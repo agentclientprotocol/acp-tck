@@ -514,3 +514,55 @@ def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
     validator = _def_validator(def_name)
     issues.extend(_issues_from_errors(validator.iter_errors(result)))
     return issues
+
+
+def _resolve_object_schema(defs: dict[str, Any], node: Any) -> dict[str, Any] | None:
+    """The `type: object` schema `node` resolves to through `$ref` and nullable `anyOf`/`oneOf`
+    (a `null` branch is ignored), or `None` if it is not an object-or-null marker -- e.g. a
+    string enum like `PositionEncodingKind`."""
+    if not isinstance(node, dict):
+        return None
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        return _resolve_object_schema(defs, defs.get(ref.removeprefix("#/$defs/")))
+    for key in ("anyOf", "oneOf"):
+        branches = node.get(key)
+        if isinstance(branches, list):
+            non_null = [b for b in branches if not (isinstance(b, dict) and b.get("type") == "null")]
+            resolved = [_resolve_object_schema(defs, b) for b in non_null]
+            return resolved[0] if non_null and all(r is not None for r in resolved) else None
+    type_ = node.get("type")
+    types = type_ if isinstance(type_, list) else [type_]
+    return node if "object" in types else None
+
+
+def find_non_object_markers(def_name: str, value: Any) -> list[str]:
+    """Paths (dotted, relative to `value`) under `#/$defs/{def_name}` where the schema declares an
+    object-or-null marker property but `value` carries a non-object (e.g. a boolean). Properties
+    the schema declares as anything else (strings, enums, ...) are never judged, and unknown
+    properties are ignored."""
+    defs = load_schema()["$defs"]
+    bad: list[str] = []
+
+    def _walk(schema: dict[str, Any], val: Any, path: str) -> None:
+        if not isinstance(val, dict):
+            return
+        props = schema.get("properties")
+        if not isinstance(props, dict):
+            return
+        for name, prop_schema in props.items():
+            if name == "_meta" or name not in val or val[name] is None:
+                continue
+            child = _resolve_object_schema(defs, prop_schema)
+            if child is None:
+                continue
+            child_path = f"{path}.{name}" if path else name
+            if not isinstance(val[name], dict):
+                bad.append(child_path)
+            else:
+                _walk(child, val[name], child_path)
+
+    root = _resolve_object_schema(defs, {"$ref": f"#/$defs/{def_name}"})
+    if root is not None:
+        _walk(root, value, "")
+    return bad

@@ -2276,3 +2276,20 @@ def test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mism
     assert len(pass_results) == len(_VERSION_TOLERANT_IDS)
     for r in pass_results:
         assert r["status"] == "PASS", r
+
+
+def test_resume_sends_notice_passes_resume_202_and_init_204():
+    """`resume_sends_notice.py` sends a live `notice` update right after `session/resume` and
+    advertises `nes`/`providers`/`positionEncoding: "utf-16"`. The draft allows both, so
+    `ACP-RESUME-202` and `ACP-INIT-204` PASS and nothing FAILs."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "resume_sends_notice.py",
+        protocol_version=2,
+        k="session_capabilities or initialize",
+    )
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert not fails, result.stdout
+    assert statuses.get("ACP-RESUME-202") == "PASS", result.stdout
+    assert statuses.get("ACP-INIT-204") == "PASS", result.stdout

@@ -94,7 +94,8 @@ async def test_resume_with_replay_from_start_replays_before_responding(
     """ACP-RESUME-202. Zero replayed updates is itself conforming (R5's retention escape
     hatch) -- recorded, never FAILed. The trailing-update check is filtered to this session's
     own `sessionId`, so an unrelated `session/update` for another session obtained earlier by
-    `obtain_resumable_session`'s own probing does not falsely FAIL this row."""
+    `obtain_resumable_session`'s own probing does not falsely FAIL this row. Live `notice`
+    updates are exempt: they are not history and may arrive at any point in a session."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry):
@@ -115,7 +116,10 @@ async def test_resume_with_replay_from_start_replays_before_responding(
         trailing_updates = [
             e
             for e in trailing
-            if update_of(e) is not None and e.parsed["params"].get("sessionId") == session_id
+            if update_of(e) is not None
+            and e.parsed["params"].get("sessionId") == session_id
+            # Live advisory notices may be sent at any time, including right after a resume.
+            and update_of(e).get("sessionUpdate") != "notice"
         ]
         assert not trailing_updates, (
             "a session/update for this session arrived after session/resume's response instead "

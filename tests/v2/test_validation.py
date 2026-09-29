@@ -204,3 +204,23 @@ def test_wrong_kind_known_method_is_a_schema_violation_not_unknown():
     issues = validate_agent_message(req)
     assert any("request but was sent without an id" in i.message for i in issues)
     assert not any("not a known" in i.message for i in issues)
+
+
+# --- find_non_object_markers (ACP-INIT-204) ---
+
+
+def test_non_object_markers_flags_boolean_object_markers_at_any_depth():
+    from tck.v2.validation import find_non_object_markers
+
+    assert find_non_object_markers("AgentCapabilities", {"session": True, "auth": {}}) == ["session"]
+    assert find_non_object_markers("AgentCapabilities", {"session": {"prompt": True}}) == [
+        "session.prompt"
+    ]
+
+
+def test_non_object_markers_accepts_draft_fields_and_scalar_position_encoding():
+    from tck.v2.validation import find_non_object_markers
+
+    caps = {"session": {}, "auth": None, "nes": {}, "providers": {}, "positionEncoding": "utf-16"}
+    assert find_non_object_markers("AgentCapabilities", caps) == []
+    assert find_non_object_markers("AgentCapabilities", {"nes": False}) == ["nes"]

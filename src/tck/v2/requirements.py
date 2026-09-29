@@ -114,9 +114,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "When the `initialize` result's `capabilities` is present, it is an object, and "
-            "every known capability marker within it (`session`, `auth`, and their known "
-            "nested keys) is either absent/`null` or an object -- never a boolean. There are no "
-            "boolean-encoded capabilities anywhere in v2. A v2-only shape requirement: SKIPPED "
+            "every object-typed capability marker within it (derived from the schema, at any "
+            "depth; scalar fields such as `positionEncoding` are not judged) is either "
+            "absent/`null` or an object -- never a boolean. A v2-only shape requirement: SKIPPED "
             "with a `VERSION-MISMATCH` note whenever the agent honestly negotiated down to a "
             "version other than 2. A dedicated diagnostic id for report legibility, kept as its "
             "own row even though the same defect also trips `ACP-SCHEMA-001`'s general schema "
@@ -800,10 +800,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "With `replayFrom: {\"type\": \"start\"}`, every `session/update` for the resumed "
             "session arrives before the `session/resume` response, and none arrives within a "
-            "quiet period after it. Zero replayed updates is conforming (R5's retention escape "
+            "quiet period after it -- except live `notice` updates, which are not history and "
+            "may be sent at any time. Zero replayed updates is conforming (R5's retention escape "
             "hatch) and is recorded, never FAILed."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:146-147,227-228"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:146-147,155-158,227-228; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:352-355,393-396"
+        ),
     ),
     Requirement(
         id="ACP-RESUME-203",
