@@ -1,4 +1,4 @@
-"""JSON-RPC 2.0 batching (v2 §6, `docs/protocol/v2/transports.mdx`): ACP-BATCH-201..208,
+"""JSON-RPC 2.0 batching (v2 §6, `docs/protocol/v2/draft/transports.mdx`): ACP-BATCH-201..208,
 ACP-INFO-BATCH-201/202.
 
 New to v2 -- v1 has no batching at all, so none of these ids reuse a v1 number; there is nothing

@@ -3,7 +3,7 @@
 
 FAILs `ACP-PATCH-204` (every `tool_call_update`/`tool_call_content_chunk` must carry a non-empty
 `toolCallId`). Also cascades into `ACP-SCHEMA-001`: `ToolCallUpdate` requires `toolCallId`
-(`schema/v2/schema.json` `$defs/ToolCallUpdate`, `required: ["toolCallId"]`). `_send_rich_turn_updates`
+(`schema/v2/schema.unstable.json#/$defs/ToolCallUpdate`, `required: ["toolCallId"]`). `_send_rich_turn_updates`
 is overridden outright (not `emit_rich_turn_updates=True` on the base class), so no plan update
 or extra message chunk is emitted -- `ACP-PATCH-201/203/205/208/209` and `ACP-ENUM-201/202` SKIP
 "no <variant> observed" rather than FAILing or PASSing on borrowed evidence.

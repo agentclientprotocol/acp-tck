@@ -54,7 +54,7 @@ async def connected_agent(
     When `handshake` is true and `--tck-auth-method` was given (`current_auth_method_id()`), an
     `auth/login` call for that method id is sent right after `initialize` -- v2's renamed
     counterpart of v1's `authenticate` (same `{"methodId": ...}` params shape,
-    `schema/v2/schema.json` `$defs/LoginAuthRequest`). As in v1, a failing `auth/login` here is
+    `schema/v2/schema.unstable.json#/$defs/LoginAuthRequest`). As in v1, a failing `auth/login` here is
     not itself a conformance assertion -- it means the TCK cannot exercise anything
     session-dependent against this agent with the given `--auth-method`, so the test SKIPs with
     a clear reason instead of raising.
@@ -200,8 +200,8 @@ async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = 
     """Send `session/new` for `cwd` and return the resulting `sessionId`.
 
     Unlike v1's `new_session`, `mcpServers` is omitted entirely rather than sent as an empty
-    list -- v2's `session/new` params require only `cwd` (`schema/v2/schema.json`
-    `required: ["cwd"]`, `mcpServers` optional), and omitting it avoids the MCP-capability check.
+    list -- v2's `session/new` params require only `cwd` (`schema/v2/schema.unstable.json#/$defs/NewSessionRequest/required`,
+    `mcpServers` optional), and omitting it avoids the MCP-capability check.
 
     SKIPs (via `skip_if_auth_gated`) rather than failing when the agent requires authentication
     and no `--auth-method` was configured.
@@ -335,7 +335,8 @@ async def set_config_option(
     value: Any,
     timeout: float | None = None,
 ) -> TranscriptEntry:
-    """Send `session/set_config_option` (`schema/v2/schema.json` `SetSessionConfigOptionRequest`:
+    """Send `session/set_config_option` (
+    `schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest`:
     `sessionId`+`configId` plus a `type`/`value` pair, e.g. `type="boolean", value=True` or
     `type="id", value=<SessionConfigValueId>`) and return its response entry."""
     params = {"sessionId": session_id, "configId": config_id, "type": type, "value": value}
@@ -736,7 +737,7 @@ async def run_prompt(
     The v1 `run_prompt` contract inverts in v2: the `session/prompt` response is no longer the
     turn's terminator (it is only an acceptance receipt, `{messageId}`, sent at insertion time).
     The turn ends only when a `session/update` `state_update {state: "idle"}` for `session_id` is
-    observed (`prompt-lifecycle.mdx:348`), or when the prompt is rejected outright with a
+    observed (`prompt-lifecycle.mdx:462`), or when the prompt is rejected outright with a
     JSON-RPC error (no insertion happened, so no further obligations apply -- P6). Every wait
     below is bounded by `timeout`, so a non-conforming agent that never reaches either terminator
     produces an `AgentTimeout` (a FAIL for whatever the caller was asserting), never a hang.
@@ -767,7 +768,7 @@ async def run_prompt(
       considered for `running_seen`/the turn-end predicate.
     - `session/request_permission` is answered `{"outcome": {"outcome": "selected", "optionId":
       <first option's optionId>}}`, or `{"outcome": {"outcome": "cancelled"}}` once
-      `session/cancel` has actually been sent for this turn (`tool-calls.mdx:304`) -- defensively
+      `session/cancel` has actually been sent for this turn (`tool-calls.mdx:306`) -- defensively
       tolerates `options: []` (no indexing crash) rather than assuming a conforming agent.
     - any other agent -> client request gets `-32601` (the mock client advertises
       `capabilities: {}`), and is recorded on `PromptTurn.client_requests_seen`; any other
@@ -781,7 +782,7 @@ async def run_prompt(
     fallback timing, but **not** in trigger condition: v1 fires its trigger on the *first*
     `session/update` of any kind; v2 fires it specifically on the transition to `state_update
     {state: "running"}` for `session_id` -- the MUST-guaranteed turn-start marker
-    (`prompt-lifecycle.mdx:159`) -- because v2's `user_message` echo update (which may arrive
+    (`prompt-lifecycle.mdx:192`) -- because v2's `user_message` echo update (which may arrive
     before `running`) is not itself evidence that foreground work has started. If `session_id`
     never reaches `running` (e.g. a non-conforming agent, or the prompt is rejected outright), the
     trigger still fires once `cancel_wait` elapses, exactly as in v1.

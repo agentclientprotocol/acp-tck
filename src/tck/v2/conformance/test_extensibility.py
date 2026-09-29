@@ -39,7 +39,7 @@ _PROMPT_TEXT = "hi"
 @pytest.mark.requirement("ACP-EXT-001")
 async def test_unknown_custom_method_receives_a_response(agent_launch):
     """ACP-EXT-001 (MANDATORY, re-cited from v1 unchanged --
-    `docs/protocol/v2/extensibility.mdx:43,52,65,109`). *Some* response -- a result, or an error
+    `docs/protocol/v2/draft/extensibility.mdx:43,52,65,109`). *Some* response -- a result, or an error
     with any code -- must arrive for a `_`-prefixed custom method; the `-32601` code specifically
     remains `ACP-JSONRPC-004`'s ADVISORY concern, not re-checked here."""
     async with connected_agent(agent_launch) as agent:
@@ -94,7 +94,8 @@ async def test_meta_field_on_prompt_is_accepted(agent_launch, tmp_path):
 async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
     """ACP-META-201 (ADVISORY, new). Every `_meta` the agent emits, anywhere in the transcript,
     is a JSON object or `null` -- never a string/array/number (all 106 `_meta` sites in the
-    schema are typed `["object", "null"]`, e.g. `schema/v2/schema.json:4289-4295`)."""
+    schema are typed `["object", "null"]`, e.g.
+    `schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/properties/_meta`)."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         await run_prompt(
@@ -126,7 +127,7 @@ async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-EXT-201")
 async def test_unrecognized_custom_notification_produces_no_response(agent_launch):
     """ACP-EXT-201 (ADVISORY). An unrecognized `_`-prefixed *notification* sent to the agent
-    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/extensibility.mdx:109`)
+    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:109`)
     -- the v2 analogue of v1's `answers_notifications.py` defect pattern, generalised to any
     custom notification rather than specifically `session/cancel`. Only a reply fails this
     (`_helpers.is_response_line`), not the agent's own notifications or requests."""
@@ -148,7 +149,7 @@ async def test_unrecognized_custom_notification_produces_no_response(agent_launc
 async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     """ACP-EXT-202 (ADVISORY). Any vendor extension the agent advertises lives under
     `initialize` -> `result.capabilities._meta`, not as a new root key of `capabilities` itself
-    (`docs/protocol/v2/extensibility.mdx:93,126-149`) -- checked via a *nested* application of
+    (`docs/protocol/v2/draft/extensibility.mdx:93,126-149`) -- checked via a *nested* application of
     `find_unknown_root_keys` against the `AgentCapabilities` `$def`, rather than the
     whole-response root-level check `ACP-SCHEMA-002` already performs.
 
@@ -179,7 +180,7 @@ async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
 async def test_dollar_prefixed_protocol_notification_behaviour(agent_launch, record_property):
     """ACP-EXT-203 (INFORMATIONAL -- the spec explicitly says the agent "is free to ignore" a
     `$/`-prefixed protocol-level notification it does not implement,
-    `schema/v2/schema.json:6967-6990`; there is no conforming/non-conforming distinction, so this
+    `schema/v2/schema.unstable.json#/$defs/ProtocolLevelNotification`; there is no conforming/non-conforming distinction, so this
     only records what happens, never asserts). Like `ACP-EXT-201`, only a reply counts, not the
     agent's own notifications or requests."""
     async with connected_agent(agent_launch) as agent:
@@ -205,7 +206,7 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
     `tck.v2.validation.find_unknown_root_keys` already skips detection for any object matched by
     an open `"other"`-titled fallback branch, since an unknown/`_`-prefixed variant is by
     construction not "a type that's part of the specification",
-    `docs/protocol/v2/extensibility.mdx:39`). Swept over an ordinary
+    `docs/protocol/v2/draft/extensibility.mdx:39`). Swept over an ordinary
     initialize -> session/new -> session/prompt exchange, same trick as v1's version of this
     test: derive `method_by_id` from the SENT transcript to resolve each response's own method.
     Unwraps every transcript line via `iter_messages` rather than requiring
@@ -240,7 +241,10 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
             if isinstance(method, str):
                 if method.startswith("_") or method.startswith("$/"):
                     continue  # extension/protocol methods carry no fixed shape by design
-                def_name = request_and_notification_defs.get(method)
+                is_request = "id" in msg
+                def_name = request_and_notification_defs.get(
+                    (method, is_request)
+                ) or request_and_notification_defs.get((method, not is_request))
                 if def_name is not None:
                     extras = validation.find_unknown_root_keys(def_name, msg.get("params"))
                     if extras:

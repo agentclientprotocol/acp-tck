@@ -119,14 +119,14 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   # routes the probe to its native v2 `initialize` handler, which does not have the v1 echo bug.
   #
   # python_v2_agent (repo-authored fixture, see `scripts/cross-check/python_v2_agent.py` docstring):
-  #   - ACP-INIT-003/201/202: this fixture also echoes back whatever protocol_version it's given
-  #     (see its `initialize()`), so it fails the same "don't echo an unsupported version
-  #     verbatim" family as the v1 agents above.
-  #   - ACP-JSONRPC-001/003, ACP-BATCH-201/202: failures inherited from the upstream
-  #     `agent-client-protocol==1.0.0rc2` Python SDK's own `acp.experimental.v2` transport/dispatch
-  #     layer (id echoing, cancel-on-idle-session handling, batch-request support) -- this fixture
-  #     delegates all JSON-RPC framing to the SDK's `run_agent()`/`Client` and doesn't touch
-  #     batching at all, so these expose the SDK's own v2 runtime limitations, not fixture bugs.
+  #   - ACP-INIT-003/201/202: the rc2 SDK itself rejects the probed protocol version with
+  #     `-32602 Invalid params` (`expectedProtocolVersion: 2`, `receivedProtocolVersion` 65535, or
+  #     1 in the downgrade case) before the fixture's `initialize()` runs, so the agent never
+  #     answers with a supported version.
+  #   - ACP-BATCH-201/202, ACP-JSONRPC-001/003 (and the advisory batch/JSON-RPC checks): the rc2
+  #     SDK crashes on any JSON array (batch) input -- `acp/connection.py` calls
+  #     `message.get("method")` on a list (`AttributeError`) and the process exits 1. These are SDK
+  #     limitations, not fixture bugs; the fixture delegates all JSON-RPC framing to the SDK.
   python3 "$SCRIPT_DIR/cross-check-summary.py" \
     "$OUT_DIR/testy.json" testy \
     "$OUT_DIR/echo_agent.json" echo_agent \

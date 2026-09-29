@@ -21,13 +21,13 @@ string, same as v1."""
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "d8805733cca4ef0d92e5135b50d5bfc2ea4fbdf3"
-"""The spec commit the vendored `schema/{schema,schema.unstable,meta}.json` -- and every
+SCHEMA_REVISION = "9af0e9f748db9f4cc4c410a7b212ead4f98ae78c"
+"""The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every
 requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VENDORED.md`). v2 is
 Draft (schema version `2.0.0-alpha.5` at this commit); expect this to change more often than
 v1's pin."""
 
-# JSON-RPC / ACP error codes (schema/v2/schema.json `ErrorCode`). Unchanged from v1.
+# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -37,7 +37,7 @@ REQUEST_CANCELLED = -32800
 AUTHENTICATION_REQUIRED = -32000
 RESOURCE_NOT_FOUND = -32002
 
-# `StopReason` values (schema/v2/schema.json `StopReason`). Same five defined constants as v1,
+# `StopReason` values (schema/v2/schema.unstable.json#/$defs/StopReason). Same five defined constants as v1,
 # but v2 additionally has an open `"other"` fallback branch (`type: "string"`, no defined
 # `const`) with no schema-level exclusion of unknown values -- see `is_valid_open_enum_value`
 # below, which is the hand-written check that enforces the `_`-prefix extensibility rule the
@@ -57,11 +57,11 @@ STOP_REASONS = frozenset(
     }
 )
 
-# Open-enum value sets for the `ACP-ENUM-201`/`ACP-ENUM-202` families (schema/v2/schema.json's
+# Open-enum value sets for the `ACP-ENUM-201`/`ACP-ENUM-202` families (schema/v2/schema.unstable.json's
 # `ToolKind`, `ToolCallStatus`, `PlanEntryPriority`, `PlanEntryStatus`,
 # `SessionUpdate.sessionUpdate`, `StateUpdate.state`, `ToolCallContent.type`). Hand-copied
 # constants, same as `STOP_REASONS` above. `tests/v2/test_validation.py`'s
-# `test_enum_sets_match_the_schema` independently re-derives each of these from `schema.json`'s
+# `test_enum_sets_match_the_schema` independently re-derives each of these from the schema's
 # own `anyOf`/`const` branches and asserts equality, so a schema refresh that adds, removes, or
 # renames a branch is caught as a test failure rather than silently drifting out of sync.
 TOOL_KIND = frozenset(
@@ -88,6 +88,10 @@ SESSION_UPDATE_KIND = frozenset(
         "config_option_update",
         "session_info_update",
         "usage_update",
+        "notice",
+        "plan_removed",
+        "compaction_update",
+        "compaction_summary_chunk",
     }
 )
 STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action"})
@@ -112,27 +116,16 @@ def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
 
 @lru_cache(maxsize=1)
 def load_meta() -> dict[str, Any]:
-    """Parse `schema/meta.json`: a `version` int, plus three flat `{internal_name: "wire/
+    """Parse `schema/meta.unstable.json`: a `version` int, plus three flat `{internal_name: "wire/
     method"}` dicts -- `agentMethods`, `clientMethods`, `protocolMethods` (just
     `cancel_request` -> `$/cancel_request`, same as v1). Does not itself distinguish requests
-    from notifications -- that split is derived from `schema.json` below."""
-    return json.loads((SCHEMA_DIR / "meta.json").read_text())
+    from notifications -- that split is derived from the schema below."""
+    return json.loads((SCHEMA_DIR / "meta.unstable.json").read_text())
 
 
 @lru_cache(maxsize=1)
 def load_schema() -> dict[str, Any]:
-    """Parse `schema/schema.json`."""
-    return json.loads((SCHEMA_DIR / "schema.json").read_text())
-
-
-@lru_cache(maxsize=1)
-def load_unstable_schema() -> dict[str, Any]:
-    """Parse `schema/schema.unstable.json` -- the Draft superset of `schema.json` that also
-    defines fields still gated behind an RFD (e.g. `AgentCapabilities.providers`,
-    `SessionCapabilities.fork`). Only `tck.v2.validation.find_unknown_root_keys` consults this,
-    to recognize such fields as known rather than undeclared extensions; nothing validates a
-    message against this schema wholesale -- `ACP-SCHEMA-001` stays scoped to the stable
-    `schema.json`."""
+    """Parse `schema/schema.unstable.json`."""
     return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
 
 

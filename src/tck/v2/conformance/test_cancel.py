@@ -6,7 +6,7 @@ a duplicate probe.
 
 v2 confirms cancellation via a terminating `session/update` `state_update {state: "idle",
 stopReason: "cancelled"}` notification, not the `session/prompt` response (which is only an
-acceptance receipt, `{messageId}`; prompt-lifecycle.mdx:519,526).
+acceptance receipt, `{messageId}`; prompt-lifecycle.mdx:633,640).
 `ACP-CANCEL-201/202/203/205/206/207/208` are `Tier.CAPABILITY`, `capability="capabilities.session"`.
 `ACP-CANCEL-204` ("as soon as possible") is `Tier.INFORMATIONAL` since promptness has no
 wire-observable signal; its test still carries the `capabilities.session` marker for the SKIP
@@ -454,7 +454,7 @@ async def test_cancel_during_pending_permission_request_behaviour(
     pending `session/request_permission` was answered `cancelled` -- when `session/cancel`
     arrives while a permission request is outstanding. `_helpers.run_prompt` already answers a
     pending permission request with `{"outcome": "cancelled"}` once cancel has been sent
-    (`tool-calls.mdx:304`); this row simply records the resulting shape rather than asserting on
+    (`tool-calls.mdx:306`); this row simply records the resulting shape rather than asserting on
     it, since there is no explicit MUST/SHOULD tying the two together."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)

@@ -93,8 +93,8 @@ statuses, not the overall verdict).
 `.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`) and an
 informational `cross-check` job (`continue-on-error: true`) that runs the suite against
 independently-built upstream agents (Rust SDK's `testy`, Python SDK's example/experimental v2
-agents) via `scripts/cross-check.sh` and diffs the result against the documented baseline in
-`docs/cross-check.md`. Both upstream v1 agents are expected to fail only the deliberately
+agents) via `scripts/cross-check.sh` and diffs the result against the expected-FAIL baseline (`--expect` lines
+in `scripts/cross-check.sh`). Both upstream v1 agents are expected to fail only the deliberately
 strengthened `ACP-INIT-003`; v2's `testy` is expected fully conformant; the Python v2 example
 agent is expected to fail a small, documented set tied to known upstream limitations. Any other
 deviation is worth investigating as either a TCK bug or a genuine new upstream behavior.
@@ -102,6 +102,9 @@ deviation is worth investigating as either a TCK bug or a genuine new upstream b
 ## How to add a requirement + test
 
 (Describes v1; a future version's suite follows the same shape under its own package.)
+v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/StopReason`),
+never by line number; `tests/v2/test_registry.py` checks that every such pointer resolves.
+v2 prose citations point at the draft doc tree (`docs/protocol/v2/draft/*.mdx`), which pairs with the draft schema.
 
 1. Add a `Requirement(...)` entry to `_DECLARATIONS` in `src/tck/v1/requirements.py`: pick an id
    (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the exact
@@ -187,9 +190,13 @@ valid non-cancelled stop reason arrives within a short race window after cancel 
 
 ## Vendored schema
 
-`src/tck/v{1,2}/schema/schema.json` and `meta.json` are verbatim copies of the ACP JSON Schema
-from the spec repo; commit hash, vendor date, and refresh procedure live in each `schema/
-VENDORED.md`. Do not hand-edit either JSON file. `tck.v{1,2}.protocol` and `tck.v{1,2}.validation`
+`src/tck/v1/schema/schema.json`/`meta.json` and `src/tck/v2/schema/schema.unstable.json`/
+`meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. v1 uses the
+stable files; v2 (Draft) verifies entirely against the draft (unstable) superset. The RFD-gated
+fields and methods it adds are optional for agents, but any an agent uses are validated against
+the draft shapes. Commit hash, vendor date, and
+refresh procedure live in each `schema/VENDORED.md`. Do not hand-edit the JSON files.
+`tck.v{1,2}.protocol` and `tck.v{1,2}.validation`
 derive their method-name tables and validation rules from these files at import time, so a schema
 refresh mostly self-updates them -- but check each version's `validation.py` docstring for
 hand-written carve-outs a refresh could invalidate (e.g. v1's `session/load` null-response quirk,

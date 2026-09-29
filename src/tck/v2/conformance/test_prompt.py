@@ -212,7 +212,7 @@ async def test_updates_validate_and_carry_the_right_session_id(agent_launch, tmp
 @pytest.mark.capability("capabilities.session")
 async def test_resource_link_content_block_is_accepted(agent_launch, tmp_path):
     """ACP-PROMPT-003 (ADVISORY -- reused from v1, re-cited to v2 sources:
-    `initialization.mdx:203` lists `resource_link` as baseline MUST-accept alongside `text`, but
+    `initialization.mdx:212` lists `resource_link` as baseline MUST-accept alongside `text`, but
     `content.mdx:33` says only `text` is MUST -- the same doc conflict v1 already carries,
     unresolved verbatim in v2, so this stays ADVISORY rather than becoming a hard FAIL target."""
     async with connected_agent(agent_launch) as agent:

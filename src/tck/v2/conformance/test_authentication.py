@@ -69,7 +69,7 @@ async def test_auth_methods_have_unique_method_ids(agent_initialize_result):
 async def test_auth_method_type_is_a_defined_or_prefixed_value(agent_initialize_result):
     """ACP-AUTH-206 (MANDATORY, new in v2). Every `authMethods[*].type` is `"agent"`,
     `"terminal"`, or begins with `_` -- the general open-enum extensibility rule applied to this
-    field (`docs/protocol/v2/authentication.mdx:120-122`)."""
+    field (`docs/protocol/v2/draft/authentication.mdx:120-122`)."""
     outcome = agent_initialize_result
     assert outcome.result is not None, f"initialize did not succeed: {outcome.error_message}"
     skip_if_version_mismatch(outcome.result)
@@ -110,7 +110,7 @@ async def test_terminal_auth_method_descriptor_shape(agent_launch):
     *does* advertise `capabilities.auth.terminal: {}`, every `type: "terminal"` entry's `args`
     (if present) is an array of strings, `env` (if present) is an array of well-formed
     `EnvVariable` objects, and `env` names are unique within that descriptor ("Names MUST be
-    unique", `schema/v2/schema.json` `$defs/AuthMethodTerminal`). Conditional on at least one
+    unique", `schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal`). Conditional on at least one
     terminal entry actually appearing -- SKIPs otherwise, since there is nothing to check."""
     async with _initialized_agent(agent_launch, capabilities={"auth": {"terminal": {}}}) as (agent, init_result):
         auth_methods = init_result.get("authMethods") or []

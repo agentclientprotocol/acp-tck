@@ -6,7 +6,7 @@ directory onto `sys.path` rather than a package-relative import -- same pattern 
 `tests/fixtures/agents/v1/_base.py`, but a fresh, much smaller implementation (not imported from
 v1).
 
-Wire shapes are taken from the vendored `src/tck/v2/schema/schema.json` (`InitializeRequest`/
+Wire shapes are taken from the vendored `src/tck/v2/schema/schema.unstable.json` (`InitializeRequest`/
 `InitializeResponse`/`NewSessionRequest`/`NewSessionResponse`/...) -- verify against that schema,
 not memory, before changing a field name. Two v2-specific renames vs. v1: the agent's own identity
 is `info` (not `agentInfo`) and its capabilities are `capabilities` (not `agentCapabilities`).
@@ -77,7 +77,7 @@ from typing import Any
 
 PROTOCOL_VERSION = 2
 
-# v2 negotiation rule (initialization.mdx:92-96): if the agent supports the requested version, it
+# v2 negotiation rule (initialization.mdx:96-100): if the agent supports the requested version, it
 # echoes it back; otherwise it answers with its own latest supported version. This fixture
 # supports both defined versions, 1 and 2.
 _SUPPORTED_VERSIONS = frozenset({1, 2})
@@ -130,8 +130,8 @@ class ConformingAgent:
         self._history: dict[str, list[dict[str, Any]]] = {}  # sessionId -> replayable updates
         self._primed_message_ids: dict[str, set[Any]] = {}  # sessionId -> messageIds already primed
         # `initialize`'s `authMethods` -- `auth/login`/`auth/logout` keyed by `methodId` (v1
-        # keyed the equivalent field `id`; v2 renamed it, see `schema/v2/schema.json`
-        # `$defs/AuthMethodId`). `require_auth` mirrors v1's `_base.py`: `session/new` errors
+        # keyed the equivalent field `id`; v2 renamed it, see
+        # `schema/v2/schema.unstable.json#/$defs/AuthMethodId`). `require_auth` mirrors v1's `_base.py`: `session/new` errors
         # with `-32000` until a successful `auth/login` flips `self._authenticated`.
         self._auth_methods = auth_methods
         self._require_auth = require_auth

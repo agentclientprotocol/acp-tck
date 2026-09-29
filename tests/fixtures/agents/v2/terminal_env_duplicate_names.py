@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A defect fixture for ACP-AUTH-207 (MANDATORY): advertises a `type: "terminal"` auth method
 whose `env` array has two entries sharing the same `name` -- violating "Names MUST be unique"
-(`schema/v2/schema.json` `$defs/AuthMethodTerminal`). No v1 analogue: v1's terminal auth
+(`schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal`). No v1 analogue: v1's terminal auth
 descriptor had no `args`/`env` fields at all.
 
 The terminal method is advertised *only* when the connecting client itself advertised

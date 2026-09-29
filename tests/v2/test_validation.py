@@ -151,7 +151,7 @@ def test_is_valid_open_enum_value_never_raises_on_a_none_value():
 
 def _consts_from_schema(def_name: str, *, discriminator: str | None = None) -> frozenset[str]:
     """Independently derive the set of defined `const` values an `anyOf`-shaped `$def` permits,
-    straight from `schema.json` -- deliberately not calling any of `tck.v2.protocol`'s own code,
+    straight from `schema.unstable.json` -- deliberately not calling any of `tck.v2.protocol`'s own code,
     so this is a real cross-check rather than the module re-affirming itself.
 
     Each `anyOf` branch is either a bare scalar with its own top-level `const` (e.g. `ToolKind`),
@@ -177,7 +177,7 @@ def test_enum_sets_match_the_schema():
     """`tck.v2.protocol`'s hand-copied `TOOL_KIND`/`TOOL_CALL_STATUS`/`PLAN_ENTRY_PRIORITY`/
     `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE` sets
     must exactly match the defined `const`
-    branches `schema.json` itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/
+    branches `schema.unstable.json` itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/
     `PlanEntryStatus`/`SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type` --
     so a schema refresh that adds, removes, or renames a branch fails this test instead of
     silently drifting out of sync with `test_enums.py`'s ACP-ENUM-201/202 checks."""
@@ -192,3 +192,35 @@ def test_enum_sets_match_the_schema():
     assert protocol.TOOL_CALL_CONTENT_TYPE == _consts_from_schema(
         "ToolCallContent", discriminator="type"
     )
+
+
+def test_wrong_kind_known_method_is_a_schema_violation_not_unknown():
+    note = {"jsonrpc": "2.0", "id": 1, "method": "session/update", "params": {}}
+    issues = validate_agent_message(note)
+    assert any("notification but was sent with an id" in i.message for i in issues)
+    assert not any("not a known" in i.message for i in issues)
+
+    req = {"jsonrpc": "2.0", "method": "session/request_permission", "params": {}}
+    issues = validate_agent_message(req)
+    assert any("request but was sent without an id" in i.message for i in issues)
+    assert not any("not a known" in i.message for i in issues)
+
+
+# --- find_non_object_markers (ACP-INIT-204) ---
+
+
+def test_non_object_markers_flags_boolean_object_markers_at_any_depth():
+    from tck.v2.validation import find_non_object_markers
+
+    assert find_non_object_markers("AgentCapabilities", {"session": True, "auth": {}}) == ["session"]
+    assert find_non_object_markers("AgentCapabilities", {"session": {"prompt": True}}) == [
+        "session.prompt"
+    ]
+
+
+def test_non_object_markers_accepts_draft_fields_and_scalar_position_encoding():
+    from tck.v2.validation import find_non_object_markers
+
+    caps = {"session": {}, "auth": None, "nes": {}, "providers": {}, "positionEncoding": "utf-16"}
+    assert find_non_object_markers("AgentCapabilities", caps) == []
+    assert find_non_object_markers("AgentCapabilities", {"nes": False}) == ["nes"]

@@ -15,7 +15,7 @@ from ._helpers import connected_agent, new_session
 @pytest.mark.requirement("ACP-ERROR-001")
 async def test_error_messages_are_non_empty_single_line(agent_launch):
     """ACP-ERROR-001 (ADVISORY, re-cited from v1 unchanged -- `error.mdx` is still a stub in v2
-    too; `Error` `$def` is byte-identical, `schema/v2/schema.json:4127-4149`). Evidence: the
+    too; `Error` `$def` is byte-identical, `schema/v2/schema.unstable.json#/$defs/Error`). Evidence: the
     reply to an unrecognised method, and the reply to a `session/new` missing its required
     `cwd`."""
     async with connected_agent(agent_launch, handshake=False) as agent:
@@ -45,7 +45,7 @@ async def test_error_messages_are_non_empty_single_line(agent_launch):
 @pytest.mark.requirement("ACP-SHUTDOWN-001")
 async def test_agent_exits_promptly_after_stdin_close(agent_launch, tmp_path):
     """ACP-SHUTDOWN-001 (ADVISORY, re-cited from v1 unchanged -- v2 still has no dedicated
-    shutdown method, `docs/protocol/v2/transports.mdx:41`). Relies on `connected_agent`'s
+    shutdown method, `docs/protocol/v2/draft/transports.mdx:41`). Relies on `connected_agent`'s
     `close()` ladder and reports whether the agent exited during the first rung
     (`AgentProcess.exited_on_stdin_close`)."""
     async with connected_agent(agent_launch) as agent:

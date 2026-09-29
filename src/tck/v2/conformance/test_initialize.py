@@ -9,7 +9,7 @@ from typing import Any
 from tck.common.harness import Direction
 from tck.v2 import SPEC
 from tck.v2.protocol import PROTOCOL_VERSION
-from tck.v2.validation import validate_agent_message, validate_agent_response
+from tck.v2.validation import find_non_object_markers, validate_agent_message, validate_agent_response
 
 import pytest
 
@@ -32,7 +32,7 @@ async def test_initialize_succeeds(agent_launch):
 
 @pytest.mark.requirement("ACP-INIT-201")
 async def test_version_negotiation_follows_the_two_branch_rule(agent_launch):
-    """ACP-INIT-201 (initialization.mdx:92-96): "If the Agent supports the requested version, it
+    """ACP-INIT-201 (initialization.mdx:96-100): "If the Agent supports the requested version, it
     MUST respond with the same version. Otherwise, the Agent MUST respond with the latest
     version it supports."
 
@@ -191,9 +191,10 @@ async def test_info_is_required_and_well_formed(agent_launch):
 
 @pytest.mark.requirement("ACP-INIT-204")
 async def test_capabilities_markers_are_objects_not_booleans(agent_launch):
-    """ACP-INIT-204. `capabilities`, when present, is an object whose known nested markers
-    (`session`, `auth`) are themselves objects (or absent/`null`) -- never booleans. There are no
-    boolean-encoded capabilities anywhere in v2 (`docs/protocol/v2/migration.mdx:181`).
+    """ACP-INIT-204. `capabilities`, when present, is an object whose object-typed marker
+    properties (derived from `schema/v2/schema.unstable.json#/$defs/AgentCapabilities`, recursively)
+    are themselves objects (or absent/`null`) -- never booleans. Non-object fields such as the
+    `positionEncoding` string are not judged.
 
     Also a v2-only shape requirement, so `skip_if_version_mismatch` SKIPs it with the
     `VERSION-MISMATCH:` marker whenever the agent negotiated down to a version other than 2 --
@@ -213,14 +214,11 @@ async def test_capabilities_markers_are_objects_not_booleans(agent_launch):
         assert isinstance(capabilities, dict), (
             f"capabilities must be an object when present, got {capabilities!r}"
         )
-        for key in ("session", "auth"):
-            if key in capabilities and capabilities[key] is not None:
-                assert isinstance(capabilities[key], dict) and not isinstance(
-                    capabilities[key], bool
-                ), (
-                    f"capabilities.{key} must be an object marker, never a boolean, got "
-                    f"{capabilities[key]!r}"
-                )
+        bad = find_non_object_markers("AgentCapabilities", capabilities)
+        assert not bad, (
+            "capability markers must be objects (or absent/null), never booleans or other "
+            f"scalars, but got non-objects at: {bad!r} in {capabilities!r}"
+        )
 
 
 @pytest.mark.requirement("ACP-SCHEMA-001")
