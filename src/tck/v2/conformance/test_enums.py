@@ -9,7 +9,7 @@ fallback). The defined-constant sets themselves (`TOOL_KIND`, `TOOL_CALL_STATUS`
 `PLAN_ENTRY_PRIORITY`, `PLAN_ENTRY_STATUS`, `SESSION_UPDATE_KIND`, `STATE_UPDATE_STATE`,
 `TOOL_CALL_CONTENT_TYPE`) live in `tck.v2.protocol` next to `STOP_REASONS`, not here -- see
 `tests/v2/test_validation.py::test_enum_sets_match_the_schema` for the meta-test that keeps them
-honest against `schema.json`.
+honest against `schema.unstable.json`.
 
 The re-worded v1 `ACP-PROMPT-001` ("the idle's `stopReason` is a defined constant or `_`-prefixed")
 is deliberately **not** re-registered here: it is already fully covered by `ACP-STATE-203`, which

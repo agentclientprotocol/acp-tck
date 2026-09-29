@@ -1,5 +1,5 @@
 """Schema validation for JSON-RPC messages the agent under test writes to stdout, against the
-vendored ACP v2 (Draft) schema (`tck/v2/schema/schema.json`, see `VENDORED.md`).
+vendored ACP v2 (Draft) schema (`tck/v2/schema/schema.unstable.json`, see `VENDORED.md`).
 
 Mirrors `tck.v1.validation`'s API (`validate_agent_message`, `validate_agent_response`,
 `find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in three
@@ -25,15 +25,6 @@ ways this module encodes:
    fallback and the check is skipped (`[]`) instead of flagging extra fields. A missing/`null`/
    non-`_`-prefixed discriminator does not count, so a malformed discriminator can't dodge the
    check.
-4. **Unstable-schema root keys aren't "unrecognized".** `find_unknown_root_keys` also resolves
-   `#/$defs/{def_name}` against the vendored `schema.unstable.json` (a Draft superset of
-   `schema.json`) and allows any root key declared there, e.g. `AgentCapabilities.providers`
-   (RFD, `docs/rfds/custom-llm-endpoint.mdx`) or `SessionCapabilities.fork` (RFD,
-   `docs/rfds/session-fork.mdx`). Those fields are typed, spec-tracked fields of a real RFD, not
-   vendor extensions -- flagging them as unrecognized root keys was a TCK false positive, since
-   the TCK only vendors the stable schema. Full jsonschema validation (`validate_agent_message`/
-   `validate_agent_response`, `ACP-SCHEMA-001`) is unaffected and stays scoped to the stable
-   schema only.
 """
 
 from __future__ import annotations
@@ -45,7 +36,7 @@ from typing import Any
 import jsonschema
 from jsonschema import Draft202012Validator
 
-from .protocol import load_schema, load_unstable_schema
+from .protocol import load_schema
 
 _DRAFT_VALIDATORS: dict[str, type[jsonschema.protocols.Validator]] = {
     "https://json-schema.org/draft/2020-12/schema": Draft202012Validator,
@@ -71,7 +62,7 @@ def _validator_class() -> type[jsonschema.protocols.Validator]:
     validator_class = _DRAFT_VALIDATORS.get(dialect)
     if validator_class is None:
         raise RuntimeError(
-            f"vendored schema.json declares $schema={dialect!r}, which this module does not "
+            f"vendored schema declares $schema={dialect!r}, which this module does not "
             "have a jsonschema Draft validator mapped for -- add one to _DRAFT_VALIDATORS"
         )
     return validator_class
@@ -117,25 +108,26 @@ def _issues_from_errors(errors: Any) -> list[ValidationIssue]:
 
 
 @lru_cache(maxsize=1)
-def _request_and_notification_method_defs() -> dict[str, str]:
-    """`{wire_method: def_name}` for every params `$def` an agent-authored message can carry:
-    agent -> client requests (`AgentRequest`), agent -> client notifications
+def _request_and_notification_method_defs() -> dict[tuple[str, bool], str]:
+    """`{(wire_method, is_request): def_name}` for every params `$def` an agent-authored message
+    can carry: agent -> client requests (`AgentRequest`), agent -> client notifications
     (`AgentNotification`), and the bidirectional `$/cancel_request` notification
     (`ProtocolLevel`). Extension (`_*`) methods are excluded -- their schema (`Ext*` defs)
-    carries no fixed shape by design.
+    carries no fixed shape by design. Keyed by request-vs-notification too, so a method name
+    used as both can't shadow one shape with the other.
     """
     defs = load_schema()["$defs"]
-    mapping: dict[str, str] = {}
-    for envelope_name in ("AgentRequest", "AgentNotification"):
+    mapping: dict[tuple[str, bool], str] = {}
+    for envelope_name, is_request in (("AgentRequest", True), ("AgentNotification", False)):
         envelope = defs[envelope_name]
         for ref_name in _ref_names_under(envelope.get("properties", {}).get("params", {})):
             method = defs.get(ref_name, {}).get("x-method")
             if method:
-                mapping[method] = ref_name
+                mapping[(method, is_request)] = ref_name
     # `$/cancel_request` lives under the third top-level single-message branch, `ProtocolLevel`.
     cancel_request_method = defs.get("CancelRequestNotification", {}).get("x-method")
     if cancel_request_method:
-        mapping[cancel_request_method] = "CancelRequestNotification"
+        mapping[(cancel_request_method, False)] = "CancelRequestNotification"
     return mapping
 
 
@@ -287,7 +279,7 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
         return issues
 
     method_defs = _request_and_notification_method_defs()
-    def_name = method_defs.get(method)
+    def_name = method_defs.get((method, "id" in msg))
     if def_name is None:
         issues.append(
             ValidationIssue(
@@ -380,23 +372,15 @@ def _collect_root_properties(defs: dict[str, Any], def_name: str) -> tuple[set[s
 
 @lru_cache(maxsize=None)
 def _allowed_root_properties(def_name: str) -> set[str] | None:
-    """The set of property names permitted at the root of `#/$defs/{def_name}`, unioned across
-    the stable schema (`schema.json`) and the Draft `schema.unstable.json` -- a field that only
-    the unstable schema defines (e.g. `AgentCapabilities.providers`) is still a real, spec-typed
-    field of an RFD, not a vendor extension, so it counts as known here (module docstring point
-    4). Full jsonschema validation elsewhere in this module stays scoped to the stable schema.
+    """The set of property names permitted at the root of `#/$defs/{def_name}`.
 
-    Returns `None` if neither schema's composition for `def_name` ever declares a non-empty
+    Returns `None` if the schema's composition for `def_name` never declares a non-empty
     `properties` map -- there is nothing meaningful to compare an object's keys against in that
     case, and the caller should skip the check rather than flag every key as unknown.
     """
-    stable_allowed, stable_found = _collect_root_properties(load_schema()["$defs"], def_name)
-    unstable_allowed, unstable_found = _collect_root_properties(
-        load_unstable_schema()["$defs"], def_name
-    )
-    if not stable_found and not unstable_found:
+    allowed, found = _collect_root_properties(load_schema()["$defs"], def_name)
+    if not found:
         return None
-    allowed = stable_allowed | unstable_allowed
     allowed.add("_meta")
     return allowed
 

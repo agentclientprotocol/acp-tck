@@ -6,7 +6,7 @@ directory onto `sys.path` rather than a package-relative import -- same pattern 
 `tests/fixtures/agents/v1/_base.py`, but a fresh, much smaller implementation (not imported from
 v1).
 
-Wire shapes are taken from the vendored `src/tck/v2/schema/schema.json` (`InitializeRequest`/
+Wire shapes are taken from the vendored `src/tck/v2/schema/schema.unstable.json` (`InitializeRequest`/
 `InitializeResponse`/`NewSessionRequest`/`NewSessionResponse`/...) -- verify against that schema,
 not memory, before changing a field name. Two v2-specific renames vs. v1: the agent's own identity
 is `info` (not `agentInfo`) and its capabilities are `capabilities` (not `agentCapabilities`).

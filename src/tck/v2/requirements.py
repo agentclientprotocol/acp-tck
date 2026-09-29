@@ -135,7 +135,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`VERSION-MISMATCH` note whenever the agent honestly negotiated down to a version "
             "other than 2, since a v1-shaped result cannot be judged against the v2 schema."
         ),
-        citation=_cite("schema/v2/schema.json (top-level anyOf); docs/protocol/v2/initialization.mdx"),
+        citation=_cite("schema/v2/schema.unstable.json (top-level anyOf); docs/protocol/v2/initialization.mdx"),
     ),
     Requirement(
         id="ACP-SESSION-001",
@@ -358,7 +358,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "separate `ACP-CLIENTCAP-001/002` rows)."
         ),
         citation=_cite(
-            "schema/v2/meta.json:16-21 (agent->client method inventory); "
+            "schema/v2/meta.unstable.json:31-37 (agent->client method inventory); "
             "docs/protocol/v2/migration.mdx:53-54,628-637 (fs/terminal removed); "
             "docs/protocol/v2/extensibility.mdx:43,52 (MUST NOT call undefined methods)"
         ),

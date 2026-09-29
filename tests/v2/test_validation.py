@@ -151,7 +151,7 @@ def test_is_valid_open_enum_value_never_raises_on_a_none_value():
 
 def _consts_from_schema(def_name: str, *, discriminator: str | None = None) -> frozenset[str]:
     """Independently derive the set of defined `const` values an `anyOf`-shaped `$def` permits,
-    straight from `schema.json` -- deliberately not calling any of `tck.v2.protocol`'s own code,
+    straight from `schema.unstable.json` -- deliberately not calling any of `tck.v2.protocol`'s own code,
     so this is a real cross-check rather than the module re-affirming itself.
 
     Each `anyOf` branch is either a bare scalar with its own top-level `const` (e.g. `ToolKind`),
@@ -177,7 +177,7 @@ def test_enum_sets_match_the_schema():
     """`tck.v2.protocol`'s hand-copied `TOOL_KIND`/`TOOL_CALL_STATUS`/`PLAN_ENTRY_PRIORITY`/
     `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE` sets
     must exactly match the defined `const`
-    branches `schema.json` itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/
+    branches `schema.unstable.json` itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/
     `PlanEntryStatus`/`SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type` --
     so a schema refresh that adds, removes, or renames a branch fails this test instead of
     silently drifting out of sync with `test_enums.py`'s ACP-ENUM-201/202 checks."""
