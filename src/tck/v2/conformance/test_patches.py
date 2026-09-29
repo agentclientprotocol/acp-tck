@@ -73,7 +73,7 @@ async def _drive_one_turn(agent_launch, tmp_path):
 async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path):
     """ACP-PATCH-201 (CAPABILITY). Every `*_message*`/`*_thought*` update carries a non-empty
     string `messageId` -- the keyed-upsert identity the whole message-patch family hinges on
-    (`prompt-lifecycle.mdx:246`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
+    (`prompt-lifecycle.mdx:277`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
     `schema/v2/schema.unstable.json#/$defs/UserMessage`,
     `schema/v2/schema.unstable.json#/$defs/AgentMessage`,
     `schema/v2/schema.unstable.json#/$defs/AgentThought`)."""
@@ -92,7 +92,7 @@ async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path)
 @pytest.mark.capability("capabilities.session")
 async def test_two_prompts_receive_distinct_message_ids(agent_launch, tmp_path):
     """ACP-PATCH-203 (CAPABILITY). Two `session/prompt`s with identical content receive two
-    distinct `messageId`s (`prompt-lifecycle.mdx:151`) -- the v2 analogue of v1's
+    distinct `messageId`s (`prompt-lifecycle.mdx:184`) -- the v2 analogue of v1's
     `duplicate_session_id.py` defect pattern, applied to message ids instead of session ids."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -151,7 +151,7 @@ async def test_tool_call_updates_carry_tool_call_id(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
     """ACP-PATCH-205 (CAPABILITY). Every `plan_update.plan`, including an unknown/`_`-prefixed
-    variant, carries `planId` (`agent-plan.mdx:71`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
+    variant, carries `planId` (`agent-plan.mdx:137`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     plan_updates = [u for u in _update_dicts(turn) if u.get("sessionUpdate") == "plan_update"]
     if not plan_updates:
@@ -169,7 +169,7 @@ async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_terminal_updates_have_absolute_cwd_and_unique_ids(agent_launch, tmp_path):
     """ACP-PATCH-206 (CAPABILITY). A supplied `terminal_update.cwd` is absolute; a `terminalId`
-    is never reused for a different terminal within a session (`tool-calls.mdx:405-411,439-440`).
+    is never reused for a different terminal within a session (`tool-calls.mdx:407-413,441-442`).
     "Reused for a different terminal" is judged as: the same `terminalId` observed with a
     different `cwd` than the first time it was seen (the only client-observable signal that two
     distinct terminals were assigned the same id -- v2 has no separate terminal "create" call to
@@ -205,7 +205,7 @@ async def test_terminal_updates_have_absolute_cwd_and_unique_ids(agent_launch, t
 @pytest.mark.capability("capabilities.session")
 async def test_terminal_output_chunks_decode_standalone(agent_launch, tmp_path):
     """ACP-PATCH-207 (CAPABILITY). `terminal_output_chunk.data` and `terminal_update.output.data`
-    each decode as standalone RFC 4648 base64 (`tool-calls.mdx:441-446,466-474`) -- a chunk that
+    each decode as standalone RFC 4648 base64 (`tool-calls.mdx:443-448,468-476`) -- a chunk that
     only decodes once concatenated with a previous one is non-conforming."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     updates = _update_dicts(turn)
@@ -237,7 +237,7 @@ async def test_terminal_output_chunks_decode_standalone(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_first_tool_call_update_reports_title(agent_launch, tmp_path):
     """ACP-PATCH-208 (ADVISORY). The first `tool_call_update` for a new `toolCallId` includes
-    `title`, and `name` does not change afterward once set (`tool-calls.mdx:44-52`)."""
+    `title`, and `name` does not change afterward once set (`tool-calls.mdx:42-55`)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     tool_call_updates = [
         u for u in _update_dicts(turn) if u.get("sessionUpdate") == "tool_call_update"
@@ -274,7 +274,7 @@ async def test_first_tool_call_update_reports_title(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_requires_action_reported_around_permission_request(agent_launch, tmp_path):
     """ACP-PATCH-209 (ADVISORY). While blocked on a permission response the agent reports
-    `requires_action`, and `running` when it resumes (`prompt-lifecycle.mdx:371`). SKIPs when
+    `requires_action`, and `running` when it resumes (`prompt-lifecycle.mdx:485`). SKIPs when
     the turn ends in `refusal`/`cancelled`: a refused or cancelled turn legitimately never
     resumes foreground work, so there is nothing for the "running again" half of this check to
     observe."""

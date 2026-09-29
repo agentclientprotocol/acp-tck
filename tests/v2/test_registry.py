@@ -384,3 +384,19 @@ def test_no_v2_source_mentions_the_stable_schema_files():
     assert not offenders, f"v2 files mention stable schema.json/meta.json: {offenders}"
     for requirement in REGISTRY.values():
         assert not _STABLE_NAME_PATTERN.search(requirement.citation), requirement.id
+
+
+# Prose citations point at the draft doc tree, matching the draft schema.
+_NON_DRAFT_DOCS_PATTERN = re.compile(r"docs/protocol/v2/(?!draft/)")
+
+
+def test_no_v2_source_cites_the_non_draft_docs_tree():
+    offenders = [
+        str(path.relative_to(_REPO_ROOT))
+        for path in _v2_source_files()
+        if _NON_DRAFT_DOCS_PATTERN.search(path.read_text())
+    ]
+    assert not offenders, f"v2 files cite docs/protocol/v2/ outside draft/: {offenders}"
+    for requirement in REGISTRY.values():
+        assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.citation), requirement.id
+        assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.text), requirement.id

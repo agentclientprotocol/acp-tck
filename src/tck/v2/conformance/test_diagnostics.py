@@ -45,7 +45,7 @@ async def test_error_messages_are_non_empty_single_line(agent_launch):
 @pytest.mark.requirement("ACP-SHUTDOWN-001")
 async def test_agent_exits_promptly_after_stdin_close(agent_launch, tmp_path):
     """ACP-SHUTDOWN-001 (ADVISORY, re-cited from v1 unchanged -- v2 still has no dedicated
-    shutdown method, `docs/protocol/v2/transports.mdx:41`). Relies on `connected_agent`'s
+    shutdown method, `docs/protocol/v2/draft/transports.mdx:41`). Relies on `connected_agent`'s
     `close()` ladder and reports whether the agent exited during the first rung
     (`AgentProcess.exited_on_stdin_close`)."""
     async with connected_agent(agent_launch) as agent:

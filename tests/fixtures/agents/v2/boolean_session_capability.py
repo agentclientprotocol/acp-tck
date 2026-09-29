@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `capabilities.session` as the literal boolean `true`
 instead of an object marker -- there are no boolean-encoded capabilities anywhere in v2
-(`docs/protocol/v2/migration.mdx:181`).
+(`schema/v2/schema.unstable.json#/$defs/AgentCapabilities`).
 
 FAILs `ACP-INIT-204` and, via schema validation of the same result, `ACP-SCHEMA-001` (both
 reject `true` against `AgentCapabilities.session`'s `anyOf [SessionCapabilities, null]`). Does

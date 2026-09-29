@@ -32,7 +32,7 @@ async def test_initialize_succeeds(agent_launch):
 
 @pytest.mark.requirement("ACP-INIT-201")
 async def test_version_negotiation_follows_the_two_branch_rule(agent_launch):
-    """ACP-INIT-201 (initialization.mdx:92-96): "If the Agent supports the requested version, it
+    """ACP-INIT-201 (initialization.mdx:96-100): "If the Agent supports the requested version, it
     MUST respond with the same version. Otherwise, the Agent MUST respond with the latest
     version it supports."
 
@@ -193,7 +193,7 @@ async def test_info_is_required_and_well_formed(agent_launch):
 async def test_capabilities_markers_are_objects_not_booleans(agent_launch):
     """ACP-INIT-204. `capabilities`, when present, is an object whose known nested markers
     (`session`, `auth`) are themselves objects (or absent/`null`) -- never booleans. There are no
-    boolean-encoded capabilities anywhere in v2 (`docs/protocol/v2/migration.mdx:181`).
+    boolean-encoded capabilities anywhere in v2 (`schema/v2/schema.unstable.json#/$defs/AgentCapabilities`).
 
     Also a v2-only shape requirement, so `skip_if_version_mismatch` SKIPs it with the
     `VERSION-MISMATCH:` marker whenever the agent negotiated down to a version other than 2 --

@@ -77,7 +77,7 @@ from typing import Any
 
 PROTOCOL_VERSION = 2
 
-# v2 negotiation rule (initialization.mdx:92-96): if the agent supports the requested version, it
+# v2 negotiation rule (initialization.mdx:96-100): if the agent supports the requested version, it
 # echoes it back; otherwise it answers with its own latest supported version. This fixture
 # supports both defined versions, 1 and 2.
 _SUPPORTED_VERSIONS = frozenset({1, 2})

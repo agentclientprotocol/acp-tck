@@ -737,7 +737,7 @@ async def run_prompt(
     The v1 `run_prompt` contract inverts in v2: the `session/prompt` response is no longer the
     turn's terminator (it is only an acceptance receipt, `{messageId}`, sent at insertion time).
     The turn ends only when a `session/update` `state_update {state: "idle"}` for `session_id` is
-    observed (`prompt-lifecycle.mdx:348`), or when the prompt is rejected outright with a
+    observed (`prompt-lifecycle.mdx:462`), or when the prompt is rejected outright with a
     JSON-RPC error (no insertion happened, so no further obligations apply -- P6). Every wait
     below is bounded by `timeout`, so a non-conforming agent that never reaches either terminator
     produces an `AgentTimeout` (a FAIL for whatever the caller was asserting), never a hang.
@@ -768,7 +768,7 @@ async def run_prompt(
       considered for `running_seen`/the turn-end predicate.
     - `session/request_permission` is answered `{"outcome": {"outcome": "selected", "optionId":
       <first option's optionId>}}`, or `{"outcome": {"outcome": "cancelled"}}` once
-      `session/cancel` has actually been sent for this turn (`tool-calls.mdx:304`) -- defensively
+      `session/cancel` has actually been sent for this turn (`tool-calls.mdx:306`) -- defensively
       tolerates `options: []` (no indexing crash) rather than assuming a conforming agent.
     - any other agent -> client request gets `-32601` (the mock client advertises
       `capabilities: {}`), and is recorded on `PromptTurn.client_requests_seen`; any other
@@ -782,7 +782,7 @@ async def run_prompt(
     fallback timing, but **not** in trigger condition: v1 fires its trigger on the *first*
     `session/update` of any kind; v2 fires it specifically on the transition to `state_update
     {state: "running"}` for `session_id` -- the MUST-guaranteed turn-start marker
-    (`prompt-lifecycle.mdx:159`) -- because v2's `user_message` echo update (which may arrive
+    (`prompt-lifecycle.mdx:192`) -- because v2's `user_message` echo update (which may arrive
     before `running`) is not itself evidence that foreground work has started. If `session_id`
     never reaches `running` (e.g. a non-conforming agent, or the prompt is rejected outright), the
     trigger still fires once `cancel_wait` elapses, exactly as in v1.

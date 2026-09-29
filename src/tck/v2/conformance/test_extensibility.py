@@ -39,7 +39,7 @@ _PROMPT_TEXT = "hi"
 @pytest.mark.requirement("ACP-EXT-001")
 async def test_unknown_custom_method_receives_a_response(agent_launch):
     """ACP-EXT-001 (MANDATORY, re-cited from v1 unchanged --
-    `docs/protocol/v2/extensibility.mdx:43,52,65,109`). *Some* response -- a result, or an error
+    `docs/protocol/v2/draft/extensibility.mdx:43,52,65,109`). *Some* response -- a result, or an error
     with any code -- must arrive for a `_`-prefixed custom method; the `-32601` code specifically
     remains `ACP-JSONRPC-004`'s ADVISORY concern, not re-checked here."""
     async with connected_agent(agent_launch) as agent:
@@ -127,7 +127,7 @@ async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-EXT-201")
 async def test_unrecognized_custom_notification_produces_no_response(agent_launch):
     """ACP-EXT-201 (ADVISORY). An unrecognized `_`-prefixed *notification* sent to the agent
-    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/extensibility.mdx:109`)
+    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:109`)
     -- the v2 analogue of v1's `answers_notifications.py` defect pattern, generalised to any
     custom notification rather than specifically `session/cancel`. Only a reply fails this
     (`_helpers.is_response_line`), not the agent's own notifications or requests."""
@@ -149,7 +149,7 @@ async def test_unrecognized_custom_notification_produces_no_response(agent_launc
 async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     """ACP-EXT-202 (ADVISORY). Any vendor extension the agent advertises lives under
     `initialize` -> `result.capabilities._meta`, not as a new root key of `capabilities` itself
-    (`docs/protocol/v2/extensibility.mdx:93,126-149`) -- checked via a *nested* application of
+    (`docs/protocol/v2/draft/extensibility.mdx:93,126-149`) -- checked via a *nested* application of
     `find_unknown_root_keys` against the `AgentCapabilities` `$def`, rather than the
     whole-response root-level check `ACP-SCHEMA-002` already performs.
 
@@ -206,7 +206,7 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
     `tck.v2.validation.find_unknown_root_keys` already skips detection for any object matched by
     an open `"other"`-titled fallback branch, since an unknown/`_`-prefixed variant is by
     construction not "a type that's part of the specification",
-    `docs/protocol/v2/extensibility.mdx:39`). Swept over an ordinary
+    `docs/protocol/v2/draft/extensibility.mdx:39`). Swept over an ordinary
     initialize -> session/new -> session/prompt exchange, same trick as v1's version of this
     test: derive `method_by_id` from the SENT transcript to resolve each response's own method.
     Unwraps every transcript line via `iter_messages` rather than requiring
