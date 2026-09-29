@@ -1,5 +1,7 @@
 # acp-tck
 
+![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
+
 A Test Compatibility Kit for the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). It launches an agent
 implementation as a stdio subprocess, drives it through the protocol - initialize, session lifecycle, prompt turns,
 cancellation, error handling, transport hygiene - and reports which requirements pass, fail, don't apply, or were never
@@ -7,6 +9,11 @@ exercised.
 
 Targets **v1** by default, with an opt-in **v2** (Draft) suite via `--protocol-version 2`.
 See ["What is covered"](#what-is-covered) below for the exact per-version breakdown.
+
+> [!NOTE]
+> This project is in an experimental state. It does not provide 100% coverage. Requirements, CLI options, the JSON
+> report format, and verdicts may change without notice, and a result from this TCK is not an official statement of ACP conformance.
+> The v2 suite tracks a draft version of the protocol and is especially likely to change.
 
 ## Run
 
