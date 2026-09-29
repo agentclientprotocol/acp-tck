@@ -102,6 +102,8 @@ deviation is worth investigating as either a TCK bug or a genuine new upstream b
 ## How to add a requirement + test
 
 (Describes v1; a future version's suite follows the same shape under its own package.)
+v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/StopReason`),
+never by line number; `tests/v2/test_registry.py` checks that every such pointer resolves.
 
 1. Add a `Requirement(...)` entry to `_DECLARATIONS` in `src/tck/v1/requirements.py`: pick an id
    (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the exact
@@ -189,8 +191,9 @@ valid non-cancelled stop reason arrives within a short race window after cancel 
 
 `src/tck/v1/schema/schema.json`/`meta.json` and `src/tck/v2/schema/schema.unstable.json`/
 `meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. v1 uses the
-stable files; v2 (Draft) verifies entirely against the draft (unstable) superset, so agents are
-expected to implement the RFD-gated fields and methods it adds. Commit hash, vendor date, and
+stable files; v2 (Draft) verifies entirely against the draft (unstable) superset. The RFD-gated
+fields and methods it adds are optional for agents, but any an agent uses are validated against
+the draft shapes. Commit hash, vendor date, and
 refresh procedure live in each `schema/VENDORED.md`. Do not hand-edit the JSON files.
 `tck.v{1,2}.protocol` and `tck.v{1,2}.validation`
 derive their method-name tables and validation rules from these files at import time, so a schema

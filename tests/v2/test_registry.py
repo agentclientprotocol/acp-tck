@@ -9,13 +9,16 @@ See `tck.v2.requirements`'s module docstring for the id-namespacing decisions (e
 from __future__ import annotations
 
 import importlib
+import json
 import pkgutil
 import re
+from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tck.common.requirements import Tier
-from tck.v2.protocol import SCHEMA_REVISION
+from tck.v2.protocol import SCHEMA_DIR, SCHEMA_REVISION
 from tck.v2 import requirements as req_module
 from tck.v2.requirements import REGISTRY
 
@@ -287,3 +290,97 @@ def test_cli_selftest_tier_sets_match_the_registry():
     assert test_cli._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
         test_cli._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
     )
+
+
+# --- schema citations ------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_V2_SOURCE_DIRS = (
+    _REPO_ROOT / "src" / "tck" / "v2",
+    _REPO_ROOT / "tests" / "v2",
+    _REPO_ROOT / "tests" / "fixtures" / "agents" / "v2",
+)
+_POINTER_PATTERN = re.compile(r"schema\.unstable\.json#(/[^\s`'\"),;]*)")
+# Any mention of the stable file names; `schema.unstable.json` does not match.
+_STABLE_NAME_PATTERN = re.compile(r"\b(?:schema|meta)\.json\b")
+
+
+def _resolve_pointer(document: Any, pointer: str) -> Any:
+    """RFC 6901 resolution; raises `KeyError`/`IndexError`/`ValueError` if it does not resolve."""
+    node = document
+    for raw in pointer.split("/")[1:]:
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            node = node[token]
+        elif isinstance(node, list):
+            if not token.isdigit() or (token != "0" and token.startswith("0")):
+                raise ValueError(f"bad array index {token!r}")
+            node = node[int(token)]
+        else:
+            raise KeyError(token)
+    return node
+
+
+def _v2_source_files() -> list[Path]:
+    this_file = Path(__file__).resolve()
+    return sorted(
+        path
+        for root in _V2_SOURCE_DIRS
+        for path in root.rglob("*.py")
+        if path.resolve() != this_file and "__pycache__" not in path.parts
+    )
+
+
+def _schema_pointers_by_source() -> dict[str, list[str]]:
+    sources = {
+        f"{req_id} citation": requirement.citation for req_id, requirement in REGISTRY.items()
+    }
+    for path in _v2_source_files():
+        sources[str(path.relative_to(_REPO_ROOT))] = path.read_text()
+    return {
+        name: [m.rstrip(".") for m in _POINTER_PATTERN.findall(text)] for name, text in sources.items()
+    }
+
+
+def _unresolved_pointers(pointers_by_source: dict[str, list[str]], schema: Any) -> list[str]:
+    bad = []
+    for source, pointers in pointers_by_source.items():
+        for pointer in pointers:
+            try:
+                _resolve_pointer(schema, pointer)
+            except (KeyError, IndexError, ValueError):
+                bad.append(f"{source}: {pointer}")
+    return bad
+
+
+def test_resolve_pointer_handles_escapes_and_arrays():
+    doc = {"a/b": {"c~d": [10, {"x": 1}]}}
+    assert _resolve_pointer(doc, "/a~1b/c~0d/1/x") == 1
+    assert _resolve_pointer(doc, "") is doc
+    for bad in ("/a~1b/c~0d/2", "/a~1b/c~0d/01", "/a/b", "/a~1b/c~0d/x"):
+        with pytest.raises((KeyError, IndexError, ValueError)):
+            _resolve_pointer(doc, bad)
+
+
+def test_schema_citation_pointers_resolve_in_the_vendored_schema():
+    schema = json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
+    pointers_by_source = _schema_pointers_by_source()
+    assert sum(len(v) for v in pointers_by_source.values()) > 50, "pointer extraction found too few"
+    assert not _unresolved_pointers(pointers_by_source, schema)
+
+
+def test_unresolvable_pointer_is_reported():
+    schema = json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
+    broken = {"x": ["/$defs/StopReason", "/$defs/NoSuchDef", "/$defs/StopReason/anyOf/99"]}
+    assert _unresolved_pointers(broken, schema) == ["x: /$defs/NoSuchDef", "x: /$defs/StopReason/anyOf/99"]
+
+
+def test_no_v2_source_mentions_the_stable_schema_files():
+    offenders = [
+        str(path.relative_to(_REPO_ROOT))
+        for path in _v2_source_files()
+        if _STABLE_NAME_PATTERN.search(path.read_text())
+    ]
+    assert not offenders, f"v2 files mention stable schema.json/meta.json: {offenders}"
+    for requirement in REGISTRY.values():
+        assert not _STABLE_NAME_PATTERN.search(requirement.citation), requirement.id

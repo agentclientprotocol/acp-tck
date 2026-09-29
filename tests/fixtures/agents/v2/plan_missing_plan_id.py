@@ -2,7 +2,7 @@
 """Non-conforming fixture: sends a `plan_update` whose `plan` object has no `planId` at all.
 
 FAILs `ACP-PATCH-205` (every `plan_update.plan` must carry a non-empty `planId`). Also cascades
-into `ACP-SCHEMA-001`: `PlanItems` requires `planId` (`schema/v2/schema.json` `$defs/PlanItems`,
+into `ACP-SCHEMA-001`: `PlanItems` requires `planId` (`schema/v2/schema.unstable.json#/$defs/PlanItems`,
 `required: ["planId", "entries"]`) -- same cascade pattern as `missing_message_id.py`.
 
 `_send_rich_turn_updates` is overridden outright, so `ACP-PATCH-204`/`208` SKIP "no <variant>

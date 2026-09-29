@@ -130,8 +130,8 @@ class ConformingAgent:
         self._history: dict[str, list[dict[str, Any]]] = {}  # sessionId -> replayable updates
         self._primed_message_ids: dict[str, set[Any]] = {}  # sessionId -> messageIds already primed
         # `initialize`'s `authMethods` -- `auth/login`/`auth/logout` keyed by `methodId` (v1
-        # keyed the equivalent field `id`; v2 renamed it, see `schema/v2/schema.json`
-        # `$defs/AuthMethodId`). `require_auth` mirrors v1's `_base.py`: `session/new` errors
+        # keyed the equivalent field `id`; v2 renamed it, see
+        # `schema/v2/schema.unstable.json#/$defs/AuthMethodId`). `require_auth` mirrors v1's `_base.py`: `session/new` errors
         # with `-32000` until a successful `auth/login` flips `self._authenticated`.
         self._auth_methods = auth_methods
         self._require_auth = require_auth

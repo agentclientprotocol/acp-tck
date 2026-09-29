@@ -11,10 +11,10 @@ inventories may still change upstream before v2 stabilizes.
 stable `schema.json`/`meta.json` and a superset `schema.unstable.json`/`meta.unstable.json` that
 additionally defines fields and methods still gated behind an individual RFD (e.g.
 `AgentCapabilities.providers`, `SessionCapabilities.fork`, `providers/*`, `mcp/message`). Because
-v2 itself is still Draft, agents are expected to implement those RFDs, so the TCK uses the
-superset for everything: method tables, full jsonschema validation (`ACP-SCHEMA-001`), and the
-unknown-root-key check. The stable files are deliberately not vendored. The upstream file names
-are kept as-is.
+v2 itself is still Draft, those additions are optional for agents, but any an agent uses must
+match the draft shapes -- so the TCK uses the superset for everything: method tables, full
+jsonschema validation (`ACP-SCHEMA-001`), and the unknown-root-key check. The stable files are
+deliberately not vendored. The upstream file names are kept as-is.
 
 - **Source repo:** https://github.com/agentclientprotocol/agent-client-protocol
   (local read-only checkout used for the copy: the path configured by the
@@ -41,3 +41,5 @@ are kept as-is.
    / `ProtocolLevel`), or the open-enum `"other"` fallback branch shape (e.g. `StopReason`)
    changed, re-check `src/tck/v2/protocol.py` and `src/tck/v2/validation.py` by hand -- both parse
    the schema structurally, not just by value.
+6. Citations into the schema are JSON-Pointer name paths (`schema.unstable.json#/$defs/...`);
+   `tests/v2/test_registry.py` fails if a refresh renames or removes one, so fix those citations.

@@ -94,7 +94,8 @@ async def test_meta_field_on_prompt_is_accepted(agent_launch, tmp_path):
 async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
     """ACP-META-201 (ADVISORY, new). Every `_meta` the agent emits, anywhere in the transcript,
     is a JSON object or `null` -- never a string/array/number (all 106 `_meta` sites in the
-    schema are typed `["object", "null"]`, e.g. `schema/v2/schema.json:4289-4295`)."""
+    schema are typed `["object", "null"]`, e.g.
+    `schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/properties/_meta`)."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         await run_prompt(
@@ -179,7 +180,7 @@ async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
 async def test_dollar_prefixed_protocol_notification_behaviour(agent_launch, record_property):
     """ACP-EXT-203 (INFORMATIONAL -- the spec explicitly says the agent "is free to ignore" a
     `$/`-prefixed protocol-level notification it does not implement,
-    `schema/v2/schema.json:6967-6990`; there is no conforming/non-conforming distinction, so this
+    `schema/v2/schema.unstable.json#/$defs/ProtocolLevelNotification`; there is no conforming/non-conforming distinction, so this
     only records what happens, never asserts). Like `ACP-EXT-201`, only a reply counts, not the
     agent's own notifications or requests."""
     async with connected_agent(agent_launch) as agent:

@@ -73,7 +73,10 @@ async def _drive_one_turn(agent_launch, tmp_path):
 async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path):
     """ACP-PATCH-201 (CAPABILITY). Every `*_message*`/`*_thought*` update carries a non-empty
     string `messageId` -- the keyed-upsert identity the whole message-patch family hinges on
-    (`prompt-lifecycle.mdx:246`; `schema/v2/schema.json:4738-4856`)."""
+    (`prompt-lifecycle.mdx:246`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
+    `schema/v2/schema.unstable.json#/$defs/UserMessage`,
+    `schema/v2/schema.unstable.json#/$defs/AgentMessage`,
+    `schema/v2/schema.unstable.json#/$defs/AgentThought`)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     message_updates = [u for u in _update_dicts(turn) if u.get("sessionUpdate") in _MESSAGE_KINDS]
     if not message_updates:
@@ -119,7 +122,8 @@ async def test_two_prompts_receive_distinct_message_ids(agent_launch, tmp_path):
 async def test_tool_call_updates_carry_tool_call_id(agent_launch, tmp_path):
     """ACP-PATCH-204 (CAPABILITY). Every `tool_call_update` carries `toolCallId`; every
     `tool_call_content_chunk` carries `toolCallId` + `content`
-    (`schema/v2/schema.json:674-758,5040-5110`) -- there is no separate "create" message in v2's
+    (`schema/v2/schema.unstable.json#/$defs/ToolCallUpdate`,
+    `schema/v2/schema.unstable.json#/$defs/ToolCallContentChunk`) -- there is no separate "create" message in v2's
     keyed-upsert model, so the identity key must be present on every single one, including the
     very first (which *is* the create)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
@@ -147,7 +151,7 @@ async def test_tool_call_updates_carry_tool_call_id(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
     """ACP-PATCH-205 (CAPABILITY). Every `plan_update.plan`, including an unknown/`_`-prefixed
-    variant, carries `planId` (`agent-plan.mdx:71`; `schema/v2/schema.json:5199-5278`)."""
+    variant, carries `planId` (`agent-plan.mdx:71`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     plan_updates = [u for u in _update_dicts(turn) if u.get("sessionUpdate") == "plan_update"]
     if not plan_updates:

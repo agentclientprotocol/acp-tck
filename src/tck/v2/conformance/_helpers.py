@@ -54,7 +54,7 @@ async def connected_agent(
     When `handshake` is true and `--tck-auth-method` was given (`current_auth_method_id()`), an
     `auth/login` call for that method id is sent right after `initialize` -- v2's renamed
     counterpart of v1's `authenticate` (same `{"methodId": ...}` params shape,
-    `schema/v2/schema.json` `$defs/LoginAuthRequest`). As in v1, a failing `auth/login` here is
+    `schema/v2/schema.unstable.json#/$defs/LoginAuthRequest`). As in v1, a failing `auth/login` here is
     not itself a conformance assertion -- it means the TCK cannot exercise anything
     session-dependent against this agent with the given `--auth-method`, so the test SKIPs with
     a clear reason instead of raising.
@@ -200,8 +200,8 @@ async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = 
     """Send `session/new` for `cwd` and return the resulting `sessionId`.
 
     Unlike v1's `new_session`, `mcpServers` is omitted entirely rather than sent as an empty
-    list -- v2's `session/new` params require only `cwd` (`schema/v2/schema.json`
-    `required: ["cwd"]`, `mcpServers` optional), and omitting it avoids the MCP-capability check.
+    list -- v2's `session/new` params require only `cwd` (`schema/v2/schema.unstable.json#/$defs/NewSessionRequest/required`,
+    `mcpServers` optional), and omitting it avoids the MCP-capability check.
 
     SKIPs (via `skip_if_auth_gated`) rather than failing when the agent requires authentication
     and no `--auth-method` was configured.
@@ -335,7 +335,8 @@ async def set_config_option(
     value: Any,
     timeout: float | None = None,
 ) -> TranscriptEntry:
-    """Send `session/set_config_option` (`schema/v2/schema.json` `SetSessionConfigOptionRequest`:
+    """Send `session/set_config_option` (
+    `schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest`:
     `sessionId`+`configId` plus a `type`/`value` pair, e.g. `type="boolean", value=True` or
     `type="id", value=<SessionConfigValueId>`) and return its response entry."""
     params = {"sessionId": session_id, "configId": config_id, "type": type, "value": value}

@@ -15,7 +15,7 @@ from ._helpers import connected_agent, new_session
 @pytest.mark.requirement("ACP-ERROR-001")
 async def test_error_messages_are_non_empty_single_line(agent_launch):
     """ACP-ERROR-001 (ADVISORY, re-cited from v1 unchanged -- `error.mdx` is still a stub in v2
-    too; `Error` `$def` is byte-identical, `schema/v2/schema.json:4127-4149`). Evidence: the
+    too; `Error` `$def` is byte-identical, `schema/v2/schema.unstable.json#/$defs/Error`). Evidence: the
     reply to an unrecognised method, and the reply to a `session/new` missing its required
     `cwd`."""
     async with connected_agent(agent_launch, handshake=False) as agent:

@@ -27,7 +27,7 @@ requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VEND
 Draft (schema version `2.0.0-alpha.5` at this commit); expect this to change more often than
 v1's pin."""
 
-# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json `ErrorCode`). Unchanged from v1.
+# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -37,7 +37,7 @@ REQUEST_CANCELLED = -32800
 AUTHENTICATION_REQUIRED = -32000
 RESOURCE_NOT_FOUND = -32002
 
-# `StopReason` values (schema/v2/schema.unstable.json `StopReason`). Same five defined constants as v1,
+# `StopReason` values (schema/v2/schema.unstable.json#/$defs/StopReason). Same five defined constants as v1,
 # but v2 additionally has an open `"other"` fallback branch (`type: "string"`, no defined
 # `const`) with no schema-level exclusion of unknown values -- see `is_valid_open_enum_value`
 # below, which is the hand-written check that enforces the `_`-prefix extensibility rule the

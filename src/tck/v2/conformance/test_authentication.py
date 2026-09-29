@@ -110,7 +110,7 @@ async def test_terminal_auth_method_descriptor_shape(agent_launch):
     *does* advertise `capabilities.auth.terminal: {}`, every `type: "terminal"` entry's `args`
     (if present) is an array of strings, `env` (if present) is an array of well-formed
     `EnvVariable` objects, and `env` names are unique within that descriptor ("Names MUST be
-    unique", `schema/v2/schema.json` `$defs/AuthMethodTerminal`). Conditional on at least one
+    unique", `schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal`). Conditional on at least one
     terminal entry actually appearing -- SKIPs otherwise, since there is nothing to check."""
     async with _initialized_agent(agent_launch, capabilities={"auth": {"terminal": {}}}) as (agent, init_result):
         auth_methods = init_result.get("authMethods") or []

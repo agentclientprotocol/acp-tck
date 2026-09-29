@@ -1963,7 +1963,7 @@ def test_terminal_env_duplicate_names_fails_auth_207_only():
 def test_tool_call_update_missing_id_fails_patch_204_and_schema_001():
     """`tool_call_update_missing_id.py` emits one `tool_call_update` with no `toolCallId` --
     FAILs `ACP-PATCH-204` directly, and cascades into `ACP-SCHEMA-001` since `ToolCallUpdate`
-    schema-requires `toolCallId` (`schema/v2/schema.json`'s `$defs/ToolCallUpdate`). It overrides
+    schema-requires `toolCallId` (`schema/v2/schema.unstable.json#/$defs/ToolCallUpdate`). It overrides
     `_send_rich_turn_updates`, which `_base.py` calls on *every* turn, so it also cascades into
     `ACP-PROMPT-205` (CAPABILITY -- schema-validates every `session/update` a driven turn
     observes) -- confirmed via an unscoped run; `-k` is widened to `test_prompt` too so this
@@ -1985,7 +1985,7 @@ def test_tool_call_update_missing_id_fails_patch_204_and_schema_001():
 def test_plan_missing_plan_id_fails_patch_205_and_schema_001():
     """`plan_missing_plan_id.py` emits one `plan_update` whose `plan` object has no `planId` --
     FAILs `ACP-PATCH-205` directly, and cascades into `ACP-SCHEMA-001` since `PlanItems`
-    schema-requires `planId` (`schema/v2/schema.json`'s `$defs/PlanItems`). Same
+    schema-requires `planId` (`schema/v2/schema.unstable.json#/$defs/PlanItems`). Same
     `_send_rich_turn_updates`-on-every-turn cascade as the sibling test above also FAILs
     `ACP-PROMPT-205` unscoped; `-k` widened to match."""
     result = _run_cli(
@@ -2005,7 +2005,7 @@ def test_plan_missing_plan_id_fails_patch_205_and_schema_001():
 def test_message_chunk_missing_message_id_fails_patch_201_and_schema_001():
     """`message_chunk_missing_message_id.py` emits one `agent_message_chunk` with no
     `messageId` -- FAILs `ACP-PATCH-201` directly, and cascades into `ACP-SCHEMA-001` since
-    `ContentChunk` schema-requires `messageId` (`schema/v2/schema.json`'s `$defs/ContentChunk`).
+    `ContentChunk` schema-requires `messageId` (`schema/v2/schema.unstable.json#/$defs/ContentChunk`).
     Same `_send_rich_turn_updates`-on-every-turn cascade as the two sibling tests above also
     FAILs `ACP-PROMPT-205` unscoped; `-k` widened to match."""
     result = _run_cli(

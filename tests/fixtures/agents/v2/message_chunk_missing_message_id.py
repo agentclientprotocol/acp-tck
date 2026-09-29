@@ -2,8 +2,8 @@
 """Non-conforming fixture: sends an `agent_message_chunk` update with no `messageId` at all.
 
 FAILs `ACP-PATCH-201` (every message-kind update must carry a non-empty string `messageId`).
-Also cascades into `ACP-SCHEMA-001`: `ContentChunk` requires `messageId` (`schema/v2/schema.json`
-`$defs/ContentChunk`, `required: ["messageId", "content"]`). No tool-call/plan update is ever
+Also cascades into `ACP-SCHEMA-001`: `ContentChunk` requires `messageId`
+(`schema/v2/schema.unstable.json#/$defs/ContentChunk`, `required: ["messageId", "content"]`). No tool-call/plan update is ever
 sent, so `ACP-PATCH-204/205/208` and `ACP-ENUM-201` SKIP "no <variant> observed".
 
 Since `_send_rich_turn_updates` runs on every turn, this also cascades into `ACP-PROMPT-205`
