@@ -93,8 +93,8 @@ statuses, not the overall verdict).
 `.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`) and an
 informational `cross-check` job (`continue-on-error: true`) that runs the suite against
 independently-built upstream agents (Rust SDK's `testy`, Python SDK's example/experimental v2
-agents) via `scripts/cross-check.sh` and diffs the result against the documented baseline in
-`docs/cross-check.md`. Both upstream v1 agents are expected to fail only the deliberately
+agents) via `scripts/cross-check.sh` and diffs the result against the expected-FAIL baseline (`--expect` lines
+in `scripts/cross-check.sh`). Both upstream v1 agents are expected to fail only the deliberately
 strengthened `ACP-INIT-003`; v2's `testy` is expected fully conformant; the Python v2 example
 agent is expected to fail a small, documented set tied to known upstream limitations. Any other
 deviation is worth investigating as either a TCK bug or a genuine new upstream behavior.
@@ -187,9 +187,12 @@ valid non-cancelled stop reason arrives within a short race window after cancel 
 
 ## Vendored schema
 
-`src/tck/v{1,2}/schema/schema.json` and `meta.json` are verbatim copies of the ACP JSON Schema
-from the spec repo; commit hash, vendor date, and refresh procedure live in each `schema/
-VENDORED.md`. Do not hand-edit either JSON file. `tck.v{1,2}.protocol` and `tck.v{1,2}.validation`
+`src/tck/v1/schema/schema.json`/`meta.json` and `src/tck/v2/schema/schema.unstable.json`/
+`meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. v1 uses the
+stable files; v2 (Draft) verifies entirely against the draft (unstable) superset, so agents are
+expected to implement the RFD-gated fields and methods it adds. Commit hash, vendor date, and
+refresh procedure live in each `schema/VENDORED.md`. Do not hand-edit the JSON files.
+`tck.v{1,2}.protocol` and `tck.v{1,2}.validation`
 derive their method-name tables and validation rules from these files at import time, so a schema
 refresh mostly self-updates them -- but check each version's `validation.py` docstring for
 hand-written carve-outs a refresh could invalidate (e.g. v1's `session/load` null-response quirk,

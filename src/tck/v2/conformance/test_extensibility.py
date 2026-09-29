@@ -240,7 +240,10 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
             if isinstance(method, str):
                 if method.startswith("_") or method.startswith("$/"):
                     continue  # extension/protocol methods carry no fixed shape by design
-                def_name = request_and_notification_defs.get((method, "id" in msg))
+                is_request = "id" in msg
+                def_name = request_and_notification_defs.get(
+                    (method, is_request)
+                ) or request_and_notification_defs.get((method, not is_request))
                 if def_name is not None:
                     extras = validation.find_unknown_root_keys(def_name, msg.get("params"))
                     if extras:

@@ -192,3 +192,15 @@ def test_enum_sets_match_the_schema():
     assert protocol.TOOL_CALL_CONTENT_TYPE == _consts_from_schema(
         "ToolCallContent", discriminator="type"
     )
+
+
+def test_wrong_kind_known_method_is_a_schema_violation_not_unknown():
+    note = {"jsonrpc": "2.0", "id": 1, "method": "session/update", "params": {}}
+    issues = validate_agent_message(note)
+    assert any("notification but was sent with an id" in i.message for i in issues)
+    assert not any("not a known" in i.message for i in issues)
+
+    req = {"jsonrpc": "2.0", "method": "session/request_permission", "params": {}}
+    issues = validate_agent_message(req)
+    assert any("request but was sent without an id" in i.message for i in issues)
+    assert not any("not a known" in i.message for i in issues)

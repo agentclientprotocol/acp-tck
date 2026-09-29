@@ -279,16 +279,31 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
         return issues
 
     method_defs = _request_and_notification_method_defs()
-    def_name = method_defs.get((method, "id" in msg))
+    is_request = "id" in msg
+    def_name = method_defs.get((method, is_request))
     if def_name is None:
+        def_name = method_defs.get((method, not is_request))
+        if def_name is None:
+            issues.append(
+                ValidationIssue(
+                    path="/method",
+                    message=f"{method!r} is not a known agent-authored request/notification method",
+                    schema_path="",
+                )
+            )
+            return issues
+        # Known method, wrong kind: report that, then still validate params against its shape.
         issues.append(
             ValidationIssue(
-                path="/method",
-                message=f"{method!r} is not a known agent-authored request/notification method",
+                path="/id" if is_request else "/method",
+                message=(
+                    f"{method!r} is a notification but was sent with an id"
+                    if is_request
+                    else f"{method!r} is a request but was sent without an id"
+                ),
                 schema_path="",
             )
         )
-        return issues
 
     params = msg.get("params")
     validator = _def_validator(def_name)
