@@ -226,6 +226,10 @@ current requirement set, `src/tck/v{1,2}/requirements.py` is the source of truth
 
 ### v2
 
+v2 is checked against the upstream *draft* schema (the unstable superset, including RFD-gated fields and methods). Those
+extras are optional for agents, but are validated against the draft shapes when used. The schema is pinned to the spec
+commit recorded in `src/tck/v2/schema/VENDORED.md`.
+
 - `initialize`/version-negotiation baseline, including a v2-only agent's required behavior when asked for `1`
 - `session/new` baseline
 - Core `session/prompt` turn/`state_update` lifecycle (turn completion via `state_update`, not the prompt response) and
