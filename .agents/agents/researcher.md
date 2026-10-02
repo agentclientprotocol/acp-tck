@@ -41,10 +41,6 @@ Always invoke these as skills; each one tells you how to locate and refresh its 
 the upstream revision you actually checked. If a skill's `.repo` is missing, follow the skill's
 instructions — ask before cloning; do not clone silently.
 
-For code discovery inside a checkout, prefer one semantic search (`context-search` /
-`mcp__jbcontext__code_search`) to bootstrap, then read the returned files and their neighbors
-directly. Fall back to `rg` when semantic search misses.
-
 ## Rules
 
 - **Scope discipline.** Answer the question you were given. If you discover an adjacent question

@@ -54,9 +54,8 @@ work.
 2. **Orient.** Read the task, the acceptance criteria, and every research report the orchestrator
    pointed you at. Those reports are your specification — implement what they cite, not what you
    remember about ACP.
-3. **Locate.** If you do not know where the relevant code lives, start with one semantic search
-   (`context-search` / `mcp__jbcontext__code_search`), then read the files it returns. If you were
-   given exact paths, open them directly.
+3. **Locate.** If you do not know where the relevant code lives, start with search, then read the files it returns.
+   If you were given exact paths, open them directly.
 4. **Implement.** Match the surrounding code's style, naming, and comment density. Prefer the
    smallest change that fully does the job. Do not refactor unrelated code, do not add speculative
    abstraction, do not expand scope beyond the slice. Commit as you go — commit granularity within
