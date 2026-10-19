@@ -18,7 +18,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from tck.common.harness import AgentExited, Direction
+from tck.common.harness import AgentExited, AgentTimeout, Direction
 from tck.v2 import SPEC
 from tck.v2.protocol import INVALID_PARAMS, PROTOCOL_VERSION, UNSUPPORTED_PROTOCOL_VERSION
 from tck.v2.validation import find_non_object_markers, validate_agent_message, validate_agent_response
@@ -242,7 +242,14 @@ async def test_unsupported_version_error_carries_requested_and_supported(
     _skip_unless_v2_endpoint(agent_initialize_result)
     issues: list[str] = []
 
-    entry = await _initialize_once(agent_launch, {**SPEC.initialize_params(), "protocolVersion": 0})
+    try:
+        entry = await _initialize_once(agent_launch, {**SPEC.initialize_params(), "protocolVersion": 0})
+    except (AgentExited, AgentTimeout) as exc:
+        pytest.fail(
+            f"initialize(protocolVersion=0) got no reply ({exc}); an unsupported version MUST be "
+            "rejected with a -32022 response",
+            pytrace=False,
+        )
     selected = _selected_version(entry.parsed)
     if selected is not None:
         assert selected <= 0, (
@@ -256,8 +263,11 @@ async def test_unsupported_version_error_carries_requested_and_supported(
         )
         issues += [f"protocolVersion=0: {i}" for i in _unsupported_version_data_issues(entry.parsed["error"], 0)]
 
-    v1_entry = await _initialize_once(agent_launch, _V1_SHAPED_PARAMS)
-    if _error_code(v1_entry.parsed) == UNSUPPORTED_PROTOCOL_VERSION:
+    try:
+        v1_entry = await _initialize_once(agent_launch, _V1_SHAPED_PARAMS)
+    except (AgentExited, AgentTimeout):
+        v1_entry = None  # no reply to the v1 request is `ACP-INIT-202`'s FAIL
+    if v1_entry is not None and _error_code(v1_entry.parsed) == UNSUPPORTED_PROTOCOL_VERSION:
         issues += [f"protocolVersion=1: {i}" for i in _unsupported_version_data_issues(v1_entry.parsed["error"], 1)]
 
     assert not issues, f"malformed -32022 error data: {issues!r}"
@@ -287,7 +297,11 @@ async def test_malformed_protocol_version_gets_invalid_params(agent_launch, agen
             del params["protocolVersion"]
         else:
             params["protocolVersion"] = value
-        entry = await _initialize_once(agent_launch, params)
+        try:
+            entry = await _initialize_once(agent_launch, params)
+        except (AgentExited, AgentTimeout) as exc:
+            failures.append(f"protocolVersion {label}: no reply ({type(exc).__name__})")
+            continue
         if _error_code(entry.parsed) != INVALID_PARAMS:
             failures.append(f"protocolVersion {label}: {entry.text!r}")
     assert not failures, f"malformed protocolVersion not answered with -32602: {failures!r}"
@@ -304,8 +318,11 @@ async def test_no_session_work_after_unsupported_version(agent_launch, agent_ini
     quiet = quiet_period(agent_launch.default_timeout)
     async with connected_agent(agent_launch, handshake=False) as agent:
         init_id = await agent.send_request("initialize", {**SPEC.initialize_params(), "protocolVersion": 0})
-        entry = await agent.wait_for_response(init_id, timeout=agent_launch.default_timeout)
-        if _error_code(entry.parsed) != UNSUPPORTED_PROTOCOL_VERSION:
+        try:
+            entry = await agent.wait_for_response(init_id, timeout=agent_launch.default_timeout)
+        except (AgentExited, AgentTimeout):
+            entry = None  # no reply at all is `ACP-INIT-205`'s FAIL, not this row's
+        if entry is None or _error_code(entry.parsed) != UNSUPPORTED_PROTOCOL_VERSION:
             pytest.skip("initialize(protocolVersion=0) was not rejected with -32022; nothing to check")
         mark = len(agent.transcript)
         new_id = await agent.send_request("session/new", {"cwd": str(tmp_path)})
