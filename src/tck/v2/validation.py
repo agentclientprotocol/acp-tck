@@ -519,7 +519,7 @@ def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
 def _resolve_object_schema(defs: dict[str, Any], node: Any) -> dict[str, Any] | None:
     """The `type: object` schema `node` resolves to through `$ref` and nullable `anyOf`/`oneOf`
     (a `null` branch is ignored), or `None` if it is not an object-or-null marker -- e.g. a
-    string enum like `PositionEncodingKind`."""
+    string enum."""
     if not isinstance(node, dict):
         return None
     ref = node.get("$ref")

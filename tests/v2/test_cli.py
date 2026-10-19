@@ -2280,7 +2280,7 @@ def test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mism
 
 def test_resume_sends_notice_passes_resume_202_and_init_204():
     """`resume_sends_notice.py` sends a live `notice` update right after `session/resume` and
-    advertises `nes`/`providers`/`positionEncoding: "utf-16"`. The draft allows both, so
+    advertises `providers`. The draft allows both, so
     `ACP-RESUME-202` and `ACP-INIT-204` PASS and nothing FAILs."""
     result = _run_cli(
         FIXTURES_DIR_V2,

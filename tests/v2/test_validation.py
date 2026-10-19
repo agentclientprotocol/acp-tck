@@ -175,11 +175,11 @@ def _consts_from_schema(def_name: str, *, discriminator: str | None = None) -> f
 
 def test_enum_sets_match_the_schema():
     """`tck.v2.protocol`'s hand-copied `TOOL_KIND`/`TOOL_CALL_STATUS`/`PLAN_ENTRY_PRIORITY`/
-    `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE` sets
-    must exactly match the defined `const`
-    branches `schema.unstable.json` itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/
-    `PlanEntryStatus`/`SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type` --
-    so a schema refresh that adds, removes, or renames a branch fails this test instead of
+    `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE`/
+    `STOP_REASONS` sets must exactly match the defined `const` branches `schema.unstable.json`
+    itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/`PlanEntryStatus`/
+    `SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type`/
+    `IdleStateUpdate.stopReason` -- so a schema refresh that adds, removes, or renames a branch fails this test instead of
     silently drifting out of sync with `test_enums.py`'s ACP-ENUM-201/202 checks."""
     assert protocol.TOOL_KIND == _consts_from_schema("ToolKind")
     assert protocol.TOOL_CALL_STATUS == _consts_from_schema("ToolCallStatus")
@@ -192,6 +192,7 @@ def test_enum_sets_match_the_schema():
     assert protocol.TOOL_CALL_CONTENT_TYPE == _consts_from_schema(
         "ToolCallContent", discriminator="type"
     )
+    assert protocol.STOP_REASONS == _consts_from_schema("IdleStateUpdate", discriminator="stopReason")
 
 
 def test_wrong_kind_known_method_is_a_schema_violation_not_unknown():
@@ -218,9 +219,11 @@ def test_non_object_markers_flags_boolean_object_markers_at_any_depth():
     ]
 
 
-def test_non_object_markers_accepts_draft_fields_and_scalar_position_encoding():
+def test_non_object_markers_accepts_draft_fields_and_ignores_unknown_ones():
     from tck.v2.validation import find_non_object_markers
 
-    caps = {"session": {}, "auth": None, "nes": {}, "providers": {}, "positionEncoding": "utf-16"}
+    caps = {"session": {}, "auth": None, "providers": {}, "positionEncoding": "utf-16"}
     assert find_non_object_markers("AgentCapabilities", caps) == []
-    assert find_non_object_markers("AgentCapabilities", {"nes": False}) == ["nes"]
+    assert find_non_object_markers("AgentCapabilities", {"providers": False}) == ["providers"]
+    # `nes`/`positionEncoding` left the draft schema; unknown fields are never judged.
+    assert find_non_object_markers("AgentCapabilities", {"nes": False}) == []

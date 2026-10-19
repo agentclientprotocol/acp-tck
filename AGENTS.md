@@ -102,7 +102,7 @@ deviation is worth investigating as either a TCK bug or a genuine new upstream b
 ## How to add a requirement + test
 
 (Describes v1; a future version's suite follows the same shape under its own package.)
-v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/StopReason`),
+v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/IdleStateUpdate`),
 never by line number; `tests/v2/test_registry.py` checks that every such pointer resolves.
 v2 prose citations point at the draft doc tree (`docs/protocol/v2/draft/*.mdx`), which pairs with the draft schema.
 v1 follows the same rules (`schema/v1/schema.unstable.json#/$defs/...`, `docs/protocol/v1/draft/*.mdx`),

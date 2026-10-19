@@ -193,8 +193,7 @@ async def test_info_is_required_and_well_formed(agent_launch):
 async def test_capabilities_markers_are_objects_not_booleans(agent_launch):
     """ACP-INIT-204. `capabilities`, when present, is an object whose object-typed marker
     properties (derived from `schema/v2/schema.unstable.json#/$defs/AgentCapabilities`, recursively)
-    are themselves objects (or absent/`null`) -- never booleans. Non-object fields such as the
-    `positionEncoding` string are not judged.
+    are themselves objects (or absent/`null`) -- never booleans. Non-object fields are not judged.
 
     Also a v2-only shape requirement, so `skip_if_version_mismatch` SKIPs it with the
     `VERSION-MISMATCH:` marker whenever the agent negotiated down to a version other than 2 --
