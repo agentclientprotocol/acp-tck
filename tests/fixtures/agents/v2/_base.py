@@ -761,14 +761,17 @@ class AsksPermissionAgent(ConformingAgent):
                 "params": {
                     "sessionId": session_id,
                     "title": "Allow this action?",
-                    "options": [
-                        {"optionId": "allow-once", "name": "Allow", "kind": "allow_once"},
-                        {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"},
-                    ],
+                    "options": self._permission_options(),
                 },
             }
         )
         return True  # defer finishing the turn to `_handle_response`, below
+
+    def _permission_options(self) -> list[dict[str, Any]]:
+        return [
+            {"optionId": "allow-once", "name": "Allow", "kind": "allow_once"},
+            {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"},
+        ]
 
     def _handle_response(self, message: dict[str, Any]) -> None:
         pending = self._pending_permission

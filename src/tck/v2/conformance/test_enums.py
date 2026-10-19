@@ -1,4 +1,4 @@
-"""Open-enum emitter rules: ACP-ENUM-201, ACP-ENUM-202, ACP-ENUM-203.
+"""Open-enum emitter rules: ACP-ENUM-201, ACP-ENUM-203.
 
 v2's schema is open at every scalar enum and tagged-union discriminator except
 `ElicitationSchemaType` and the JSON-RPC `jsonrpc` literal -- but prose still binds the
@@ -7,7 +7,7 @@ v2's schema is open at every scalar enum and tagged-union discriminator except
 (the schema itself would happily accept `"kind": "sorcery"` via its own `other`-branch
 fallback). The defined-constant sets themselves (`TOOL_KIND`, `TOOL_CALL_STATUS`,
 `PLAN_ENTRY_PRIORITY`, `PLAN_ENTRY_STATUS`, `SESSION_UPDATE_KIND`, `STATE_UPDATE_STATE`,
-`TOOL_CALL_CONTENT_TYPE`) live in `tck.v2.protocol` next to `STOP_REASONS`, not here -- see
+`TOOL_CALL_CONTENT_TYPE`, `PERMISSION_OPTION_KIND`) live in `tck.v2.protocol` next to `STOP_REASONS`, not here -- see
 `tests/v2/test_validation.py::test_enum_sets_match_the_schema` for the meta-test that keeps them
 honest against `schema.unstable.json`.
 
@@ -15,15 +15,12 @@ The re-worded v1 `ACP-PROMPT-001` ("the idle's `stopReason` is a defined constan
 is deliberately **not** re-registered here: it is already fully covered by `ACP-STATE-203`, which
 already combines "carries a `stopReason`" with exactly this value-legality check.
 
-`ACP-ENUM-201` covers the sites with dedicated per-site MUST prose: `ToolKind`
-(`tool_call_update.kind`), `ToolCallStatus` (`tool_call_update.status`),
-`PlanEntryPriority`/`PlanEntryStatus` (plan entries). Turn-observable, so `Tier.CAPABILITY`,
+`ACP-ENUM-201` applies the extensibility rule ("extensions MUST NOT define custom non-underscore
+values", extensibility.mdx:226-231) to every open-enum site observable in one turn: the
+`sessionUpdate` discriminator, `state_update.state`, `tool_call_update.kind`/`.status`, tool-call
+content `type`, plan entries' `priority`/`status`, and `session/request_permission` options'
+`kind` (only if the agent asks for permission). Turn-observable, so `Tier.CAPABILITY`,
 `capability="capabilities.session"` per the session-baseline tiering rule.
-
-`ACP-ENUM-202` covers three sites with no dedicated per-site prose --
-`SessionUpdate.sessionUpdate`, `StateUpdate.state`, `ToolCallContent.type` -- at `Tier.ADVISORY`,
-`capability=None` (not promoted; only the *test* still `@pytest.mark.capability`-gated for the
-SKIP, mirroring `ACP-CANCEL-204`/`ACP-DELETE-203`).
 
 `ACP-ENUM-203` is the receiver-tolerance direction (client sends a `_`-prefixed value, agent must
 not crash/`-32602`): receivers MUST accept unknown discriminator values where the schema has a
@@ -43,6 +40,7 @@ import pytest
 from tck.common.harness import AgentExited, AgentTimeout
 from tck.v2.protocol import (
     METHOD_NOT_FOUND,
+    PERMISSION_OPTION_KIND,
     PLAN_ENTRY_PRIORITY,
     PLAN_ENTRY_STATUS,
     SESSION_UPDATE_KIND,
@@ -87,91 +85,61 @@ async def _drive_one_turn(agent_launch, tmp_path):
 
 @pytest.mark.requirement("ACP-ENUM-201")
 @pytest.mark.capability("capabilities.session")
-async def test_dedicated_prose_open_enum_sites_are_defined_or_underscore_prefixed(
-    agent_launch, tmp_path
-):
-    """ACP-ENUM-201 (CAPABILITY). `tool_call_update.kind`/`.status` and plan entries'
-    `priority`/`status` are each a defined constant or begin with `_`."""
+async def test_open_enum_sites_are_defined_or_underscore_prefixed(agent_launch, tmp_path):
+    """ACP-ENUM-201 (CAPABILITY). Across one driven turn, every value at an open-enum site is a
+    defined constant or begins with `_`: `sessionUpdate`, `state_update.state`,
+    `tool_call_update.kind`/`.status`, tool-call content `type`, plan entries' `priority`/`status`,
+    and permission options' `kind`. Permission requests are only scanned if the agent sends
+    one; the test never requires it."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     updates = _update_dicts(turn)
 
     checked = 0
     violations: list[str] = []
 
-    for update in updates:
-        if update.get("sessionUpdate") != "tool_call_update":
-            continue
-        if "kind" in update and update["kind"] is not None:
-            checked += 1
-            if not is_valid_open_enum_value(update["kind"], TOOL_KIND):
-                violations.append(f"tool_call_update.kind={update['kind']!r}")
-        if "status" in update and update["status"] is not None:
-            checked += 1
-            if not is_valid_open_enum_value(update["status"], TOOL_CALL_STATUS):
-                violations.append(f"tool_call_update.status={update['status']!r}")
-
-    for update in updates:
-        if update.get("sessionUpdate") != "plan_update":
-            continue
-        plan = update.get("plan")
-        if not isinstance(plan, dict):
-            continue
-        for entry in plan.get("entries") or []:
-            if not isinstance(entry, dict):
-                continue
-            if "priority" in entry:
-                checked += 1
-                if not is_valid_open_enum_value(entry["priority"], PLAN_ENTRY_PRIORITY):
-                    violations.append(f"plan entry priority={entry['priority']!r}")
-            if "status" in entry:
-                checked += 1
-                if not is_valid_open_enum_value(entry["status"], PLAN_ENTRY_STATUS):
-                    violations.append(f"plan entry status={entry['status']!r}")
-
-    if checked == 0:
-        pytest.skip("no tool_call_update.kind/.status or plan entry priority/status observed")
-    assert not violations, (
-        f"open-enum value(s) that are neither a defined constant nor `_`-prefixed: {violations!r}"
-    )
-
-
-@pytest.mark.requirement("ACP-ENUM-202")
-@pytest.mark.capability("capabilities.session")
-async def test_no_dedicated_prose_open_enum_sites_are_defined_or_underscore_prefixed(
-    agent_launch, tmp_path
-):
-    """ACP-ENUM-202 (ADVISORY -- registry `capability=None`; test still capability-gated for the
-    SKIP). `session/update`'s own `sessionUpdate` discriminator, `state_update.state`, and
-    `tool_call_update`/`tool_call_content_chunk`'s `content[*].type` are each a defined constant
-    or begin with `_`, even though no per-site prose individually restates the generic rule for
-    these three."""
-    turn = await _drive_one_turn(agent_launch, tmp_path)
-    updates = _update_dicts(turn)
-
-    checked = 0
-    violations: list[str] = []
+    def check(label: str, value: Any, defined: frozenset[str]) -> None:
+        nonlocal checked
+        checked += 1
+        if not is_valid_open_enum_value(value, defined):
+            violations.append(f"{label}={value!r}")
 
     for update in updates:
         kind = update.get("sessionUpdate")
         if kind is None:
             continue
-        checked += 1
-        if not is_valid_open_enum_value(kind, SESSION_UPDATE_KIND):
-            violations.append(f"sessionUpdate={kind!r}")
+        check("sessionUpdate", kind, SESSION_UPDATE_KIND)
         if kind == "state_update" and "state" in update:
-            checked += 1
-            if not is_valid_open_enum_value(update["state"], STATE_UPDATE_STATE):
-                violations.append(f"state_update.state={update['state']!r}")
+            check("state_update.state", update["state"], STATE_UPDATE_STATE)
+        if kind == "tool_call_update":
+            if update.get("kind") is not None:
+                check("tool_call_update.kind", update["kind"], TOOL_KIND)
+            if update.get("status") is not None:
+                check("tool_call_update.status", update["status"], TOOL_CALL_STATUS)
         if kind in ("tool_call_update", "tool_call_content_chunk"):
-            content = update.get("content")
-            for block in content or []:
+            for block in update.get("content") or []:
                 if isinstance(block, dict) and "type" in block:
-                    checked += 1
-                    if not is_valid_open_enum_value(block["type"], TOOL_CALL_CONTENT_TYPE):
-                        violations.append(f"tool call content type={block['type']!r}")
+                    check("tool call content type", block["type"], TOOL_CALL_CONTENT_TYPE)
+        if kind == "plan_update" and isinstance(update.get("plan"), dict):
+            for entry in update["plan"].get("entries") or []:
+                if not isinstance(entry, dict):
+                    continue
+                if "priority" in entry:
+                    check("plan entry priority", entry["priority"], PLAN_ENTRY_PRIORITY)
+                if "status" in entry:
+                    check("plan entry status", entry["status"], PLAN_ENTRY_STATUS)
+
+    for request in turn.client_requests_seen:
+        msg = request.parsed
+        if not isinstance(msg, dict) or msg.get("method") != "session/request_permission":
+            continue
+        params = msg.get("params")
+        options = params.get("options") if isinstance(params, dict) else None
+        for option in options if isinstance(options, list) else []:
+            if isinstance(option, dict) and "kind" in option:
+                check("permission option kind", option["kind"], PERMISSION_OPTION_KIND)
 
     if checked == 0:
-        pytest.skip("no session/update observed during this turn")
+        pytest.skip("no open-enum value observed during this turn")
     assert not violations, (
         f"open-enum value(s) that are neither a defined constant nor `_`-prefixed: {violations!r}"
     )
