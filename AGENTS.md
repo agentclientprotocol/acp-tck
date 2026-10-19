@@ -181,13 +181,15 @@ an agent that resolves before the driver acts isn't misreported.
 v1 and v2 have genuinely different turn-end contracts and so have separate, non-shared
 implementations: in v1 the `session/prompt` response itself carries `stopReason` and *is* the
 turn's result; in v2 the response is only an acceptance receipt (`{messageId}`), and the turn's
-outcome is learned from a later `state_update{state:"idle", stopReason}` notification. Read
+outcome is learned from the `state_update{state:"idle"}` that follows an active state
+(`running`/`requires_action`); its `stopReason` is only SHOULD. Read
 `src/tck/v{1,2}/conformance/_helpers.py` directly for the exact turn-end predicate and
 cancel-race handling before writing a new prompt test.
 
 Cancellation tests never turn an unavoidable race into a false PASS/FAIL: they SKIP with
 "cancellation not exercised" when the response was read before cancel could be sent, or when a
-valid non-cancelled stop reason arrives within a short race window after cancel was sent.
+stop reason the agent could plausibly have reached on its own arrives within a short race window
+after cancel was sent (v2 never excuses `error` that way).
 `--cancel-prompt` exists specifically to make that race less likely against a real agent.
 
 ## Vendored schema

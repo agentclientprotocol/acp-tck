@@ -52,9 +52,9 @@ the agent to `session/new`, `session/list`, `session/resume`, `session/close`, `
   followed by a patch carrying `content` for the same `toolCallId` (`ACP-PATCH-204`), and a
   `plan_update` with one entry (`ACP-PATCH-205`) -- gives every PATCH/ENUM requirement something
   real to observe instead of vacuously SKIPping. Only `conforming_full.py` sets the flag.
-  `AsksPermissionAgent` additionally brackets its `session/request_permission` with
-  `state_update {state: "requires_action"}` before and `state_update {state: "running"}` after,
-  so `ACP-PATCH-209` has something to observe too.
+  `AsksPermissionAgent` additionally reports `state_update {state: "requires_action"}` before
+  its `session/request_permission` and `running` once an answer lets it resume, so
+  `ACP-PATCH-209`/`ACP-STATE-205` have something to observe too.
 - `terminal_auth_method`, a constructor-supplied `AuthMethod` dict (`type: "terminal"`), is
   appended to whatever `auth_methods` `initialize` would otherwise answer, but only when the
   request's own `params.capabilities.auth.terminal` object marker is present (`{}`/non-`null`) --
@@ -607,9 +607,8 @@ class AsksPermissionAgent(ConformingAgent):
     """Conforming, but sends `session/request_permission` mid-turn (after the running update)
     and only finishes the turn once the client answers -- the normal shape a real tool-using
     agent produces (`title`/`options` required, each option carrying `optionId`/`name`/`kind`).
-    Honors the outcome: `"cancelled"` becomes the turn's `stopReason`, anything else (including
-    `"selected"`) becomes `"end_turn"`. `ACP-PERM-201`'s self-test -- exercises `run_prompt`'s
-    permission-answering path, which nothing else under `tests/fixtures/agents/v2/` exercises.
+    Reports `requires_action` while blocked and honors the outcome (`_after_permission`). The
+    self-test for `ACP-PERM-201`/`ACP-PATCH-209`/`ACP-STATE-205`/`ACP-CANCEL-209`.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -647,10 +646,17 @@ class AsksPermissionAgent(ConformingAgent):
         self._pending_permission = None
         result = message.get("result") or {}
         outcome = (result.get("outcome") or {}).get("outcome")
-        stop_reason = "cancelled" if outcome == "cancelled" else "end_turn"
-        # ACP-PATCH-209: report `running` again once the block is resolved.
-        self._send_update(pending["session_id"], {"sessionUpdate": "state_update", "state": "running"})
-        self._finish_turn(pending["session_id"], stop_reason)
+        self._after_permission(pending["session_id"], outcome)
+
+    def _after_permission(self, session_id: Any, outcome: Any) -> None:
+        """Hook: a `cancelled` outcome ends the blocked work without resuming (`idle` straight
+        from `requires_action`); anything else reports `running` before resuming output
+        (`ACP-STATE-205`) and finishes with `end_turn`."""
+        if outcome == "cancelled":
+            self._send_idle_update(session_id, "cancelled")
+            return
+        self._send_update(session_id, {"sessionUpdate": "state_update", "state": "running"})
+        self._finish_turn(session_id, "end_turn")
 
 
 class SendsClientRequestAgent(ConformingAgent):
