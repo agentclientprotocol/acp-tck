@@ -375,7 +375,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v2/meta.unstable.json:31-37 (agent->client method inventory); "
-            "docs/protocol/v2/draft/extensibility.mdx:156,165 (MUST NOT call undefined methods)"
+            "docs/protocol/v2/draft/extensibility.mdx:156,165 (only `_`-prefixed custom methods may be called)"
         ),
     ),
     Requirement(
@@ -799,15 +799,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "With `replayFrom: {\"type\": \"start\"}`, every `session/update` for the resumed "
-            "session arrives before the `session/resume` response, and none arrives within a "
-            "quiet period after it -- except live `notice` updates, which are not history and "
-            "may be sent at any time. Zero replayed updates is conforming (R5's retention escape "
+            "With `replayFrom: {\"type\": \"start\"}`, replayed conversation history arrives "
+            "before the `session/resume` response: no replayed-history update (`user_message`/"
+            "`agent_message`/`agent_thought` or their `_chunk` forms) for the resumed session "
+            "arrives within a quiet period after it. Other kinds -- the current-state snapshot "
+            "repeated, `available_commands_update`, `session_info_update`, "
+            "`config_option_update`, `usage_update`, live `notice`s -- may legitimately follow "
+            "and are not judged. Zero replayed updates is conforming (R5's retention escape "
             "hatch) and is recorded, never FAILed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:192-193,212-215,301-303; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:483-493,535-538"
+            "docs/protocol/v2/draft/session-setup.mdx:123,192-193,212-215,301-303,319-322; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:483-493,535-538,966,1004-1007; "
+            "docs/protocol/v2/draft/session-list.mdx:197-198"
         ),
     ),
     Requirement(
@@ -819,7 +823,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the resumed session arrives before the response. Vacuous -- and recorded, never "
             "FAILed on that account -- for an agent that retains no history to replay."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:164-165"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:164-169 (the current-state snapshot is "
+            "live sync, not history)"
+        ),
     ),
     Requirement(
         id="ACP-RESUME-204",
@@ -841,11 +848,72 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "During replay, a `*_chunk` update for a `messageId` is preceded, within the same "
-            "replay window, by the matching whole-message update (`content: []`) for that id. "
-            "Vacuous -- recorded, never FAILed -- for an agent whose replay uses only whole-"
-            "message updates."
+            "replay window, by a matching whole-message update for that id carrying a `content` "
+            "array -- `[]` when chunks rebuild the message from its beginning, or full content "
+            "the chunks then append to (a client cannot tell the two apart). Vacuous -- "
+            "recorded, never FAILed -- for an agent whose replay uses only whole-message "
+            "updates."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:279-285"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:279-292"),
+    ),
+    Requirement(
+        id="ACP-RESUME-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every successful `session/resume` -- with `replayFrom` omitted or "
+            "`{\"type\": \"start\"}` -- is preceded by a current-state `state_update` for the "
+            "resumed session, sent after every replayed history update and before the response."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:36-37,301-303,319-324; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:975-981; "
+            "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-207",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/resume` with a cursor type the agent does not support (the schema-valid "
+            "custom `{\"type\": \"_tck_unsupported_cursor\"}`) is rejected with `-32602`. A "
+            "success -- silently substituting another cursor or resuming without replay -- "
+            "FAILs, as does any other error code."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:197-201; "
+            "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/replayFrom; "
+            "schema/v2/schema.unstable.json#/$defs/ReplayFrom/anyOf/1"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-208",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/resume` with a malformed `replayFrom` (a bare `\"start\"` string, `{}`, "
+            "or `{\"type\": 5}`) is rejected with `-32602`. `null` is not malformed -- it means "
+            "omitted -- and is not probed here."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:200-201; "
+            "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/replayFrom"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-209",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every `session/update` the agent sends during a `session/resume` exchange with "
+            "`replayFrom: {\"type\": \"start\"}` (replay plus the state snapshot) validates "
+            "against the v2 schema and carries the resumed `sessionId`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:192-195,261-263; "
+            "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
+        ),
     ),
     Requirement(
         id="ACP-LIST-201",
@@ -919,26 +987,65 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "legibility."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:360-362; docs/protocol/v2/draft/prompt-lifecycle.mdx:1109-1112,1124"
+            "docs/protocol/v2/draft/session-setup.mdx:360-364; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:304,1109-1112,1124"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When `session/close` cancels in-flight foreground work, the idle `state_update` "
+            "with `stopReason: \"cancelled\"` for that session arrives before the successful "
+            "`session/close` response. SKIPs when the turn did not end `cancelled` (that is "
+            "`ACP-CLOSE-202`'s finding) or the close lost the race."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:364"),
+    ),
+    Requirement(
+        id="ACP-CLOSE-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A `session/prompt` sent immediately before `session/close` (without awaiting its "
+            "receipt) is answered either with `-32800` (closing prevented insertion) or with a "
+            "success carrying a string `messageId` (already inserted) -- never another error, "
+            "never left unanswered. ADVISORY rather than CAPABILITY: the outcome depends on how "
+            "the agent schedules two back-to-back requests, so a failure here is reported but "
+            "does not by itself fail the verdict."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:366; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:304"
         ),
     ),
     Requirement(
         id="ACP-DELETE-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
-        text="`session/delete` of an existing session succeeds with an empty-object result.",
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:35,57,74-86"),
+        text=(
+            "`session/delete` of an existing, already-closed session succeeds with a "
+            "schema-valid empty-object result. The session is closed first because deleting an "
+            "active session is implementation-defined."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:35,57,74-86,94; "
+            "schema/v2/schema.unstable.json#/$defs/DeleteSessionResponse"
+        ),
     ),
     Requirement(
         id="ACP-DELETE-202",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
-            "After a successful `session/delete`, the session no longer appears in "
-            "`session/list` results. SKIPs when the session was never observed in "
-            "`session/list` in the first place (nothing to compare against)."
+            "After a successful `session/delete` of a closed session, the session no longer "
+            "appears in `session/list` results. SKIPs when the closed session was never observed "
+            "in `session/list` in the first place (nothing to compare against). :90 is a plain "
+            "declarative, not an RFC keyword, but it is what `session/delete` means (mirrored by "
+            "the sequence diagram), so this stays CAPABILITY."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:90"),
+        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,94"),
     ),
     Requirement(
         id="ACP-DELETE-203",
@@ -973,6 +1080,61 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:385-386,409; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/additionalDirectories"
+        ),
+    ),
+    Requirement(
+        id="ACP-FORK-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "`session/fork` of an existing session (same `cwd`) succeeds with a schema-valid "
+            "result whose `sessionId` is a non-empty string distinct from the source session's."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:614-624; "
+            "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/SessionCapabilities/properties/fork"
+        ),
+    ),
+    Requirement(
+        id="ACP-FORK-202",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "The forked session is active once `session/fork` responds: a `session/prompt` on "
+            "the forked id, with no `session/resume` first, is accepted with a `messageId` and "
+            "the turn reaches a terminating idle. Definitional prose without an RFC keyword."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:622-624; docs/rfds/session-fork.mdx:67"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.systemPrompt",
+        text=(
+            "`session/new` with `systemPrompt: {mode: \"append\", content: [<text block>]}` "
+            "succeeds. Only this positive path is probed: the error paths (unadvertised mode, "
+            "non-text content) would require the TCK to break a client MUST."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:441-445,450; "
+            "schema/v2/schema.unstable.json#/$defs/SystemPromptMode/anyOf/0"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-202",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.systemPrompt.mode.override",
+        text=(
+            "`session/new` with `systemPrompt: {mode: \"override\", content: [<text block>]}` "
+            "succeeds when `session.systemPrompt.mode.override` is advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:444-445,450; "
+            "docs/protocol/v2/draft/initialization.mdx:238-244; "
+            "schema/v2/schema.unstable.json#/$defs/SessionSystemPromptModeCapabilities"
         ),
     ),
     Requirement(
@@ -1014,8 +1176,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Every `configOptions` entry in `session/new`'s result validates: `configId` and "
             "`name` are present, `type` selects the right shape (`select` requires `currentValue`"
             "+`options`; `boolean` requires `currentValue`), and a `select` entry's `options` is "
-            "either a flat `SessionConfigSelectOption[]` or a grouped "
-            "`SessionConfigSelectGroup[]`, never mixed. Inferred support, same encoding as v1's "
+            "an array -- either a flat `SessionConfigSelectOption[]` or a grouped "
+            "`SessionConfigSelectGroup[]`, never mixed (the schema sets no minimum length). Inferred support, same encoding as v1's "
             "`ACP-MODES-001`/`ACP-CONFIG-001` -- `capability=\"inferred:configOptions\"` is "
             "documentation-only."
         ),
@@ -1038,14 +1200,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
-            "`session/set_config_option` responds with the *complete* `configOptions` list -- "
-            "every previously-advertised `configId` is present in the response (a superset "
-            "check: the dependent-changes note permits the response to also add options or "
-            "change other values). Gate is genuinely unstated upstream (C12): SKIP on `-32601` "
-            "when no `configOptions` were ever advertised, rather than FAIL."
+            "`session/set_config_option` responds with the complete post-change `configOptions` "
+            "list: an array, schema-valid, containing the changed `configId`. Whether every "
+            "previously-advertised `configId` is still present is recorded, never asserted -- a "
+            "change may legitimately remove dependent options, so a partial reply and a "
+            "dependent removal are wire-identical. SKIPs when `session/new` advertised no "
+            "`configOptions`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:279,324-329; "
+            "docs/rfds/session-config-options.mdx:45; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionResponse"
         ),
     ),
@@ -1056,10 +1220,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/resume`'s `configOptions`, when present, validates the same way as "
             "`ACP-CONFIG-201` -- a new carrier in v2 (v1's `session/load` had no analogous "
-            "field)."
+            "field). The session is obtained the same way as `ACP-RESUME-201`, so a resume "
+            "error other than `-32601` SKIPs."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:313-315; "
+            "docs/protocol/v2/draft/session-setup.mdx:94,313-315; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse/properties/configOptions"
         ),
     ),
@@ -1082,13 +1247,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
-            "An observed `config_option_update` `session/update` carries the *complete* "
-            "configuration state -- its `configId` set is a superset of the last known set. "
-            "Conditional and vacuous (recorded, never FAILed) when no such update is ever "
-            "observed during a run."
+            "An observed `config_option_update` `session/update` carries the complete current "
+            "configuration state as a schema-valid `configOptions` array. Whether it is a "
+            "superset of the last known `configId` set is recorded, never asserted -- the "
+            "current state may legitimately drop options (e.g. a model fallback). Conditional "
+            "and vacuous (recorded, never FAILed) when no such update is ever observed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:331-382; "
+            "docs/protocol/v2/draft/session-config-options.mdx:331-386; "
+            "docs/rfds/session-config-options.mdx:45; "
             "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
         ),
     ),

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Conforming fixture that advertises every capability the suite exercises and asks for
 permission on every turn: `capabilities.session.prompt.{image,audio,embeddedContext}`,
-`session.delete`/`additionalDirectories`/`mcp: {stdio, http}`, plus one `select`-type
+`session.delete`/`additionalDirectories`/`mcp: {stdio, http}`/`fork`/`systemPrompt` (with
+`mode.override`), plus one `select`-type
 `configOptions` entry (`_base.ConformingAgent`'s `config_options` param), one `type: "agent"`
 auth method (`methodId: "tck"`), and `emit_rich_turn_updates=True`. Built on
 `AsksPermissionAgent`, so every turn also exercises the permission-request shape. Must PASS every
@@ -41,6 +42,8 @@ def main() -> None:
                 "delete": {},
                 "additionalDirectories": {},
                 "mcp": {"stdio": {}, "http": {}},
+                "fork": {},
+                "systemPrompt": {"mode": {"override": {}}},
             },
         },
         config_options=[

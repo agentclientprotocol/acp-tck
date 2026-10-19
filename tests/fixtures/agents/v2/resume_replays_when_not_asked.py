@@ -4,9 +4,8 @@ unconditionally, even when `replayFrom` is omitted/`null` (which MUST NOT replay
 responding).
 
 FAILs exactly `ACP-RESUME-203`. `ACP-RESUME-201` (the resume itself still succeeds) and
-`ACP-RESUME-202`/`204`/`205` (the replay-`{"type": "start"}` scenarios, which this fixture
-answers identically to `ConformingAgent` since it always replays regardless of `replayFrom`) are
-unaffected.
+`ACP-RESUME-202`/`204`/`205`/`206`/`209` (the replay-`{"type": "start"}` scenarios and the
+state snapshot, which this fixture answers identically to `ConformingAgent`) are unaffected.
 """
 
 import sys
@@ -19,13 +18,9 @@ from _base import ConformingAgent  # noqa: E402
 
 
 class ResumeReplaysWhenNotAskedAgent(ConformingAgent):
-    def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
-        session_id = params.get("sessionId")
-        if session_id not in self._sessions:
-            self._sessions[session_id] = params.get("cwd", "")
-        for update in self._history.get(session_id, []):
-            self._notify("session/update", {"sessionId": session_id, "update": update})
-        self._reply(msg_id, {})
+    @staticmethod
+    def _should_replay(replay_from: Any) -> bool:
+        return True
 
 
 def main() -> None:
