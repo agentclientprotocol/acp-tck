@@ -371,8 +371,13 @@ def test_schema_citation_pointers_resolve_in_the_vendored_schema():
 
 def test_unresolvable_pointer_is_reported():
     schema = json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
-    broken = {"x": ["/$defs/StopReason", "/$defs/NoSuchDef", "/$defs/StopReason/anyOf/99"]}
-    assert _unresolved_pointers(broken, schema) == ["x: /$defs/NoSuchDef", "x: /$defs/StopReason/anyOf/99"]
+    broken = {
+        "x": ["/$defs/IdleStateUpdate", "/$defs/NoSuchDef", "/$defs/IdleStateUpdate/anyOf/99"]
+    }
+    assert _unresolved_pointers(broken, schema) == [
+        "x: /$defs/NoSuchDef",
+        "x: /$defs/IdleStateUpdate/anyOf/99",
+    ]
 
 
 def test_no_v2_source_mentions_the_stable_schema_files():

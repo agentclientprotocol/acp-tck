@@ -150,7 +150,7 @@ async def test_idle_follows_running_within_the_turn_deadline(agent_launch, tmp_p
 @pytest.mark.capability("capabilities.session")
 async def test_terminating_idle_carries_a_valid_stop_reason(agent_launch, tmp_path, record_property):
     """ACP-STATE-203. The idle `state_update` that terminates an observed `running` turn carries
-    a `stopReason`, and its value is one of the five defined constants or begins with `_`
+    a `stopReason`, and its value is one of the six defined constants or begins with `_`
     (`tck.v2.protocol.is_valid_open_enum_value`) -- the open-enum extensibility rule.
 
     Same "no foreground work observed" SKIP gate as `ACP-STATE-202` (`running` never observed).
@@ -212,7 +212,7 @@ async def test_updates_validate_and_carry_the_right_session_id(agent_launch, tmp
 @pytest.mark.capability("capabilities.session")
 async def test_resource_link_content_block_is_accepted(agent_launch, tmp_path):
     """ACP-PROMPT-003 (ADVISORY -- reused from v1, re-cited to v2 sources:
-    `initialization.mdx:212` lists `resource_link` as baseline MUST-accept alongside `text`, but
+    `initialization.mdx:248` lists `resource_link` as baseline MUST-accept alongside `text`, but
     `content.mdx:33` says only `text` is MUST -- the same doc conflict v1 already carries,
     unresolved verbatim in v2, so this stays ADVISORY rather than becoming a hard FAIL target."""
     async with connected_agent(agent_launch) as agent:

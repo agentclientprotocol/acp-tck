@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Conforming fixture: sends a live `notice` `session/update` right after answering
 `session/resume`, which the draft permits at any point in a session, and advertises the draft's
-extra capability fields (`nes: {}`, `providers: {}`, `positionEncoding: "utf-16"`).
+extra capability field `providers: {}`.
 
 Fully conformant: `ACP-RESUME-202` must not treat the trailing `notice` as replayed history, and
-`ACP-INIT-204` must not judge the scalar `positionEncoding` as an object marker.
+`ACP-INIT-204` must accept the draft `providers` object marker.
 """
 
 import sys
@@ -36,9 +36,7 @@ def main() -> None:
     ResumeSendsNoticeAgent(
         capabilities={
             "session": {},
-            "nes": {},
             "providers": {},
-            "positionEncoding": "utf-16",
         }
     ).run()
 
