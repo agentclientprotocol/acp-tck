@@ -30,7 +30,9 @@ async def connected_agent(
     requirement(s) the test is checking.
 
     When `handshake` is true and `--tck-auth-method` was given (`current_auth_method_id()`),
-    an `authenticate` call for that method id is sent right after `initialize` -- this lets
+    an `authenticate` call for that method id is sent right after `initialize` (or the test
+    SKIPs, see `unusable_auth_method_reason`, if that id is not advertised or is a `terminal`
+    method) -- this lets
     every existing/new test that calls `new_session()` afterwards just work against an agent
     that requires authentication before `session/new`, without each test having to know about
     auth at all. Note: this auto-authenticate step only fires for `handshake=True` callers --
@@ -50,9 +52,15 @@ async def connected_agent(
                     else {},
                 },
             )
-            await agent.wait_for_response(req_id, timeout=launch.startup_timeout)
+            init_entry = await agent.wait_for_response(req_id, timeout=launch.startup_timeout)
             method_id = current_auth_method_id()
             if method_id is not None:
+                init_msg = init_entry.parsed if isinstance(init_entry.parsed, dict) else {}
+                init_result = init_msg.get("result")
+                auth_methods = init_result.get("authMethods") if isinstance(init_result, dict) else None
+                reason = unusable_auth_method_reason(auth_methods, method_id)
+                if reason is not None:
+                    pytest.skip(f"AUTH-GATED: {reason} -- check --tck-auth-method")
                 auth_id = await agent.send_request("authenticate", {"methodId": method_id})
                 auth_entry = await agent.wait_for_response(auth_id, timeout=launch.startup_timeout)
                 auth_msg = auth_entry.parsed
@@ -71,6 +79,25 @@ async def connected_agent(
         yield agent
 
 
+def unusable_auth_method_reason(auth_methods: Any, method_id: str) -> str | None:
+    """Why `authenticate` must not be called with `method_id` given the agent's advertised
+    `authMethods`, or `None` if it may. The id must be one the agent advertised, and clients
+    MUST NOT pass a `terminal` method to `authenticate`
+    (`docs/protocol/v1/draft/authentication.mdx:153,187-188`)."""
+    entries = auth_methods if isinstance(auth_methods, list) else []
+    match = next(
+        (m for m in entries if isinstance(m, dict) and m.get("id") == method_id), None
+    )
+    if match is None:
+        return f"methodId={method_id!r} is not one of the ids advertised in initialize's authMethods"
+    if match.get("type") == "terminal":
+        return (
+            f"methodId={method_id!r} is a terminal auth method, which a client must not pass "
+            "to authenticate"
+        )
+    return None
+
+
 def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     """Skip the current test, with a message pointing at `--auth-method`, if `entry` (a
     `session/new` response) is the `AUTHENTICATION_REQUIRED` (`-32000`) error.
@@ -83,7 +110,7 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     an ordinary capability-not-advertised skip) and set `Verdict.blocked_by_auth`.
 
     Only excuses the `-32000` when the cached `initialize` result actually advertised at least
-    one `authMethods` entry (AUTH-A1) -- an agent that advertises none and still returns
+    one `authMethods` entry -- an agent that advertises none and still returns
     `-32000` has no defined remedy; left as an ordinary, un-excused failure (see
     `ACP-AUTH-005`), not something the TCK can route around.
     """
@@ -96,7 +123,7 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     ):
         return
     if not current_initialize_auth_methods():
-        return  # AUTH-A1: no advertised authMethods -- not excusable, let the caller's own assert fail
+        return  # no advertised authMethods -- not excusable, let the caller's own assert fail
     pytest.skip(
         "AUTH-GATED: session/new returned -32000 (authentication required) and no "
         "--auth-method was given; pass --auth-method <id> (one of the ids advertised in "

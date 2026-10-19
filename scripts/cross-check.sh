@@ -113,7 +113,9 @@ set +e
 if [ "$CROSS_CHECK_V2" = "1" ]; then
   # ACP-INIT-003 (MANDATORY): both v1 agents just echo the client's unsupported probe version
   # (65535) verbatim instead of returning their own latest supported version -- a known,
-  # expected FAIL for both independent v1 implementations, not a TCK regression.
+  # expected FAIL for both independent v1 implementations, not a TCK regression. testy answers
+  # 1 from rust-sdk 53dd268 on (newer than CI's pinned RUST_SDK_SHA), so a local run against a
+  # newer checkout, or a bumped pin, needs `--expect "testy="` here instead.
   #
   # testy_v2 (no expected MANDATORY FAILs): built with `unstable_protocol_v2`, testy correctly
   # routes the probe to its native v2 `initialize` handler, which does not have the v1 echo bug.

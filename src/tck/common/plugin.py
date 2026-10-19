@@ -399,13 +399,13 @@ def capability_is_supported(result: dict[str, Any], path: str, *, boolean: bool 
       are supported iff the value is `=== true` -- anything else (missing, `false`, `null`, an
       object) does not count.
     - Object markers (e.g. `agentCapabilities.mcpCapabilities`, `auth.logout`) are supported iff
-      the value is present and non-null -- `{}` counts as supported, `false`/missing/`null`
-      does not.
+      the value is present and neither `null` nor `false` -- `{}` counts as supported,
+      `false`/missing/`null` does not.
     """
     value = _lookup_capability(result, path)
     if boolean:
         return value is True
-    return value is not None
+    return value is not None and value is not False
 
 
 @pytest.fixture(autouse=True)

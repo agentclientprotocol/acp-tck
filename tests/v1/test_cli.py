@@ -29,6 +29,8 @@ _MANDATORY_IDS = {
     "ACP-JSONRPC-001",
     "ACP-JSONRPC-002",
     "ACP-JSONRPC-003",
+    "ACP-JSONRPC-006",
+    "ACP-JSONRPC-007",
     "ACP-INIT-001",
     "ACP-INIT-002",
     "ACP-INIT-003",
@@ -41,6 +43,7 @@ _MANDATORY_IDS = {
     "ACP-CANCEL-002",
     "ACP-CONFIG-003",
     "ACP-AUTH-002",
+    "ACP-AUTH-006",
     "ACP-CLIENTCAP-001",
     "ACP-CLIENTCAP-002",
     "ACP-CLIENTCAP-003",
@@ -55,7 +58,8 @@ _ADVISORY_IDS = {
     "ACP-DELETE-002",
     "ACP-META-001",
     "ACP-ERROR-001",
-    "ACP-SHUTDOWN-001",
+    "ACP-ERROR-002",
+    "ACP-EXT-002",
     "ACP-SCHEMA-002",
     "ACP-AUTH-005",
     # ACP-AUTH-001: its only assertion, AUTH-A5 (auth method ids are unique), is advisory in
@@ -63,6 +67,7 @@ _ADVISORY_IDS = {
     "ACP-AUTH-001",
 }
 _INFORMATIONAL_IDS = {
+    "ACP-SHUTDOWN-001",
     "ACP-STDERR-001",
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
@@ -93,12 +98,13 @@ _CAPABILITY_IDS = {
 }
 _ALL_IDS = _MANDATORY_IDS | _ADVISORY_IDS | _CAPABILITY_IDS
 
-_CANCEL_IDS = {"ACP-CANCEL-001", "ACP-CANCEL-002"}
+_CANCEL_IDS = {"ACP-CANCEL-001", "ACP-CANCEL-002", "ACP-JSONRPC-007"}
 """None of the fixtures below `hangs_until_cancel.py`, `cancel_returns_error.py`,
 `cancel_wrong_stop_reason.py`, and `update_after_response.py` deliberately withhold their
 response until `session/cancel` arrives for arbitrary prompt text -- they resolve the turn
-immediately, same as `conforming.py`. So for all of them, `session/cancel` always loses the
-race and the cancel tests SKIP with "cancellation not exercised" rather than PASS or FAIL."""
+immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
+`ACP-JSONRPC-007`'s `$/cancel_request`) always loses the race and the cancel tests SKIP with
+"cancellation not exercised" rather than PASS or FAIL."""
 
 _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {"ACP-LOAD-003", "ACP-DELETE-002"}
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
@@ -296,7 +302,7 @@ def test_banner_on_stdout_fails_transport_001_but_passes_transport_002():
     assert (
         "Every line the agent writes to stdout is a single valid JSON-RPC 2.0 message." in result.stdout
     ), result.stdout
-    assert "transports.mdx:24,26" in result.stdout, result.stdout
+    assert "transports.mdx:23,24,26" in result.stdout, result.stdout
     # ... and once as its own pytest FAILURES section, next to the traceback/transcript.
     assert "ACP requirement ACP-TRANSPORT-001" in result.stdout, result.stdout
     # A PASSing requirement's text is noise, not signal -- it must not be printed in the table.
@@ -469,9 +475,9 @@ def test_router_requires_info_passes_everything():
 
 def test_echoes_any_version_fails_init_003_only():
     """`echoes_any_version.py` echoes the client's requested `protocolVersion` verbatim for
-    *every* request, including the unsupported 65535 one -- exactly the false-negative pattern
-    (`testy`, `examples/echo_agent.py`) the strengthened ACP-INIT-003 exists to catch (see
-    `test_initialize.py`). ACP-INIT-002 still PASSes (a v1 request is correctly echoed 1)."""
+    *every* request, including the unsupported 65535 one -- the pattern ACP-INIT-003 exists to
+    catch (see `test_initialize.py`). ACP-INIT-002 still PASSes (a v1 request is correctly
+    echoed 1)."""
     result = _run_cli("echoes_any_version.py")
     assert result.returncode != 0
 
@@ -1089,3 +1095,155 @@ def test_report_json_for_exits_immediately_has_no_crash_and_all_mandatory_fail_o
             assert requirement["status"] == "SKIPPED", requirement
         elif requirement["tier"] == "MANDATORY":
             assert requirement["status"] in ("FAIL", "NOT_TESTED"), requirement
+
+
+# --- notification, cancel_request, error, and auth-surface defect fixtures ---
+
+
+def _fail_ids(statuses: dict[str, str]) -> set[str]:
+    return {req_id for req_id, status in statuses.items() if status == "FAIL"}
+
+
+def test_answers_custom_notifications_fails_jsonrpc_003_only():
+    """`answers_custom_notifications.py` replies to `_`-prefixed notifications; the connection
+    stays usable, so ACP-EXT-002 still PASSes."""
+    result = _run_cli("answers_custom_notifications.py")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-JSONRPC-003"}, result.stdout
+    assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
+
+
+def test_answers_cancel_request_fails_jsonrpc_003_only():
+    """`answers_cancel_request.py` replies to `$/cancel_request`; the connection stays usable,
+    so ACP-JSONRPC-006 still PASSes."""
+    result = _run_cli("answers_cancel_request.py")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-JSONRPC-003"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-006") == "PASS", result.stdout
+
+
+def test_exits_on_unknown_notification_fails_ext_002_and_jsonrpc_006_only():
+    """`exits_on_unknown_notification.py` dies on `_`/`$/` notifications without replying, so
+    ACP-JSONRPC-003 still PASSes: an exit is not a reply."""
+    result = _run_cli("exits_on_unknown_notification.py")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-EXT-002", "ACP-JSONRPC-006"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-003") == "PASS", result.stdout
+
+
+def test_cancel_request_wrong_error_fails_jsonrpc_007_only():
+    """`cancel_request_wrong_error.py` answers a `$/cancel_request`-cancelled prompt with
+    `-32603`. `--cancel-prompt __hang__` keeps the prompt in flight, so ACP-CANCEL-001/002 are
+    exercised too and PASS."""
+    result = _run_cli("cancel_request_wrong_error.py", cancel_prompt="__hang__")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-JSONRPC-007"}, result.stdout
+    assert statuses.get("ACP-CANCEL-001") == "PASS", result.stdout
+
+
+def test_invalid_params_internal_error_fails_error_002_advisory_only():
+    result = _run_cli("invalid_params_internal_error.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-002"}, result.stdout
+
+
+def test_terminal_auth_bad_shape_fails_auth_006_only():
+    """`terminal_auth_bad_shape.py` advertises a terminal method with a string `args` only to a
+    client that enabled `auth.terminal`. The schema's lax `AuthMethod` union alone would accept
+    it as an `agent` method; ACP-AUTH-006 validates it as the terminal variant it claims to be."""
+    result = _run_cli("terminal_auth_bad_shape.py")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-AUTH-006"}, result.stdout
+    assert statuses.get("ACP-AUTH-002") == "PASS", result.stdout
+
+
+def test_error_with_meta_fails_schema_002_advisory_only():
+    """`error_with_meta.py` puts `_meta` on every error object, which `Error` does not define."""
+    result = _run_cli("error_with_meta.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-SCHEMA-002"}, result.stdout
+
+
+def test_silent_on_unknown_method_fails_ext_001_only():
+    """`silent_on_unknown_method.py` never answers a `_`-prefixed request. Only ACP-EXT-001 owns
+    that defect: ACP-JSONRPC-004 SKIPs and ACP-ERROR-001 judges its remaining sample."""
+    result = _run_cli("silent_on_unknown_method.py")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-EXT-001"}, result.stdout
+    assert statuses.get("ACP-ERROR-001") == "PASS", result.stdout
+    assert statuses.get("ACP-JSONRPC-004") == "SKIPPED", result.stdout
+
+
+_AUTH_005_SCOPE = "not_gated_when_no_auth_methods or test_session_new_succeeds"
+
+
+def test_auth_005_fails_on_minus_32000_without_auth_methods():
+    result = _run_cli("auth_required_without_methods.py", k=_AUTH_005_SCOPE)
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-AUTH-005") == "FAIL", result.stdout
+    assert statuses.get("ACP-SESSION-001") == "FAIL", result.stdout
+
+
+def test_auth_005_leaves_other_session_new_errors_to_session_001():
+    result = _run_cli("session_new_internal_error.py", k=_AUTH_005_SCOPE)
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-AUTH-005") == "PASS", result.stdout
+    assert statuses.get("ACP-SESSION-001") == "FAIL", result.stdout
+
+
+def _skip_message(report: dict, req_id: str) -> str:
+    by_id = {r["id"]: r for r in report["requirements"]}
+    (test,) = by_id[req_id]["tests"]
+    assert test["status"] == "SKIPPED", by_id[req_id]
+    return test["message"]
+
+
+def test_auth_method_naming_a_terminal_method_skips_without_authenticating(tmp_path):
+    """`terminal_auth_unadvertised.py` advertises a `terminal` method (id `term`) that its
+    `authenticate` would accept. A client must not pass a terminal method to `authenticate`, so
+    `--auth-method term` SKIPs session-dependent tests (blocked by auth) rather than using it."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "terminal_auth_unadvertised.py",
+        k="test_session_new_succeeds or test_authenticate_then",
+        auth_method="term",
+        report_json=str(report_path),
+    )
+    assert "blocked by authentication" in result.stdout, result.stdout
+
+    report = json.loads(report_path.read_text())
+    assert "terminal auth method" in _skip_message(report, "ACP-SESSION-001")
+    assert "terminal auth method" in _skip_message(report, "ACP-AUTH-003")
+
+
+def test_auth_method_not_advertised_skips_without_authenticating(tmp_path):
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "gated_by_auth.py",
+        k="test_session_new_succeeds or test_authenticate_then",
+        auth_method="nope",
+        report_json=str(report_path),
+    )
+    assert "blocked by authentication" in result.stdout, result.stdout
+
+    report = json.loads(report_path.read_text())
+    for req_id in ("ACP-SESSION-001", "ACP-AUTH-003"):
+        assert "not one of the ids advertised" in _skip_message(report, req_id)

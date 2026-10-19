@@ -56,10 +56,9 @@ async def test_requested_v1_is_echoed(agent_launch):
 @pytest.mark.requirement("ACP-INIT-003")
 async def test_unsupported_version_still_succeeds(agent_launch):
     """ACP-INIT-003: a successful result with an integer protocolVersion isn't sufficient --
-    both `testy` and `examples/echo_agent.py` echo the unsupported requested version (65535)
-    verbatim, which the requirement text ("its latest supported version") forbids. Checking
-    against a reference point (the same agent's plain v1 answer, ACP-INIT-002) needs two fresh
-    processes, one per `initialize` call.
+    echoing the unsupported requested version (65535) verbatim breaks the MUST to answer with
+    the latest supported version. Checking against a reference point (the same agent's plain v1
+    answer, ACP-INIT-002) needs two fresh processes, one per `initialize` call.
 
     The rule is `!= 65535 and >= latest_supported`, not equality: an agent may legitimately
     answer higher than its own v1 answer for an unsupported/future version without ever having
@@ -67,9 +66,10 @@ async def test_unsupported_version_still_succeeds(agent_launch):
 
     The 65535 probe's params also carry a v2-shaped `info` object: a dual-version router agent
     selects v2 for any requested version >= 2, including 65535, and its v2 InitializeRequest
-    requires `info`. Without it such an agent would answer -32602 for an unrelated params-shape
-    reason -- a false MANDATORY FAIL. Extra keys are harmless for a plain v1 agent (no schema
-    here sets `additionalProperties: false`)."""
+    requires `info`; v1-only Rust SDK agents parse `info` for such a request too. Without it
+    either would answer -32602 for an unrelated params-shape reason -- a false MANDATORY FAIL.
+    Extra keys are harmless for a plain v1 agent (no schema here sets
+    `additionalProperties: false`)."""
     async with connected_agent(agent_launch, handshake=False) as reference_agent:
         v1_req_id = await reference_agent.send_request(
             "initialize", {"protocolVersion": 1, "clientCapabilities": {}}
@@ -89,8 +89,8 @@ async def test_unsupported_version_still_succeeds(agent_launch):
             {
                 "protocolVersion": 65535,
                 "clientCapabilities": {},
-                # v2's InitializeRequest requires `info`; a dual-version router agent needs
-                # it to select v2 without rejecting these params (see docstring above).
+                # Needed by dual-version routers and v1-only Rust SDK agents for any
+                # requested version >= 2 (see docstring above).
                 "info": {"name": "acp-tck", "version": current_tck_version()},
             },
         )
