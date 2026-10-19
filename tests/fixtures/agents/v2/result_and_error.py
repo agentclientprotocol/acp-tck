@@ -19,18 +19,20 @@ from _base import ConformingAgent  # noqa: E402
 
 
 class ResultAndErrorAgent(ConformingAgent):
-    def _handle_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
-        if method == "initialize":
+    def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
+        # Only the successful `initialize` result (the one carrying `info`) is defective;
+        # negotiation errors and every other reply go out normally.
+        if "info" in result and "protocolVersion" in result:
             self._write(
                 {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": self._initialize_result(params),
+                    "result": result,
                     "error": {"code": -32603, "message": "also an error, illegally"},
                 }
             )
             return
-        super()._handle_request(method, msg_id, params)
+        super()._reply(msg_id, result)
 
 
 def main() -> None:

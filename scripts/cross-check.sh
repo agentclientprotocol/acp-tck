@@ -121,10 +121,11 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   # routes the probe to its native v2 `initialize` handler, which does not have the v1 echo bug.
   #
   # python_v2_agent (repo-authored fixture, see `scripts/cross-check/python_v2_agent.py` docstring):
-  #   - ACP-INIT-003/201/202: the rc2 SDK itself rejects the probed protocol version with
-  #     `-32602 Invalid params` (`expectedProtocolVersion: 2`, `receivedProtocolVersion` 65535, or
-  #     1 in the downgrade case) before the fixture's `initialize()` runs, so the agent never
-  #     answers with a supported version.
+  #   - ACP-INIT-003/202/205: the rc2 SDK itself rejects every `protocolVersion` other than 2
+  #     with `-32602 Invalid params` before the fixture's `initialize()` runs. 65535 must select
+  #     2, and 1 and 0 must get `-32022` with `{requested, supported}` data.
+  #   - ACP-INIT-206: the SDK coerces a string `protocolVersion` such as "2" to an integer and
+  #     accepts it, where a non-integer value must get `-32602`.
   #   - ACP-BATCH-201/202, ACP-JSONRPC-001/003 (and the advisory batch/JSON-RPC checks): the rc2
   #     SDK crashes on any JSON array (batch) input -- `acp/connection.py` calls
   #     `message.get("method")` on a list (`AttributeError`) and the process exits 1. These are SDK
@@ -139,7 +140,7 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
     --report "$OUT_DIR/python-v2.json" python_v2_agent \
     --expect-only-mandatory-fail ACP-INIT-003 \
     --expect "testy_v2=" \
-    --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-201,ACP-INIT-202,ACP-JSONRPC-001,ACP-JSONRPC-003"
+    --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"
 else
   # ACP-INIT-003 (MANDATORY): known, expected FAIL for both v1 agents -- see the matching
   # comment in the CROSS_CHECK_V2 branch above for why.

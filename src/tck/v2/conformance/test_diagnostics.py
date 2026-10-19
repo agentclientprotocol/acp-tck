@@ -1,7 +1,7 @@
-"""Advisory/informational diagnostics, re-cited from v1 unchanged: `ACP-ERROR-001`,
-`ACP-SHUTDOWN-001`, `ACP-STDERR-001`. `Error` `$def` is byte-identical to v1; v2 still has no
-shutdown method; the spec has nothing to say about stderr in either version. All
-connection-level, `capability=None` -- none needs a turn."""
+"""Advisory/informational diagnostics, re-cited from v1: `ACP-ERROR-001`, `ACP-SHUTDOWN-001`,
+`ACP-STDERR-001`. `Error` `$def` is byte-identical to v1; v2 still has no shutdown method; stderr
+MAY carry UTF-8 logging (transports.mdx:26). All connection-level, `capability=None` -- none
+needs a turn, and `ACP-SHUTDOWN-001`/`ACP-STDERR-001` need nothing beyond `initialize`."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from tck.v2 import SPEC
 
-from ._helpers import connected_agent, new_session
+from ._helpers import connected_agent
 
 
 @pytest.mark.requirement("ACP-ERROR-001")
@@ -43,13 +43,13 @@ async def test_error_messages_are_non_empty_single_line(agent_launch):
 
 
 @pytest.mark.requirement("ACP-SHUTDOWN-001")
-async def test_agent_exits_promptly_after_stdin_close(agent_launch, tmp_path):
+async def test_agent_exits_promptly_after_stdin_close(agent_launch):
     """ACP-SHUTDOWN-001 (ADVISORY, re-cited from v1 unchanged -- v2 still has no dedicated
     shutdown method, `docs/protocol/v2/draft/transports.mdx:41`). Relies on `connected_agent`'s
     `close()` ladder and reports whether the agent exited during the first rung
     (`AgentProcess.exited_on_stdin_close`)."""
     async with connected_agent(agent_launch) as agent:
-        await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        pass
 
     assert agent.exited_on_stdin_close, (
         "agent did not exit within the grace period after stdin closed; it needed SIGTERM/"
@@ -59,12 +59,12 @@ async def test_agent_exits_promptly_after_stdin_close(agent_launch, tmp_path):
 
 
 @pytest.mark.requirement("ACP-STDERR-001")
-async def test_stderr_byte_count_is_recorded(agent_launch, tmp_path, record_property):
-    """ACP-STDERR-001 (INFORMATIONAL, re-cited from v1 unchanged -- the spec has nothing to say
-    about stderr at all). Always PASSes; exists purely to surface stderr chattiness for a human
-    reading the report."""
+async def test_stderr_byte_count_is_recorded(agent_launch, record_property):
+    """ACP-STDERR-001 (INFORMATIONAL -- the agent MAY write UTF-8 logging to stderr,
+    transports.mdx:26, so there is nothing to assert). Always PASSes; exists purely to surface
+    stderr chattiness for a human reading the report."""
     async with connected_agent(agent_launch) as agent:
-        await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        pass
 
     stderr_bytes = len(agent.stderr_text().encode("utf-8"))
     record_property("acp_tck_stderr_bytes", stderr_bytes)

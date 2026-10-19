@@ -26,7 +26,8 @@ already combines "carries a `stopReason`" with exactly this value-legality check
 SKIP, mirroring `ACP-CANCEL-204`/`ACP-DELETE-203`).
 
 `ACP-ENUM-203` is the receiver-tolerance direction (client sends a `_`-prefixed value, agent must
-not crash/`-32602`): also `Tier.ADVISORY`, `capability=None`, test `@pytest.mark.capability`-gated.
+not crash/`-32602`): receivers MUST accept unknown discriminator values where the schema has a
+fallback (extensibility.mdx:49-53), so `Tier.CAPABILITY`, `capability="capabilities.session"`.
 `run_prompt()` has no hook to inject a non-standard permission-outcome value, so this test drives
 its own minimal turn by hand instead of reusing it.
 """
@@ -179,8 +180,8 @@ async def test_no_dedicated_prose_open_enum_sites_are_defined_or_underscore_pref
 @pytest.mark.requirement("ACP-ENUM-203")
 @pytest.mark.capability("capabilities.session")
 async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_launch, tmp_path):
-    """ACP-ENUM-203 (ADVISORY -- registry `capability=None`; test still capability-gated for the
-    SKIP). Answers a `session/request_permission` with a `_`-prefixed, non-standard `outcome`
+    """ACP-ENUM-203 (CAPABILITY, `capabilities.session`). Answers a `session/request_permission`
+    with a `_`-prefixed, non-standard `outcome`
     value instead of `selected`/`cancelled`; the agent must not crash or answer the *prompt*
     itself with `-32602` (Invalid params) -- it may treat the unrecognised outcome however it
     likes internally (untestable, B4/B6), but the connection and the turn must survive it.
@@ -198,13 +199,13 @@ async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_laun
         prompt_response = None
         crashed_or_invalid = None
         reached_idle = False
-        running_seen = False
+        active_seen = False
 
         crashed_break = False
 
         async def _process_message(msg: dict[str, Any]) -> None:
             nonlocal permission_seen, prompt_response, crashed_or_invalid, reached_idle
-            nonlocal running_seen, crashed_break
+            nonlocal active_seen, crashed_break
 
             if entry.matches_id(prompt_id):
                 prompt_response = msg
@@ -230,10 +231,15 @@ async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_laun
                 params = msg.get("params") or {}
                 update = params.get("update") if isinstance(params, dict) else None
                 if isinstance(update, dict) and update.get("sessionUpdate") == "state_update":
-                    if update.get("state") == "running":
-                        running_seen = True
-                    elif update.get("state") == "idle" and (
-                        update.get("stopReason") is not None or running_seen
+                    # An idle ends the turn once an active state (`running`/`requires_action`)
+                    # was seen, with or without a stopReason; `unknown` and custom states never
+                    # end it. Fallback for an agent that reports no active state: an idle
+                    # carrying a stopReason after the permission was answered.
+                    state = update.get("state")
+                    if state in ("running", "requires_action"):
+                        active_seen = True
+                    elif state == "idle" and (
+                        active_seen or (permission_seen and update.get("stopReason") is not None)
                     ):
                         reached_idle = True
                 return

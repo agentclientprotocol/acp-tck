@@ -27,7 +27,8 @@ requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VEND
 Draft (schema version `2.0.0-alpha.9` at this commit); expect this to change more often than
 v1's pin."""
 
-# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1.
+# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1,
+# plus `UNSUPPORTED_PROTOCOL_VERSION`.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -36,6 +37,7 @@ INTERNAL_ERROR = -32603
 REQUEST_CANCELLED = -32800
 AUTHENTICATION_REQUIRED = -32000
 RESOURCE_NOT_FOUND = -32002
+UNSUPPORTED_PROTOCOL_VERSION = -32022
 
 # Stop-reason values (the `stopReason` discriminator of
 # schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf). The five v1 constants plus v2's

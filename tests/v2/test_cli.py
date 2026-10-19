@@ -30,6 +30,10 @@ _MANDATORY_IDS = {
     "ACP-INIT-202",
     "ACP-INIT-203",
     "ACP-INIT-204",
+    "ACP-INIT-205",
+    "ACP-INIT-206",
+    "ACP-INIT-207",
+    "ACP-INIT-208",
     "ACP-SCHEMA-001",
     "ACP-TRANSPORT-201",
     "ACP-TRANSPORT-002",
@@ -43,9 +47,11 @@ _MANDATORY_IDS = {
     "ACP-AUTH-206",
     "ACP-AUTH-207",
     "ACP-EXT-001",
+    "ACP-EXT-204",
 }
 _CAPABILITY_IDS = {
     "ACP-ENUM-201",
+    "ACP-ENUM-203",
     "ACP-SESSION-001",
     "ACP-SESSION-002",
     "ACP-PROMPT-205",
@@ -129,7 +135,6 @@ _ADVISORY_IDS = {
     "ACP-PATCH-208",
     "ACP-PATCH-209",
     "ACP-ENUM-202",
-    "ACP-ENUM-203",
     "ACP-META-001",
     "ACP-META-201",
     "ACP-EXT-201",
@@ -154,18 +159,23 @@ _INFORMATIONAL_IDS = {
 }
 _ALL_IDS = _MANDATORY_IDS | _CAPABILITY_IDS | _ADVISORY_IDS | _INFORMATIONAL_IDS
 
-# `ACP-BATCH-206`/`207`/`208` (unconditional record-only ADVISORY probes -- see `test_batch.py`)
+# `ACP-BATCH-205`/`206`/`207`/`208` (unconditional record-only probes -- see `test_batch.py`)
 # and `ACP-CANCEL-204` (ditto for cancellation) never PASS for *any* fixture; they always SKIP --
 # except that `ACP-CANCEL-204` (and, not in this set, `ACP-INFO-CANCEL-202`) FAILs instead of
 # SKIPping against a fixture that hangs forever on `session/cancel` (`cancel_no_idle.py` and its
 # siblings): an uncaught `AgentTimeout` in shared setup is a FAIL, not a SKIP, so "always" here
 # means "for any fixture that lets the turn reach a terminating idle", not literally always.
+#
+# `ACP-INIT-208` only judges a result that selects v1, which a v2-only fixture never returns (it
+# rejects v1 with -32022), so it SKIPs for every `_base.py` fixture except the dual-stack ones.
+_V2_ONLY_SKIP_IDS = {"ACP-INIT-208"}
 _ALWAYS_SKIPPED_IDS = {
     "ACP-CANCEL-204",
+    "ACP-BATCH-205",
     "ACP-BATCH-206",
     "ACP-BATCH-207",
     "ACP-BATCH-208",
-}
+} | _V2_ONLY_SKIP_IDS
 
 # CAPABILITY-tier cancel rows that need a turn to still be in flight when `session/cancel` is
 # sent to be exercised at all -- against a fast fixture with no `--cancel-prompt` override the
@@ -655,12 +665,12 @@ def test_explicit_protocol_version_1_matches_the_default():
 # --- defect fixtures: each must FAIL exactly its intended requirement id(s) ---
 
 
-def test_echoes_any_version_fails_init_003_and_201_only():
-    """`echoes_any_version.py` echoes the client's requested `protocolVersion` verbatim,
-    including the unsupported `65535` probe -- fails the strengthened `ACP-INIT-003` (must not
-    echo `65535`) and `ACP-INIT-201` (the two-branch negotiation rule). It advertises
-    `capabilities: {"session": {}}` like `conforming.py`, so `ACP-SESSION-001/002` PASS --
-    `session/new` itself is unmodified and correct."""
+def test_echoes_any_version_fails_init_003_only():
+    """`echoes_any_version.py` echoes any requested `protocolVersion` above 2, including the
+    `65535` probe -- fails `ACP-INIT-003` (must select its own highest version, not echo).
+    `ACP-INIT-201` PASSes: its equality check only applies when the `65535` probe selects a
+    version <= 2. It advertises `capabilities: {"session": {}}` like `conforming.py`, so
+    `ACP-SESSION-001/002` PASS -- `session/new` itself is unmodified and correct."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "echoes_any_version.py",
@@ -671,16 +681,19 @@ def test_echoes_any_version_fails_init_003_and_201_only():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-INIT-003", "ACP-INIT-201"}, result.stdout
+    assert fails == {"ACP-INIT-003"}, result.stdout
+    assert statuses.get("ACP-INIT-201") == "PASS", result.stdout
     assert statuses.get("ACP-SESSION-001") == "PASS", result.stdout
     assert statuses.get("ACP-SESSION-002") == "PASS", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
 def test_v2_only_errors_on_v1_fails_init_202_only():
-    """`v2_only_errors_on_v1.py` errors instead of answering `2` when asked for `1` -- fails only
-    `ACP-INIT-202` (the `N < min(S)` downgrade-must-still-succeed rule). It advertises
-    `capabilities: {"session": {}}` like `conforming.py`, so `ACP-SESSION-001/002` PASS."""
+    """`v2_only_errors_on_v1.py` answers `initialize(1)` with `-32602` instead of `-32022` --
+    fails only `ACP-INIT-202` (1 is well-formed; `-32602` is reserved for a malformed
+    `protocolVersion`). `ACP-INIT-205` still PASSes on its `protocolVersion: 0` probe. It
+    advertises `capabilities: {"session": {}}` like `conforming.py`, so `ACP-SESSION-001/002`
+    PASS."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "v2_only_errors_on_v1.py",
@@ -692,9 +705,116 @@ def test_v2_only_errors_on_v1_fails_init_202_only():
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-INIT-202"}, result.stdout
+    assert statuses.get("ACP-INIT-205") == "PASS", result.stdout
     assert statuses.get("ACP-SESSION-001") == "PASS", result.stdout
     assert statuses.get("ACP-SESSION-002") == "PASS", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def _negotiation_fails(fixture: str) -> tuple[set[str], dict[str, str]]:
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="initialize or extensibility")
+    assert result.returncode != 0, result.stdout
+    statuses = _table_statuses(result.stdout)
+    return {req_id for req_id, status in statuses.items() if status == "FAIL"}, statuses
+
+
+def test_v2_only_honest_fails_init_202_and_205():
+    """`v2_only_honest.py` selects 2 for every well-formed request, including 1 and 0 -- a
+    version higher than requested, where `-32022` is required."""
+    fails, statuses = _negotiation_fails("v2_only_honest.py")
+    assert fails == {"ACP-INIT-202", "ACP-INIT-205"}, statuses
+
+
+def test_unsupported_version_bad_data_fails_init_205_only():
+    """`unsupported_version_bad_data.py`'s `-32022` lacks `data.supported`; `ACP-INIT-202` only
+    judges the code, so it PASSes."""
+    fails, statuses = _negotiation_fails("unsupported_version_bad_data.py")
+    assert fails == {"ACP-INIT-205"}, statuses
+    assert statuses.get("ACP-INIT-202") == "PASS", statuses
+
+
+def test_accepts_string_version_fails_init_206_only():
+    fails, statuses = _negotiation_fails("accepts_string_version.py")
+    assert fails == {"ACP-INIT-206"}, statuses
+
+
+def test_starts_session_after_mismatch_fails_init_207_only():
+    fails, statuses = _negotiation_fails("starts_session_after_mismatch.py")
+    assert fails == {"ACP-INIT-207"}, statuses
+    assert statuses.get("ACP-INIT-205") == "PASS", statuses
+
+
+def test_dual_v2_shape_on_v1_fails_init_208_only():
+    """`dual_v2_shape_on_v1.py` selects 1 for a v1 request (so `ACP-INIT-202` PASSes) but answers
+    with v2's `info`/`capabilities`."""
+    fails, statuses = _negotiation_fails("dual_v2_shape_on_v1.py")
+    assert fails == {"ACP-INIT-208"}, statuses
+    assert statuses.get("ACP-INIT-202") == "PASS", statuses
+
+
+def test_rejects_unknown_capability_fields_fails_ext_204_only():
+    fails, statuses = _negotiation_fails("rejects_unknown_capability_fields.py")
+    assert fails == {"ACP-EXT-204"}, statuses
+
+
+def test_conforming_dual_agent_passes_everything():
+    """`conforming_dual.py` selects v1 (with a v1-shaped result) for a v1 request and rejects 0
+    with `supported: [1, 2]`: the positive control for `ACP-INIT-202`'s result path and
+    `ACP-INIT-208`, which PASS instead of SKIPping. Otherwise identical to `conforming.py`."""
+    result = _run_cli(FIXTURES_DIR_V2, "conforming_dual.py", protocol_version=2)
+    assert result.returncode == 0, result.stdout + result.stderr
+    statuses = _table_statuses(result.stdout)
+    assert set(statuses) == _ALL_IDS, result.stdout
+    expected_skips = _CONFORMING_EXPECTED_SKIPS - _V2_ONLY_SKIP_IDS
+    for req_id, status in statuses.items():
+        expected = "SKIPPED" if req_id in expected_skips else "PASS"
+        assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+
+def test_no_session_capability_agent_is_conformant(tmp_path):
+    """`no_session_capability.py` advertises `capabilities: {}` and answers `session/*` with
+    `-32601`. Only `initialize` is unconditional in v2, so every MANDATORY row PASSes (falling
+    back to `_`-prefixed probes where it would otherwise use a session) or SKIPs for lack of
+    evidence, and every session row SKIPs "not advertised".
+
+    `test_session_config.py` is deselected: its tests still call `session/new` without a
+    `capabilities.session` gate (owned by the session-config tests, not this slice)."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "no_session_capability.py",
+        protocol_version=2,
+        k="not session_config",
+        report_json=str(report_path),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == set(), result.stdout
+    for req_id in _MANDATORY_IDS - {"ACP-AUTH-206", "ACP-AUTH-207"} - _V2_ONLY_SKIP_IDS:
+        assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
+    report = json.loads(report_path.read_text())
+    by_id = {r["id"]: r for r in report["requirements"]}
+    for req_id in ("ACP-SESSION-001", "ACP-ENUM-203", "ACP-PROMPT-201"):
+        assert by_id[req_id]["status"] == "SKIPPED", by_id[req_id]
+        assert all("not advertised" in t["message"] for t in by_id[req_id]["tests"]), by_id[req_id]
+
+
+def test_login_method_not_found_fails_auth_204_only():
+    """`login_method_not_found.py` advertises `authMethods` but answers `auth/login` with
+    `-32601`, which an agent advertising `authMethods` MUST NOT do."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "login_method_not_found.py",
+        protocol_version=2,
+        k="authentication",
+        auth_method="tck",
+    )
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-AUTH-204"}, result.stdout
 
 
 def test_missing_info_fails_init_203_and_schema_001_only():
@@ -1499,15 +1619,14 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
     assert "VERDICT: NOT CONFORMANT" in cascade_result.stdout, cascade_result.stdout
 
 
-def test_rejects_batch_fails_batch_202_through_205_only():
+def test_rejects_batch_fails_batch_202_through_204_only():
     """`rejects_batch.py` treats every non-empty batch as if it were the empty-batch case -- a
     single top-level `-32600`/`id: null` object. This coincidentally still satisfies
     `ACP-BATCH-201` (the empty-array case itself). FAILs `ACP-BATCH-202` (a notification-only
     batch gets a bogus reply instead of silence), `ACP-BATCH-203` (no per-entry handling at all),
-    and the shared `ACP-BATCH-204`/`205` test (no matching response array is ever produced) --
-    plus, cascading from the same three tests (each is also the sole batch-delivered evidence
-    for one `ACP-JSONRPC-*` id via a second `@pytest.mark.requirement(...)` marker),
-    `ACP-JSONRPC-003`/`005`/`001` respectively."""
+    and `ACP-BATCH-204` (no matching response array is ever produced) -- plus
+    `ACP-JSONRPC-003`/`005` (the `202`/`203` tests also carry those ids) and `ACP-JSONRPC-001`
+    (its batch test sees a response whose `id` is `null`, not a request's)."""
     result = _run_cli(FIXTURES_DIR_V2, "rejects_batch.py", protocol_version=2, k="batch")
     assert result.returncode != 0
 
@@ -1517,7 +1636,6 @@ def test_rejects_batch_fails_batch_202_through_205_only():
         "ACP-BATCH-202",
         "ACP-BATCH-203",
         "ACP-BATCH-204",
-        "ACP-BATCH-205",
         "ACP-JSONRPC-001",
         "ACP-JSONRPC-003",
         "ACP-JSONRPC-005",
@@ -1529,10 +1647,8 @@ def test_rejects_batch_fails_batch_202_through_205_only():
 def test_crashes_on_batch_fails_only_batch_rows():
     """`crashes_on_batch.py` exits the moment it sees any batch-shaped line -- otherwise fully
     conforming. FAILs every row whose own test actually sends a batch line
-    (`ACP-BATCH-201`/`202`/`203`/`204`/`205`), plus -- cascading from the same tests
-    (`202`/`203`/`204`+`205`'s tests are also the sole batch-delivered evidence for
-    `ACP-JSONRPC-003`/`005`/`001` respectively, via a second `@pytest.mark.requirement(...)`
-    marker on each) -- those three ids too. Despite the name,
+    (`ACP-BATCH-201`/`202`/`203`/`204`), plus `ACP-JSONRPC-003`/`005` (the `202`/`203` tests
+    carry those ids too) and `ACP-JSONRPC-001` (its own batch test). Despite the name,
     "only batch rows" now means "only rows whose evidence is gathered by sending a batch line",
     not literally every failing id's own name starting with `ACP-BATCH-`."""
     result = _run_cli(
@@ -1551,7 +1667,6 @@ def test_crashes_on_batch_fails_only_batch_rows():
         "ACP-BATCH-202",
         "ACP-BATCH-203",
         "ACP-BATCH-204",
-        "ACP-BATCH-205",
         "ACP-JSONRPC-001",
         "ACP-JSONRPC-003",
         "ACP-JSONRPC-005",
@@ -1707,9 +1822,9 @@ def test_v2_pushes_status_and_answers_notifications_fails_no_reply_rows_only():
 def test_v2_pushes_status_and_splits_batch_replies_fails_batch_204_only():
     """`pushes_status_and_splits_batch_replies.py` pushes the same status notifications, but
     answers a batch with separate response lines (a push between them) instead of one array.
-    Skipping the pushes must not change how the reply's shape is judged: the `ACP-BATCH-204`/
-    `205` test (which also carries `ACP-JSONRPC-001`) still FAILs, while `ACP-BATCH-203`, which
-    counts response objects across lines, still PASSes."""
+    Skipping the pushes must not change how the reply's shape is judged: `ACP-BATCH-204` (the
+    SHOULD) still FAILs, while `ACP-JSONRPC-001` and `ACP-BATCH-203`, which flatten response
+    objects across lines, PASS -- the ids are echoed correctly."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "pushes_status_and_splits_batch_replies.py",
@@ -1720,8 +1835,8 @@ def test_v2_pushes_status_and_splits_batch_replies_fails_batch_204_only():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-BATCH-204", "ACP-BATCH-205", "ACP-JSONRPC-001"}, result.stdout
-    for req_id in ("ACP-BATCH-201", "ACP-BATCH-202", "ACP-BATCH-203", "ACP-JSONRPC-005"):
+    assert fails == {"ACP-BATCH-204"}, result.stdout
+    for req_id in ("ACP-BATCH-201", "ACP-BATCH-202", "ACP-BATCH-203", "ACP-JSONRPC-001", "ACP-JSONRPC-005"):
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
 
 
@@ -1745,8 +1860,9 @@ def test_v2_result_and_error_fails_jsonrpc_002_and_schema_001_only():
 def test_v2_unknown_method_no_error_only_fails_the_advisory_requirement():
     """`unknown_method_no_error.py` replies to unknown methods with an empty success result
     instead of `-32601`. Should only trip the ADVISORY `ACP-JSONRPC-004`, never a MANDATORY/
-    CAPABILITY requirement. `ACP-BATCH-204`/`205`'s own probe batches two `session/list` calls,
-    never an unknown method, so this fixture does not fail them. ADVISORY failures never flip
+    CAPABILITY requirement. `ACP-BATCH-204`'s own probe batches two `session/list` calls (the
+    fixture advertises `session`), never an unknown method, so this fixture does not fail it.
+    ADVISORY failures never flip
     the verdict on their own -- but the exit code/overall verdict text are not asserted here:
     this run is `-k`-scoped, which necessarily leaves every other MANDATORY id NOT_TESTED, and
     NOT_TESTED MANDATORY ids do flip the verdict to NOT CONFORMANT by design (see
@@ -1762,7 +1878,6 @@ def test_v2_unknown_method_no_error_only_fails_the_advisory_requirement():
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-JSONRPC-004"}, result.stdout
     assert statuses.get("ACP-BATCH-204") == "PASS", result.stdout
-    assert statuses.get("ACP-BATCH-205") == "PASS", result.stdout
     assert all(req_id in _ADVISORY_IDS for req_id in fails), result.stdout
 
 
@@ -2499,9 +2614,9 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
 
 # --- version mismatch: a v1 agent run under --protocol-version 2 ---
 
-# The negotiation rows (`ACP-INIT-001`/`003`/`201`/`202`) assert only on the negotiation
-# *outcome*, never on the result's shape, so an agent that honestly negotiates down to 1 still
-# PASSes them. The v2-only *shape* rows (`info` required, object-only capability markers, v2
+# The negotiation rows (`ACP-INIT-001`/`003`/`201`/`202`/`208`) assert only on the negotiation
+# *outcome*, never on the result's v2 shape, so an agent that honestly negotiates down to 1 still
+# PASSes them. `ACP-INIT-205`/`206`/`207` bind agents implementing v2 only, so they SKIP. The v2-only *shape* rows (`info` required, object-only capability markers, v2
 # schema validity, plus the CAPABILITY-tier session rows) cannot be meaningfully judged against
 # a result the agent never claimed was v2-shaped, so they SKIP with the `VERSION-MISMATCH:`
 # marker instead of FAILing (see `tck.v2.requirements`'s "Version-mismatch-aware v2-shape rows"
@@ -2525,7 +2640,7 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
 # `tests/fixtures/agents/v1/conforming.py` under `--protocol-version 2` produces zero FAILs,
 # exactly the five JSONRPC ids PASS, and every other new id (all of
 # `ACP-TRANSPORT-*`/`ACP-BATCH-*`/`ACP-INFO-BATCH-*`) SKIPs with `VERSION-MISMATCH:`.
-_NEGOTIATION_IDS = {"ACP-INIT-001", "ACP-INIT-003", "ACP-INIT-201", "ACP-INIT-202"}
+_NEGOTIATION_IDS = {"ACP-INIT-001", "ACP-INIT-003", "ACP-INIT-201", "ACP-INIT-202", "ACP-INIT-208"}
 # ACP-EXT-001/201/203 probe an ordinary `_`-/`$/`-prefixed custom method or notification
 # exchange -- they never inspect `initialize`'s negotiated version or its `capabilities` shape at
 # all, so they PASS regardless of which protocolVersion was negotiated.
@@ -2570,8 +2685,8 @@ assert _VERSION_TOLERANT_IDS | _VERSION_MISMATCH_SKIP_IDS == _ALL_IDS
 
 def test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mismatch(tmp_path):
     """The v1 conforming fixture speaks only protocol version 1, so under `--protocol-version 2`
-    it honestly negotiates down to `1` for every fresh handshake (per `ACP-INIT-201`'s two-branch
-    rule). The negotiation rows (`ACP-INIT-001`/`003`/`201`/`202`) are judged normally against
+    it honestly negotiates down to `1` for every fresh handshake (a legacy v1-only agent returns
+    v1 to a v2 request). The negotiation rows (`ACP-INIT-001`/`003`/`201`/`202`/`208`) are judged normally against
     that honest negotiation and PASS -- an agent that does not yet speak v2 is not thereby
     "broken". Every v2-only shape row (`ACP-INIT-203`/`204`/`ACP-SCHEMA-001`,
     `ACP-SESSION-001`/`002`) SKIPs with the `VERSION-MISMATCH:` marker instead of FAILing, since

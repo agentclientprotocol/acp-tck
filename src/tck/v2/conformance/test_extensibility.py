@@ -1,5 +1,6 @@
 """Extensibility conformance: `ACP-EXT-001`, `ACP-META-001`, `ACP-SCHEMA-002` (re-cited from v1,
-unchanged) plus new hygiene rows `ACP-META-201`, `ACP-EXT-201`, `ACP-EXT-202`, `ACP-EXT-203`.
+unchanged) plus new hygiene rows `ACP-META-201`, `ACP-EXT-201`, `ACP-EXT-202`, `ACP-EXT-203`, and
+the receiver rule `ACP-EXT-204` (unknown `initialize` fields are ignored).
 
 `ACP-EXT-001`/`ACP-META-001` are connection-level rows with `capability=None`, matching their v1
 registry entries; `ACP-META-001`'s test still carries the `capabilities.session` marker since it
@@ -93,8 +94,8 @@ async def test_meta_field_on_prompt_is_accepted(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
     """ACP-META-201 (ADVISORY, new). Every `_meta` the agent emits, anywhere in the transcript,
-    is a JSON object or `null` -- never a string/array/number (all 106 `_meta` sites in the
-    schema are typed `["object", "null"]`, e.g.
+    is a JSON object or `null` -- never a string/array/number (every `_meta` site in the
+    schema is typed `["object", "null"]`, e.g.
     `schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/properties/_meta`)."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -149,7 +150,7 @@ async def test_unrecognized_custom_notification_produces_no_response(agent_launc
 async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     """ACP-EXT-202 (ADVISORY). Any vendor extension the agent advertises lives under
     `initialize` -> `result.capabilities._meta`, not as a new root key of `capabilities` itself
-    (`docs/protocol/v2/draft/extensibility.mdx:93,126-149`) -- checked via a *nested* application of
+    (`docs/protocol/v2/draft/extensibility.mdx:239-245`) -- checked via a *nested* application of
     `find_unknown_root_keys` against the `AgentCapabilities` `$def`, rather than the
     whole-response root-level check `ACP-SCHEMA-002` already performs.
 
@@ -173,6 +174,40 @@ async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     assert not extras, (
         f"initialize result.capabilities has unrecognized root key(s) {extras!r} -- vendor "
         "extensions must be advertised under capabilities._meta instead"
+    )
+
+
+@pytest.mark.requirement("ACP-EXT-204")
+async def test_unknown_initialize_fields_are_ignored(agent_launch):
+    """ACP-EXT-204 (MANDATORY; initialization.mdx:134, extensibility.mdx:148). `initialize` with
+    unknown fields at the `capabilities` root, under `capabilities.auth`, and in `info` must not
+    be rejected, and "Unknown fields do not advertise support": `auth.tckFutureAuthMode` is not
+    `auth.terminal`, so no `type: "terminal"` auth method may appear. The names are deliberately
+    not `_`-prefixed: they stand in for fields of a future ACP revision (a `_` name would be a
+    custom capability, which extensibility.mdx:245 forbids at these positions)."""
+    params = SPEC.initialize_params()
+    params = {
+        **params,
+        "info": {**params["info"], "tckFutureField": 1},
+        "capabilities": {"tckFutureCapability": {}, "auth": {"tckFutureAuthMode": {}}},
+    }
+    async with connected_agent(agent_launch, handshake=False) as agent:
+        req_id = await agent.send_request("initialize", params)
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+
+    msg = entry.parsed
+    assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
+        f"initialize with unknown capability/info fields must not be rejected: {entry.text!r}"
+    )
+    skip_if_version_mismatch(msg["result"])
+    terminal = [
+        method
+        for method in msg["result"].get("authMethods") or []
+        if isinstance(method, dict) and method.get("type") == "terminal"
+    ]
+    assert not terminal, (
+        "an unknown capabilities.auth field advertised terminal auth support: "
+        f"{terminal!r}"
     )
 
 

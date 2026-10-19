@@ -47,6 +47,10 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-INIT-202",
         "ACP-INIT-203",
         "ACP-INIT-204",
+        "ACP-INIT-205",
+        "ACP-INIT-206",
+        "ACP-INIT-207",
+        "ACP-INIT-208",
         "ACP-SCHEMA-001",
         "ACP-SESSION-001",
         "ACP-SESSION-002",
@@ -156,6 +160,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-EXT-201",
         "ACP-EXT-202",
         "ACP-EXT-203",
+        "ACP-EXT-204",
         "ACP-ERROR-001",
         "ACP-SHUTDOWN-001",
         "ACP-SCHEMA-002",
@@ -174,11 +179,9 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-AUTH-205",
         "ACP-BATCH-203",
         "ACP-BATCH-204",
-        "ACP-BATCH-205",
         "ACP-CLOSE-204",
         "ACP-DELETE-203",
         "ACP-ENUM-202",
-        "ACP-ENUM-203",
         "ACP-ERROR-001",
         "ACP-EXT-201",
         "ACP-EXT-202",
@@ -197,9 +200,10 @@ def test_advisory_tier_is_exactly_these_ids():
 
 def test_informational_tier_is_exactly_these_ids():
     """Pins the INFORMATIONAL set -- see `test_advisory_tier_is_exactly_these_ids` above.
-    `ACP-BATCH-206/207/208` and `ACP-CANCEL-204` are here (not ADVISORY): each is always SKIPped,
-    never PASS/FAIL, so they belong in the record-only tier."""
+    `ACP-BATCH-205/206/207/208` and `ACP-CANCEL-204` are here (not ADVISORY): each is always
+    SKIPped, never PASS/FAIL, so they belong in the record-only tier."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.INFORMATIONAL} == {
+        "ACP-BATCH-205",
         "ACP-BATCH-206",
         "ACP-BATCH-207",
         "ACP-BATCH-208",
