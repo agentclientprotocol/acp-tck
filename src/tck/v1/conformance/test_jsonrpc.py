@@ -4,7 +4,7 @@ Separate from `test_transport.py`/`test_initialize.py` to keep the "jsonrpc:" gr
 assertions in one focused file.
 
 The TCK's own probe method, `_tck/does_not_exist`, is `_`-prefixed because the spec requires
-custom methods to be (`docs/protocol/v1/extensibility.mdx`) -- the TCK holds its own probe
+custom methods to be (`docs/protocol/v1/draft/extensibility.mdx`) -- the TCK holds its own probe
 traffic to the same rule it enforces on agents.
 """
 

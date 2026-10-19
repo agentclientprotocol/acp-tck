@@ -215,6 +215,10 @@ current requirement set, `src/tck/v{1,2}/requirements.py` is the source of truth
 
 ### v1
 
+v1 is checked against the upstream *draft* v1 schema (the unstable superset, including RFD-gated fields and methods).
+Those extras are optional for agents, but are validated against the draft shapes when used. The schema is pinned to the
+spec commit recorded in `src/tck/v1/schema/VENDORED.md`.
+
 - `initialize` handshake and version negotiation, including the strengthened unsupported-version probe (`ACP-INIT-003`)
 - Session lifecycle: `session/new`, `session/load`, `session/resume`, `session/list`, `session/delete`, `session/close`,
   `additionalDirectories`

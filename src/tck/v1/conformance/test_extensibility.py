@@ -16,8 +16,8 @@ from ._helpers import connected_agent, new_session, run_prompt, skip_if_version_
 @pytest.mark.requirement("ACP-EXT-001")
 async def test_unknown_custom_method_receives_a_response(agent_launch):
     """ACP-EXT-001 (MANDATORY, judgment call -- see `tck.v1.requirements`): Req 42 requires
-    recipients to respond to custom requests (extensibility.mdx:43,52,65,109), separate from
-    the SHOULD on which error *code* an unrecognised method gets (extensibility.mdx:80-92,
+    recipients to respond to custom requests (extensibility.mdx:47,56,69,113), separate from
+    the SHOULD on which error *code* an unrecognised method gets (extensibility.mdx:84-96,
     ACP-JSONRPC-004). Only asserts *some* response arrives for a `_`-prefixed method; the
     `-32601` code itself is ACP-JSONRPC-004's concern.
 
