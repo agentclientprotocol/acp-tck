@@ -54,6 +54,9 @@ _CAPABILITY_IDS = {
     "ACP-STATE-201",
     "ACP-STATE-202",
     "ACP-STATE-203",
+    "ACP-STATE-205",
+    "ACP-PROMPT-206",
+    "ACP-PROMPT-207",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -67,6 +70,7 @@ _CAPABILITY_IDS = {
     "ACP-CANCEL-206",
     "ACP-CANCEL-207",
     "ACP-CANCEL-208",
+    "ACP-CANCEL-209",
     "ACP-SESSION-203",
     "ACP-RESUME-201",
     "ACP-RESUME-202",
@@ -98,7 +102,8 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-207",
 }
 _ADVISORY_IDS = {
-    "ACP-PROMPT-003",
+    "ACP-PROMPT-208",
+    "ACP-STATE-204",
     "ACP-CANCEL-204",
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-005",
@@ -191,6 +196,9 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PATCH-207",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
+    "ACP-STATE-205",
+    "ACP-CANCEL-209",
+    "ACP-PROMPT-207",
 }
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
@@ -324,6 +332,9 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PATCH-207",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
+    "ACP-STATE-205",
+    "ACP-CANCEL-209",
+    "ACP-PROMPT-207",
 } | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
@@ -374,6 +385,13 @@ def test_v2_conforming_agent_passes_everything():
     _assert_conforming_baseline(result, "conforming.py")
 
 
+# What `conforming_full.py` still SKIPs besides `_ALWAYS_SKIPPED_IDS`: `ACP-AUTH-205` (only
+# concerns the empty-`authMethods` case), `ACP-PROMPT-207` (it never rejects a prompt), and
+# `ACP-CANCEL-209` (`__hang__` preempts its permission request, so none is pending at cancel;
+# `asks_permission.py`'s self-test exercises it instead).
+_FULL_EXPECTED_SKIPS = {"ACP-AUTH-205", "ACP-PROMPT-207", "ACP-CANCEL-209"}
+
+
 def test_v2_conforming_full_agent_passes_everything():
     """`conforming_full.py` advertises `capabilities.session.prompt.{image,audio,
     embeddedContext}`, asks for permission on every turn (`AsksPermissionAgent`), opts into
@@ -382,8 +400,8 @@ def test_v2_conforming_full_agent_passes_everything():
     `type: "agent"` authMethods entry (`methodId: "tck"`). Run with `--cancel-prompt __hang__
     --auth-method tck --allow-logout`, this exercises essentially every capability: every
     prompt-content/permission/client-capability id, `ACP-PATCH-201/203/204/205/208/209` and
-    `ACP-ENUM-201/202/203`, `ACP-AUTH-203/204`, and every CAPABILITY-tier `ACP-CANCEL-*` id all
-    PASS. Both INFORMATIONAL probes PASS too (an INFORMATIONAL test PASSes as long as it never
+    `ACP-ENUM-201/202/203`, `ACP-AUTH-203/204`, and every CAPABILITY-tier `ACP-CANCEL-*` id but
+    `ACP-CANCEL-209` all PASS. Both INFORMATIONAL probes PASS too (an INFORMATIONAL test PASSes as long as it never
     hits an assertion failure or setup/teardown error -- it never asserts on the behaviour it
     probes, only records it).
 
@@ -394,10 +412,8 @@ def test_v2_conforming_full_agent_passes_everything():
     `emit_rich_turn_updates` flag -- so `ACP-AUTH-207`/`ACP-PATCH-206`/`ACP-PATCH-207` all PASS
     too, instead of SKIPping "nothing to check"/"no <variant> observed".
 
-    One id still legitimately SKIPs even for this otherwise all-PASS fixture: `ACP-AUTH-205`
-    only concerns the empty-`authMethods` case, the mirror image of `ACP-AUTH-204` PASSing
-    precisely because `authMethods` is non-empty. `_ALWAYS_SKIPPED_IDS` (permanently
-    unobservable ADVISORY record-only probes) SKIP regardless."""
+    `_FULL_EXPECTED_SKIPS` still legitimately SKIP (see its comment), and `_ALWAYS_SKIPPED_IDS`
+    (permanently unobservable record-only probes) SKIP regardless."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "conforming_full.py",
@@ -410,9 +426,7 @@ def test_v2_conforming_full_agent_passes_everything():
 
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
-    expected_skips = _ALWAYS_SKIPPED_IDS | {
-        "ACP-AUTH-205",
-    }
+    expected_skips = _ALWAYS_SKIPPED_IDS | _FULL_EXPECTED_SKIPS
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -443,10 +457,7 @@ def test_v2_conforming_full_agent_without_allow_logout_only_skips_auth_203():
 
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
-    expected_skips = _ALWAYS_SKIPPED_IDS | {
-        "ACP-AUTH-205",
-        "ACP-AUTH-203",
-    }
+    expected_skips = _ALWAYS_SKIPPED_IDS | _FULL_EXPECTED_SKIPS | {"ACP-AUTH-203"}
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -827,7 +838,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
     through `run_prompt` independently hits `AgentTimeout` and FAILs. This includes
     `ACP-CLIENTCAP-201/202` (both observe a turn via `run_prompt`), `ACP-PERM-201` (never gets
     the chance to legitimately SKIP "no permission observed" -- it times out instead), the
-    ADVISORY `ACP-PROMPT-003`, every `ACP-CANCEL-*` row (all seven drive `run_prompt` and never
+    ADVISORY `ACP-PROMPT-206`, every `ACP-CANCEL-*` row (all seven drive `run_prompt` and never
     see a terminating idle either) plus `ACP-CLOSE-202` (shares `ACP-CANCEL-208`'s test),
     `ACP-INFO-CANCEL-202` (INFORMATIONAL, but an uncaught `AgentTimeout` is a FAIL, not a SKIP),
     `ACP-TRANSPORT-201/002/203` (`test_transport.py`'s own `_drive_full_exchange` drives one
@@ -868,7 +879,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PROMPT-205",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
         "ACP-SCHEMA-001",
         "ACP-SCHEMA-002",
         "ACP-STATE-201",
@@ -991,7 +1002,7 @@ def test_missing_message_id_fails_prompt_201_and_schema_001_and_skips_prompt_203
 def test_update_wrong_session_fails_every_run_prompt_dependent_id():
     """`update_wrong_session.py` misattributes every `session/update` to `sessionId: "other"`:
     the same cascade shape as `no_idle_after_running.py` (see that test's docstring for why
-    `ACP-CLIENTCAP-201/202`/`ACP-PERM-201`/`ACP-PROMPT-003`/every `ACP-CANCEL-*` row (plus
+    `ACP-CLIENTCAP-201/202`/`ACP-PERM-201`/`ACP-PROMPT-206`/every `ACP-CANCEL-*` row (plus
     `ACP-CLOSE-202`, sharing `ACP-CANCEL-208`'s test)/`ACP-INFO-CANCEL-202`/
     `ACP-TRANSPORT-201/002/203` are included here too), since `run_prompt` never recognizes a
     matching terminating idle either. Also FAILs `ACP-RESUME-202..205` (their own tests drive a
@@ -1021,7 +1032,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PROMPT-205",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
         "ACP-SCHEMA-001",
         "ACP-SCHEMA-002",
         "ACP-STATE-201",
@@ -1117,7 +1128,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-STATE-202",
         "ACP-STATE-203",
         "ACP-CANCEL-204",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
         "ACP-RESUME-202",
         "ACP-RESUME-203",
         "ACP-RESUME-204",
@@ -1147,7 +1158,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
     every id whose own test drives an ordinary (non-cancelling) `run_prompt` turn never even gets
     that far and FAILs with a timeout: `ACP-SCHEMA-001`, `ACP-TRANSPORT-201/002/203`,
     `ACP-CLIENTCAP-201/202`, `ACP-PERM-201`, `ACP-PROMPT-201/203/205`, `ACP-STATE-201/202/203`,
-    and the ADVISORY `ACP-PROMPT-003`. On top of that cascade, cancelling itself resolves the
+    and the ADVISORY `ACP-PROMPT-206`. On top of that cascade, cancelling itself resolves the
     prompt with a JSON-RPC error instead of a terminating idle -- FAILs `ACP-CANCEL-203` (the
     error itself) and `ACP-CANCEL-208`/`ACP-CLOSE-202` (dual-bound to the same test: a
     `session/close` sent instead has nothing registered to rescue either, since `_handle_prompt`
@@ -1203,7 +1214,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-STATE-201",
         "ACP-STATE-202",
         "ACP-STATE-203",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
         "ACP-RESUME-202",
         "ACP-RESUME-203",
         "ACP-RESUME-204",
@@ -1232,7 +1243,7 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
     one), so every id whose own test drives an ordinary (non-cancelling) `run_prompt` turn times
     out too, the same broad cascade shape as `cancel_no_idle.py` above: `ACP-SCHEMA-001`,
     `ACP-TRANSPORT-201/002/203`, `ACP-CLIENTCAP-201/202`, `ACP-PERM-201`,
-    `ACP-PROMPT-201/203/205`, `ACP-STATE-201/202/203`, and the ADVISORY `ACP-PROMPT-003`. For the
+    `ACP-PROMPT-201/203/205`, `ACP-STATE-201/202/203`, and the ADVISORY `ACP-PROMPT-206`. For the
     cancel scenario itself -- a deliberate 1.2s delay clears the TCK's own race window (see the
     fixture's own module docstring; needs `--timeout 2` for that delay to fit comfortably inside
     the wait) before resolving with `stopReason: "end_turn"` instead of `"cancelled"` -- FAILs
@@ -1292,7 +1303,7 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-STATE-201",
         "ACP-STATE-202",
         "ACP-STATE-203",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
         "ACP-RESUME-202",
         "ACP-RESUME-203",
         "ACP-RESUME-204",
@@ -2155,7 +2166,7 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
 # a result the agent never claimed was v2-shaped, so they SKIP with the `VERSION-MISMATCH:`
 # marker instead of FAILing (see `tck.v2.requirements`'s "Version-mismatch-aware v2-shape rows"
 # section).
-# `ACP-PROMPT-003` (ADVISORY) and the two INFORMATIONAL probes carry the same
+# `ACP-PROMPT-206` (ADVISORY) and the two INFORMATIONAL probes carry the same
 # `@pytest.mark.capability("capabilities.session")` marker as every other row below, so the
 # autouse version-mismatch gate (`tck.common.plugin`'s `_tck_capability_gate`) skips them with
 # the same `VERSION-MISMATCH:` marker too -- include them here alongside the MANDATORY/
