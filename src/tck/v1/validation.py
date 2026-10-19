@@ -1,8 +1,10 @@
 """Schema validation for JSON-RPC messages the agent under test writes to stdout.
 
-Backed by the vendored `tck/v1/schema/schema.json` (see `tck/v1/schema/VENDORED.md`). The
-schema's top-level shape is `anyOf` of three side-annotated envelopes -- `Agent`, `Client`,
-`ProtocolLevel` (`schema/v1/schema.json:4-119`) -- each further split into `Request` /
+Backed by the vendored `tck/v1/schema/schema.unstable.json` (see `tck/v1/schema/VENDORED.md`):
+the draft superset of the stable schema, so RFD-gated fields and methods an agent uses are
+validated against their draft shapes. The schema's top-level shape is `anyOf` of three
+side-annotated envelopes -- `Agent`, `Client`, `ProtocolLevel`
+(`schema/v1/schema.unstable.json#/anyOf`) -- each further split into `Request` /
 `Response` / `Notification` branches. Every method-specific params/response `$def` carries
 `x-side` (which side implements the method) and `x-method` (its wire name); those annotations
 are what let us look up "the schema for `session/prompt`'s response" instead of hand-copying
@@ -52,7 +54,7 @@ def _validator_class() -> type[jsonschema.protocols.Validator]:
     validator_class = _DRAFT_VALIDATORS.get(dialect)
     if validator_class is None:
         raise RuntimeError(
-            f"vendored schema.json declares $schema={dialect!r}, which this module does not "
+            f"vendored schema.unstable.json declares $schema={dialect!r}, which this module does not "
             "have a jsonschema Draft validator mapped for -- add one to _DRAFT_VALIDATORS"
         )
     return validator_class
@@ -151,9 +153,10 @@ def _ref_names_under(node: Any) -> list[str]:
 def _response_schema_permits_null(def_name: str) -> bool:
     """True if `#/$defs/{def_name}` is an object type with no required properties, in which
     case `null` and `{}` are equivalent in practice even though the schema only spells out
-    `{}`. Quirk: `session/load`'s and `fs/write_text_file`'s docs show `"result": null`, but
-    their schema `$def`s are `type: "object"` with no required fields, which literally rejects
-    `null`.
+    `{}`. Deliberate leniency: earlier `session/load`/`fs/write_text_file` docs showed
+    `"result": null` (they now show `{}`) and the Rust reference accepts `null` for defaultable
+    payloads, but these `$def`s are `type: "object"` with no required fields, which literally
+    rejects `null`. ACP-LOAD-003 (ADVISORY) still flags a `null` `session/load` result.
     """
     definition = load_schema()["$defs"].get(def_name, {})
     return definition.get("type") == "object" and not definition.get("required")
@@ -191,7 +194,7 @@ def _validate_error_envelope(error: Any, base_path: list[str]) -> list[Validatio
 
 
 def _is_valid_request_id(value: Any) -> bool:
-    """`RequestId` (`schema/v1/schema.json:245-264`) is `null | integer | string`."""
+    """`RequestId` (`schema/v1/schema.unstable.json#/$defs/RequestId`) is `null | integer | string`."""
     if value is None or isinstance(value, str):
         return True
     return isinstance(value, int) and not isinstance(value, bool)

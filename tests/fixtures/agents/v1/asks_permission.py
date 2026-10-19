@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Conforming fixture that asks for permission mid-turn: on `session/prompt` it sends
-`session/request_permission` (`docs/protocol/v1/prompt-turn.mdx:32-43`) and only resolves the
+`session/request_permission` (`docs/protocol/v1/draft/prompt-turn.mdx:108-119`) and only resolves the
 prompt once the client answers, honoring whichever option was selected (or "cancelled" if the
 client answers that way after `session/cancel`).
 

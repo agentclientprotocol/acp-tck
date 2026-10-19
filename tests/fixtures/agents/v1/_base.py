@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 PROTOCOL_VERSION = 1
 
-# The five `ContentBlock` variants (`schema/v1/schema.json:601-688`, discriminated by `type`) --
+# The five `ContentBlock` variants (`schema/v1/schema.unstable.json#/$defs/ContentBlock`, discriminated by `type`) --
 # used by `_content_block_error` below to give `session/prompt` schema-shape strictness
 # equivalent to `_handle_authenticate`'s `methodId` check.
 _VALID_CONTENT_BLOCK_TYPES = {"text", "image", "audio", "resource", "resource_link"}

@@ -246,7 +246,7 @@ async def run_prompt(
     While waiting:
     - `session/request_permission` is answered `{"outcome": {"outcome": "selected",
       "optionId": <first option's optionId>}}`, or `{"outcome": {"outcome": "cancelled"}}` once
-      `session/cancel` has been sent for this turn (`docs/protocol/v1/prompt-turn.mdx:328`).
+      `session/cancel` has been sent for this turn (`docs/protocol/v1/draft/prompt-turn.mdx:614`).
     - any other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) gets
       `-32601`, since the mock client advertised `clientCapabilities: {}`; the request is also
       recorded on `PromptTurn.client_requests_seen`.
