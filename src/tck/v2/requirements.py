@@ -171,7 +171,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "Every `session/update` notification the agent emits during a `session/prompt` "
-            "turn validates against the v2 schema and carries the prompted `sessionId`. "
+            "turn validates against the v2 schema and carries the prompted `sessionId`, or that "
+            "of a child session already announced (in wire order) by a `subagent_update` on a "
+            "known session -- child traffic before its announcement FAILs. "
             "Vacuous pass if the agent emits no updates during the turn. NOT a reuse of v1's "
             "`ACP-PROMPT-002`: the requirement text is the same schema/sessionId "
             "check, but the *tier* differs -- v1 registers it `Tier.MANDATORY` (v1's whole "
@@ -183,7 +185,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/required; "
-            "schema/v2/schema.unstable.json#/$defs/SessionUpdate"
+            "schema/v2/schema.unstable.json#/$defs/SessionUpdate; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/protocol/v2/draft/schema.mdx:8397-8401"
         ),
     ),
     Requirement(
@@ -193,10 +197,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "The `session/prompt` result is a non-error object carrying a non-empty string "
             "`messageId` -- the acceptance receipt sent at insertion time, not a turn result "
-            "(there is no `stopReason` here at all in v2)."
+            "(there is no `stopReason` here at all in v2). Non-empty is a TCK strengthening: "
+            "`MessageId` is a plain string."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:271-274; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:253-255,271-274; "
             "schema/v2/schema.unstable.json#/$defs/PromptResponse/required; "
             "schema/v2/schema.unstable.json#/$defs/MessageId"
         ),
@@ -212,7 +217,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "response, no later than the turn-ending idle."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:276; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:276,731; "
             "schema/v2/schema.unstable.json#/$defs/UserMessage; "
             "schema/v2/schema.unstable.json#/$defs/ContentChunk"
         ),
@@ -222,16 +227,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "If a turn-ending idle `state_update` (one carrying a `stopReason`) is observed "
-            "for the prompted session, a `state_update {state: \"running\"}` for that session "
-            "was observed earlier in the same turn. SKIPPED as 'no turn-ending idle observed' "
-            "only when the turn never reached a stop-reason-bearing idle at all -- unlike "
-            "`ACP-STATE-202`/`ACP-STATE-203`, this row's SKIP gate is the idle, not `running`; "
-            "a turn-ending idle with no preceding `running` FAILs this row rather than "
-            "SKIPping it."
+            "The agent reports `running` or `requires_action` for the prompted session before "
+            "the idle that ends the turn. FAILs when the turn could only be ended by a "
+            "stopReason-bearing idle with no active state before it (confirmed after a quiet "
+            "period); SKIPPED when the prompt was rejected with no foreground work."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:124,319-321,714 (inference)"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:124,318-321,993,1000-1002,1042-1047; "
+            "schema/v2/schema.unstable.json#/$defs/StateUpdate"
         ),
     ),
     Requirement(
@@ -239,13 +242,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "After an accepted prompt for a session that showed `state_update "
-            "{state: \"running\"}`, an idle `state_update` for that session arrives within the "
-            "turn's timeout budget. Asserted only when `running` was observed; SKIPPED as 'no "
-            "foreground work observed' otherwise."
+            "Once the prompted session reported `running` or `requires_action`, an idle "
+            "`state_update` for it arrives within the turn's timeout budget -- also when the "
+            "prompt was rejected after foreground work had started. SKIPPED as 'no foreground "
+            "work observed' when no active state was seen."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:714"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:126,314,714,996,1034,1042-1045"
         ),
     ),
     Requirement(
@@ -253,21 +256,93 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "The idle `state_update` that terminates an observed `running` turn carries a "
-            "`stopReason`, and its value is one of the six defined constants (`end_turn`, "
-            "`max_tokens`, `max_turn_requests`, `refusal`, `cancelled`, `error`) or begins with "
-            "`_`. "
-            "CAPABILITY (gated on `capabilities.session`), scoped to the idle that terminates "
-            "an observed `running` turn -- an unscoped 'every idle has a stopReason' check is "
-            "forbidden. SKIPPED as 'no foreground work observed' (same gate as "
-            "`ACP-STATE-202`) when `running` was never observed."
+            "If the idle that ends the turn carries a non-null `stopReason`, its value is one "
+            "of the six defined constants (`end_turn`, `max_tokens`, `max_turn_requests`, "
+            "`refusal`, `cancelled`, `error`) or begins with `_`. A missing or `null` "
+            "stopReason is SKIPPED here (it is only SHOULD; see `ACP-STATE-204`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:714,864-887; "
-            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate; "
-            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:714,733,864,887; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/stopReason; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/7; "
             "docs/protocol/v2/draft/extensibility.mdx:226-231"
         ),
+    ),
+    Requirement(
+        id="ACP-STATE-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The idle that ends the turn carries a non-null `stopReason` (SHOULD; an agent that "
+            "cannot determine why work stopped may omit it). The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:126,714,864,1012; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After `requires_action` for the prompted session, the agent reports `running` "
+            "before progress resumes, or `idle` if the work ends without resuming: no "
+            "`agent_message`/`agent_message_chunk`/`agent_thought`/`agent_thought_chunk` "
+            "update for the session arrives before the next `running` or `idle` for it. "
+            "Tool-call updates are not judged (background activity may continue while blocked). "
+            "SKIPPED when `requires_action` is never observed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:125,773,995,1024-1025; "
+            "schema/v2/schema.unstable.json#/$defs/RequiresActionStateUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A prompt of `text` + `resource_link` content blocks is accepted (a non-error "
+            "`session/prompt` result), and the turn ends: agents advertising `session` MUST "
+            "support both block types. Replaces v1's ADVISORY `ACP-PROMPT-003`, whose recorded "
+            "doc conflict does not exist in v2 (`content.mdx` is silent on `resource_link`, not "
+            "contradictory)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:248; "
+            "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/prompt; "
+            "schema/v2/schema.unstable.json#/$defs/ResourceLink"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-207",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "If `session/prompt` is answered with a JSON-RPC error, no `user_message`/"
+            "`user_message_chunk` update was emitted for that submission: a prompt rejected "
+            "before insertion emits no user-message update, and an inserted one must not get an "
+            "error. Checked on an ordinary and on a cancelled turn; SKIPPED when the prompt "
+            "succeeded."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:255,276,312; "
+            "docs/protocol/v2/draft/cancellation.mdx:53"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-208",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A successful `session/prompt` response arrives no later than the idle that ends "
+            "the turn: the agent responds once the message is inserted, without waiting for "
+            "foreground work to finish. ADVISORY because wire order is only a proxy for "
+            "insertion timing. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:255,302"),
     ),
     Requirement(
         id="ACP-PROMPTCAP-001",
@@ -315,38 +390,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-003",
-        tier=Tier.ADVISORY,
-        capability=None,
-        text=(
-            "A prompt of `text` + `resource_link` content blocks is accepted, and the turn "
-            "reaches idle -- ADVISORY, since `initialization.mdx:248` ('agents advertising "
-            "`session` MUST support `text` and `resource_link`') conflicts with "
-            "`content.mdx:33` ('all agents MUST support text content blocks', silent on "
-            "`resource_link`); the conflict survives verbatim from v1 into v2."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:248; docs/protocol/v2/draft/content.mdx:33; "
-            "schema/v2/schema.unstable.json#/$defs/ResourceLink; "
-            "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/prompt"
-        ),
-    ),
-    Requirement(
         id="ACP-PERM-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "Any `session/request_permission` request the agent sends during a turn "
-            "validates: `sessionId`, a non-empty string `title`, and a non-empty `options` "
-            "array, each option carrying `optionId`/`name`/`kind`. Once the client answers "
-            "with a `selected` outcome, the turn still reaches an idle. Vacuous (SKIPPED) when "
-            "no permission request was observed during the turn -- sending one is only MAY."
+            "validates against the v2 schema: `sessionId`, `title`, and an `options` array of "
+            "at least one option, each carrying `optionId`/`name`/`kind`. Once the client "
+            "answers with a `selected` outcome, the turn still reaches an idle. Vacuous "
+            "(SKIPPED) when no permission request was observed during the turn -- sending one "
+            "is only MAY."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionRequest/required; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionRequest/properties/options (minItems: 1); "
             "schema/v2/schema.unstable.json#/$defs/PermissionOption/required; "
-            "docs/protocol/v2/draft/tool-calls.mdx:199,240,260"
+            "docs/protocol/v2/draft/tool-calls.mdx:201,236-263,337-355"
         ),
     ),
     Requirement(
@@ -389,8 +448,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "design."
         ),
         citation=_cite(
-            "docs/rfds/v2/prompt.mdx:86 ('This RFD does not specify queueing, steering, or "
-            "whether agents insert new prompts while busy')"
+            "docs/rfds/v2/prompt.mdx:88 ('This RFD does not specify queueing, steering, or "
+            "whether agents insert new prompts while busy'); "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1039-1040"
         ),
     ),
     Requirement(
@@ -409,13 +469,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "After `session/cancel` for a session with foreground work in flight, the agent "
-            "sends a `session/update` whose `update` is `{\"sessionUpdate\": \"state_update\", "
-            "\"state\": \"idle\", \"stopReason\": \"cancelled\"}`."
+            "After `session/cancel`, if foreground work was active when cancellation took "
+            "effect, the agent sends a `session/update` whose `update` is `{\"sessionUpdate\": "
+            "\"state_update\", \"state\": \"idle\", \"stopReason\": \"cancelled\"}`. A prompt "
+            "cancelled before insertion (`-32800`) with no active state owes no idle."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1109-1112,1124; "
-            "docs/protocol/v2/draft/schema.mdx:461-471"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1013,1109-1117,1124; "
+            "docs/protocol/v2/draft/cancellation.mdx:35-38; "
+            "docs/protocol/v2/draft/schema.mdx:461-465"
         ),
     ),
     Requirement(
@@ -423,25 +485,30 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "Every `session/update` the agent sends for the cancelled foreground work precedes "
-            "the terminating idle `state_update`. Tested in a weaker, client-observable form "
-            "(no per-update entity tracking): after the idle "
-            "`cancelled` update, no further `state_update` for this session arrives within "
-            "`quiet_period(...)` unless a new prompt was sent."
+            "Every update for the cancelled foreground work precedes its cancelled idle: "
+            "within `quiet_period(...)` after that idle, no `agent_message*`/`agent_thought*` "
+            "update for the session reuses a `messageId` (of the same entity type) seen during "
+            "the cancelled turn. Repeated idle snapshots, `unknown`, and new work are allowed."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:1128; cf. :966"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:731,1004-1007,1128; "
+            "docs/protocol/v2/draft/schema.mdx:473-475"
+        ),
     ),
     Requirement(
         id="ACP-CANCEL-203",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "Cancellation is never surfaced as a generic failure: after `session/cancel`, the "
-            "turn does not end with a JSON-RPC error on the `session/prompt` request, nor with "
-            "an idle `state_update` whose `stopReason` is a non-`cancelled` known value."
+            "Cancellation is never surfaced as a generic failure: after `session/cancel`, an "
+            "error response to `session/prompt` is conforming only as `-32800` for a prompt "
+            "cancelled before insertion (no user-message update emitted for it); and the "
+            "turn-ending idle does not carry a non-`cancelled` known stop reason such as "
+            "`error` or `end_turn`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1119-1126 (the <Warning> block, :1124); "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:255,312,926,1094,1119-1126; "
+            "docs/protocol/v2/draft/cancellation.mdx:53; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/4 (`cancelled` branch description)"
         ),
     ),
@@ -513,22 +580,44 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/close` on a session with foreground work in flight MUST cancel that work "
             "as if `session/cancel` had been sent (same idle `cancelled` state_update), then "
-            "free resources. Distinct from V2-4's future `CLOSE-201/202` -- see module "
-            "docstring. Shares its test and citation with `ACP-CLOSE-202` (the same wire "
-            "evidence, bound to both ids via a second `@pytest.mark.requirement(...)` marker) "
-            "-- deliberately counted twice, once under each id."
+            "free resources; a prompt the close kept from being inserted is answered `-32800`. "
+            "Shares its test and citation with `ACP-CLOSE-202` (the same wire evidence, bound "
+            "to both ids via a second `@pytest.mark.requirement(...)` marker) -- deliberately "
+            "counted twice, once under each id."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:360-362"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:360-366"),
+    ),
+    Requirement(
+        id="ACP-CANCEL-209",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Cancelling a turn blocked on the agent's own pending `session/request_permission` "
+            "(the session last reported `requires_action`) ends the work with an idle "
+            "`stopReason: \"cancelled\"`; the client answers the pending request `cancelled`. "
+            "SKIPPED when no permission request was pending when cancel was sent, or the session "
+            "was not reported blocked."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1074,1098-1101,1109-1113; "
+            "docs/protocol/v2/draft/cancellation.mdx:33-37; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome"
+        ),
     ),
     Requirement(
         id="ACP-INFO-CANCEL-201",
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Record (never assert) the agent's behaviour on `session/cancel` for an unknown "
-            "`sessionId`, or for a session with no foreground work -- not specified."
+            "Record (never assert) the agent's behaviour on `session/cancel` for a session with "
+            "no foreground work: no completion update is required, and nothing beyond "
+            "`ACP-CANCEL-205`'s no-response rule is assertable. Behaviour for an unknown "
+            "`sessionId` is not specified."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:1080-1134 (no normative text for an unknown `sessionId`)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1078,1115-1117; "
+            "docs/protocol/v2/draft/cancellation.mdx:37-38"
+        ),
     ),
     Requirement(
         id="ACP-INFO-CANCEL-202",
@@ -536,8 +625,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Record (never assert) whether the agent sends `$/cancel_request` for its own "
-            "pending `session/request_permission`/`elicitation/create` requests when active "
-            "work is cancelled -- not required, only illustrated (MAY at best)."
+            "pending `session/request_permission` when active work is cancelled -- the TCK holds "
+            "that request unanswered while sending `session/cancel`. Not required (MAY at best)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/cancellation.mdx:14,18,57 (non-normative; propagation is explicitly left to the agent)"
@@ -1266,12 +1355,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "A supplied `terminal_update.cwd`, when present, is an absolute path; a given "
-            "`terminalId` is never observed with two different `cwd` values within a session "
-            "(upsert-by-key implies `cwd` is set-once). Conditional on at least one "
-            "`terminal_update` being observed, else SKIP."
+            "Every `terminal_update` carries a `terminalId`, and a supplied `cwd` is an "
+            "absolute path. `cwd` is a patch field, so a later concrete value may replace an "
+            "earlier one. Conditional on at least one `terminal_update` being observed, else "
+            "SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:412-418,446-447"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:413-419,439-447"),
     ),
     Requirement(
         id="ACP-PATCH-207",
@@ -1282,7 +1371,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "standalone, valid RFC 4648 base64 -- independent of any other chunk. Conditional "
             "on at least one such field being observed, else SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:448-453,475-483"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:448-449,478-482"),
     ),
     Requirement(
         id="ACP-PATCH-208",
@@ -1303,14 +1392,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "While blocked on a `session/request_permission` response, the agent reports "
-            "`state_update.state == \"requires_action\"`, and reports `\"running\"` again "
-            "once it resumes. Kept ADVISORY, not promoted to CAPABILITY under the "
-            "session-baseline tiering rule -- the corresponding test "
-            "is still `@pytest.mark.capability(\"capabilities.session\")`-gated for its own "
-            "SKIP."
+            "When the agent sends `session/request_permission` for the prompted session during "
+            "a turn, it reports `state_update.state == \"requires_action\"` for that session "
+            "at some point in the turn (SHOULD). What follows it is `ACP-STATE-205`'s MUST. "
+            "The test is gated on `capabilities.session`."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:773"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:125,773,994; "
+            "docs/protocol/v2/draft/tool-calls.mdx:201"
+        ),
     ),
     Requirement(
         id="ACP-ENUM-201",

@@ -59,7 +59,11 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PROMPTCAP-001",
         "ACP-PROMPTCAP-002",
         "ACP-PROMPTCAP-003",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
+        "ACP-PROMPT-207",
+        "ACP-PROMPT-208",
+        "ACP-STATE-204",
+        "ACP-STATE-205",
         "ACP-PERM-201",
         "ACP-CLIENTCAP-201",
         "ACP-CLIENTCAP-202",
@@ -89,6 +93,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CANCEL-206",
         "ACP-CANCEL-207",
         "ACP-CANCEL-208",
+        "ACP-CANCEL-209",
         "ACP-INFO-BATCH-201",
         "ACP-INFO-BATCH-202",
         "ACP-INFO-CANCEL-201",
@@ -172,9 +177,10 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-META-201",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-208",
         "ACP-SCHEMA-002",
         "ACP-SHUTDOWN-001",
+        "ACP-STATE-204",
     }
 
 

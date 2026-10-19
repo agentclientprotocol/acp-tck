@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: the turn-ending idle carries a `stopReason` that is not one of the
-five defined constants and does not begin with `_` -- an illegal, non-extension value.
+six defined constants and does not begin with `_` -- an illegal, non-extension value.
 
 FAILs exactly `ACP-STATE-203` (the idle's `stopReason` must be a defined constant or an
 open-enum `_`-prefixed extension). `ACP-STATE-201` (`running` observed before the idle) and

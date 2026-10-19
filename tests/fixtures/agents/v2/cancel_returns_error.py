@@ -4,7 +4,8 @@
 *original* `session/prompt` request with a JSON-RPC error instead of ever sending a terminating
 idle `state_update`.
 
-FAILs `ACP-CANCEL-203` (cancellation surfaced as a generic JSON-RPC failure) and `ACP-CANCEL-208`
+FAILs `ACP-CANCEL-203` (cancellation surfaced as a generic `-32603` failure -- `-32800` would
+have been a conforming pre-insertion cancel, see `cancel_before_insertion.py`) and `ACP-CANCEL-208`
 (a `session/close` sent instead of `session/cancel` cannot rescue the pending prompt either --
 `_handle_prompt` never registers the session in `_hanging_sessions`, so the inherited
 `_handle_close_session` has nothing to resolve, and the original `session/prompt` request is

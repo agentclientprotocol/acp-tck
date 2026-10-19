@@ -8,8 +8,8 @@ exactly like `ConformingAgent`'s baseline.
 `run_prompt` never drains `agent.pending()` before sending `session/prompt`, so this pre-prompt
 idle is either consumed by the test's own `new_session()` read, or -- if it arrives after that
 read -- picked up as the first line `run_prompt` itself reads, where it fails the turn-end
-predicate (`running_seen` is `False`, no `stopReason`) and is recorded as an ordinary update
-rather than mistaken for this turn's terminator.
+predicate (no active state yet, no `stopReason`) and is recorded as an ordinary update rather
+than mistaken for this turn's terminator.
 """
 
 import sys
