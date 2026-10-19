@@ -146,7 +146,7 @@ def test_is_valid_open_enum_value_never_raises_on_a_none_value():
     assert protocol.is_valid_open_enum_value(None, protocol.STOP_REASONS) is False
 
 
-# --- ACP-ENUM-201/202's defined-constant sets, cross-checked against the schema itself ---
+# --- ACP-ENUM-201's defined-constant sets, cross-checked against the schema itself ---
 
 
 def _consts_from_schema(def_name: str, *, discriminator: str | None = None) -> frozenset[str]:
@@ -176,11 +176,11 @@ def _consts_from_schema(def_name: str, *, discriminator: str | None = None) -> f
 def test_enum_sets_match_the_schema():
     """`tck.v2.protocol`'s hand-copied `TOOL_KIND`/`TOOL_CALL_STATUS`/`PLAN_ENTRY_PRIORITY`/
     `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE`/
-    `STOP_REASONS` sets must exactly match the defined `const` branches `schema.unstable.json`
+    `PERMISSION_OPTION_KIND`/`STOP_REASONS` sets must exactly match the defined `const` branches `schema.unstable.json`
     itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/`PlanEntryStatus`/
     `SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type`/
-    `IdleStateUpdate.stopReason` -- so a schema refresh that adds, removes, or renames a branch fails this test instead of
-    silently drifting out of sync with `test_enums.py`'s ACP-ENUM-201/202 checks."""
+    `PermissionOptionKind`/`IdleStateUpdate.stopReason` -- so a schema refresh that adds, removes, or renames a branch fails this test instead of
+    silently drifting out of sync with `test_enums.py`'s ACP-ENUM-201 check."""
     assert protocol.TOOL_KIND == _consts_from_schema("ToolKind")
     assert protocol.TOOL_CALL_STATUS == _consts_from_schema("ToolCallStatus")
     assert protocol.PLAN_ENTRY_PRIORITY == _consts_from_schema("PlanEntryPriority")
@@ -192,6 +192,7 @@ def test_enum_sets_match_the_schema():
     assert protocol.TOOL_CALL_CONTENT_TYPE == _consts_from_schema(
         "ToolCallContent", discriminator="type"
     )
+    assert protocol.PERMISSION_OPTION_KIND == _consts_from_schema("PermissionOptionKind")
     assert protocol.STOP_REASONS == _consts_from_schema("IdleStateUpdate", discriminator="stopReason")
 
 

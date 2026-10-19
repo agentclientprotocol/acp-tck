@@ -62,9 +62,10 @@ STOP_REASONS = frozenset(
     }
 )
 
-# Open-enum value sets for the `ACP-ENUM-201`/`ACP-ENUM-202` families (schema/v2/schema.unstable.json's
+# Open-enum value sets for `ACP-ENUM-201` (schema/v2/schema.unstable.json's
 # `ToolKind`, `ToolCallStatus`, `PlanEntryPriority`, `PlanEntryStatus`,
-# `SessionUpdate.sessionUpdate`, `StateUpdate.state`, `ToolCallContent.type`). Hand-copied
+# `SessionUpdate.sessionUpdate`, `StateUpdate.state`, `ToolCallContent.type`,
+# `PermissionOptionKind`). Hand-copied
 # constants, same as `STOP_REASONS` above. `tests/v2/test_validation.py`'s
 # `test_enum_sets_match_the_schema` independently re-derives each of these from the schema's
 # own `anyOf`/`const` branches and asserts equality, so a schema refresh that adds, removes, or
@@ -104,6 +105,7 @@ SESSION_UPDATE_KIND = frozenset(
 )
 STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"})
 TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal"})
+PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
 
 
 def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:

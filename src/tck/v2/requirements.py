@@ -1639,33 +1639,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "Every value the agent emits at an open-enum site carrying dedicated per-site "
-            "MUST prose -- `tool_call_update.kind`/`.status` (`ToolKind`/`ToolCallStatus`) and "
-            "plan entries' `priority`/`status` (`PlanEntryPriority`/`PlanEntryStatus`) -- is a "
-            "defined constant or begins with `_`. A curated, non-exhaustive subset of the "
-            "schema's roughly 30 open-enum sites (classifying every one of them "
-            "individually is disproportionate for this slice)."
+            "Every value the agent emits at an open-enum site is a defined constant or begins "
+            "with `_`: extensions MUST NOT define custom non-underscore values wherever the "
+            "schema has a fallback branch (which accepts any string, so schema validation can't "
+            "catch it). Sites checked: `session/update`'s `sessionUpdate` discriminator, "
+            "`tool_call_update.kind`/`.status` (`ToolKind`/`ToolCallStatus`), plan entries' "
+            "`priority`/`status` (`PlanEntryPriority`/`PlanEntryStatus`), `state_update.state`, "
+            "tool-call content blocks' `type`, and `session/request_permission` options' `kind` "
+            "(`PermissionOptionKind`, only observable if the agent asks for permission). A "
+            "curated, non-exhaustive subset of the schema's roughly 30 open-enum sites."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:224-231; "
-            "docs/protocol/v2/draft/tool-calls.mdx:77,380; docs/protocol/v2/draft/agent-plan.mdx:160,172"
-        ),
-    ),
-    Requirement(
-        id="ACP-ENUM-202",
-        tier=Tier.ADVISORY,
-        capability=None,
-        text=(
-            "Same defined-or-`_`-prefixed rule applied at open-enum sites the prose does not "
-            "individually restate: `session/update`'s own `sessionUpdate` discriminator, "
-            "`state_update.state`, and tool-call content blocks' `type`. Kept ADVISORY, not "
-            "promoted to CAPABILITY under the session-baseline tiering rule -- the "
-            "corresponding test is still "
-            "`@pytest.mark.capability(\"capabilities.session\")`-gated for its own SKIP."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:230,233; "
-            "schema/v2/schema.unstable.json#/$defs/SessionUpdate/anyOf (the `other` fallback branch)"
+            "docs/protocol/v2/draft/extensibility.mdx:226-231; "
+            "docs/protocol/v2/draft/tool-calls.mdx:77,353,380; "
+            "docs/protocol/v2/draft/agent-plan.mdx:160,172; "
+            "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),
     Requirement(

@@ -134,7 +134,6 @@ _ADVISORY_IDS = {
     "ACP-AUTH-205",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
-    "ACP-ENUM-202",
     "ACP-META-001",
     "ACP-META-201",
     "ACP-EXT-201",
@@ -211,7 +210,6 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
     "ACP-PERM-201",
-    "ACP-ENUM-201",
     "ACP-ENUM-203",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
@@ -356,7 +354,6 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-AUTH-204",
     "ACP-AUTH-206",
     "ACP-AUTH-207",
-    "ACP-ENUM-201",
     "ACP-ENUM-203",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
@@ -398,9 +395,9 @@ def test_v2_conforming_agent_passes_everything():
     observed"), `ACP-DELETE-201/202/203`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
     `ACP-FORK-201/202`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
     extras absent), `ACP-AUTH-203/204/207` (no
-    `authMethods`, no `--auth-method`/`--allow-logout`), and `ACP-ENUM-201/203`/
+    `authMethods`, no `--auth-method`/`--allow-logout`), and `ACP-ENUM-203`/
     `ACP-PATCH-204..209` (no rich turn updates, no permission request). `ACP-PATCH-201/203` and
-    `ACP-ENUM-202` still PASS: the ordinary message-chunk/state-update traffic every turn already
+    `ACP-ENUM-201` still PASS: the ordinary message-chunk/state-update traffic every turn already
     emits is enough to exercise them. `ACP-SESSION-203`/`ACP-RESUME-201..209`/
     `ACP-LIST-201..204`/`ACP-CLOSE-201`/`ACP-CLOSE-204` are gated on the baseline `capabilities.session` marker
     alone (present even as `{}`), so they PASS. `ACP-AUTH-202`/`205` PASS too -- each is judged
@@ -434,7 +431,7 @@ def test_v2_conforming_full_agent_passes_everything():
     `type: "agent"` authMethods entry (`methodId: "tck"`). Run with `--cancel-prompt __hang__
     --auth-method tck --allow-logout`, this exercises essentially every capability: every
     prompt-content/permission/client-capability id, `ACP-PATCH-201/203/204/205/208/209` and
-    `ACP-ENUM-201/202/203`, `ACP-AUTH-203/204`, and every CAPABILITY-tier `ACP-CANCEL-*` id but
+    `ACP-ENUM-201/203`, `ACP-AUTH-203/204`, and every CAPABILITY-tier `ACP-CANCEL-*` id but
     `ACP-CANCEL-209` all PASS. Both INFORMATIONAL probes PASS too (an INFORMATIONAL test PASSes as long as it never
     hits an assertion failure or setup/teardown error -- it never asserts on the behaviour it
     probes, only records it).
@@ -971,7 +968,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
     test), and `ACP-PATCH-209` (its test drives a `run_prompt` turn expecting a permission
     request mid-turn, incidentally selected by this fixture's `-k` pattern via
     `test_permission.py`). Every other `run_prompt`-driven id in `test_enums.py`
-    (`ACP-ENUM-201/202`) and `test_extensibility.py` (`ACP-META-001/201`/`ACP-SCHEMA-002`) FAILs
+    (`ACP-ENUM-201`) and `test_extensibility.py` (`ACP-META-001/201`/`ACP-SCHEMA-002`) FAILs
     too, for the same reason -- so `-k` is widened to also select those two modules.
     `ACP-PROMPTCAP-001/002/003` are unaffected -- they SKIP on the capability-marker check before
     ever calling `run_prompt`, since this fixture advertises `capabilities: {"session": {}}}`
@@ -1044,7 +1041,6 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-208",
         "ACP-PATCH-209",
         "ACP-ENUM-201",
-        "ACP-ENUM-202",
         "ACP-META-001",
         "ACP-META-201",
     }, result.stdout
@@ -1139,7 +1135,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
     `run_prompt` turn via `_session_with_history` first, which never resolves either) and
     `ACP-PATCH-209` (same "permission" `-k` substring incidence explained on
     `no_idle_after_running.py`'s test above) -- and, for the same reason, every other
-    `run_prompt`-driven id: `ACP-ENUM-201/202`, `ACP-META-001/201`, `ACP-SCHEMA-002`, and the
+    `run_prompt`-driven id: `ACP-ENUM-201`, `ACP-META-001/201`, `ACP-SCHEMA-002`, and the
     rest of the `ACP-PATCH-2xx` family -- confirmed identical to `no_idle_after_running.py`'s own
     FAIL set via an unscoped run, since both fixtures never send a terminating idle at all. `-k`
     widened to match."""
@@ -1205,7 +1201,6 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-208",
         "ACP-PATCH-209",
         "ACP-ENUM-201",
-        "ACP-ENUM-202",
         "ACP-META-001",
         "ACP-META-201",
     }, result.stdout
@@ -1346,7 +1341,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
     (their own tests drive a `run_prompt` turn via `_session_with_history` first, which never
     resolves either since this fixture hangs on *every* prompt) and `ACP-PATCH-209` (same
     "permission" `-k` substring incidence explained on `no_idle_after_running.py`'s test above)
-    -- and, for the same reason, so does every other `run_prompt`-driven id: `ACP-ENUM-201/202`,
+    -- and, for the same reason, so does every other `run_prompt`-driven id: `ACP-ENUM-201`,
     `ACP-META-001/201`, `ACP-SCHEMA-002`, and the rest of the `ACP-PATCH-2xx` family. `-k`
     widened to match."""
     result = _run_cli(
@@ -1408,7 +1403,6 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-PATCH-208",
         "ACP-PATCH-209",
         "ACP-ENUM-201",
-        "ACP-ENUM-202",
         "ACP-META-001",
         "ACP-META-201",
     }, result.stdout
@@ -1434,7 +1428,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
     `ACP-RESUME-202..206`/`209` (their own tests drive a `run_prompt` turn via `_session_with_history`
     first, which never resolves either since this fixture withholds its acceptance receipt on
     every turn). The same cascade also catches every other `run_prompt`-driven id -- `ACP-
-    ENUM-201/202` (`test_enums.py`), `ACP-META-001/201`/`ACP-SCHEMA-002` (`test_extensibility.py`),
+    ENUM-201` (`test_enums.py`), `ACP-META-001/201`/`ACP-SCHEMA-002` (`test_extensibility.py`),
     and the whole `ACP-PATCH-2xx` family (`test_patches.py`) -- `-k` widened to select those
     three modules too.
 
@@ -1500,7 +1494,6 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
         "ACP-ENUM-201",
-        "ACP-ENUM-202",
         "ACP-META-001",
         "ACP-META-201",
         "ACP-PATCH-201",
@@ -1532,7 +1525,7 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
     above; `ACP-CLOSE-203` PASSes (closing still rescues the turn as `cancelled`). Also FAILs
     `ACP-RESUME-202..206`/`209` (their own tests drive a `run_prompt` turn via
     `_session_with_history` first, which hangs the same way). The same cascade also catches
-    every other `run_prompt`-driven id -- `ACP-ENUM-201/202`, `ACP-META-001/201`/
+    every other `run_prompt`-driven id -- `ACP-ENUM-201`, `ACP-META-001/201`/
     `ACP-SCHEMA-002`, and the whole `ACP-PATCH-2xx` family -- `-k` widened to select those three
     modules too.
 
@@ -1596,7 +1589,6 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-RESUME-206",
         "ACP-RESUME-209",
         "ACP-ENUM-201",
-        "ACP-ENUM-202",
         "ACP-META-001",
         "ACP-META-201",
         "ACP-PATCH-201",
@@ -1902,7 +1894,6 @@ def test_v2_emits_batch_updates_passes_everything():
     # here rather than SKIP -- only `ACP-PATCH-208` (needs a *tool_call_update*, not a
     # permission request) still SKIPs.
     _RICH_TURN_SKIP_IDS = {
-        "ACP-ENUM-201",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
         "ACP-PATCH-206",
@@ -2484,33 +2475,54 @@ def test_message_chunk_missing_message_id_fails_patch_201_and_schema_001():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
-def test_unprefixed_custom_session_update_fails_enum_202_only():
+def _enum_201_run(fixture: str):
+    return _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_enums")
+
+
+def test_unprefixed_custom_session_update_fails_enum_201_only():
     """`unprefixed_custom_session_update.py` sends one `session/update` with
     `sessionUpdate: "surprise"` (neither a defined constant nor `_`-prefixed) -- FAILs
-    `ACP-ENUM-202` only. The `SessionUpdate` `$def`'s own `"other"`-titled fallback branch only
+    `ACP-ENUM-201` only. The `SessionUpdate` `$def`'s own `"other"`-titled fallback branch only
     requires `sessionUpdate` to be a string, so this does NOT cascade into `ACP-SCHEMA-001`."""
-    result = _run_cli(
-        FIXTURES_DIR_V2, "unprefixed_custom_session_update.py", protocol_version=2, k="test_enums"
-    )
+    result = _enum_201_run("unprefixed_custom_session_update.py")
     assert result.returncode != 0
-
-    statuses = _table_statuses(result.stdout)
-    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-ENUM-202"}, result.stdout
+    assert _fails(_table_statuses(result.stdout)) == {"ACP-ENUM-201"}, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
-def test_prefixed_custom_session_update_passes_enum_202():
+def test_prefixed_custom_session_update_passes_enum_201():
     """Positive control for the rule above: `_tck_custom_update` is `_`-prefixed, so
-    `ACP-ENUM-202` PASSes."""
-    result = _run_cli(
-        FIXTURES_DIR_V2, "prefixed_custom_session_update.py", protocol_version=2, k="test_enums"
-    )
+    `ACP-ENUM-201` PASSes."""
+    result = _enum_201_run("prefixed_custom_session_update.py")
+    assert _fails(_table_statuses(result.stdout)) == set(), result.stdout
+    assert _table_statuses(result.stdout).get("ACP-ENUM-201") == "PASS", result.stdout
 
-    statuses = _table_statuses(result.stdout)
-    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == set(), result.stdout
-    assert statuses.get("ACP-ENUM-202") == "PASS", result.stdout
+
+def test_unprefixed_custom_state_fails_enum_201_only():
+    """`unprefixed_custom_state.py` sends `state_update{state: "busy"}` mid-turn, then a normal
+    idle. The unrecognised state never ends the turn, so the turn still completes (no timeout
+    cascade); the full suite FAILs only `ACP-ENUM-201`."""
+    result = _run_cli(FIXTURES_DIR_V2, "unprefixed_custom_state.py", protocol_version=2)
+    assert result.returncode != 0
+    assert _fails(_table_statuses(result.stdout)) == {"ACP-ENUM-201"}, result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_unprefixed_custom_permission_kind_fails_enum_201_only():
+    """`unprefixed_custom_permission_kind.py` offers a permission option with `kind: "sorcery"`
+    -- schema-valid via `PermissionOptionKind`'s `other` branch, so only `ACP-ENUM-201` FAILs."""
+    result = _run_cli(FIXTURES_DIR_V2, "unprefixed_custom_permission_kind.py", protocol_version=2)
+    assert result.returncode != 0
+    assert _fails(_table_statuses(result.stdout)) == {"ACP-ENUM-201"}, result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_prefixed_custom_permission_kind_passes_enum_201():
+    """Positive control: `_tck_custom_kind` is `_`-prefixed, so `ACP-ENUM-201` PASSes -- and
+    really checked, since this fixture does ask for permission."""
+    result = _enum_201_run("prefixed_custom_permission_kind.py")
+    assert _fails(_table_statuses(result.stdout)) == set(), result.stdout
+    assert _table_statuses(result.stdout).get("ACP-ENUM-201") == "PASS", result.stdout
 
 
 def test_custom_method_no_response_fails_ext_001_and_error_001():
