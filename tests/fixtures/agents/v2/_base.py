@@ -36,10 +36,18 @@ the agent to `session/new`, `session/list`, `session/resume`, `session/close`, `
   fixture only ever sends whole updates itself, but the primer keeps a chunk-emitting subclass's
   history schema-correct too. `_handle_resume_session` accepts *any* `sessionId`, even an
   unknown one, registering it as live -- so every route `_helpers.obtain_resumable_session`
-  tries succeeds.
-- `session/delete` (`_handle_delete_session`) removes a session like `session/close` does, but
-  with no cancellation side effect (deleting an unknown/already-deleted id succeeds silently,
-  `ACP-DELETE-203`).
+  tries succeeds. Any other `replayFrom` cursor type, or a malformed value, is rejected with
+  `-32602` (`_replay_from_rejection`, `ACP-RESUME-207/208`); every successful resume sends a
+  current-state `state_update` after the replay and before the response
+  (`_send_resume_snapshot`, `ACP-RESUME-206`). Each step is a small overridable hook so the
+  `resume_*.py` defect fixtures can break exactly one.
+- `session/close` keeps the closed session in `session/list` (it stays resumable) but no longer
+  accepts prompts for it. `session/delete` (`_handle_delete_session`) removes a session from the
+  list entirely, with no cancellation side effect (deleting an unknown/already-deleted id
+  succeeds silently, `ACP-DELETE-203`).
+- `session/fork` (only when `capabilities.session.fork` is advertised) creates a new live
+  session with a copy of the source's history. `systemPrompt` on `session/new` is accepted only
+  in an advertised mode with text content, else `-32602`.
 - `session/set_config_option` (`_handle_set_config_option`) looks up `configId` among the
   constructor's `config_options`, updates its `currentValue`, and replies with the complete
   updated list (`ACP-CONFIG-202`). `session/new`/`session/resume` include `configOptions` in
@@ -120,7 +128,8 @@ class ConformingAgent:
         self._emit_rich_turn_updates = emit_rich_turn_updates
         self._capabilities = capabilities if capabilities is not None else {}
         self._agent_name = agent_name
-        self._sessions: dict[str, str] = {}  # sessionId -> cwd
+        self._sessions: dict[str, str] = {}  # live sessionId -> cwd
+        self._closed_sessions: dict[str, str] = {}  # closed but still listed sessionId -> cwd
         self._hanging_sessions: dict[Any, bool] = {}  # sessionId -> awaiting session/cancel
         self._batch_collector: list[Any] | None = None  # non-None while inside `_handle_batch`
         # `session/new`/`session/resume`'s `configOptions`, mutated in place by
@@ -228,6 +237,8 @@ class ConformingAgent:
             self._handle_close_session(msg_id, params)
         elif method == "session/delete":
             self._handle_delete_session(msg_id, params)
+        elif method == "session/fork" and self._session_capability("fork") is not None:
+            self._handle_fork_session(msg_id, params)
         elif method == "session/set_config_option":
             self._handle_set_config_option(msg_id, params)
         elif method == "session/prompt":
@@ -280,9 +291,37 @@ class ConformingAgent:
         self._authenticated = False
         self._reply(msg_id, {})
 
+    def _session_capability(self, name: str) -> Any:
+        session = self._capabilities.get("session")
+        return session.get(name) if isinstance(session, dict) else None
+
+    def _system_prompt_rejection(self, system_prompt: Any) -> str | None:
+        """Why `systemPrompt` cannot be applied, or `None` if it can (or is absent). Only an
+        advertised mode with text-only content is accepted (session-setup.mdx:442-448)."""
+        if system_prompt is None:
+            return None
+        advertised = self._session_capability("systemPrompt")
+        if advertised is None:
+            return "systemPrompt is not supported"
+        modes = {"append"}
+        if isinstance(advertised, dict) and (advertised.get("mode") or {}).get("override") is not None:
+            modes.add("override")
+        if not isinstance(system_prompt, dict) or system_prompt.get("mode") not in modes:
+            return "unsupported systemPrompt mode"
+        content = system_prompt.get("content")
+        if not isinstance(content, list) or not all(
+            isinstance(block, dict) and block.get("type") == "text" for block in content
+        ):
+            return "unsupported systemPrompt content"
+        return None
+
     def _handle_new_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         if self._require_auth and not self._authenticated:
             self._error(msg_id, -32000, "Authentication required")
+            return
+        rejection = self._system_prompt_rejection(params.get("systemPrompt"))
+        if rejection is not None:
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
@@ -298,28 +337,76 @@ class ConformingAgent:
         cwd_filter = params.get("cwd")
         sessions = [
             {"sessionId": session_id, "cwd": cwd}
-            for session_id, cwd in self._sessions.items()
+            for session_id, cwd in {**self._closed_sessions, **self._sessions}.items()
             if cwd_filter is None or cwd == cwd_filter
         ]
         self._reply(msg_id, {"sessions": sessions})
 
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
-        # R2/R3: `replayFrom` omitted/`null` -> MUST NOT replay history before responding;
-        # `{"type": "start"}` -> replay the session's full retained history first. Accepts *any*
-        # `sessionId`, even one this process never created -- see the module docstring's
-        # `_helpers.obtain_resumable_session` note -- registering it as live if it wasn't
-        # already, so a later `session/close`/`session/list`/`session/prompt` on it behaves
-        # normally too.
+        # Accepts *any* `sessionId`, even one this process never created -- see the module
+        # docstring's `_helpers.obtain_resumable_session` note -- registering it as live, so a
+        # later `session/close`/`session/list`/`session/prompt` on it behaves normally too.
+        rejection = self._replay_from_rejection(params.get("replayFrom"))
+        if rejection is not None:
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
         session_id = params.get("sessionId")
+        self._closed_sessions.pop(session_id, None)
         if session_id not in self._sessions:
             self._sessions[session_id] = params.get("cwd", "")
-        replay_from = params.get("replayFrom")
-        if isinstance(replay_from, dict) and replay_from.get("type") == "start":
-            for update in self._history.get(session_id, []):
-                # Replay via `_notify` directly (not `_send_update`): a replayed update must not
-                # itself be re-recorded into history.
-                self._notify("session/update", {"sessionId": session_id, "update": update})
+        if self._should_replay(params.get("replayFrom")):
+            self._replay_history(session_id)
+        self._send_resume_snapshot(session_id)
+        self._reply(msg_id, self._resume_result())
+
+    @staticmethod
+    def _replay_from_rejection(replay_from: Any) -> str | None:
+        """Omitted/`null` (no replay) and `{"type": "start"}` are the only cursors this agent
+        supports; any other well-formed cursor is unsupported and anything else is malformed --
+        both `-32602` (session-setup.mdx:197-201)."""
+        if replay_from is None:
+            return None
+        if not isinstance(replay_from, dict) or not isinstance(replay_from.get("type"), str):
+            return "malformed replayFrom"
+        if replay_from["type"] != "start":
+            return f"unsupported replayFrom cursor type {replay_from['type']!r}"
+        return None
+
+    @staticmethod
+    def _should_replay(replay_from: Any) -> bool:
+        return isinstance(replay_from, dict) and replay_from.get("type") == "start"
+
+    def _replay_history(self, session_id: Any) -> None:
+        for update in self._history.get(session_id, []):
+            # Replay via `_notify` directly (not `_send_update`): a replayed update must not
+            # itself be re-recorded into history.
+            self._notify("session/update", {"sessionId": session_id, "update": update})
+
+    def _send_resume_snapshot(self, session_id: Any) -> None:
+        """The current-state `state_update` every successful resume sends before responding.
+        Not recorded into history: it is live state, not conversation."""
+        state = "running" if session_id in self._hanging_sessions else "idle"
+        self._notify(
+            "session/update",
+            {"sessionId": session_id, "update": {"sessionUpdate": "state_update", "state": state}},
+        )
+
+    def _resume_result(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
+        if self._config_options:
+            result["configOptions"] = self._current_config_options()
+        return result
+
+    def _handle_fork_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        source_id = params.get("sessionId")
+        if source_id not in self._sessions and source_id not in self._closed_sessions:
+            self._error(msg_id, -32602, f"Invalid params: unknown sessionId {source_id!r}")
+            return
+        self._session_count += 1
+        session_id = f"sess-{self._session_count:04d}"
+        self._sessions[session_id] = params.get("cwd", "")
+        self._history[session_id] = [dict(update) for update in self._history.get(source_id, [])]
+        result: dict[str, Any] = {"sessionId": session_id}
         if self._config_options:
             result["configOptions"] = self._current_config_options()
         self._reply(msg_id, result)
@@ -331,7 +418,8 @@ class ConformingAgent:
         session_id = params.get("sessionId")
         if self._hanging_sessions.pop(session_id, None) is not None:
             self._finish_turn(session_id, "cancelled")
-        self._sessions.pop(session_id, None)
+        if session_id in self._sessions:
+            self._closed_sessions[session_id] = self._sessions.pop(session_id)
         self._reply(msg_id, {})
 
     def _handle_delete_session(self, msg_id: Any, params: dict[str, Any]) -> None:
@@ -340,6 +428,7 @@ class ConformingAgent:
         # ACP-DELETE-203: an unknown/already-deleted sessionId still succeeds silently.
         session_id = params.get("sessionId")
         self._sessions.pop(session_id, None)
+        self._closed_sessions.pop(session_id, None)
         self._history.pop(session_id, None)
         self._reply(msg_id, {})
 

@@ -129,6 +129,9 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   #     SDK crashes on any JSON array (batch) input -- `acp/connection.py` calls
   #     `message.get("method")` on a list (`AttributeError`) and the process exits 1. These are SDK
   #     limitations, not fixture bugs; the fixture delegates all JSON-RPC framing to the SDK.
+  #   - ACP-RESUME-208 (CAPABILITY, so not part of the MANDATORY-only `--expect` set below): the
+  #     rc2 SDK parses `replayFrom` with a default-on-error validator, so a malformed value
+  #     reaches the fixture as `None` (omitted) and the resume succeeds instead of `-32602`.
   python3 "$SCRIPT_DIR/cross-check-summary.py" \
     "$OUT_DIR/testy.json" testy \
     "$OUT_DIR/echo_agent.json" echo_agent \

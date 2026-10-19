@@ -232,16 +232,19 @@ async def resume_session(
     session_id: str,
     cwd: Any,
     *,
-    replay_from: dict[str, Any] | None = None,
+    replay_from: Any = None,
     additional_directories: list[str] | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
     timeout: float | None = None,
 ) -> tuple[TranscriptEntry, list[tuple[int, TranscriptEntry]]]:
     """Send `session/resume` and collect every `session/update` notification observed on the
     wire before its response arrives, in wire order -- this *is* the replay stream
-    `ACP-RESUME-202..205` need to inspect. `session/resume`'s response is not an acceptance
+    `ACP-RESUME-202..209` need to inspect. `session/resume`'s response is not an acceptance
     receipt (unlike `session/prompt`'s): it carries the actual result directly, so unlike
     `run_prompt` there is no separate turn-end predicate to wait for, just the matching response.
+
+    `replay_from` is sent verbatim -- even a malformed value, which `ACP-RESUME-208` probes on
+    purpose -- and omitted when `None`.
 
     Returns `(response_entry, updates)`. Any agent -> client request arriving meanwhile (none is
     expected during `session/resume`) is simply left unanswered in the transcript for the caller
@@ -351,15 +354,21 @@ async def set_config_option(
     return await agent.wait_for_response(req_id, timeout=timeout)
 
 
-async def _route_just_created(agent: AgentProcess, cwd: Any, timeout: float | None) -> str:
+async def _route_just_created(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> tuple[str, Any]:
     """Route (1): the session `session/new` just created on this same fresh connection."""
-    return await new_session(agent, cwd, timeout=timeout)
+    return await new_session(agent, cwd, timeout=timeout), cwd
 
 
-async def _route_from_list(agent: AgentProcess, cwd: Any, timeout: float | None) -> str:
-    """Route (3): the first entry `session/list` reports on this fresh connection. Raises if the
-    list is empty or malformed -- a fresh, just-opened connection has no session of its own yet,
-    so this route only ever helps against an agent that persists sessions across connections."""
+async def _route_from_list(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> tuple[str, Any]:
+    """Route (3): the first entry `session/list` reports on this fresh connection, resumed with
+    that entry's own `cwd` -- resume is only defined when the request `cwd` matches the
+    session's (session-setup.mdx:409). Raises if the list is empty or malformed -- a fresh,
+    just-opened connection has no session of its own yet, so this route only ever helps against
+    an agent that persists sessions across connections."""
     entry = await list_sessions(agent, timeout=timeout)
     msg = entry.parsed
     result = msg.get("result") if isinstance(msg, dict) else None
@@ -370,14 +379,19 @@ async def _route_from_list(agent: AgentProcess, cwd: Any, timeout: float | None)
     session_id = first.get("sessionId") if isinstance(first, dict) else None
     if not isinstance(session_id, str) or not session_id:
         raise RuntimeError(f"session/list's first entry has no usable sessionId: {first!r}")
-    return session_id
+    listed_cwd = first.get("cwd")
+    if not isinstance(listed_cwd, str) or not listed_cwd:
+        raise RuntimeError(f"session/list's first entry has no usable cwd: {first!r}")
+    return session_id, listed_cwd
 
 
-async def _route_after_close(agent: AgentProcess, cwd: Any, timeout: float | None) -> str:
+async def _route_after_close(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> tuple[str, Any]:
     """Route (2): create a session, `session/close` it, then attempt to resume the closed id."""
     session_id = await new_session(agent, cwd, timeout=timeout)
     await close_session(agent, session_id, timeout=timeout)
-    return session_id
+    return session_id, cwd
 
 
 async def _attempt_resumable_route(
@@ -385,12 +399,13 @@ async def _attempt_resumable_route(
     cwd: Any,
     timeout: float | None,
     errors: list[str],
-    route_setup: Callable[[AgentProcess, Any, float | None], Awaitable[str]],
-) -> tuple[AgentProcess, str, TranscriptEntry, contextlib.AsyncExitStack] | None:
+    route_setup: Callable[[AgentProcess, Any, float | None], Awaitable[tuple[str, Any]]],
+) -> tuple[AgentProcess, str, TranscriptEntry, Any, contextlib.AsyncExitStack] | None:
     """Try one route of `obtain_resumable_session` on its own fresh connection. Returns
-    `(agent, session_id, resume_response_entry, stack)` -- with the connection detached from
-    local cleanup via `stack.pop_all()` -- on success, so the caller can keep it open; `None` on
-    any failure, with the connection already closed and the failure appended to `errors`.
+    `(agent, session_id, resume_response_entry, resume_cwd, stack)` -- with the connection
+    detached from local cleanup via `stack.pop_all()` -- on success, so the caller can keep it
+    open; `None` on any failure, with the connection already closed and the failure appended to
+    `errors`.
 
     A `-32601` from `session/resume` itself is not a route failure to record and move past: `B3`
     makes `session/resume` baseline-mandatory once `capabilities.session` is advertised at all,
@@ -400,9 +415,9 @@ async def _attempt_resumable_route(
     attempt_stack = contextlib.AsyncExitStack()
     try:
         agent = await attempt_stack.enter_async_context(connected_agent(launch))
-        session_id = await route_setup(agent, cwd, timeout)
+        session_id, resume_cwd = await route_setup(agent, cwd, timeout)
         req_id = await agent.send_request(
-            "session/resume", {"sessionId": session_id, "cwd": str(cwd)}
+            "session/resume", {"sessionId": session_id, "cwd": str(resume_cwd)}
         )
         entry = await agent.wait_for_response(req_id, timeout=timeout)
     except pytest.skip.Exception:
@@ -415,7 +430,7 @@ async def _attempt_resumable_route(
 
     msg = entry.parsed
     if isinstance(msg, dict) and isinstance(msg.get("result"), dict):
-        return agent, session_id, entry, attempt_stack.pop_all()
+        return agent, session_id, entry, resume_cwd, attempt_stack.pop_all()
 
     if isinstance(msg, dict) and isinstance(msg.get("error"), dict):
         code = msg["error"].get("code")
@@ -437,11 +452,13 @@ async def _attempt_resumable_route(
 @contextlib.asynccontextmanager
 async def obtain_resumable_session(
     launch: AgentLaunch, cwd: Any, *, timeout: float | None = None
-) -> AsyncIterator[tuple[AgentProcess, str, TranscriptEntry]]:
-    """Yield `(agent, session_id, resume_response_entry)` for a connected, initialized agent, a
-    session id this helper found `session/resume` accepts for `cwd`, and the response entry from
-    the successful probe call that proved it (`ACP-RESUME-201` uses this directly rather than
-    issuing a second, redundant `session/resume` for the same id).
+) -> AsyncIterator[tuple[AgentProcess, str, TranscriptEntry, Any]]:
+    """Yield `(agent, session_id, resume_response_entry, resume_cwd)` for a connected,
+    initialized agent, a session id this helper found `session/resume` accepts, the response
+    entry from the successful probe call that proved it (`ACP-RESUME-201` uses this directly
+    rather than issuing a second, redundant `session/resume` for the same id), and the `cwd`
+    that probe used -- `cwd` itself for routes (1)/(2), the listed session's own `cwd` for
+    route (3). Callers resuming again must pass `resume_cwd`, not their own `cwd`.
 
     No route for obtaining a legally resumable session id is spec-guaranteed. Tries, in order,
     each on its own fresh connection: (1) resuming the session `session/new` just created on this
@@ -465,9 +482,9 @@ async def obtain_resumable_session(
             "no resumable session obtainable via any of the three routes (create-then-resume, "
             "list-then-resume, close-then-resume): " + "; ".join(errors)
         )
-    agent, session_id, entry, stack = result
+    agent, session_id, entry, resume_cwd, stack = result
     try:
-        yield agent, session_id, entry
+        yield agent, session_id, entry, resume_cwd
     finally:
         await stack.aclose()
 

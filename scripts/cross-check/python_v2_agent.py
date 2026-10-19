@@ -31,6 +31,7 @@ import asyncio
 from typing import Any
 from uuid import uuid4
 
+from acp.exceptions import RequestError
 from acp.experimental.v2 import run_agent
 from acp.experimental.v2.interfaces import Client
 from acp.experimental.v2.schema import (
@@ -72,6 +73,8 @@ class V2CrossCheckAgent:
         self._sessions: dict[str, dict[str, Any]] = {}
         # session_id -> asyncio.Event, set by cancel_session() for a turn currently in flight
         self._cancel_events: dict[str, asyncio.Event] = {}
+        # session_id -> the task running that session's latest turn
+        self._turns: dict[str, asyncio.Task[None]] = {}
 
     def on_connect(self, conn: Client) -> None:
         self._conn = conn
@@ -117,9 +120,22 @@ class V2CrossCheckAgent:
         replay_from: Any = None,
         **kwargs: Any,
     ) -> ResumeSessionResponse:
+        # Only `start` is a supported cursor; any other well-formed type MUST be rejected with
+        # -32602 rather than resumed without replay. A malformed value cannot be rejected here:
+        # the rc2 SDK already turned it into `None` (a known ACP-RESUME-208 FAIL, see
+        # `scripts/cross-check.sh`).
+        if replay_from is not None and getattr(replay_from, "type", None) != "start":
+            raise RequestError.invalid_params({"details": "unsupported replayFrom cursor type"})
         # No history is retained (no config options either); a resumed session is simply
         # re-registered so later session/prompt or session/close calls against it still work.
         self._sessions[session_id] = {"cwd": cwd, "additional_directories": additional_directories}
+        # Every successful resume sends a current-state snapshot before responding.
+        assert self._conn is not None
+        busy = session_id in self._cancel_events
+        await self._conn.session_update(
+            session_id=session_id,
+            update=RunningSessionStateUpdate() if busy else IdleSessionStateUpdate(),
+        )
         return ResumeSessionResponse()
 
     async def close_session(self, session_id: str, **kwargs: Any) -> CloseSessionResponse:
@@ -127,6 +143,10 @@ class V2CrossCheckAgent:
         event = self._cancel_events.get(session_id)
         if event is not None:
             event.set()
+        # The cancelled turn's final updates and idle must precede the close response.
+        turn = self._turns.get(session_id)
+        if turn is not None and not turn.done():
+            await turn
         return CloseSessionResponse()
 
     async def prompt(
@@ -143,7 +163,7 @@ class V2CrossCheckAgent:
         **kwargs: Any,
     ) -> PromptResponse:
         message_id = uuid4().hex
-        asyncio.create_task(self._run_turn(session_id, message_id, prompt))
+        self._turns[session_id] = asyncio.create_task(self._run_turn(session_id, message_id, prompt))
         return PromptResponse(message_id=message_id)
 
     async def cancel_session(self, session_id: str, **kwargs: Any) -> None:
