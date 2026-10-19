@@ -153,6 +153,32 @@ def quiet_period(timeout: float) -> float:
     return max(0.5, min(2.0, timeout / 10))
 
 
+HISTORY_KINDS = frozenset(
+    {"user_message_chunk", "agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update"}
+)
+"""`sessionUpdate` kinds that carry conversation content: what `session/load` replays before
+its response, what `session/resume` must not replay, and the "content or tool call updates" that
+must not follow a cancelled prompt's response. Session-state kinds (`session_info_update`,
+`available_commands_update`, `usage_update`, ...) may be sent any time a session exists
+(`docs/protocol/v1/draft/prompt-turn.mdx:38`), so they are never judged by ordering rules."""
+
+
+def session_update_kind(entry: TranscriptEntry, session_id: str | None = None) -> str | None:
+    """The `params.update.sessionUpdate` of `entry` if it is a `session/update` notification
+    (for `session_id`, when given), else `None`."""
+    msg = entry.parsed
+    if not (isinstance(msg, dict) and msg.get("method") == "session/update"):
+        return None
+    params = msg.get("params")
+    if not isinstance(params, dict):
+        return None
+    if session_id is not None and params.get("sessionId") != session_id:
+        return None
+    update = params.get("update")
+    kind = update.get("sessionUpdate") if isinstance(update, dict) else None
+    return kind if isinstance(kind, str) else None
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` is a reply: a JSON-RPC object without `method`, even a malformed one
     missing `id`/`result`/`error`.

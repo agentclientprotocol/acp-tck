@@ -26,7 +26,15 @@ import pytest
 from tck.common.harness import AgentExited, AgentTimeout
 from tck.v1.protocol import STOP_REASONS
 
-from ._helpers import PromptTurn, connected_agent, new_session, quiet_period, run_prompt
+from ._helpers import (
+    HISTORY_KINDS,
+    PromptTurn,
+    connected_agent,
+    new_session,
+    quiet_period,
+    run_prompt,
+    session_update_kind,
+)
 
 
 def _skip_if_cancel_not_exercised(
@@ -93,9 +101,10 @@ async def test_no_session_update_follows_the_cancelled_response(
 
     Every `session/update` `run_prompt` observed necessarily arrived before the prompt response
     (stdout is read strictly line-by-line, stopping at the matching response), so the "before"
-    half of Req 28 is structural. This test covers the other half: no further `session/update`
-    for this session may arrive after the response. Skips under the same conditions as
-    ACP-CANCEL-001 (module docstring).
+    half of Req 28 is structural. This test covers the other half: no further content or tool
+    call update (`HISTORY_KINDS`) for this session may arrive after the response. Session-state
+    updates such as `session_info_update` are allowed outside a turn and are ignored. Skips
+    under the same conditions as ACP-CANCEL-001 (module docstring).
     """
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -120,12 +129,7 @@ async def test_no_session_update_follows_the_cancelled_response(
         # Only ordering is this test's concern; sessionId correctness is ACP-PROMPT-002 territory.
 
         def _is_late_update_for_this_session(entry) -> bool:
-            candidate = entry.parsed
-            return (
-                isinstance(candidate, dict)
-                and candidate.get("method") == "session/update"
-                and (candidate.get("params") or {}).get("sessionId") == session_id
-            )
+            return session_update_kind(entry, session_id) in HISTORY_KINDS
 
         # An agent that exits promptly (rather than staying connected through the quiet period)
         # raises AgentExited on EOF, not AgentTimeout -- still "no late update arrived."

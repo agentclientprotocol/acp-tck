@@ -153,10 +153,13 @@ def _ref_names_under(node: Any) -> list[str]:
 def _response_schema_permits_null(def_name: str) -> bool:
     """True if `#/$defs/{def_name}` is an object type with no required properties, in which
     case `null` and `{}` are equivalent in practice even though the schema only spells out
-    `{}`. Deliberate leniency: earlier `session/load`/`fs/write_text_file` docs showed
-    `"result": null` (they now show `{}`) and the Rust reference accepts `null` for defaultable
-    payloads, but these `$def`s are `type: "object"` with no required fields, which literally
-    rejects `null`. ACP-LOAD-003 (ADVISORY) still flags a `null` `session/load` result.
+    `{}`. Deliberate leniency: these `$def`s are `type: "object"` with no required fields,
+    which literally rejects `null`, but upstream's Rust schema crate accepts `null` for such
+    defaultable payloads on receipt (`ac82df63`, `agent-client-protocol-schema/src/serde_util.rs`:
+    deserialization only, the schema is unchanged) and the Python SDK coerces it too, so a
+    `null` result still interoperates with both reference clients. Upstream's guidance is
+    "send `{}`, tolerate `null`" (the docs examples were corrected to `{}` in `d89c8d31`).
+    ACP-LOAD-003 (ADVISORY) still flags a `null` `session/load` result.
     """
     definition = load_schema()["$defs"].get(def_name, {})
     return definition.get("type") == "object" and not definition.get("required")
@@ -415,7 +418,7 @@ def validate_agent_response(method: str, msg: dict[str, Any]) -> list[Validation
 
     result = msg["result"]
     if result is None and _response_schema_permits_null(def_name):
-        # Quirk: docs show `null` for all-optional object responses; treat as equivalent to `{}`.
+        # Reference receivers tolerate `null` for all-optional object responses; see above.
         return issues
 
     validator = _def_validator(def_name)

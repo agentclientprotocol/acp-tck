@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from typing import Any, Callable
 
@@ -96,6 +97,7 @@ class ConformingAgent:
         self._mode_update_field = mode_update_field
         self._ignore_boolean_gating = ignore_boolean_gating
         self._client_capabilities: dict[str, Any] = {}
+        self._mcp_processes: list[subprocess.Popen] = []
 
     def run(self) -> None:
         if self._on_start is not None:
@@ -201,6 +203,11 @@ class ConformingAgent:
         if self._require_auth and not self._authenticated:
             self._error(msg_id, -32000, "Authentication required")
             return
+        system_prompt_error = self._system_prompt_error(params.get("systemPrompt"))
+        if system_prompt_error is not None:
+            self._error(msg_id, -32602, f"Invalid params: {system_prompt_error}")
+            return
+        self._launch_mcp_servers(params.get("mcpServers") or [])
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
@@ -211,6 +218,62 @@ class ConformingAgent:
         if visible_config is not None:
             result["configOptions"] = visible_config
         self._reply(msg_id, result)
+
+    def _system_prompt_error(self, system_prompt: Any) -> str | None:
+        """`None` if `system_prompt` is absent/null or one this agent can apply: `append` mode
+        (or `override` when advertised) with only text blocks. An agent MUST error on anything
+        else (ACP-SYSPROMPT-002/003)."""
+        if system_prompt is None:
+            return None
+        if not isinstance(system_prompt, dict):
+            return "systemPrompt must be an object"
+        supported_modes = {"append"}
+        sp_caps = self._capabilities.get("sessionCapabilities", {}).get("systemPrompt") or {}
+        if (sp_caps.get("mode") or {}).get("override") is not None:
+            supported_modes.add("override")
+        if system_prompt.get("mode") not in supported_modes:
+            return f"unsupported systemPrompt mode {system_prompt.get('mode')!r}"
+        content = system_prompt.get("content")
+        if not isinstance(content, list) or any(
+            not isinstance(block, dict) or block.get("type") != "text" for block in content
+        ):
+            return "systemPrompt content must be text blocks only"
+        return None
+
+    def _launch_mcp_servers(self, servers: list[Any]) -> None:
+        """Launch every stdio MCP server entry and send it an MCP `initialize` request, so the
+        TCK's stub server can observe the connection (ACP-SESSION-004). The reply is discarded;
+        the child exits on its own once this process's end of its stdin closes."""
+        for server in servers:
+            if not isinstance(server, dict) or "type" in server or not server.get("command"):
+                continue  # only stdio entries (no `type`) are launched
+            env = dict(os.environ)
+            for var in server.get("env") or []:
+                if isinstance(var, dict):
+                    env[str(var.get("name"))] = str(var.get("value"))
+            try:
+                proc = subprocess.Popen(
+                    [server["command"], *server.get("args", [])],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                )
+                initialize = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": self._agent_name, "version": "0.0.0"},
+                    },
+                }
+                proc.stdin.write((json.dumps(initialize) + "\n").encode())
+                proc.stdin.flush()
+            except OSError:
+                continue
+            self._mcp_processes.append(proc)
 
     def _handle_set_mode(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")

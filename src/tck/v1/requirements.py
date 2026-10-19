@@ -181,6 +181,34 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SESSION-003",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "`session/new` with one stdio MCP server entry (`name`, absolute `command`, `args`, "
+            "`env`) succeeds with a schema-valid result -- all agents MUST support the stdio "
+            "MCP transport. The entry points at a stub MCP server shipped with the TCK "
+            "(`tck.v1.conformance._mcp_stub`), run by the TCK's own Python interpreter."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-setup.mdx:468,476-501; "
+            "schema/v1/schema.unstable.json#/$defs/McpServer; "
+            "schema/v1/schema.unstable.json#/$defs/McpServerStdio"
+        ),
+    ),
+    Requirement(
+        id="ACP-SESSION-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "After `session/new` with that stdio MCP server entry and one prompt turn, the agent "
+            "has launched the stub server and sent it an MCP `initialize` request. SHOULD-level "
+            "(\"Agents SHOULD connect to all MCP servers specified by the Client\"); the prompt "
+            "turn gives an agent that connects lazily a chance to do so before the check."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:638"),
+    ),
+    Requirement(
         id="ACP-PROMPT-001",
         tier=Tier.MANDATORY,
         capability=None,
@@ -215,17 +243,36 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     ),
     Requirement(
         id="ACP-PROMPT-003",
-        tier=Tier.ADVISORY,
+        tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "A prompt containing a `resource_link` content block alongside text is accepted. "
-            "Advisory, not mandatory: `initialization.mdx:204` lists `resource_link` as baseline "
-            "MUST-accept alongside text, but `content.mdx:31` says only text is MUST -- treated "
-            "as advisory until upstream resolves the discrepancy."
+            "A prompt containing a `resource_link` content block alongside text resolves with a "
+            "successful result whose `stopReason` is a defined value. `initialization.mdx:247` "
+            "and the schema's `PromptCapabilities` description both make Text and ResourceLink "
+            "the baseline every agent MUST support; `content.mdx:31` only mentions text but does "
+            "not exclude `resource_link`, which carries no prompt-capability requirement."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:247 vs "
-            "docs/protocol/v1/draft/content.mdx:31 (Req 7; Discrepancy 2)"
+            "docs/protocol/v1/draft/initialization.mdx:247; "
+            "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
+            "docs/protocol/v1/draft/content.mdx:31"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-004",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "Every file path the agent emits is absolute: `locations[].path` and `diff` "
+            "content `path` on any `tool_call`/`tool_call_update`, and `sessions[].cwd` in a "
+            "`session/list` result (when `list` is advertised). Absolute means POSIX `/...`, a "
+            "Windows drive path, or a UNC path. Passes vacuously when the agent emits no paths."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/overview.mdx:230; "
+            "docs/protocol/v1/draft/session-list.mdx:136-137; "
+            "schema/v1/schema.unstable.json#/$defs/ToolCallLocation/properties/path; "
+            "schema/v1/schema.unstable.json#/$defs/Diff/properties/path"
         ),
     ),
     Requirement(
@@ -243,12 +290,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Every `session/update` for the cancelled session arrives before the `session/prompt` "
-            "response; none arrive after it. \"None arrive after it\" is checked with a quiet "
-            "period derived from --tck-timeout (tck.v1.conformance._helpers.quiet_period), not an "
-            "infinite wait."
+            "Content and tool call updates (`user_message_chunk`, `agent_message_chunk`, "
+            "`agent_thought_chunk`, `tool_call`, `tool_call_update`) for the cancelled session "
+            "arrive before the `session/prompt` response; none arrive after it. Session-state "
+            "updates (e.g. `session_info_update`, `usage_update`) are allowed outside a turn and "
+            "are not judged. \"None arrive after it\" is checked with a quiet period derived from "
+            "--tck-timeout (tck.v1.conformance._helpers.quiet_period), not an infinite wait."
         ),
-        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:629 (Req 28)"),
+        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:38,629"),
     ),
     Requirement(
         id="ACP-LOAD-001",
@@ -259,7 +308,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema-valid `LoadSessionResponse` object."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:106,110-200; "
+            "docs/protocol/v1/draft/session-setup.mdx:106,110-200 (`{}` result example at "
+            "191-200); "
             "schema/v1/schema.unstable.json#/$defs/AgentCapabilities/properties/loadSession; "
             "schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; "
             "schema/v1/schema.unstable.json#/$defs/LoadSessionRequest (C1, L1, L4)"
@@ -270,28 +320,34 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.loadSession",
         text=(
-            "Every `session/update` belonging to the `session/load` replay arrives before the "
-            "`session/load` response; none arrive after it. No claim is made about which "
-            "`sessionUpdate` kinds, how many, or their fidelity -- L5 says that is unspecified."
+            "Every history update belonging to the `session/load` replay arrives before the "
+            "`session/load` response; no history-kind update (`user_message_chunk`, "
+            "`agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`) for "
+            "the session arrives after it. Session-state updates (e.g. "
+            "`available_commands_update`) are allowed outside a turn and are not judged. No claim "
+            "is made about how many history updates are replayed or their fidelity."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:136-137,191-192 (L2, L3, L5)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-setup.mdx:136-142,191-192; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:38"
+        ),
     ),
     Requirement(
         id="ACP-LOAD-003",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The `session/load` empty result is `{}` (an object), not `null` -- the docs' "
-            "historical `null` example was corrected upstream to `{}`. ADVISORY only: mandatory "
-            "schema validation (ACP-LOAD-001) already treats `null` as equivalent for an "
-            "all-optional object response (documented leniency, Discrepancy 2), and upstream "
-            "`ac82df6` (`agent-client-protocol-schema/src/serde_util.rs`) made the Rust reference "
-            "itself accept `null` for defaultable payloads, which is why `null` stays tolerated "
-            "rather than becoming a FAIL."
+            "The `session/load` empty result is `{}` (an object), not `null`. The schema allows "
+            "only an object and the docs example shows `{}` (corrected from `null` upstream in "
+            "`d89c8d31`). ADVISORY only: upstream's Rust schema crate tolerates `null` for "
+            "defaultable payloads on receipt (`ac82df63`, deserialization only; the schema is "
+            "unchanged), and the Python SDK coerces it too, so mandatory schema validation "
+            "(ACP-LOAD-001) treats `null` as equivalent for an all-optional object response."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-setup.mdx:194-200; "
-            "schema/v1/schema.unstable.json#/$defs/LoadSessionResponse (L4; Discrepancy 2)"
+            "schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; "
+            "agent-client-protocol-schema/src/serde_util.rs:30-38"
         ),
     ),
     Requirement(
@@ -299,11 +355,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.resume",
         text=(
-            "`session/resume` with `sessionId` and `cwd` (no `mcpServers`) succeeds with a "
+            "`session/resume` with `sessionId`, `cwd`, and `mcpServers: []` succeeds with a "
             "schema-valid `ResumeSessionResponse` object."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:266-269; "
+            "docs/protocol/v1/draft/session-setup.mdx:239-244,266-277; "
             "schema/v1/schema.unstable.json#/$defs/ResumeSessionRequest; "
             "schema/v1/schema.unstable.json#/$defs/ResumeSessionResponse (C2, R1, R3)"
         ),
@@ -314,10 +370,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="agentCapabilities.sessionCapabilities.resume",
         text=(
             "No `session/update` carrying conversation history (`user_message_chunk`, "
-            "`agent_message_chunk`, `agent_thought_chunk`) for the resumed session arrives "
-            "before the `session/resume` response -- the prohibition is scoped to history "
-            "updates in the pre-response window only, not to every update kind or to updates "
-            "after the response."
+            "`agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`) for "
+            "the resumed session arrives before the `session/resume` response -- the prohibition "
+            "is scoped to history updates in the pre-response window only, not to every update "
+            "kind or to updates after the response."
         ),
         citation=_cite("docs/protocol/v1/draft/session-setup.mdx:266-269 (R2)"),
     ),
@@ -355,10 +411,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="agentCapabilities.sessionCapabilities.delete",
         text=(
             "`session/delete` for a session created earlier on the same connection succeeds "
-            "with a schema-valid empty-object result."
+            "with a schema-valid empty-object result. Deleting an active session is "
+            "implementation-defined, so the session is closed first when `close` is advertised; "
+            "otherwise an error from deleting the still-active session SKIPs rather than FAILs."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-delete.mdx:69-81; "
+            "docs/protocol/v1/draft/session-delete.mdx:69-81,89; "
             "schema/v1/schema.unstable.json#/$defs/DeleteSessionRequest; "
             "schema/v1/schema.unstable.json#/$defs/DeleteSessionResponse (C2, D1)"
         ),
@@ -372,6 +430,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "rather than erroring."
         ),
         citation=_cite("docs/protocol/v1/draft/session-delete.mdx:86 (D2)"),
+    ),
+    Requirement(
+        id="ACP-DELETE-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.delete",
+        text=(
+            "After a successful `session/delete`, the deleted `sessionId` does not appear in a "
+            "subsequent `session/list` result (all pages, filtered by the session's `cwd`). Also "
+            "needs `sessionCapabilities.list`; SKIPs without it. The session is closed first "
+            "when `close` is advertised, as for ACP-DELETE-001."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-delete.mdx:85,89"),
     ),
     Requirement(
         id="ACP-CLOSE-001",
@@ -415,12 +485,57 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SYSPROMPT-001",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.systemPrompt",
+        text=(
+            "`session/new` with `systemPrompt: {mode: \"append\", content: [<text block>]}` "
+            "succeeds with a schema-valid result: every agent advertising the capability "
+            "supports `append`, and MUST accept text content blocks. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-setup.mdx:411,415; "
+            "schema/v1/schema.unstable.json#/$defs/SystemPrompt; "
+            "schema/v1/schema.unstable.json#/$defs/SessionSystemPromptModeCapabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-002",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.systemPrompt",
+        text=(
+            "`session/new` with a `systemPrompt.mode` the agent cannot support (the "
+            "implementation-reserved `_tck_unsupported`) returns an error rather than creating "
+            "the session. The error code is recorded, not asserted (`-32602` is only "
+            "RECOMMENDED). Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-setup.mdx:412,418; "
+            "schema/v1/schema.unstable.json#/$defs/SystemPromptMode"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.systemPrompt",
+        text=(
+            "`session/new` with a non-text `systemPrompt.content` block (`resource_link`) "
+            "returns an error rather than creating the session -- only text blocks are "
+            "supported for now. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-setup.mdx:415,418; "
+            "schema/v1/schema.unstable.json#/$defs/SystemPrompt/properties/content"
+        ),
+    ),
+    Requirement(
         id="ACP-MODES-001",
         tier=Tier.CAPABILITY,
         capability="inferred:modes",
         text=(
             "When `session/new` returns a non-null `modes`, it validates against the schema "
-            "and `currentModeId` refers to one of `availableModes`. Inferred support, not a "
+            "and `currentModeId` refers to one of `availableModes` (derived from the field "
+            "descriptions, not a stated MUST). Inferred support, not a "
             "boolean/object marker in `initialize` -- there is no `agentCapabilities` field for "
             "this; support is inferred from `session/new`'s own response (`capability` is a "
             "documentation-only string, not a real initialize-result path -- see module "
@@ -428,7 +543,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "modes/configOptions' when absent."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-modes.mdx; "
+            "docs/protocol/v1/draft/session-modes.mdx:17,49-75; "
             "schema/v1/schema.unstable.json#/$defs/SessionModeState; "
             "schema/v1/schema.unstable.json#/$defs/SessionMode (§7, §0)"
         ),
@@ -438,7 +553,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="inferred:modes",
         text=(
-            "`session/set_mode` to a different `modeId` succeeds. No echo notification is "
+            "`session/set_mode` to a different `modeId` succeeds with a schema-valid "
+            "`SetSessionModeResponse`. No echo notification is "
             "required (§7: \"do not assert an echo notification\"), but if a "
             "`current_mode_update` (`session/update` with `sessionUpdate: "
             "\"current_mode_update\"`) for the session is observed, it MUST carry the schema "
@@ -447,8 +563,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "always the source of truth here."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-modes.mdx:117-119 (shows `currentModeId` since "
-            "upstream b96b439); schema/v1/schema.unstable.json#/$defs/SetSessionModeRequest; "
+            "docs/protocol/v1/draft/session-modes.mdx:83-122 (`currentModeId` example at 117-119 "
+            "since upstream b96b439); schema/v1/schema.unstable.json#/$defs/SetSessionModeRequest; "
+            "schema/v1/schema.unstable.json#/$defs/SetSessionModeResponse; "
             "schema/v1/schema.unstable.json#/$defs/CurrentModeUpdate (§7)"
         ),
     ),
@@ -464,6 +581,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`capability=\"inferred:configOptions\"` is documentation-only."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:118-127,242; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigOption; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigSelect; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigBoolean (§7, §0)"
@@ -474,12 +592,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
-            "`session/set_config_option` responds with the *complete* list of every "
+            "`session/set_config_option` responds with a schema-valid result carrying the "
+            "*complete* list of every "
             "previously-advertised `configOptions` id (not only the changed one), with the new "
             "value applied to the option that was changed -- stated as a MUST twice in the "
             "docs."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:301,328-333; "
             "schema/v1/schema.unstable.json#/$defs/SetSessionConfigOptionRequest; "
             "schema/v1/schema.unstable.json#/$defs/SetSessionConfigOptionResponse (§7 'complete "
             "list' rule)"
@@ -490,17 +610,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "An agent MUST NOT include a `type: \"boolean\"` config option anywhere in "
-            "`session/new`'s `configOptions` unless the client advertised "
-            "`clientCapabilities.session.configOptions.boolean: {}` -- Req 33, a genuine client- "
-            "controlled MUST NOT. Passes vacuously if the agent has no config options, or none "
-            "of `type: \"boolean\"`, at all."
+            "An agent MUST NOT include a `type: \"boolean\"` config option in any "
+            "`configOptions` payload unless the client advertised "
+            "`clientCapabilities.session.configOptions.boolean: {}` -- a genuine client- "
+            "controlled MUST NOT. Checked on `session/new`'s result, a "
+            "`session/set_config_option` result, `session/load`/`session/resume` results when "
+            "advertised, and any `config_option_update` seen meanwhile. Passes vacuously if the "
+            "agent has no config options, or none of `type: \"boolean\"`, at all."
         ),
         citation=_cite(
             "schema/v1/schema.unstable.json#/$defs/SessionConfigOption/oneOf/1; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigBoolean (SessionConfigOption "
             "boolean variant); docs/protocol/v1/draft/session-config-options.mdx:204-206 "
-            "(normative MUST NOT text) (Req 33; §7 boolean gating)"
+            "(normative MUST NOT text); docs/protocol/v1/draft/initialization.mdx:172-181"
         ),
     ),
     Requirement(
@@ -513,8 +635,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "text resolves with a successful result whose `stopReason` is a defined value."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/initialization.mdx:249-253; "
+            "docs/protocol/v1/draft/content.mdx:54-56; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
-            "schema/v1/schema.unstable.json#/$defs/ImageContent (§8, Req 8)"
+            "schema/v1/schema.unstable.json#/$defs/ImageContent"
         ),
     ),
     Requirement(
@@ -527,8 +651,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "text resolves with a successful result whose `stopReason` is a defined value."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/initialization.mdx:255-257; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
-            "schema/v1/schema.unstable.json#/$defs/AudioContent (§8, Req 8)"
+            "schema/v1/schema.unstable.json#/$defs/AudioContent"
         ),
     ),
     Requirement(
@@ -542,8 +667,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "whose `stopReason` is a defined value."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/initialization.mdx:259-261; "
+            "docs/protocol/v1/draft/content.mdx:122-125; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
-            "schema/v1/schema.unstable.json#/$defs/EmbeddedResource (§8, Req 8)"
+            "schema/v1/schema.unstable.json#/$defs/EmbeddedResource"
         ),
     ),
     Requirement(
@@ -677,7 +804,77 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the client did not advertise any elicitation mode. PASS is vacuous for an agent "
             "that never elicits."
         ),
-        citation=_cite("docs/protocol/v1/draft/elicitation.mdx:54,107-108 (Req 32)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/elicitation.mdx:40-47,54; "
+            "docs/protocol/v1/draft/initialization.mdx:160-166"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-004",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send a `notice` session update unless the client advertised "
+            "`clientCapabilities.session.notices` -- checked over a whole connection with "
+            "`clientCapabilities: {}` (session/new, one prompt turn, `session/load` when "
+            "advertised, then a quiet period). PASS is vacuous for an agent that never sends "
+            "notices."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:266-269; "
+            "docs/protocol/v1/draft/initialization.mdx:211-217; "
+            "schema/v1/schema.unstable.json#/$defs/Notice"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-005",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `compaction_update` or `compaction_summary_chunk` unless "
+            "the client advertised `clientCapabilities.session.compaction`, live or during "
+            "`session/load` replay -- checked the same way as ACP-CLIENTCAP-004. PASS is vacuous "
+            "for an agent that never reports compaction."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:328-333; "
+            "docs/protocol/v1/draft/session-setup.mdx:139-142; "
+            "docs/protocol/v1/draft/initialization.mdx:193-199; "
+            "schema/v1/schema.unstable.json#/$defs/CompactionUpdate; "
+            "schema/v1/schema.unstable.json#/$defs/CompactionSummaryChunk"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-006",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `plan_update` or `plan_removed` unless the client "
+            "advertised `clientCapabilities.plan` -- checked the same way as ACP-CLIENTCAP-004. "
+            "Unstable feature: an agent that does not implement plan operations never sends "
+            "these and passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:10,53; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:25-26; "
+            "schema/v1/schema.unstable.json#/$defs/PlanCapabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-007",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `subagent_update`, `session_message`, or "
+            "`session_message_chunk` unless the client advertised `clientCapabilities.subagents` "
+            "-- checked the same way as ACP-CLIENTCAP-004. Unstable feature: an agent that does "
+            "not expose subagents never sends these and passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:19-21,42; "
+            "docs/rfds/subagents.mdx:72-74; "
+            "schema/v1/schema.unstable.json#/$defs/SubagentCapabilities"
+        ),
     ),
     Requirement(
         id="ACP-EXT-001",
