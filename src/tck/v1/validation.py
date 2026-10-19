@@ -364,7 +364,7 @@ def _allowed_root_properties(def_name: str) -> set[str] | None:
 def find_unknown_root_keys(def_name: str, obj: Any) -> list[str]:
     """ACP-SCHEMA-002 (ADVISORY): the root-level keys of an emitted spec object (`obj`, e.g. a
     request/notification `params`, or a successful response `result`) that are not part of
-    `#/$defs/{def_name}`'s resolved `properties` union (`_meta` is always allowed, per Req 41's
+    `#/$defs/{def_name}`'s resolved `properties` union (`_meta` is always allowed, per the
     "custom data goes in `_meta`" carve-out). Returns `[]` -- nothing to flag -- when `obj` is
     not a dict, or when `def_name`'s schema has no resolvable `properties` at all.
     """
@@ -374,6 +374,23 @@ def find_unknown_root_keys(def_name: str, obj: Any) -> list[str]:
     if allowed is None:
         return []
     return sorted(key for key in obj if key not in allowed)
+
+
+def validate_against_def(def_name: str, value: Any) -> list[ValidationIssue]:
+    """Validate `value` against `#/$defs/{def_name}` alone, e.g. one union variant that a lax
+    `anyOf` would otherwise let a malformed value dodge (see ACP-AUTH-006)."""
+    return _issues_from_errors(_def_validator(def_name).iter_errors(value))
+
+
+def find_unknown_error_keys(error: Any) -> list[str]:
+    """ACP-SCHEMA-002 for a JSON-RPC error object: keys outside `#/$defs/Error`'s own
+    `properties` (`code`, `message`, `data`). Unlike `find_unknown_root_keys`, `_meta` is not
+    allowed: `Error` is the spec's example of a type without `_meta` (extensibility.mdx:13-14).
+    """
+    if not isinstance(error, dict):
+        return []
+    allowed = load_schema()["$defs"]["Error"]["properties"].keys()
+    return sorted(key for key in error if key not in allowed)
 
 
 def validate_agent_response(method: str, msg: dict[str, Any]) -> list[ValidationIssue]:

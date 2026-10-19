@@ -41,7 +41,7 @@ async def _probe_connection_usable_after(agent, tmp_path, timeout: float) -> str
 @pytest.mark.requirement("ACP-INFO-PARSE-001")
 async def test_malformed_json_line_behaviour(agent_launch, tmp_path, record_property):
     """ACP-INFO-PARSE-001 (INFORMATIONAL). Sends one line of malformed JSON (not valid JSON at
-    all) and records whether the agent: replies with a `-32700`/`id: null` error (J1's
+    all) and records whether the agent: replies with a `-32700`/`id: null` error (JSON-RPC's
     documented-but-not-universal behaviour), replies with something else, or stays silent (the
     reference SDK's documented behaviour -- concluded via `quiet_period()`, not the full
     `--tck-timeout`). Then, using a fresh, ordinary `session/new` on the *same* connection,

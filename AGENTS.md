@@ -94,8 +94,10 @@ statuses, not the overall verdict).
 informational `cross-check` job (`continue-on-error: true`) that runs the suite against
 independently-built upstream agents (Rust SDK's `testy`, Python SDK's example/experimental v2
 agents) via `scripts/cross-check.sh` and diffs the result against the expected-FAIL baseline (`--expect` lines
-in `scripts/cross-check.sh`). Both upstream v1 agents are expected to fail only the deliberately
-strengthened `ACP-INIT-003`; v2's `testy` is expected fully conformant; the Python v2 example
+in `scripts/cross-check.sh`). Both upstream v1 agents are expected to fail only `ACP-INIT-003`
+(they echo an unsupported requested version; `testy` stops doing so from rust-sdk `53dd268`, newer
+than CI's pinned `RUST_SDK_SHA`, so bumping that pin means dropping testy's expectation); v2's
+`testy` is expected fully conformant; the Python v2 example
 agent is expected to fail a small, documented set tied to known upstream limitations. Any other
 deviation is worth investigating as either a TCK bug or a genuine new upstream behavior.
 

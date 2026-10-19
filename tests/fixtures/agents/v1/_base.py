@@ -48,8 +48,9 @@ def _content_block_error(block: Any) -> str | None:
 class ConformingAgent:
     """A minimal, deterministic, offline ACP v1 agent.
 
-    Handles `initialize`, `session/new`, `session/prompt`, `session/cancel`, and the
-    harness-only `_tck/env` extension method used to prove env-var overrides reach the child.
+    Handles `initialize`, `session/new`, `session/prompt`, `session/cancel`, `$/cancel_request`
+    (answers a pending prompt with `-32800`), and the harness-only `_tck/env` extension method
+    used to prove env-var overrides reach the child.
     Any other method gets `-32601`. Exits cleanly on stdin EOF (the `for` loop over
     `sys.stdin` simply ends).
 
@@ -166,7 +167,13 @@ class ConformingAgent:
                 pending = self._pending_prompt
                 self._pending_prompt = None
                 self._reply(pending["id"], {"stopReason": "cancelled"})
-        # other/unknown notifications (including unrecognized `_`-prefixed ones) are ignored
+        elif method == "$/cancel_request" and self._pending_prompt is not None:
+            if self._pending_prompt["id"] == params.get("requestId"):
+                pending = self._pending_prompt
+                self._pending_prompt = None
+                self._error(pending["id"], -32800, "Request cancelled")
+        # other/unknown notifications (including unrecognized `_`-prefixed ones, and
+        # `$/cancel_request` for an unknown id) are ignored
 
     def _initialize_result(self) -> dict[str, Any]:
         # Only version 1 is supported, so the response is always 1 -- never echo a version
@@ -200,6 +207,9 @@ class ConformingAgent:
     def _handle_new_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         if self._require_auth and not self._authenticated:
             self._error(msg_id, -32000, "Authentication required")
+            return
+        if not isinstance(params.get("cwd"), str):
+            self._error(msg_id, -32602, "Invalid params: missing 'cwd'")
             return
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"

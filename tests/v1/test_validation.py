@@ -233,6 +233,18 @@ def test_find_unknown_root_keys_on_a_non_dict_object_returns_empty() -> None:
     assert validation.find_unknown_root_keys("InitializeResponse", "not a dict") == []
 
 
+def test_find_unknown_error_keys_permits_code_message_data() -> None:
+    error = {"code": -32601, "message": "Method not found", "data": {"method": "_x"}}
+    assert validation.find_unknown_error_keys(error) == []
+
+
+def test_find_unknown_error_keys_flags_meta_and_custom_fields() -> None:
+    # `Error` is the one spec type without `_meta`, so it is flagged like any other extra key.
+    error = {"code": -32601, "message": "Method not found", "_meta": {}, "details": "x"}
+    assert validation.find_unknown_error_keys(error) == ["_meta", "details"]
+    assert validation.find_unknown_error_keys("not a dict") == []
+
+
 # --- registry completeness ---
 
 
