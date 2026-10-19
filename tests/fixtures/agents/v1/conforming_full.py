@@ -31,6 +31,7 @@ CAPABILITIES = {
         "resume": {},
         "close": {},
         "additionalDirectories": {},
+        "systemPrompt": {},
     },
     "promptCapabilities": {
         "image": True,

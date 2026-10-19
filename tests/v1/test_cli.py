@@ -37,8 +37,11 @@ _MANDATORY_IDS = {
     "ACP-SCHEMA-001",
     "ACP-SESSION-001",
     "ACP-SESSION-002",
+    "ACP-SESSION-003",
     "ACP-PROMPT-001",
     "ACP-PROMPT-002",
+    "ACP-PROMPT-003",
+    "ACP-PROMPT-004",
     "ACP-CANCEL-001",
     "ACP-CANCEL-002",
     "ACP-CONFIG-003",
@@ -47,13 +50,17 @@ _MANDATORY_IDS = {
     "ACP-CLIENTCAP-001",
     "ACP-CLIENTCAP-002",
     "ACP-CLIENTCAP-003",
+    "ACP-CLIENTCAP-004",
+    "ACP-CLIENTCAP-005",
+    "ACP-CLIENTCAP-006",
+    "ACP-CLIENTCAP-007",
     "ACP-EXT-001",
 }
 _ADVISORY_IDS = {
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-005",
     "ACP-INIT-004",
-    "ACP-PROMPT-003",
+    "ACP-SESSION-004",
     "ACP-LOAD-003",
     "ACP-DELETE-002",
     "ACP-META-001",
@@ -81,9 +88,13 @@ _CAPABILITY_IDS = {
     "ACP-LIST-001",
     "ACP-LIST-002",
     "ACP-DELETE-001",
+    "ACP-DELETE-003",
     "ACP-CLOSE-001",
     "ACP-CLOSE-002",
     "ACP-ADDDIRS-001",
+    "ACP-SYSPROMPT-001",
+    "ACP-SYSPROMPT-002",
+    "ACP-SYSPROMPT-003",
     "ACP-MODES-001",
     "ACP-MODES-002",
     "ACP-CONFIG-001",
@@ -422,7 +433,8 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
     symmetric, not "always `False` for a v1 run".
 
     v1's own MANDATORY/ADVISORY tests that judge a result's *shape* against v1's rules
-    (`ACP-INIT-002`/`004`, `ACP-META-001`, `ACP-PROMPT-001`, `ACP-SCHEMA-001`/`002`) call their
+    (`ACP-INIT-002`/`004`, `ACP-META-001`, `ACP-PROMPT-001`/`003`/`004`, `ACP-SCHEMA-001`/`002`,
+    `ACP-SESSION-003`/`004`) call their
     own `skip_if_version_mismatch` twin (`tck.v1.conformance._helpers`) right after obtaining
     the `initialize` result, mirroring v2's `test_initialize.py`/`test_batch.py`/
     `test_transport.py` pattern -- so they SKIP with the `VERSION-MISMATCH:` marker here too,
@@ -442,8 +454,12 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-INIT-004",
         "ACP-META-001",
         "ACP-PROMPT-001",
+        "ACP-PROMPT-003",
+        "ACP-PROMPT-004",
         "ACP-SCHEMA-001",
         "ACP-SCHEMA-002",
+        "ACP-SESSION-003",
+        "ACP-SESSION-004",
     }:
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
 
@@ -583,9 +599,10 @@ def test_duplicate_session_id_fails_session_002_only():
         assert statuses.get(req_id) == "PASS", f"{req_id} should still PASS:\n{result.stdout}"
 
 
-def test_bad_stop_reason_fails_prompt_001_and_schema_001_only():
+def test_bad_stop_reason_fails_prompt_001_003_and_schema_001_only():
     """`bad_stop_reason.py` replies `stopReason: "done"` for any non-`__hang__` prompt, which
-    directly breaks ACP-PROMPT-001 and ACP-SCHEMA-001. It does *not* hang for the cancel tests'
+    directly breaks ACP-PROMPT-001, ACP-PROMPT-003 (the resource_link prompt also needs a valid
+    `stopReason`), and ACP-SCHEMA-001. It does *not* hang for the cancel tests'
     prompt text either (only `__hang__` triggers that), so `session/cancel` always loses the
     race against its immediate (if invalid) reply -- ACP-CANCEL-001/002 SKIP as "cancellation
     not exercised" rather than cascading into a FAIL."""
@@ -593,7 +610,7 @@ def test_bad_stop_reason_fails_prompt_001_and_schema_001_only():
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
-    expected_fails = {"ACP-PROMPT-001", "ACP-SCHEMA-001"}
+    expected_fails = {"ACP-PROMPT-001", "ACP-PROMPT-003", "ACP-SCHEMA-001"}
     for req_id in expected_fails:
         assert statuses.get(req_id) == "FAIL", result.stdout
     for req_id in _CANCEL_IDS | {"ACP-AUTH-003"}:
@@ -1247,3 +1264,105 @@ def test_auth_method_not_advertised_skips_without_authenticating(tmp_path):
     report = json.loads(report_path.read_text())
     for req_id in ("ACP-SESSION-001", "ACP-AUTH-003"):
         assert "not one of the ids advertised" in _skip_message(report, req_id)
+
+
+# --- session/prompt audit fixtures: each trips exactly the id(s) in its docstring ---
+
+
+def _output_fail_ids(output: str) -> set[str]:
+    return {req_id for req_id, status in _table_statuses(output).items() if status == "FAIL"}
+
+
+def test_rejects_mcp_servers_fails_session_003_only():
+    """`rejects_mcp_servers.py` errors on any non-empty `mcpServers`; ACP-SESSION-004 SKIPs on
+    the failed prerequisite rather than double-reporting it."""
+    result = _run_cli("rejects_mcp_servers.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-SESSION-003"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-SESSION-004") == "SKIPPED", result.stdout
+
+
+def test_ignores_mcp_servers_fails_advisory_session_004_only():
+    """`ignores_mcp_servers.py` accepts but never launches stdio MCP servers -- an ADVISORY
+    (SHOULD) failure, so the run stays CONFORMANT."""
+    result = _run_cli("ignores_mcp_servers.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _output_fail_ids(result.stdout) == {"ACP-SESSION-004"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-SESSION-003") == "PASS", result.stdout
+
+
+def test_client_gated_update_fixtures_fail_only_their_own_clientcap_id():
+    """One fixture per client-gated `session/update` kind; the compaction one only sends it
+    during `session/load` replay, proving replay is covered."""
+    for fixture, expected in (
+        ("emits_notice_unadvertised.py", "ACP-CLIENTCAP-004"),
+        ("replays_compaction_unadvertised.py", "ACP-CLIENTCAP-005"),
+        ("emits_plan_update_unadvertised.py", "ACP-CLIENTCAP-006"),
+        ("emits_subagent_update_unadvertised.py", "ACP-CLIENTCAP-007"),
+    ):
+        result = _run_cli(fixture)
+        assert result.returncode != 0, f"{fixture}:\n{result.stdout}"
+        assert _output_fail_ids(result.stdout) == {expected}, f"{fixture}:\n{result.stdout}"
+
+
+def test_relative_tool_call_path_fails_prompt_004_only():
+    result = _run_cli("relative_tool_call_path.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-PROMPT-004"}, result.stdout
+
+
+def test_delete_keeps_listing_fails_delete_003_only():
+    result = _run_cli("delete_keeps_listing.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-DELETE-003"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-DELETE-001", "ACP-DELETE-002", "ACP-LIST-001", "ACP-LIST-002"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_refusing_to_delete_an_active_session_skips_delete_001_and_003():
+    """Deleting an active session is implementation-defined; without `close` to end it first,
+    an error SKIPs instead of failing a conforming agent."""
+    result = _run_cli("refuses_deleting_active_session.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    assert statuses.get("ACP-DELETE-001") == "SKIPPED", result.stdout
+    assert statuses.get("ACP-DELETE-003") == "SKIPPED", result.stdout
+    assert statuses.get("ACP-DELETE-002") == "PASS", result.stdout
+    assert "deleting an active session is implementation-defined" in result.stdout, result.stdout
+
+
+def test_system_prompt_lenient_fails_sysprompt_002_and_003():
+    result = _run_cli("system_prompt_lenient.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-SYSPROMPT-002", "ACP-SYSPROMPT-003"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-SYSPROMPT-001") == "PASS", result.stdout
+
+
+def test_system_prompt_rejected_fails_sysprompt_001_only():
+    result = _run_cli("system_prompt_rejected.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-SYSPROMPT-001"}, result.stdout
+
+
+def test_boolean_option_on_set_fails_config_003_only():
+    """The boolean option is hidden from `session/new` but leaked by `set_config_option`."""
+    result = _run_cli("boolean_option_on_set.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-CONFIG-003"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-CONFIG-001") == "PASS", result.stdout
+    assert statuses.get("ACP-CONFIG-002") == "PASS", result.stdout
+
+
+def test_late_state_updates_pass_cancel_002_and_load_002():
+    """`late_state_updates.py` sends `session_info_update` after each prompt response (including
+    a cancelled one) and `available_commands_update` after each load response. Those kinds are
+    allowed outside a turn, so ACP-CANCEL-002/LOAD-002 PASS and the run stays CONFORMANT."""
+    result = _run_cli("late_state_updates.py", cancel_prompt="__hang__")
+    assert result.returncode == 0, result.stdout + result.stderr
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    for req_id in ("ACP-CANCEL-001", "ACP-CANCEL-002", "ACP-LOAD-001", "ACP-LOAD-002"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"

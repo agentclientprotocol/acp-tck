@@ -21,10 +21,11 @@ from typing import Any
 
 import pytest
 
-from tck.common.harness import AgentExited, AgentTimeout
+from tck.common.harness import AgentExited, AgentTimeout, Direction
+from tck.common.plugin import capability_is_supported
 from tck.v1.validation import validate_agent_response
 
-from ._helpers import connected_agent, quiet_period, skip_if_auth_gated
+from ._helpers import connected_agent, quiet_period, session_update_kind, skip_if_auth_gated
 
 
 async def _new_session_full_result(agent, cwd, *, timeout):
@@ -111,6 +112,8 @@ async def test_set_mode_succeeds_and_update_uses_currentModeId(agent_launch, tmp
         assert isinstance(msg, dict) and "result" in msg, (
             f"session/set_mode did not succeed: {entry.text!r}"
         )
+        issues = validate_agent_response("session/set_mode", msg)
+        assert not issues, f"session/set_mode result failed schema validation: {issues!r}"
 
         def _is_mode_update(candidate_entry) -> bool:
             candidate = candidate_entry.parsed
@@ -223,6 +226,8 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
             f"session/set_config_option did not succeed: {entry.text!r}"
         )
+        issues = validate_agent_response("session/set_config_option", msg)
+        assert not issues, f"session/set_config_option result failed schema validation: {issues!r}"
         returned = msg["result"].get("configOptions")
         assert isinstance(returned, list), (
             f"session/set_config_option result.configOptions must be an array, got {returned!r}"
@@ -245,18 +250,89 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
         )
 
 
+def _boolean_options(config_options: Any) -> list[Any]:
+    if not isinstance(config_options, list):
+        return []
+    return [opt for opt in config_options if isinstance(opt, dict) and opt.get("type") == "boolean"]
+
+
+async def _result_of(agent, method: str, params: dict[str, Any], *, timeout: float) -> dict[str, Any]:
+    """The `result` object of `method`, or `{}` if it errored -- an error is another
+    requirement's finding; CONFIG-003 only inspects payloads that were actually sent."""
+    req_id = await agent.send_request(method, params)
+    entry = await agent.wait_for_response(req_id, timeout=timeout)
+    msg = entry.parsed
+    result = msg.get("result") if isinstance(msg, dict) else None
+    return result if isinstance(result, dict) else {}
+
+
 @pytest.mark.requirement("ACP-CONFIG-003")
-async def test_no_boolean_config_option_without_client_capability(agent_launch, tmp_path):
-    """ACP-CONFIG-003 (MANDATORY, Req 33). Connects with `clientCapabilities: {}` explicitly
-    (no `session.configOptions.boolean`) and asserts no `type: "boolean"` option is present.
-    Passes vacuously if the agent has no config options at all, or none of type boolean."""
+async def test_no_boolean_config_option_without_client_capability(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-CONFIG-003 (MANDATORY). Connects with `clientCapabilities: {}` explicitly (no
+    `session.configOptions.boolean`) and asserts no `type: "boolean"` option appears in any
+    `configOptions` payload: `session/new`'s result, a `session/set_config_option` result (when
+    a select option has an alternative value), `session/load`/`session/resume` results (when
+    advertised), and any `config_option_update` seen on the connection. Passes vacuously if the
+    agent has no config options at all, or none of type boolean."""
+    init_result = agent_initialize_result.result or {}
+    timeout = agent_launch.default_timeout
     # `client_capabilities={}` is already the default; passed explicitly so this reads as a
     # deliberate no-capability connection, not an accident of today's default.
     async with connected_agent(agent_launch, client_capabilities={}) as agent:
-        result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
-        config_options = result.get("configOptions") or []
-        boolean_options = [opt for opt in config_options if isinstance(opt, dict) and opt.get("type") == "boolean"]
-        assert not boolean_options, (
-            "agent advertised type='boolean' configOptions without the client advertising "
-            f"clientCapabilities.session.configOptions.boolean: {boolean_options!r}"
+        result = await _new_session_full_result(agent, tmp_path, timeout=timeout)
+        session_id = result["sessionId"]
+        payloads: dict[str, Any] = {"session/new": result.get("configOptions")}
+
+        select = next(
+            (
+                opt
+                for opt in result.get("configOptions") or []
+                if isinstance(opt, dict) and opt.get("type") != "boolean" and "id" in opt
+            ),
+            None,
         )
+        alternatives = [
+            value
+            for value in _flatten_select_values((select or {}).get("options") or [])
+            if value != (select or {}).get("currentValue")
+        ]
+        if alternatives:
+            set_result = await _result_of(
+                agent,
+                "session/set_config_option",
+                {"sessionId": session_id, "configId": select["id"], "value": alternatives[0]},
+                timeout=timeout,
+            )
+            payloads["session/set_config_option"] = set_result.get("configOptions")
+        if capability_is_supported(init_result, "agentCapabilities.loadSession", boolean=True):
+            load_result = await _result_of(
+                agent,
+                "session/load",
+                {"sessionId": session_id, "cwd": str(tmp_path), "mcpServers": []},
+                timeout=timeout,
+            )
+            payloads["session/load"] = load_result.get("configOptions")
+        if capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.resume"):
+            resume_result = await _result_of(
+                agent,
+                "session/resume",
+                {"sessionId": session_id, "cwd": str(tmp_path), "mcpServers": []},
+                timeout=timeout,
+            )
+            payloads["session/resume"] = resume_result.get("configOptions")
+
+        payloads["config_option_update"] = [
+            option
+            for entry in agent.transcript
+            if entry.direction is Direction.RECEIVED
+            and session_update_kind(entry) == "config_option_update"
+            for option in _boolean_options(entry.parsed["params"]["update"].get("configOptions"))
+        ]
+
+    offending = {source: found for source, options in payloads.items() if (found := _boolean_options(options))}
+    assert not offending, (
+        "agent sent type='boolean' configOptions without the client advertising "
+        f"clientCapabilities.session.configOptions.boolean: {offending!r}"
+    )
