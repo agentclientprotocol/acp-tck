@@ -2028,7 +2028,7 @@ def test_resume_always_errors_all_resume_rows_skip_together():
     """`resume_always_errors.py` advertises `capabilities.session: {}` but always errors on
     `session/resume` with a plain `-32603`, never `-32601` (Method not found, which
     `obtain_resumable_session` treats as a hard FAIL). All three of
-    `obtain_resumable_session`'s routes (create-then-resume, list-then-resume, close-then-resume)
+    `obtain_resumable_session`'s routes (create-then-resume, close-then-resume, list-then-resume)
     end in the same `session/resume` call, so all three are exhausted identically here, and
     every test that routes through it -- `ACP-RESUME-201..209` and `ACP-ADDDIRS-202` -- must
     SKIP together with the same "no resumable session obtainable" reason, never hard-FAIL:
@@ -2059,6 +2059,36 @@ def test_resume_always_errors_all_resume_rows_skip_together():
         "ACP-ADDDIRS-202",
     ):
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
+
+
+def test_resume_lists_foreign_session_is_never_resumed():
+    """`resume_lists_foreign_session.py` lists only a session under a foreign `cwd` (ignoring the
+    `cwd` filter -- FAILs `ACP-LIST-202`/`203`) and resumes only that session. The list route
+    must skip it, so no route succeeds and every resume-dependent row SKIPs; resuming it would
+    PASS them instead, and the TCK would then prompt into the operator's session."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "resume_lists_foreign_session.py",
+        protocol_version=2,
+        k="session_capabilities",
+    )
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-LIST-202", "ACP-LIST-203"}, result.stdout
+    for req_id in (
+        "ACP-RESUME-201",
+        "ACP-RESUME-202",
+        "ACP-RESUME-203",
+        "ACP-RESUME-204",
+        "ACP-RESUME-205",
+        "ACP-RESUME-206",
+        "ACP-RESUME-207",
+        "ACP-RESUME-208",
+        "ACP-RESUME-209",
+    ):
+        assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
+    assert "session/list has no session created in the TCK's own cwd" in result.stdout
 
 
 def test_resume_no_state_snapshot_fails_resume_206_only():

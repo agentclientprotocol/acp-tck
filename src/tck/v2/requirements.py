@@ -933,7 +933,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "`session/resume` (no `replayFrom`) of a session obtained via the harness's "
-            "three-route strategy succeeds with a schema-valid object result. `-32601` FAILs "
+            "three-route strategy (create, create-then-close, then a `session/list` entry created in "
+            "the TCK's own `cwd`) succeeds with a schema-valid object result. `-32601` FAILs "
             "(B3 makes `session/resume` a baseline-mandatory method); any other error from all "
             "three routes SKIPs -- no route is spec-guaranteed to work."
         ),

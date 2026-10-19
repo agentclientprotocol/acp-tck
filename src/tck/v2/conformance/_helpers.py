@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import pytest
@@ -356,42 +357,65 @@ async def set_config_option(
 
 async def _route_just_created(
     agent: AgentProcess, cwd: Any, timeout: float | None
-) -> tuple[str, Any]:
+) -> str:
     """Route (1): the session `session/new` just created on this same fresh connection."""
-    return await new_session(agent, cwd, timeout=timeout), cwd
-
-
-async def _route_from_list(
-    agent: AgentProcess, cwd: Any, timeout: float | None
-) -> tuple[str, Any]:
-    """Route (3): the first entry `session/list` reports on this fresh connection, resumed with
-    that entry's own `cwd` -- resume is only defined when the request `cwd` matches the
-    session's (session-setup.mdx:409). Raises if the list is empty or malformed -- a fresh,
-    just-opened connection has no session of its own yet, so this route only ever helps against
-    an agent that persists sessions across connections."""
-    entry = await list_sessions(agent, timeout=timeout)
-    msg = entry.parsed
-    result = msg.get("result") if isinstance(msg, dict) else None
-    sessions = result.get("sessions") if isinstance(result, dict) else None
-    if not sessions:
-        raise RuntimeError(f"session/list returned no sessions to resume: {entry.text!r}")
-    first = sessions[0]
-    session_id = first.get("sessionId") if isinstance(first, dict) else None
-    if not isinstance(session_id, str) or not session_id:
-        raise RuntimeError(f"session/list's first entry has no usable sessionId: {first!r}")
-    listed_cwd = first.get("cwd")
-    if not isinstance(listed_cwd, str) or not listed_cwd:
-        raise RuntimeError(f"session/list's first entry has no usable cwd: {first!r}")
-    return session_id, listed_cwd
+    return await new_session(agent, cwd, timeout=timeout)
 
 
 async def _route_after_close(
     agent: AgentProcess, cwd: Any, timeout: float | None
-) -> tuple[str, Any]:
+) -> str:
     """Route (2): create a session, `session/close` it, then attempt to resume the closed id."""
     session_id = await new_session(agent, cwd, timeout=timeout)
     await close_session(agent, session_id, timeout=timeout)
-    return session_id, cwd
+    return session_id
+
+
+_LIST_ROUTE_MAX_PAGES = 5
+
+
+def _same_dir(listed: Any, cwd: Any) -> bool:
+    """True if `listed` is an absolute path naming the same directory as `cwd` (resolved, so
+    e.g. macOS `/var` vs `/private/var` compare equal)."""
+    if not isinstance(listed, str) or not Path(listed).is_absolute():
+        return False
+    return Path(listed).resolve() == Path(cwd).resolve()
+
+
+async def _route_from_list(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> str:
+    """Route (3), tried last: a `session/list` entry whose `cwd` is the TCK's own `cwd`, resumed
+    with that same `cwd` (resume is only defined when the request `cwd` matches the session's,
+    session-setup.mdx:409).
+
+    Safety: `cwd` is a per-test temporary directory, so a session listed under it was created by
+    the TCK. Entries with any other `cwd` -- possibly the operator's own saved sessions -- are
+    skipped, never resumed or prompted into. The request carries the `cwd` filter, but the
+    entries are re-checked client-side because an agent may ignore the filter. Follows
+    `nextCursor` for a few pages, then gives up.
+
+    A fresh connection has no session of its own, so this only succeeds against an agent that
+    persists sessions across connections -- the ones routes (1)/(2) created earlier in the same
+    test. Raises if no matching entry is found."""
+    cursor: str | None = None
+    for _ in range(_LIST_ROUTE_MAX_PAGES):
+        entry = await list_sessions(agent, cwd=cwd, cursor=cursor, timeout=timeout)
+        msg = entry.parsed
+        result = msg.get("result") if isinstance(msg, dict) else None
+        sessions = result.get("sessions") if isinstance(result, dict) else None
+        if not isinstance(sessions, list):
+            raise RuntimeError(f"session/list returned no usable sessions array: {entry.text!r}")
+        for listed in sessions:
+            if not isinstance(listed, dict) or not _same_dir(listed.get("cwd"), cwd):
+                continue
+            session_id = listed.get("sessionId")
+            if isinstance(session_id, str) and session_id:
+                return session_id
+        cursor = result.get("nextCursor")
+        if not isinstance(cursor, str) or not cursor:
+            break
+    raise RuntimeError(f"session/list has no session created in the TCK's own cwd {str(cwd)!r}")
 
 
 async def _attempt_resumable_route(
@@ -399,10 +423,10 @@ async def _attempt_resumable_route(
     cwd: Any,
     timeout: float | None,
     errors: list[str],
-    route_setup: Callable[[AgentProcess, Any, float | None], Awaitable[tuple[str, Any]]],
-) -> tuple[AgentProcess, str, TranscriptEntry, Any, contextlib.AsyncExitStack] | None:
+    route_setup: Callable[[AgentProcess, Any, float | None], Awaitable[str]],
+) -> tuple[AgentProcess, str, TranscriptEntry, contextlib.AsyncExitStack] | None:
     """Try one route of `obtain_resumable_session` on its own fresh connection. Returns
-    `(agent, session_id, resume_response_entry, resume_cwd, stack)` -- with the connection
+    `(agent, session_id, resume_response_entry, stack)` -- with the connection
     detached from local cleanup via `stack.pop_all()` -- on success, so the caller can keep it
     open; `None` on any failure, with the connection already closed and the failure appended to
     `errors`.
@@ -415,9 +439,9 @@ async def _attempt_resumable_route(
     attempt_stack = contextlib.AsyncExitStack()
     try:
         agent = await attempt_stack.enter_async_context(connected_agent(launch))
-        session_id, resume_cwd = await route_setup(agent, cwd, timeout)
+        session_id = await route_setup(agent, cwd, timeout)
         req_id = await agent.send_request(
-            "session/resume", {"sessionId": session_id, "cwd": str(resume_cwd)}
+            "session/resume", {"sessionId": session_id, "cwd": str(cwd)}
         )
         entry = await agent.wait_for_response(req_id, timeout=timeout)
     except pytest.skip.Exception:
@@ -430,7 +454,7 @@ async def _attempt_resumable_route(
 
     msg = entry.parsed
     if isinstance(msg, dict) and isinstance(msg.get("result"), dict):
-        return agent, session_id, entry, resume_cwd, attempt_stack.pop_all()
+        return agent, session_id, entry, attempt_stack.pop_all()
 
     if isinstance(msg, dict) and isinstance(msg.get("error"), dict):
         code = msg["error"].get("code")
@@ -457,13 +481,16 @@ async def obtain_resumable_session(
     initialized agent, a session id this helper found `session/resume` accepts, the response
     entry from the successful probe call that proved it (`ACP-RESUME-201` uses this directly
     rather than issuing a second, redundant `session/resume` for the same id), and the `cwd`
-    that probe used -- `cwd` itself for routes (1)/(2), the listed session's own `cwd` for
-    route (3). Callers resuming again must pass `resume_cwd`, not their own `cwd`.
+    that probe used -- always `cwd` itself, since resume requires the session's own `cwd` and
+    every route only ever resumes a session the TCK created in `cwd`.
 
     No route for obtaining a legally resumable session id is spec-guaranteed. Tries, in order,
     each on its own fresh connection: (1) resuming the session `session/new` just created on this
-    same connection; (3) `session/list`'s first entry; (2) creating a session, `session/close`-ing it,
-    then resuming it. `pytest.skip(...)`s with all three routes' recorded errors if none
+    same connection; (2) creating a session, `session/close`-ing it, then resuming it; (3) a
+    `session/list` entry created in `cwd` (see `_route_from_list` -- last, and only matching
+    `cwd`, so the operator's own saved sessions are never touched; it only succeeds against an
+    agent that persists sessions across connections, such as the ones routes (1)/(2) created
+    earlier in this same call). `pytest.skip(...)`s with all three routes' recorded errors if none
     succeeds -- *unless* `session/resume` itself ever answered `-32601`, which is instead a hard
     `pytest.fail(...)` (see `_attempt_resumable_route`).
 
@@ -473,18 +500,18 @@ async def obtain_resumable_session(
     """
     errors: list[str] = []
     result = None
-    for route_setup in (_route_just_created, _route_from_list, _route_after_close):
+    for route_setup in (_route_just_created, _route_after_close, _route_from_list):
         result = await _attempt_resumable_route(launch, cwd, timeout, errors, route_setup)
         if result is not None:
             break
     if result is None:
         pytest.skip(
             "no resumable session obtainable via any of the three routes (create-then-resume, "
-            "list-then-resume, close-then-resume): " + "; ".join(errors)
+            "close-then-resume, list-then-resume): " + "; ".join(errors)
         )
-    agent, session_id, entry, resume_cwd, stack = result
+    agent, session_id, entry, stack = result
     try:
-        yield agent, session_id, entry, resume_cwd
+        yield agent, session_id, entry, cwd
     finally:
         await stack.aclose()
 
