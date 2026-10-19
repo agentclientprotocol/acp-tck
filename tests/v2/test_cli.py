@@ -776,16 +776,12 @@ def test_no_session_capability_agent_is_conformant(tmp_path):
     """`no_session_capability.py` advertises `capabilities: {}` and answers `session/*` with
     `-32601`. Only `initialize` is unconditional in v2, so every MANDATORY row PASSes (falling
     back to `_`-prefixed probes where it would otherwise use a session) or SKIPs for lack of
-    evidence, and every session row SKIPs "not advertised".
-
-    `test_session_config.py` is deselected: its tests still call `session/new` without a
-    `capabilities.session` gate (owned by the session-config tests, not this slice)."""
+    evidence, and every session row SKIPs "not advertised"."""
     report_path = tmp_path / "report.json"
     result = _run_cli(
         FIXTURES_DIR_V2,
         "no_session_capability.py",
         protocol_version=2,
-        k="not session_config",
         report_json=str(report_path),
     )
     assert result.returncode == 0, result.stdout + result.stderr
@@ -797,7 +793,7 @@ def test_no_session_capability_agent_is_conformant(tmp_path):
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
     report = json.loads(report_path.read_text())
     by_id = {r["id"]: r for r in report["requirements"]}
-    for req_id in ("ACP-SESSION-001", "ACP-ENUM-203", "ACP-PROMPT-201"):
+    for req_id in ("ACP-SESSION-001", "ACP-ENUM-203", "ACP-PROMPT-201", "ACP-CONFIG-201"):
         assert by_id[req_id]["status"] == "SKIPPED", by_id[req_id]
         assert all("not advertised" in t["message"] for t in by_id[req_id]["tests"]), by_id[req_id]
 

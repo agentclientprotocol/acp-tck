@@ -495,6 +495,7 @@ async def v2_only_agent(
     *,
     capabilities: dict[str, Any] | None = None,
     yield_result: bool = False,
+    require_session: bool = False,
 ) -> AsyncIterator[Any]:
     """Shared "fresh connection, manual `initialize` routed through `SPEC.initialize_params()`,
     `VERSION-MISMATCH:` skip unless the agent actually negotiated v2, then `login_if_needed`"
@@ -504,7 +505,9 @@ async def v2_only_agent(
     `test_transport.py`.
 
     Yields the connected `AgentProcess`, or `(agent, init_result)` when `yield_result=True` (for
-    callers that need to inspect the negotiated result, e.g. a capabilities marker)."""
+    callers that need to inspect the negotiated result, e.g. a capabilities marker).
+    `require_session=True` SKIPs like the capability gate unless `capabilities.session` is
+    advertised, for callers that use `session/*` without a capability marker."""
     async with connected_agent(agent_launch, handshake=False) as agent:
         params = SPEC.initialize_params()
         if capabilities is not None:
@@ -516,6 +519,8 @@ async def v2_only_agent(
             f"initialize did not return a result object: {entry.text!r}"
         )
         skip_if_version_mismatch(msg["result"])
+        if require_session and not advertises_session(msg["result"]):
+            pytest.skip("capability 'capabilities.session' not advertised by the agent under test")
         await login_if_needed(agent, timeout=agent_launch.startup_timeout)
         if yield_result:
             yield agent, msg["result"]

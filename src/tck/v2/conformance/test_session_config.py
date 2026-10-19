@@ -109,7 +109,7 @@ def _assert_config_options_shape_valid(config_options: list[Any]) -> None:
 @pytest.mark.requirement("ACP-CONFIG-201")
 async def test_config_options_shape_is_valid(agent_launch, tmp_path):
     """ACP-CONFIG-201."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -144,7 +144,7 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
     asserted: whether every originally-advertised id is still there (a change may remove
     dependent options) and whether the changed entry echoes the sent value (an agent may
     reflect a dependent adjustment instead)."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -198,7 +198,7 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
     `VERSION-MISMATCH:` skip). The resume itself goes through `obtain_resumable_session`, whose
     successful probe response is the one validated -- so a resume error SKIPs exactly as it
     does for `ACP-RESUME-201`."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         if not result.get("configOptions"):
             pytest.skip("session/new returned no configOptions")
@@ -215,7 +215,7 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
 @pytest.mark.requirement("ACP-CONFIG-204")
 async def test_select_config_option_current_value_is_declared(agent_launch, tmp_path):
     """ACP-CONFIG-204."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -239,7 +239,7 @@ async def test_config_option_update_is_complete_if_observed(agent_launch, tmp_pa
     `config_option_update` is ever observed during the run. Whether the update still carries
     every originally-advertised id is recorded, not asserted: the current state may drop
     options."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
