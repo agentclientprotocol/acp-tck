@@ -737,6 +737,15 @@ class AsksPermissionAgent(ConformingAgent):
         outcome = (result.get("outcome") or {}).get("outcome")
         self._after_permission(pending["session_id"], outcome)
 
+    def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # ACP-CLOSE-203: closing a session blocked on our permission request cancels that work,
+        # so its cancelled idle goes out before the close response; a late reply is ignored.
+        pending = self._pending_permission
+        if pending is not None and pending["session_id"] == params.get("sessionId"):
+            self._pending_permission = None
+            self._send_idle_update(pending["session_id"], "cancelled")
+        super()._handle_close_session(msg_id, params)
+
     def _after_permission(self, session_id: Any, outcome: Any) -> None:
         """Hook: a `cancelled` outcome ends the blocked work without resuming (`idle` straight
         from `requires_action`); anything else reports `running` before resuming output
