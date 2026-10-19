@@ -11,6 +11,10 @@ Wire shapes are taken from the vendored `src/tck/v2/schema/schema.unstable.json`
 not memory, before changing a field name. Two v2-specific renames vs. v1: the agent's own identity
 is `info` (not `agentInfo`) and its capabilities are `capabilities` (not `agentCapabilities`).
 
+Negotiates as a v2-only endpoint (`_handle_initialize`): a malformed `protocolVersion` gets
+`-32602`, one below 2 gets `-32022` with `data: {requested, supported: [2]}` and leaves the
+connection uninitialized (later requests are refused), and 2 or above selects 2.
+
 Implements the full `capabilities.session` baseline (advertising `session` even as `{}` commits
 the agent to `session/new`, `session/list`, `session/resume`, `session/close`, `session/prompt`,
 `session/cancel`, `session/update`), plus:
@@ -76,25 +80,30 @@ import sys
 from typing import Any
 
 PROTOCOL_VERSION = 2
+UNSUPPORTED_PROTOCOL_VERSION = -32022
 
-# v2 negotiation rule (initialization.mdx:96-100): if the agent supports the requested version, it
-# echoes it back; otherwise it answers with its own latest supported version. This fixture
-# supports both defined versions, 1 and 2.
-_SUPPORTED_VERSIONS = frozenset({1, 2})
+
+def _is_well_formed_protocol_version(value: Any) -> bool:
+    """`ProtocolVersion` is a uint16; anything else is malformed and gets `-32602`."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 65535
 
 
 class ConformingAgent:
     """A minimal, deterministic, offline ACP v2 agent.
 
-    Handles `initialize` (honest version negotiation across `_SUPPORTED_VERSIONS`) and the full
+    Handles `initialize` (v2-only negotiation, see `_handle_initialize`) and the full
     `capabilities.session` baseline: `session/new`, `session/list`, `session/resume`,
     `session/close`, `session/prompt`, `session/cancel`. Any other method gets `-32601`. Exits
     cleanly on stdin EOF (the `for` loop over `sys.stdin` simply ends).
 
     `capabilities`, if given, is merged verbatim into the `initialize` result's `capabilities`
-    (empty by default: `{}` still commits the agent to the baseline session methods per the
-    vendored schema's own description text on `AgentCapabilities.session`).
+    (empty by default, which advertises no `session` support; `{"session": {}}` commits the agent
+    to the baseline session methods).
     """
+
+    # Versions reported in a `-32022`'s `data.supported`. A subclass that answers other versions
+    # itself (e.g. `conforming_dual.py`) widens this.
+    SUPPORTED_VERSIONS: tuple[int, ...] = (PROTOCOL_VERSION,)
 
     # `sessionUpdate` kinds that belong to the replayable conversation history, split into
     # whole-message and their `_chunk` counterparts.
@@ -141,6 +150,9 @@ class ConformingAgent:
         # `capabilities.auth.terminal` (see `_initialize_result`/`_client_wants_terminal_auth`
         # below) -- `ACP-AUTH-202`'s own gate, so this never leaks onto the default connection.
         self._terminal_auth_method = terminal_auth_method
+        # Set by a `-32022` rejection: the connection is not initialized, so every later
+        # non-`initialize` request is refused and notifications are ignored.
+        self._init_rejected = False
 
     def run(self) -> None:
         for raw_line in sys.stdin:
@@ -195,6 +207,10 @@ class ConformingAgent:
             self._handle_response(message)
             return
         params = message.get("params") or {}
+        if self._init_rejected and method != "initialize":
+            if "id" in message:
+                self._error(message["id"], -32600, "Invalid Request: connection not initialized")
+            return
         if "id" in message:
             self._handle_request(method, message["id"], params)
         elif method == "session/cancel":
@@ -217,7 +233,7 @@ class ConformingAgent:
 
     def _handle_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
         if method == "initialize":
-            self._reply(msg_id, self._initialize_result(params))
+            self._handle_initialize(msg_id, params)
         elif method == "session/new":
             self._handle_new_session(msg_id, params)
         elif method == "session/list":
@@ -239,11 +255,37 @@ class ConformingAgent:
         else:
             self._error(msg_id, -32601, "Method not found")
 
-    def _initialize_result(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _handle_initialize(self, msg_id: Any, params: dict[str, Any]) -> None:
+        """v2-only negotiation (initialization.mdx:98-117): a malformed `protocolVersion` gets
+        `-32602`; one below 2 gets `-32022` and leaves the connection uninitialized; 2 or above
+        selects 2."""
         requested = params.get("protocolVersion")
-        negotiated = requested if requested in _SUPPORTED_VERSIONS else PROTOCOL_VERSION
+        if not _is_well_formed_protocol_version(requested):
+            self._error(msg_id, -32602, "Invalid params: protocolVersion must be an integer in 0..65535")
+            return
+        if requested < PROTOCOL_VERSION:
+            self._reject_unsupported_version(msg_id, requested)
+            return
+        self._reply(msg_id, self._initialize_result(params))
+
+    def _reject_unsupported_version(self, msg_id: Any, requested: int) -> None:
+        self._init_rejected = True
+        self._write(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": UNSUPPORTED_PROTOCOL_VERSION,
+                    "message": "Unsupported protocol version",
+                    "data": {"requested": requested, "supported": list(self.SUPPORTED_VERSIONS)},
+                },
+            }
+        )
+
+    def _initialize_result(self, params: dict[str, Any]) -> dict[str, Any]:
+        """The v2 `initialize` result (protocolVersion 2)."""
         result: dict[str, Any] = {
-            "protocolVersion": negotiated,
+            "protocolVersion": PROTOCOL_VERSION,
             "capabilities": dict(self._capabilities),
             "info": {"name": self._agent_name, "version": "0.0.0"},
         }

@@ -201,6 +201,11 @@ def pytest_configure(config: pytest.Config) -> None:
         "semantics) any present, non-null value counts; pass boolean=True for capabilities that "
         "are gated by `=== true` rather than by presence (e.g. 'agentCapabilities.loadSession').",
     )
+    config.addinivalue_line(
+        "markers",
+        "negotiation: this test judges version negotiation itself, so it still runs when the "
+        "cached `initialize` was rejected with -32022 (every other test SKIPs VERSION-MISMATCH).",
+    )
     config.stash[TEST_STATES_KEY] = {}
 
 
@@ -340,7 +345,18 @@ class InitializeOutcome:
 
     result: dict[str, Any] | None
     error_message: str | None
+    error: dict[str, Any] | None = None
+    """The JSON-RPC `error` object, when `initialize` was answered with one."""
 
+    @property
+    def version_rejected(self) -> bool:
+        """Whether `initialize` was rejected as an unsupported protocol version (`-32022`)."""
+        return isinstance(self.error, dict) and self.error.get("code") == UNSUPPORTED_PROTOCOL_VERSION
+
+
+UNSUPPORTED_PROTOCOL_VERSION = -32022
+"""Error code for "no supported version <= requested" (v2 draft initialization.mdx:100). Version
+agnostic: a v2-only agent answers a v1 client's `initialize` with it too."""
 
 AGENT_INIT_KEY = pytest.StashKey[InitializeOutcome]()
 
@@ -372,7 +388,12 @@ def agent_initialize_result(request: pytest.FixtureRequest) -> InitializeOutcome
             return InitializeOutcome(None, str(exc))
         msg = entry.parsed
         if not isinstance(msg, dict) or "result" not in msg:
-            return InitializeOutcome(None, f"initialize did not return a result: {entry.text!r}")
+            error = msg.get("error") if isinstance(msg, dict) else None
+            return InitializeOutcome(
+                None,
+                f"initialize did not return a result: {entry.text!r}",
+                error if isinstance(error, dict) else None,
+            )
         return InitializeOutcome(msg["result"], None)
 
     outcome = asyncio.run(_run())
@@ -416,6 +437,7 @@ def _tck_capability_gate(request: pytest.FixtureRequest) -> None:
     path = marker.args[0]
     boolean = marker.kwargs.get("boolean", False)
     outcome: InitializeOutcome = request.getfixturevalue("agent_initialize_result")
+    _skip_if_version_rejected(request, outcome)
     if outcome.result is None:
         # `initialize` is mandatory: if it failed, a capability-gated test is a real failure,
         # not "not applicable" -- SKIPPED would let a broken agent score falsely well.
@@ -436,6 +458,27 @@ def _tck_capability_gate(request: pytest.FixtureRequest) -> None:
         )
     if not capability_is_supported(outcome.result, path, boolean=boolean):
         pytest.skip(f"capability {path!r} not advertised by the agent under test")
+
+
+def _skip_if_version_rejected(request: pytest.FixtureRequest, outcome: InitializeOutcome) -> None:
+    """SKIP with the `VERSION-MISMATCH:` marker when the cached `initialize` was rejected with
+    `-32022`: the agent does not implement this run's protocol version (e.g. a v2-only agent
+    under the v1 suite) and leaves the connection uninitialized, so nothing version-specific can
+    be judged. Tests marked `negotiation` are exempt -- they judge the negotiation itself."""
+    if not outcome.version_rejected or request.node.get_closest_marker("negotiation") is not None:
+        return
+    spec = request.config.stash[VERSION_SPEC_KEY]
+    data = outcome.error.get("data") if outcome.error is not None else None
+    pytest.skip(
+        f"{_VERSION_MISMATCH_MARKER} initialize(protocolVersion={spec.protocol_version!r}) was "
+        f"rejected with {UNSUPPORTED_PROTOCOL_VERSION} (unsupported protocol version, data="
+        f"{data!r}) -- the agent does not implement this protocol version"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _tck_version_rejection_gate(request: pytest.FixtureRequest) -> None:
+    _skip_if_version_rejected(request, request.getfixturevalue("agent_initialize_result"))
 
 
 # --- process registration, for failure diagnostics ---
@@ -872,7 +915,8 @@ def pytest_terminal_summary(
                 "hint: one or more version-dependent tests were SKIPPED because this connection "
                 "did not negotiate the protocol version this run targets (initialize negotiated "
                 "a different protocolVersion than --protocol-version requested, in either "
-                "direction) -- the agent under test may simply not support this version; the "
+                "direction, or rejected it with -32022) -- the agent under test may simply not "
+                "support this version; the "
                 "run cannot be scored CONFORMANT without a successful negotiation.",
                 bold=True,
                 yellow=True,

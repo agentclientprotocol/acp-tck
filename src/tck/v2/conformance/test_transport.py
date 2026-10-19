@@ -20,22 +20,28 @@ import pytest
 
 from tck.common.harness import Direction
 
-from ._helpers import new_session, run_prompt, v2_only_agent
+from ._helpers import advertises_session, new_session, run_prompt, v2_only_agent
 
 
 async def _drive_full_exchange(agent_launch, tmp_path):
     """Run initialize (skips on version mismatch, see module docstring) -> `session/new` -> one
     ordinary `session/prompt` turn to completion, and return the full RECEIVED transcript,
     collected only after the agent process has fully closed so post-response stdout garbage is
-    included (mirrors v1's `_drive_full_exchange`)."""
-    async with v2_only_agent(agent_launch) as agent:
-        session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
-        await run_prompt(
-            agent,
-            session_id,
-            [{"type": "text", "text": "hello é中文 \U0001f600"}],
-            timeout=agent_launch.default_timeout,
-        )
+    included (mirrors v1's `_drive_full_exchange`). An agent that does not advertise
+    `capabilities.session` gets a `_tck/does_not_exist` request instead of the session traffic
+    (only `initialize` is unconditional in v2)."""
+    async with v2_only_agent(agent_launch, yield_result=True) as (agent, init_result):
+        if advertises_session(init_result):
+            session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+            await run_prompt(
+                agent,
+                session_id,
+                [{"type": "text", "text": "hello é中文 \U0001f600"}],
+                timeout=agent_launch.default_timeout,
+            )
+        else:
+            req_id = await agent.send_request("_tck/does_not_exist")
+            await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
     return [entry for entry in agent.transcript if entry.direction is Direction.RECEIVED]
 
 

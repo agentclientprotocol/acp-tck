@@ -42,10 +42,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`initialize` succeeds with a non-error JSON-RPC result. Judged the same "
             "regardless of the negotiated `protocolVersion` -- unlike `ACP-INIT-203`/"
-            "`ACP-INIT-204`/`ACP-SCHEMA-001`, this row does not SKIP on a version mismatch, "
-            "since a MUST-succeed handshake applies even to an agent that honestly negotiates "
-            "down to a version other than 2. Schema/shape validation of the result -- "
-            "including v2-only requirements -- lives in `ACP-SCHEMA-001`."
+            "`ACP-INIT-204`/`ACP-SCHEMA-001`, this row does not SKIP when the agent negotiates "
+            "down to a version other than 2. It does SKIP with `VERSION-MISMATCH` when the "
+            "request of 2 is rejected with `-32022` (the agent has no version <= 2). "
+            "Schema/shape validation of the result lives in `ACP-SCHEMA-001`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:24,51; "
@@ -57,46 +57,107 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "The result's `protocolVersion` is an integer, and the negotiated value is either "
-            "the requested `2`, or -- if the agent does not support `2` -- the agent's own "
-            "latest supported version (never something else, and never the literal request "
-            "echoed back unconditionally)."
+            "The agent selects the highest version it supports that is <= the requested one: "
+            "the result for a request of `2` has an integer `protocolVersion` no higher than "
+            "2, and equals what a request of `65535` selects whenever that is <= 2. A `-32022` "
+            "for the request of 2 is accepted only if the `65535` probe selects nothing <= 2."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:96-100"),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:98; "
+            "schema/v2/schema.unstable.json#/$defs/InitializeResponse/properties/protocolVersion"
+        ),
     ),
     Requirement(
         id="ACP-INIT-003",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "An unsupported-version probe (`protocolVersion: 65535`) still succeeds, and the "
-            "returned `protocolVersion` is not the literal unsupported request echoed back -- "
-            "it is at least the agent's own latest supported version (as observed from a "
-            "reference `protocolVersion: 2` request on the same agent)."
+            "A request for a version above every supported one (`protocolVersion: 65535`, "
+            "in range for the uint16 `ProtocolVersion`) succeeds -- neither `-32602` nor "
+            "`-32022` applies -- and selects the agent's highest supported version: not the "
+            "request echoed back, and at least what the same agent selects for a request of "
+            "`2`."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98 (highest supported version at or below the request)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:98,117; "
+            "schema/v2/schema.unstable.json#/$defs/ProtocolVersion"
+        ),
     ),
     Requirement(
         id="ACP-INIT-202",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "A downgrade probe (`protocolVersion: 1`) still succeeds -- never a JSON-RPC error "
-            "-- and the returned `protocolVersion` is `1` or `2` (the agent's own latest "
-            "supported version when it does not support `1`). Kept MANDATORY -- debatable, "
-            "since both reference SDKs' strict v2-only endpoints violate this by construction "
-            "-- to honor the spec's unambiguous text, the same posture already taken for "
-            "`ACP-INIT-003`."
+            "A v1-shaped request (`protocolVersion: 1`, no `info`) either succeeds selecting a "
+            "version <= 1 (a dual-stack or v1 agent) or is rejected with `-32022` (a v2-only "
+            "agent). Selecting 2 or higher FAILs, and so does `-32602`, which is reserved for "
+            "a malformed `protocolVersion`."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98,100"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98,100,117"),
+    ),
+    Requirement(
+        id="ACP-INIT-205",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A request with no supported version at or below it (`protocolVersion: 0`) either "
+            "selects 0 or is rejected with `-32022` whose `data` is an object with "
+            "`requested` (the requested version) and `supported` (an integer array with no "
+            "entry <= the request, containing 2). Any `-32022` to `ACP-INIT-202`'s v1 request "
+            "is held to the same `data` shape. Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:100-115; "
+            "schema/v2/schema.unstable.json#/$defs/ErrorCode"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-206",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A missing, non-integer (`\"2\"`, `null`), or out-of-range (`-1`, `65536`) "
+            "`protocolVersion` is answered with `-32602` -- never a result, and not `-32022`. "
+            "Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
+            "handshake selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:117; "
+            "schema/v2/schema.unstable.json#/$defs/ProtocolVersion"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-207",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "After rejecting `initialize` with `-32022`, the agent does not begin "
+            "version-specific operations on that connection: a following `session/new` does "
+            "not succeed, and the agent sends no `session/*` or `elicitation/*` message. "
+            "SKIPPED when no `-32022` is observed, and with `VERSION-MISMATCH` unless the main "
+            "handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:117"),
+    ),
+    Requirement(
+        id="ACP-INIT-208",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A successful response uses the selected version's response shape: when the v1 "
+            "request selects 1, the result has no v2-only root `info` or `capabilities` key. "
+            "SKIPPED when the agent does not select 1."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98"),
     ),
     Requirement(
         id="ACP-INIT-203",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "The `initialize` result's `info` is present and is an object with non-empty "
-            "string `name` and `version` (`title` optional, may be `null`) -- REQUIRED in v2, "
+            "The `initialize` result's `info` is present and is an object with string `name` "
+            "and `version` (`title` optional, may be `null`) -- REQUIRED in v2, "
             "unlike v1's optional `agentInfo`. A v2-only shape requirement: SKIPPED with a "
             "`VERSION-MISMATCH` note whenever the agent honestly negotiated down to a version "
             "other than 2, since it never claimed its result was v2-shaped."
@@ -669,10 +730,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A response's `id` echoes the request `id` exactly (integer and string ids), "
-            "including for responses delivered inside a batch response array."
+            "including for responses to a batch's requests -- whether the agent returns them "
+            "as one array (`ACP-BATCH-204`'s SHOULD) or as separate lines, and whether they "
+            "are results or errors."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:80-81; "
+            "docs/protocol/v2/draft/transports.mdx:76-81; "
             "schema/v2/schema.unstable.json#/anyOf/3/items (AgentBatchResponse.items -> Result/Error, both required id); "
             "docs/protocol/v2/draft/overview.mdx:201 (JSON-RPC envelope fields, including `id`, "
             "follow the base JSON-RPC 2.0 spec, where id-echo is itself normative)"
@@ -729,13 +792,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "An empty array (`[]`) receives a single Invalid Request (`-32600`) response "
-            "object with `id: null` -- never a response array. The RFC-2119 force of "
-            "`transports.mdx`'s own prose is on the *sender* ('a Batch rpc call SHOULD be "
-            "an Array containing at least one item') -- the *receiver* rule tested here is "
-            "still treated as MUST because it is JSON-RPC 2.0 §6's own base envelope rule "
-            "(adopted wholesale by `overview.mdx`'s 'ACP messages follow JSON-RPC 2.0'), not "
-            "a new SHOULD ACP invented -- unlike `ACP-BATCH-203`'s per-entry rule below, which "
-            "*is* ACP's own unqualified prose and stays ADVISORY."
+            "object with `id: null` -- never a response array. ACP's own text is MUST ('The "
+            "batch MUST be an array with at least one value. An empty array receives a single "
+            "`Invalid Request` response'), matching JSON-RPC 2.0 §6's single Response object."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/transports.mdx:69-71; "
@@ -772,18 +831,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "The agent SHOULD reply to a batch containing at least one request with one array "
-            "of the corresponding response objects, emitted after all batch requests have been "
-            "processed."
+            "of the corresponding response objects (results or errors), emitted after all "
+            "batch requests have been processed."
         ),
         citation=_cite("docs/protocol/v2/draft/transports.mdx:74-77"),
     ),
     Requirement(
         id="ACP-BATCH-205",
-        tier=Tier.ADVISORY,
+        tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
             "Responses MAY appear in any order in the array; the sender SHOULD match them to "
-            "requests by `id`, never by position."
+            "requests by `id`, never by position. Binds the TCK as sender, not the agent -- "
+            "record-only, always SKIPped (the TCK's own batch checks match by `id`)."
         ),
         citation=_cite("docs/protocol/v2/draft/transports.mdx:80-81"),
     ),
@@ -1208,7 +1268,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal; "
             "schema/v2/schema.unstable.json#/$defs/AuthCapabilities; "
-            "schema/v2/schema.unstable.json#/$defs/TerminalAuthCapabilities"
+            "schema/v2/schema.unstable.json#/$defs/TerminalAuthCapabilities; "
+            "docs/protocol/v2/draft/authentication.mdx:151-154"
         ),
     ),
     Requirement(
@@ -1235,12 +1296,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:authMethods",
         text=(
             "Given `--auth-method <id>` naming a non-`terminal`, advertised `methodId`, "
-            "`auth/login` does not answer `-32601` (Method not found), and a subsequent "
-            "`session/new` does not fail with `-32000`. Mirrors v1's `ACP-AUTH-003` exactly, "
-            "method renamed `authenticate` -> `auth/login`. SKIPs when `--auth-method` was not "
-            "given, or the agent advertises no `authMethods`."
+            "`auth/login` does not answer `-32601` (Method not found) -- an agent advertising "
+            "`authMethods` MUST implement it -- and, when `capabilities.session` is "
+            "advertised, a subsequent `session/new` does not fail with `-32000`. Mirrors v1's "
+            "`ACP-AUTH-003`, method renamed `authenticate` -> `auth/login`. SKIPs when "
+            "`--auth-method` was not given, the agent advertises no `authMethods`, or "
+            "`auth/login` fails with any other error."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/authentication.mdx:51-54; "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthRequest/required (`methodId`); "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthResponse"
         ),
@@ -1252,7 +1316,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/new` does not fail with `-32000` (AUTHENTICATION_REQUIRED) when "
             "`authMethods` is empty or absent. Re-cites v1's `ACP-AUTH-005`/AUTH-A1; not "
-            "promoted."
+            "promoted. SKIPs unless `capabilities.session` is advertised."
         ),
         citation=_cite("docs/protocol/v2/draft/schema.mdx:785 (-32000 is a MAY, not a MUST)"),
     ),
@@ -1284,7 +1348,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal/properties/env (\"Names MUST be "
-            "unique\"); schema/v2/schema.unstable.json#/$defs/EnvVariable"
+            "unique\"); schema/v2/schema.unstable.json#/$defs/EnvVariable; "
+            "docs/protocol/v2/draft/authentication.mdx:201-203"
         ),
     ),
     Requirement(
@@ -1438,18 +1503,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     ),
     Requirement(
         id="ACP-ENUM-203",
-        tier=Tier.ADVISORY,
-        capability=None,
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
         text=(
             "A `_`-prefixed value at an open-enum site the client sends (here: "
-            "`session/request_permission`'s answered `outcome`) is tolerated by the agent -- "
-            "no crash, and the prompt itself is not answered with `-32602`. Untestable how the "
-            "agent treats the value internally; only survival is checked. Kept ADVISORY, not "
-            "promoted to CAPABILITY under the session-baseline tiering rule -- the "
-            "corresponding test is still "
-            "`@pytest.mark.capability(\"capabilities.session\")`-gated for its own SKIP."
+            "`session/request_permission`'s answered `outcome`, whose schema has an `other` "
+            "fallback) is accepted by the agent -- no crash, the prompt is not answered with "
+            "`-32602`, and the turn still reaches idle. Untestable how the agent treats the "
+            "value internally; only survival is checked."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:228,235"),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:49-53,228,235; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome/anyOf/2"
+        ),
     ),
     Requirement(
         id="ACP-EXT-001",
@@ -1461,7 +1527,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the citation moves to v2's extensibility docs. The `-32601` code specifically "
             "remains `ACP-JSONRPC-004`'s separate ADVISORY concern."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:156,165,178,222"),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:156,165,178,222; "
+            "docs/protocol/v2/draft/overview.mdx:193 (JSON-RPC 2.0 §4: every request gets a response)"
+        ),
     ),
     Requirement(
         id="ACP-META-001",
@@ -1480,8 +1549,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Every `_meta` value the agent emits, anywhere in the transcript, is a JSON "
-            "object or `null` -- never a string/array/number. New in v2; all 106 `_meta` "
-            "sites in the schema are typed `[\"object\", \"null\"]`."
+            "object or `null` -- never a string/array/number. New in v2; every `_meta` site "
+            "in the schema is typed `[\"object\", \"null\"]`."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/properties/_meta"
@@ -1508,7 +1577,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`result.capabilities._meta`, not as an unrecognized root key of `capabilities` "
             "itself."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:93,126-149"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:239-245"),
+    ),
+    Requirement(
+        id="ACP-EXT-204",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent ignores unknown fields in the client's `initialize` params -- at the "
+            "`capabilities` root, nested under `capabilities.auth`, and in `info` -- rather than "
+            "rejecting the request, and an unknown field advertises nothing (no `type: "
+            "\"terminal\"` auth method appears). The probe names are not `_`-prefixed, so they "
+            "stand in for fields of a future ACP revision."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:134; "
+            "docs/protocol/v2/draft/extensibility.mdx:49-50,148"
+        ),
     ),
     Requirement(
         id="ACP-EXT-203",
@@ -1565,10 +1650,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Stderr byte count is recorded for a human reading the report. Re-cited from v1 "
-            "unchanged: the spec has nothing to say about stderr in either version."
+            "Stderr byte count is recorded for a human reading the report. The agent MAY "
+            "write UTF-8 logging to stderr, so there is nothing to assert."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:26"),
     ),
     Requirement(
         id="ACP-INFO-PARSE-001",

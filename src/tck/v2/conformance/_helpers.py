@@ -625,8 +625,8 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
     `init_result`'s negotiated `protocolVersion` is this suite's own `PROTOCOL_VERSION` (2).
 
     An agent that honestly negotiates down to a lower version (e.g. a v1-only agent answering `1`
-    to a v2 client, per the two-branch negotiation rule -- see `ACP-INIT-201`) is not thereby
-    "broken": the negotiation itself is judged normally by `ACP-INIT-001`/`003`/`201`/`202`, which
+    to a v2 client -- see `ACP-INIT-201`) is not thereby
+    "broken": the negotiation itself is judged normally by `ACP-INIT-001`/`003`/`201`/`202`/`208`, which
     only ever assert on the negotiation outcome, never on the *shape* of the result payload. But
     a test that goes on to assert v2-only shape requirements against that same result -- `info`
     being REQUIRED (`ACP-INIT-203`), capability markers being objects (`ACP-INIT-204`), or the
@@ -648,6 +648,15 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
             f"{PROTOCOL_VERSION!r} -- this agent does not speak v2, so its result cannot be "
             "judged against v2-only shape requirements"
         )
+
+
+def advertises_session(init_result: dict[str, Any] | None) -> bool:
+    """Whether an `initialize` result advertises `capabilities.session` (object marker: present
+    and non-null). Only `initialize` is unconditional in v2, so a test that is not
+    `capabilities.session`-gated must not call `session/*` methods unless this holds; it falls
+    back to `_`-prefixed probe traffic instead. A v1-shaped result has no `capabilities`."""
+    capabilities = init_result.get("capabilities") if isinstance(init_result, dict) else None
+    return isinstance(capabilities, dict) and capabilities.get("session") is not None
 
 
 def cancel_race_peek(timeout: float) -> float:

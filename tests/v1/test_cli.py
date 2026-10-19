@@ -424,7 +424,7 @@ def test_version_mismatch_errors_fails_init_003_only():
 
 def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch():
     """`v2_only_honest.py` (`tests/fixtures/agents/v2/`) always answers `initialize` with
-    `protocolVersion: 2`, honestly, regardless of what a v1 client requests -- the mirror image
+    `protocolVersion: 2`, regardless of what a v1 client requests -- the mirror image
     of `tests/v2/test_cli.py`'s `test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_
     version_mismatch`. `_tck_capability_gate` (`tck.common.plugin`) is version-agnostic: it fires
     whenever the negotiated `protocolVersion` does not equal this run's own, in either
@@ -462,6 +462,30 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-SESSION-004",
     }:
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
+
+
+def test_v2_only_agent_rejecting_v1_with_32022_is_blocked_by_version_mismatch(tmp_path):
+    """A spec-conforming v2-only agent (`tests/fixtures/agents/v2/conforming.py`) rejects the v1
+    `initialize` with `-32022` and leaves the connection uninitialized, so no v1 requirement --
+    including the `ACP-INIT-*` negotiation rows, whose v1 rule ("respond with the latest version
+    it supports") the v2 draft supersedes for agents implementing v2 -- can be judged. Every id
+    SKIPs with the `VERSION-MISMATCH:` marker (`tck.common.plugin`'s version-rejection gate) and
+    the run is blocked, not a wall of FAILs."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "conforming.py", fixture_dir=FIXTURES_DIR_V2, protocol_version=1, report_json=str(report_path)
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "VERDICT: NOT CONFORMANT (blocked by version mismatch)" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _ALL_IDS <= set(statuses), result.stdout
+    assert set(statuses.values()) == {"SKIPPED"}, result.stdout
+
+    report = json.loads(report_path.read_text())
+    assert report["verdict"]["blocked_by_version_mismatch"] is True, report["verdict"]
+    for requirement in report["requirements"]:
+        assert all("-32022" in t["message"] and "VERSION-MISMATCH:" in t["message"] for t in requirement["tests"]), requirement
 
 
 def test_router_requires_info_passes_everything():

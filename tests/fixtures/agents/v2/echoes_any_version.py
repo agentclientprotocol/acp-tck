@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Non-conforming fixture: echoes back whatever `protocolVersion` the client requested in
-`initialize`, instead of returning its own latest supported version for a version it does not
-support. Mirrors `tests/fixtures/agents/v1/echoes_any_version.py`.
+"""Non-conforming fixture: echoes back any requested `protocolVersion` above 2 instead of
+selecting its own highest supported version (initialization.mdx:98). Requests of 2 or below go
+through the base negotiation unchanged. Mirrors `tests/fixtures/agents/v1/echoes_any_version.py`.
 
-FAILs exactly `ACP-INIT-003` and `ACP-INIT-201`: both probe the unsupported-version (`65535`)
-case and assert the response does not echo it back verbatim. Does NOT fail `ACP-INIT-202` (the
-downgrade probe, `protocolVersion: 1`): echoing `1` back is itself a valid answer to that probe
-(`1` is one of the two accepted values), so that assertion is unaffected by this defect.
+FAILs exactly `ACP-INIT-003`, whose `65535` probe must not be echoed. `ACP-INIT-201` does not
+FAIL: its equality check only applies when the `65535` probe selects a version at or below 2.
 
 Advertises `capabilities: {"session": {}}`, same as `conforming.py`, so `ACP-SESSION-001/002`
 PASS (session/new is otherwise unmodified and correct) instead of SKIPping "not advertised".
@@ -23,6 +21,7 @@ from _base import ConformingAgent  # noqa: E402
 
 class EchoesAnyVersionAgent(ConformingAgent):
     def _initialize_result(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Only reached for a well-formed request of 2 or above (see `_handle_initialize`).
         requested = params.get("protocolVersion")
         return {
             "protocolVersion": requested,

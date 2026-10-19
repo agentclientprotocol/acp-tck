@@ -64,6 +64,13 @@ failing, and the run is forced NOT CONFORMANT (`Verdict.blocked_by_version_misma
 zero FAILs. Requirements that judge only the negotiation *outcome* are judged normally and PASS
 on an honest downgrade.
 
+If the main `initialize` is instead *rejected* with `-32022` (unsupported protocol version --
+e.g. a v2-only agent under the default v1 suite), the connection is not initialized, so
+`tck.common.plugin`'s version-rejection gate SKIPs every test with `VERSION-MISMATCH:` and the
+run is blocked the same way. Only tests marked `@pytest.mark.negotiation` still run (v2's
+version-tolerant `ACP-INIT-*` rows); v1 marks none, because its negotiation rule ("respond with
+the latest version it supports") predates `-32022` and cannot judge a v2-only agent.
+
 **Exit code** is the four-status verdict, not pytest's own: `0` iff `verdict.conformant` (no
 MANDATORY FAIL/NOT_TESTED, no CAPABILITY FAIL, no auth/version-mismatch block), `1` otherwise.
 
