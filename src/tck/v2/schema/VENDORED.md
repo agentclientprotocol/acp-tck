@@ -3,9 +3,9 @@
 `schema.unstable.json` and `meta.unstable.json` in this directory are verbatim copies of the ACP
 v2 JSON Schema, vendored from the spec's source-of-truth repository. Do not hand-edit them.
 
-**v2 is Draft** (schema version `2.0.0-alpha.9` as of the commit below) -- unlike `tck/v1/schema/`,
-this directory should be expected to churn: field shapes, capability markers, and even method
-inventories may still change upstream before v2 stabilizes.
+**v2 is Draft** (schema version `2.0.0-alpha.9` as of the commit below) -- unlike v1, where
+only RFD-gated additions churn, even v2's core may still change upstream before it stabilizes:
+field shapes, capability markers, and even method inventories.
 
 **v2 verifies entirely against the draft (unstable) schema.** The upstream repo publishes both a
 stable `schema.json`/`meta.json` and a superset `schema.unstable.json`/`meta.unstable.json` that
