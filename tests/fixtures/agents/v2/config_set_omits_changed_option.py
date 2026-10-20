@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Non-conforming fixture: `session/set_config_option` returns only the changed entry instead of
-the complete `configOptions` list. Advertises the same `select`-type `verbosity` option as
-`conforming_full.py` *plus* a second, unrelated `boolean` option (`debug_mode`) -- a single
-config option would make a "partial" reply indistinguishable from a "complete" one, since the
-one changed entry would trivially be the whole list.
+"""Non-conforming fixture: `session/set_config_option` applies the change but replies with a
+`configOptions` list that omits the option it just changed. Advertises the same `select`-type
+`verbosity` option as `conforming_full.py` plus a second, unrelated `boolean` option
+(`debug_mode`), so the reply is still a non-empty array.
 
-FAILs exactly `ACP-CONFIG-202` (the complete-list check: setting `verbosity` drops `debug_mode`
-from the response). `ACP-CONFIG-201`/`203`/`204` (shape validity on `session/new`/
-`session/resume`, and the select `currentValue` membership check) and `ACP-CONFIG-206` (vacuous
-unless a `config_option_update` is separately observed, which this fixture never sends) are
-unaffected. Mirrors v1's `config_partial_list.py`.
+FAILs exactly `ACP-CONFIG-202`: the post-change list must contain the changed `configId`. A reply
+that merely drops *other* options is not a defect -- a change may remove dependent options.
+`ACP-CONFIG-201`/`203`/`204` (shape validity on `session/new`/`session/resume`, and the select
+`currentValue` membership check) and `ACP-CONFIG-206` (vacuous unless a `config_option_update`
+is observed, which this fixture never sends) are unaffected.
 """
 
 import sys
@@ -40,20 +39,20 @@ _DEBUG_MODE_OPTION = {
 }
 
 
-class ConfigPartialListAgent(ConformingAgent):
+class ConfigSetOmitsChangedOptionAgent(ConformingAgent):
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
         config_id = params.get("configId")
-        value = params.get("value")
         for option in self._config_options:
             if option.get("configId") == config_id:
-                option["currentValue"] = value
-                self._reply(msg_id, {"configOptions": [dict(option)]})
+                option["currentValue"] = params.get("value")
+                others = [dict(o) for o in self._config_options if o.get("configId") != config_id]
+                self._reply(msg_id, {"configOptions": others})
                 return
         self._error(msg_id, -32602, "Invalid params: unknown configId")
 
 
 def main() -> None:
-    ConfigPartialListAgent(
+    ConfigSetOmitsChangedOptionAgent(
         capabilities={"session": {}},
         config_options=[dict(_VERBOSITY_OPTION), dict(_DEBUG_MODE_OPTION)],
     ).run()

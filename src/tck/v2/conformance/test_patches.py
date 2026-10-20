@@ -23,7 +23,6 @@ from typing import Any
 
 import pytest
 
-from ..protocol import STOP_REASON_CANCELLED, STOP_REASON_REFUSAL
 from ._helpers import connected_agent, new_session, run_prompt
 
 _PROMPT_TEXT = "hi"
@@ -41,14 +40,16 @@ _MESSAGE_KINDS = frozenset(
 
 
 def _update_dicts(turn) -> list[dict[str, Any]]:
-    """Every `session/update`'s inner `update` object observed during `turn`, in wire order."""
+    """The inner `update` objects of `turn`'s `session/update`s for the prompted session, in wire
+    order. Entity ids are unique per session (prompt-lifecycle.mdx:66-68), so a child session's
+    updates must not be mixed in."""
     result: list[dict[str, Any]] = []
     for _, entry in turn.updates:
         msg = entry.parsed
         if not isinstance(msg, dict):
             continue
         params = msg.get("params")
-        if not isinstance(params, dict):
+        if not isinstance(params, dict) or params.get("sessionId") != turn.session_id:
             continue
         update = params.get("update")
         if isinstance(update, dict):
@@ -73,7 +74,7 @@ async def _drive_one_turn(agent_launch, tmp_path):
 async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path):
     """ACP-PATCH-201 (CAPABILITY). Every `*_message*`/`*_thought*` update carries a non-empty
     string `messageId` -- the keyed-upsert identity the whole message-patch family hinges on
-    (`prompt-lifecycle.mdx:277`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
+    (`prompt-lifecycle.mdx:406`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
     `schema/v2/schema.unstable.json#/$defs/UserMessage`,
     `schema/v2/schema.unstable.json#/$defs/AgentMessage`,
     `schema/v2/schema.unstable.json#/$defs/AgentThought`)."""
@@ -92,7 +93,7 @@ async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path)
 @pytest.mark.capability("capabilities.session")
 async def test_two_prompts_receive_distinct_message_ids(agent_launch, tmp_path):
     """ACP-PATCH-203 (CAPABILITY). Two `session/prompt`s with identical content receive two
-    distinct `messageId`s (`prompt-lifecycle.mdx:184`) -- the v2 analogue of v1's
+    distinct `messageId`s (`prompt-lifecycle.mdx:298`) -- the v2 analogue of v1's
     `duplicate_session_id.py` defect pattern, applied to message ids instead of session ids."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -151,7 +152,7 @@ async def test_tool_call_updates_carry_tool_call_id(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
     """ACP-PATCH-205 (CAPABILITY). Every `plan_update.plan`, including an unknown/`_`-prefixed
-    variant, carries `planId` (`agent-plan.mdx:137`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
+    variant, carries `planId` (`agent-plan.mdx:143`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     plan_updates = [u for u in _update_dicts(turn) if u.get("sessionUpdate") == "plan_update"]
     if not plan_updates:
@@ -167,18 +168,14 @@ async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
 
 @pytest.mark.requirement("ACP-PATCH-206")
 @pytest.mark.capability("capabilities.session")
-async def test_terminal_updates_have_absolute_cwd_and_unique_ids(agent_launch, tmp_path):
-    """ACP-PATCH-206 (CAPABILITY). A supplied `terminal_update.cwd` is absolute; a `terminalId`
-    is never reused for a different terminal within a session (`tool-calls.mdx:407-413,441-442`).
-    "Reused for a different terminal" is judged as: the same `terminalId` observed with a
-    different `cwd` than the first time it was seen (the only client-observable signal that two
-    distinct terminals were assigned the same id -- v2 has no separate terminal "create" call to
-    compare against)."""
+async def test_terminal_updates_have_absolute_cwd(agent_launch, tmp_path):
+    """ACP-PATCH-206 (CAPABILITY). Every `terminal_update` carries a `terminalId`, and a supplied
+    `cwd` is absolute (`tool-calls.mdx:439-447`). `cwd` is a patch field, so a later concrete
+    value may replace an earlier one."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     terminal_updates = [u for u in _update_dicts(turn) if u.get("sessionUpdate") == "terminal_update"]
     if not terminal_updates:
         pytest.skip("no terminal_update observed during this turn")
-    first_cwd_by_id: dict[str, str] = {}
     for update in terminal_updates:
         terminal_id = update.get("terminalId")
         assert isinstance(terminal_id, str) and terminal_id, (
@@ -186,26 +183,17 @@ async def test_terminal_updates_have_absolute_cwd_and_unique_ids(agent_launch, t
         )
         cwd = update.get("cwd")
         if cwd is None:
-            continue  # cwd is a patch field: omitted means unchanged, nothing new to check
+            continue  # omitted means unchanged; null clears it
         assert isinstance(cwd, str) and os.path.isabs(cwd), (
             f"terminal_update.cwd must be an absolute path, got {cwd!r}"
         )
-        seen_cwd = first_cwd_by_id.get(terminal_id)
-        if seen_cwd is None:
-            first_cwd_by_id[terminal_id] = cwd
-        else:
-            assert cwd == seen_cwd, (
-                f"terminalId {terminal_id!r} was seen with two different cwds "
-                f"({seen_cwd!r}, {cwd!r}) -- terminalIds must not be reused for a different "
-                "terminal within a session"
-            )
 
 
 @pytest.mark.requirement("ACP-PATCH-207")
 @pytest.mark.capability("capabilities.session")
 async def test_terminal_output_chunks_decode_standalone(agent_launch, tmp_path):
     """ACP-PATCH-207 (CAPABILITY). `terminal_output_chunk.data` and `terminal_update.output.data`
-    each decode as standalone RFC 4648 base64 (`tool-calls.mdx:443-448,468-476`) -- a chunk that
+    each decode as standalone RFC 4648 base64 (`tool-calls.mdx:448-449,478-482`) -- a chunk that
     only decodes once concatenated with a previous one is non-conforming."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     updates = _update_dicts(turn)
@@ -273,33 +261,20 @@ async def test_first_tool_call_update_reports_title(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-PATCH-209")
 @pytest.mark.capability("capabilities.session")
 async def test_requires_action_reported_around_permission_request(agent_launch, tmp_path):
-    """ACP-PATCH-209 (ADVISORY). While blocked on a permission response the agent reports
-    `requires_action`, and `running` when it resumes (`prompt-lifecycle.mdx:485`). SKIPs when
-    the turn ends in `refusal`/`cancelled`: a refused or cancelled turn legitimately never
-    resumes foreground work, so there is nothing for the "running again" half of this check to
-    observe."""
+    """ACP-PATCH-209 (ADVISORY). When the agent sends `session/request_permission` for the
+    prompted session during the turn, it reports `requires_action` for that session at some
+    point in the turn (prompt-lifecycle.mdx:773). What follows `requires_action` -- `running` or
+    `idle`, both allowed -- is `ACP-STATE-205`'s concern."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     if not any(
-        isinstance(entry.parsed, dict) and entry.parsed.get("method") == "session/request_permission"
+        isinstance(entry.parsed, dict)
+        and entry.parsed.get("method") == "session/request_permission"
+        and (entry.parsed.get("params") or {}).get("sessionId") == turn.session_id
         for entry in turn.client_requests_seen
     ):
-        pytest.skip("no permission request observed during this turn")
-
-    states = [
-        u.get("state") for u in _update_dicts(turn) if u.get("sessionUpdate") == "state_update"
-    ]
+        pytest.skip("no permission request for the prompted session observed during this turn")
+    states = [update.get("state") for _, update in turn.states]
     assert "requires_action" in states, (
         f"agent sent session/request_permission but never reported state_update "
         f"{{state: 'requires_action'}}; observed states: {states!r}"
-    )
-    if turn.stop_reason in (STOP_REASON_REFUSAL, STOP_REASON_CANCELLED):
-        pytest.skip(
-            f"turn ended with stopReason={turn.stop_reason!r}; the turn never resumed "
-            "foreground work, so there is nothing to check for a 'running' state after "
-            "requires_action"
-        )
-    last_requires_action = max(i for i, s in enumerate(states) if s == "requires_action")
-    assert "running" in states[last_requires_action + 1 :], (
-        f"agent never reported state_update {{state: 'running'}} again after "
-        f"requires_action; observed states: {states!r}"
     )

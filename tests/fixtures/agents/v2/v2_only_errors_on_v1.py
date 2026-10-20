@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Non-conforming fixture: a strict v2-only agent that answers a `protocolVersion: 1` request
-with a JSON-RPC error instead of downgrading gracefully (or answering with its own latest
-supported version), violating the negotiation rule's `N < min(S)` case -- the same shortcut both
-reference SDKs' *strict* v2 endpoints take (see `tck.v2.requirements`'s ACP-INIT-202 docstring).
+"""Non-conforming fixture: a v2-only agent that answers `protocolVersion: 1` with `-32602`
+(Invalid params) instead of `-32022` (Unsupported protocol version). 1 is a well-formed, in-range
+version, so `-32602` is reserved for malformed values (initialization.mdx:100,117) -- the same
+shortcut the Python SDK's v2 endpoint takes.
 
-FAILs exactly `ACP-INIT-202`. Every other `protocolVersion` this fixture is ever asked for in the
-suite is `PROTOCOL_VERSION` (2) or `65535`, both of which still hit the normal, correct
-negotiation path in `ConformingAgent._initialize_result`, so no other requirement is affected.
+FAILs exactly `ACP-INIT-202`. Every other probe (`0`, `2`, `65535`, malformed values) still goes
+through the base negotiation unchanged.
 
 Advertises `capabilities: {"session": {}}`, same as `conforming.py`, so `ACP-SESSION-001/002`
 PASS (session/new is otherwise unmodified and correct) instead of SKIPping "not advertised".

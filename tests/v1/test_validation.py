@@ -184,7 +184,7 @@ def test_meta_field_round_trip_passes() -> None:
 def test_unknown_root_field_is_permitted_by_the_vendored_schema() -> None:
     """The spec's docs (extensibility.mdx) say implementations MUST NOT add custom root
     fields to a spec type, but the vendored JSON Schema itself never sets
-    `additionalProperties: false` anywhere (checked: zero occurrences in schema.json), so it
+    `additionalProperties: false` anywhere (checked: zero occurrences in schema.unstable.json), so it
     cannot enforce this. Document the gap rather than assert a rejection the schema does not
     actually produce.
     """
@@ -233,6 +233,18 @@ def test_find_unknown_root_keys_on_a_non_dict_object_returns_empty() -> None:
     assert validation.find_unknown_root_keys("InitializeResponse", "not a dict") == []
 
 
+def test_find_unknown_error_keys_permits_code_message_data() -> None:
+    error = {"code": -32601, "message": "Method not found", "data": {"method": "_x"}}
+    assert validation.find_unknown_error_keys(error) == []
+
+
+def test_find_unknown_error_keys_flags_meta_and_custom_fields() -> None:
+    # `Error` is the one spec type without `_meta`, so it is flagged like any other extra key.
+    error = {"code": -32601, "message": "Method not found", "_meta": {}, "details": "x"}
+    assert validation.find_unknown_error_keys(error) == ["_meta", "details"]
+    assert validation.find_unknown_error_keys("not a dict") == []
+
+
 # --- registry completeness ---
 
 
@@ -251,6 +263,40 @@ def test_every_client_method_has_a_resolvable_schema() -> None:
     request_and_notification_defs = validation._request_and_notification_method_defs()
     for method in protocol.CLIENT_METHODS:
         assert method in request_and_notification_defs, method
+
+
+# --- draft (unstable) schema ---
+
+
+def test_mcp_message_is_an_agent_request_and_a_client_notification() -> None:
+    """`mcp/message` is in both method tables with a different kind per direction: the agent
+    sends it as a request, the client sends it to the agent as a notification."""
+    assert "mcp/message" in protocol.AGENT_METHODS & protocol.CLIENT_METHODS
+    assert "mcp/message" in protocol.AGENT_NOTIFICATIONS
+    assert "mcp/message" not in protocol.CLIENT_NOTIFICATIONS
+    assert validation._request_and_notification_method_defs()["mcp/message"] == "MessageMcpRequest"
+
+
+def test_agent_mcp_message_request_is_validated_against_the_draft_shape() -> None:
+    valid = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "mcp/message",
+        "params": {"serverId": "srv", "requestId": "r1", "method": "tools/list"},
+    }
+    assert validate_agent_message(valid) == []
+    invalid = {"jsonrpc": "2.0", "id": 7, "method": "mcp/message", "params": {"serverId": "srv"}}
+    assert validate_agent_message(invalid), "missing requestId/method must be flagged"
+
+
+def test_draft_only_prompt_response_field_is_known_and_validated() -> None:
+    """`PromptResponse.usage` is draft-only: optional, recognised as a known root key, and
+    validated against its draft shape when present."""
+    result = {"stopReason": "end_turn", "usage": {"totalTokens": 3, "inputTokens": 1, "outputTokens": 2}}
+    assert validate_agent_response("session/prompt", {"jsonrpc": "2.0", "id": 1, "result": result}) == []
+    assert validation.find_unknown_root_keys("PromptResponse", result) == []
+    bad = {"stopReason": "end_turn", "usage": {"totalTokens": "lots"}}
+    assert validate_agent_response("session/prompt", {"jsonrpc": "2.0", "id": 1, "result": bad})
 
 
 # --- harness integration ---

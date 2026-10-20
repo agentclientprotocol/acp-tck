@@ -27,11 +27,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import pytest
 
-from tck.common.harness import AgentExited, AgentLaunch, AgentProcess, AgentTimeout, TranscriptEntry
+from tck.common.harness import (
+    AgentExited,
+    AgentLaunch,
+    AgentProcess,
+    AgentTimeout,
+    Direction,
+    TranscriptEntry,
+)
 from tck.common.plugin import current_auth_method_id, current_initialize_auth_methods, register_active_process
 
 from .. import SPEC
@@ -225,16 +233,19 @@ async def resume_session(
     session_id: str,
     cwd: Any,
     *,
-    replay_from: dict[str, Any] | None = None,
+    replay_from: Any = None,
     additional_directories: list[str] | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
     timeout: float | None = None,
 ) -> tuple[TranscriptEntry, list[tuple[int, TranscriptEntry]]]:
     """Send `session/resume` and collect every `session/update` notification observed on the
     wire before its response arrives, in wire order -- this *is* the replay stream
-    `ACP-RESUME-202..205` need to inspect. `session/resume`'s response is not an acceptance
+    `ACP-RESUME-202..209` need to inspect. `session/resume`'s response is not an acceptance
     receipt (unlike `session/prompt`'s): it carries the actual result directly, so unlike
     `run_prompt` there is no separate turn-end predicate to wait for, just the matching response.
+
+    `replay_from` is sent verbatim -- even a malformed value, which `ACP-RESUME-208` probes on
+    purpose -- and omitted when `None`.
 
     Returns `(response_entry, updates)`. Any agent -> client request arriving meanwhile (none is
     expected during `session/resume`) is simply left unanswered in the transcript for the caller
@@ -344,33 +355,67 @@ async def set_config_option(
     return await agent.wait_for_response(req_id, timeout=timeout)
 
 
-async def _route_just_created(agent: AgentProcess, cwd: Any, timeout: float | None) -> str:
+async def _route_just_created(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> str:
     """Route (1): the session `session/new` just created on this same fresh connection."""
     return await new_session(agent, cwd, timeout=timeout)
 
 
-async def _route_from_list(agent: AgentProcess, cwd: Any, timeout: float | None) -> str:
-    """Route (3): the first entry `session/list` reports on this fresh connection. Raises if the
-    list is empty or malformed -- a fresh, just-opened connection has no session of its own yet,
-    so this route only ever helps against an agent that persists sessions across connections."""
-    entry = await list_sessions(agent, timeout=timeout)
-    msg = entry.parsed
-    result = msg.get("result") if isinstance(msg, dict) else None
-    sessions = result.get("sessions") if isinstance(result, dict) else None
-    if not sessions:
-        raise RuntimeError(f"session/list returned no sessions to resume: {entry.text!r}")
-    first = sessions[0]
-    session_id = first.get("sessionId") if isinstance(first, dict) else None
-    if not isinstance(session_id, str) or not session_id:
-        raise RuntimeError(f"session/list's first entry has no usable sessionId: {first!r}")
-    return session_id
-
-
-async def _route_after_close(agent: AgentProcess, cwd: Any, timeout: float | None) -> str:
+async def _route_after_close(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> str:
     """Route (2): create a session, `session/close` it, then attempt to resume the closed id."""
     session_id = await new_session(agent, cwd, timeout=timeout)
     await close_session(agent, session_id, timeout=timeout)
     return session_id
+
+
+_LIST_ROUTE_MAX_PAGES = 5
+
+
+def _same_dir(listed: Any, cwd: Any) -> bool:
+    """True if `listed` is an absolute path naming the same directory as `cwd` (resolved, so
+    e.g. macOS `/var` vs `/private/var` compare equal)."""
+    if not isinstance(listed, str) or not Path(listed).is_absolute():
+        return False
+    return Path(listed).resolve() == Path(cwd).resolve()
+
+
+async def _route_from_list(
+    agent: AgentProcess, cwd: Any, timeout: float | None
+) -> str:
+    """Route (3), tried last: a `session/list` entry whose `cwd` is the TCK's own `cwd`, resumed
+    with that same `cwd` (resume is only defined when the request `cwd` matches the session's,
+    session-setup.mdx:409).
+
+    Safety: `cwd` is a per-test temporary directory, so a session listed under it was created by
+    the TCK. Entries with any other `cwd` -- possibly the operator's own saved sessions -- are
+    skipped, never resumed or prompted into. The request carries the `cwd` filter, but the
+    entries are re-checked client-side because an agent may ignore the filter. Follows
+    `nextCursor` for a few pages, then gives up.
+
+    A fresh connection has no session of its own, so this only succeeds against an agent that
+    persists sessions across connections -- the ones routes (1)/(2) created earlier in the same
+    test. Raises if no matching entry is found."""
+    cursor: str | None = None
+    for _ in range(_LIST_ROUTE_MAX_PAGES):
+        entry = await list_sessions(agent, cwd=cwd, cursor=cursor, timeout=timeout)
+        msg = entry.parsed
+        result = msg.get("result") if isinstance(msg, dict) else None
+        sessions = result.get("sessions") if isinstance(result, dict) else None
+        if not isinstance(sessions, list):
+            raise RuntimeError(f"session/list returned no usable sessions array: {entry.text!r}")
+        for listed in sessions:
+            if not isinstance(listed, dict) or not _same_dir(listed.get("cwd"), cwd):
+                continue
+            session_id = listed.get("sessionId")
+            if isinstance(session_id, str) and session_id:
+                return session_id
+        cursor = result.get("nextCursor")
+        if not isinstance(cursor, str) or not cursor:
+            break
+    raise RuntimeError(f"session/list has no session created in the TCK's own cwd {str(cwd)!r}")
 
 
 async def _attempt_resumable_route(
@@ -381,9 +426,10 @@ async def _attempt_resumable_route(
     route_setup: Callable[[AgentProcess, Any, float | None], Awaitable[str]],
 ) -> tuple[AgentProcess, str, TranscriptEntry, contextlib.AsyncExitStack] | None:
     """Try one route of `obtain_resumable_session` on its own fresh connection. Returns
-    `(agent, session_id, resume_response_entry, stack)` -- with the connection detached from
-    local cleanup via `stack.pop_all()` -- on success, so the caller can keep it open; `None` on
-    any failure, with the connection already closed and the failure appended to `errors`.
+    `(agent, session_id, resume_response_entry, stack)` -- with the connection
+    detached from local cleanup via `stack.pop_all()` -- on success, so the caller can keep it
+    open; `None` on any failure, with the connection already closed and the failure appended to
+    `errors`.
 
     A `-32601` from `session/resume` itself is not a route failure to record and move past: `B3`
     makes `session/resume` baseline-mandatory once `capabilities.session` is advertised at all,
@@ -430,16 +476,21 @@ async def _attempt_resumable_route(
 @contextlib.asynccontextmanager
 async def obtain_resumable_session(
     launch: AgentLaunch, cwd: Any, *, timeout: float | None = None
-) -> AsyncIterator[tuple[AgentProcess, str, TranscriptEntry]]:
-    """Yield `(agent, session_id, resume_response_entry)` for a connected, initialized agent, a
-    session id this helper found `session/resume` accepts for `cwd`, and the response entry from
-    the successful probe call that proved it (`ACP-RESUME-201` uses this directly rather than
-    issuing a second, redundant `session/resume` for the same id).
+) -> AsyncIterator[tuple[AgentProcess, str, TranscriptEntry, Any]]:
+    """Yield `(agent, session_id, resume_response_entry, resume_cwd)` for a connected,
+    initialized agent, a session id this helper found `session/resume` accepts, the response
+    entry from the successful probe call that proved it (`ACP-RESUME-201` uses this directly
+    rather than issuing a second, redundant `session/resume` for the same id), and the `cwd`
+    that probe used -- always `cwd` itself, since resume requires the session's own `cwd` and
+    every route only ever resumes a session the TCK created in `cwd`.
 
     No route for obtaining a legally resumable session id is spec-guaranteed. Tries, in order,
     each on its own fresh connection: (1) resuming the session `session/new` just created on this
-    same connection; (3) `session/list`'s first entry; (2) creating a session, `session/close`-ing it,
-    then resuming it. `pytest.skip(...)`s with all three routes' recorded errors if none
+    same connection; (2) creating a session, `session/close`-ing it, then resuming it; (3) a
+    `session/list` entry created in `cwd` (see `_route_from_list` -- last, and only matching
+    `cwd`, so the operator's own saved sessions are never touched; it only succeeds against an
+    agent that persists sessions across connections, such as the ones routes (1)/(2) created
+    earlier in this same call). `pytest.skip(...)`s with all three routes' recorded errors if none
     succeeds -- *unless* `session/resume` itself ever answered `-32601`, which is instead a hard
     `pytest.fail(...)` (see `_attempt_resumable_route`).
 
@@ -449,18 +500,18 @@ async def obtain_resumable_session(
     """
     errors: list[str] = []
     result = None
-    for route_setup in (_route_just_created, _route_from_list, _route_after_close):
+    for route_setup in (_route_just_created, _route_after_close, _route_from_list):
         result = await _attempt_resumable_route(launch, cwd, timeout, errors, route_setup)
         if result is not None:
             break
     if result is None:
         pytest.skip(
             "no resumable session obtainable via any of the three routes (create-then-resume, "
-            "list-then-resume, close-then-resume): " + "; ".join(errors)
+            "close-then-resume, list-then-resume): " + "; ".join(errors)
         )
     agent, session_id, entry, stack = result
     try:
-        yield agent, session_id, entry
+        yield agent, session_id, entry, cwd
     finally:
         await stack.aclose()
 
@@ -471,6 +522,7 @@ async def v2_only_agent(
     *,
     capabilities: dict[str, Any] | None = None,
     yield_result: bool = False,
+    require_session: bool = False,
 ) -> AsyncIterator[Any]:
     """Shared "fresh connection, manual `initialize` routed through `SPEC.initialize_params()`,
     `VERSION-MISMATCH:` skip unless the agent actually negotiated v2, then `login_if_needed`"
@@ -480,7 +532,9 @@ async def v2_only_agent(
     `test_transport.py`.
 
     Yields the connected `AgentProcess`, or `(agent, init_result)` when `yield_result=True` (for
-    callers that need to inspect the negotiated result, e.g. a capabilities marker)."""
+    callers that need to inspect the negotiated result, e.g. a capabilities marker).
+    `require_session=True` SKIPs like the capability gate unless `capabilities.session` is
+    advertised, for callers that use `session/*` without a capability marker."""
     async with connected_agent(agent_launch, handshake=False) as agent:
         params = SPEC.initialize_params()
         if capabilities is not None:
@@ -492,6 +546,8 @@ async def v2_only_agent(
             f"initialize did not return a result object: {entry.text!r}"
         )
         skip_if_version_mismatch(msg["result"])
+        if require_session and not advertises_session(msg["result"]):
+            pytest.skip("capability 'capabilities.session' not advertised by the agent under test")
         await login_if_needed(agent, timeout=agent_launch.startup_timeout)
         if yield_result:
             yield agent, msg["result"]
@@ -618,8 +674,8 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
     `init_result`'s negotiated `protocolVersion` is this suite's own `PROTOCOL_VERSION` (2).
 
     An agent that honestly negotiates down to a lower version (e.g. a v1-only agent answering `1`
-    to a v2 client, per the two-branch negotiation rule -- see `ACP-INIT-201`) is not thereby
-    "broken": the negotiation itself is judged normally by `ACP-INIT-001`/`003`/`201`/`202`, which
+    to a v2 client -- see `ACP-INIT-201`) is not thereby
+    "broken": the negotiation itself is judged normally by `ACP-INIT-001`/`003`/`201`/`202`/`208`, which
     only ever assert on the negotiation outcome, never on the *shape* of the result payload. But
     a test that goes on to assert v2-only shape requirements against that same result -- `info`
     being REQUIRED (`ACP-INIT-203`), capability markers being objects (`ACP-INIT-204`), or the
@@ -643,6 +699,15 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
         )
 
 
+def advertises_session(init_result: dict[str, Any] | None) -> bool:
+    """Whether an `initialize` result advertises `capabilities.session` (object marker: present
+    and non-null). Only `initialize` is unconditional in v2, so a test that is not
+    `capabilities.session`-gated must not call `session/*` methods unless this holds; it falls
+    back to `_`-prefixed probe traffic instead. A v1-shaped result has no `capabilities`."""
+    capabilities = init_result.get("capabilities") if isinstance(init_result, dict) else None
+    return isinstance(capabilities, dict) and capabilities.get("session") is not None
+
+
 def cancel_race_peek(timeout: float) -> float:
     """Like v1's `cancel_race_peek` (same formula, deliberately re-implemented rather than
     imported): a short, bounded look for a line that may already be sitting in the pipe, used by
@@ -661,62 +726,104 @@ def quiet_period(timeout: float) -> float:
     return max(0.5, min(2.0, timeout / 10))
 
 
+ACTIVE_STATES = frozenset({"running", "requires_action"})
+"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:124,993). Work may
+start directly in `requires_action` (:1000-1002), so both count as "active"."""
+
+
+def session_state_update(msg: dict[str, Any], session_id: str) -> dict[str, Any] | None:
+    """The `update` payload if `msg` is a `session/update` `state_update` for `session_id`, else
+    `None`. A child session's state (announced via `subagent_update`) is never the parent's."""
+    if msg.get("method") != "session/update":
+        return None
+    params = msg.get("params")
+    if not isinstance(params, dict) or params.get("sessionId") != session_id:
+        return None
+    update = params.get("update")
+    if isinstance(update, dict) and update.get("sessionUpdate") == "state_update":
+        return update
+    return None
+
+
+def last_known_state(agent: AgentProcess, session_id: str) -> Any:
+    """The `state` of the last `state_update` for `session_id` already read on this connection,
+    or `None` if none was. Seeds `run_prompt`'s notion of "active" so a prompt sent while earlier
+    (e.g. agent-initiated) foreground work is still running is not misjudged."""
+    state = None
+    for entry in agent.transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            update = session_state_update(msg, session_id)
+            if update is not None:
+                state = update.get("state")
+    return state
+
+
+def _pick_permission_option(options: Any) -> Any:
+    """The `optionId` the mock client selects: the first option whose `kind` starts with
+    `allow_`, else the first option. Picking a reject option would legitimately let the agent end
+    the turn without resuming, starving the resumed-path checks. Tolerates malformed options."""
+    if not isinstance(options, list):
+        return None
+    candidates = [option for option in options if isinstance(option, dict)]
+    for option in candidates:
+        kind = option.get("kind")
+        if isinstance(kind, str) and kind.startswith("allow_"):
+            return option.get("optionId")
+    return candidates[0].get("optionId") if candidates else None
+
+
 @dataclass(frozen=True)
 class PromptTurn:
     """The outcome of one v2 `session/prompt` turn driven by `run_prompt`.
 
     Unlike v1's `PromptTurn` (whose `response_entry` *is* the turn result), v2's response is only
-    an acceptance receipt -- the turn's actual outcome (`running_seen`/`idle_update`/
-    `stop_reason`) is learned entirely from `session/update` notifications.
+    an acceptance receipt -- the turn's outcome is learned from `state_update` notifications.
     """
 
+    session_id: str
     response_entry: TranscriptEntry
-    """The transcript entry for the `session/prompt` response (the acceptance receipt, or a
-    JSON-RPC error if the agent rejected the prompt before insertion)."""
+    """The `session/prompt` response (the acceptance receipt, or a JSON-RPC error)."""
+    response_index: int
+    """Transcript line index of `response_entry`."""
     message_id: str | None
-    """The response result's `messageId`, if it was present and a string; `None` otherwise
-    (including when the response was a JSON-RPC error, or a malformed/missing `messageId`)."""
-    running_seen: bool
-    """Whether a `state_update {state: "running"}` for `session_id` was observed at any point
-    during the turn."""
+    """The response result's `messageId` if it is a string; `None` otherwise."""
     idle_update: TranscriptEntry | None
-    """The `session/update` entry carrying the turn-ending `state_update {state: "idle"}` for
-    `session_id` -- i.e. the one that satisfied the turn-end predicate (see `run_prompt`) --
-    or `None` if the turn ended via a JSON-RPC error instead, or via the caller's
-    `--timeout`/`--tck-test-timeout` giving up (in which case `run_prompt` never returns at all;
-    it raises `AgentTimeout`)."""
+    """The `session/update` carrying the turn-ending idle, or `None` when the turn ended with an
+    error response and no foreground work (`terminated_by == "error"`)."""
+    idle_index: int | None = None
+    """Transcript line index of `idle_update` (a batch line's own index)."""
     stop_reason: Any = None
-    """The terminating idle's `stopReason` value, exactly as sent (including if it is missing,
-    `None`, or an illegal value -- validity is the caller's job, not the driver's). `None` when
-    `idle_update` is `None`."""
+    """The turn-ending idle's `stopReason` exactly as sent (missing and `null` both read as
+    `None`); validity is the caller's job."""
+    terminated_by: str = "idle"
+    """`"idle"` (an idle after an active state), `"idle_without_active"` (the confirmed fallback:
+    a stopReason-bearing idle with no active state before it), or `"error"`."""
+    active_seen: bool = False
+    """Whether the session was active at any point: `running`/`requires_action` observed during
+    the turn, or already the last known state when the prompt was sent."""
+    requires_action_seen: bool = False
+    states: list[tuple[int, dict[str, Any]]] = field(default_factory=list)
+    """`(transcript_index, update)` for every `state_update` of `session_id` during the turn."""
     updates: list[tuple[int, TranscriptEntry]] = field(default_factory=list)
-    """`(transcript_index, entry)` for every `session/update` notification observed during the
-    turn, in the order they arrived on the wire -- regardless of which `sessionId` they carried
-    (a misattributed `sessionId` is exactly what `ACP-PROMPT-205` checks for; the driver still
-    records it rather than discarding it)."""
+    """`(transcript_index, entry)` for every `session/update` observed during the turn, in wire
+    order, whatever `sessionId` it carried (`ACP-PROMPT-205` judges attribution)."""
     client_requests_seen: list[TranscriptEntry] = field(default_factory=list)
-    """Every agent -> client request the mock client had to answer during the turn:
-    `session/request_permission` (answered normally) plus anything else (`elicitation/create`,
-    and anything v1-shaped like `fs/*`/`terminal/*`, which do not exist as client methods in v2
-    at all), which gets `-32601` since our mock client advertises `capabilities: {}` -- used by
-    the negative tests asserting "the agent called an unadvertised/nonexistent method"
-    (`ACP-CLIENTCAP-201`/`202`).
-
-    Also carries every agent -> client *notification* other than `session/update` (e.g.
-    `elicitation/complete`, or an undefined/misspelled method name), since `ACP-CLIENTCAP-202`
-    covers requests and notifications alike and the driver must not go blind to a notification
-    just because it needs no reply. Callers that only care about requests (e.g.
-    `session/request_permission`) filter this list by `.parsed.get("method")` themselves."""
+    """Every agent -> client request (answered by the mock client) and every agent -> client
+    notification other than `session/update` (e.g. `$/cancel_request`, or an undefined method,
+    for `ACP-CLIENTCAP-202`) observed during the turn."""
     cancelled_at_index: int | None = None
-    """The transcript index at which `run_prompt` sent `session/cancel`, or `None` if
-    `on_cancel` was false or the prompt turn ended before a cancel was ever sent."""
+    """Transcript index of the `session/cancel` sent for this turn, or `None` if none was."""
+    state_at_cancel: Any = None
+    """The session's last known `state` when the trigger (cancel or `on_action`) fired."""
+    held_permission: TranscriptEntry | None = None
+    """In `hold_permission` mode, the `session/request_permission` that was pending when
+    `session/cancel` was sent."""
     action_response: TranscriptEntry | None = None
-    """The response to `on_action`'s request, if `on_action` was given and fired -- `None`
-    otherwise (mirrors v1's `PromptTurn.action_response`; used by `test_cancel.py` to drive
-    `session/close` mid-turn)."""
+    """The response to `on_action`'s request, if it fired and was answered within the turn."""
     action_sent_at_index: int | None = None
-    """The transcript index at which `on_action`'s request was sent, mirroring
-    `cancelled_at_index`."""
+    """Transcript index at which `on_action`'s request was sent."""
 
 
 async def run_prompt(
@@ -728,100 +835,92 @@ async def run_prompt(
     on_action: Callable[[], Awaitable[Any]] | None = None,
     cancel_wait: float = 0.5,
     cancel_meta: dict[str, Any] | None = None,
+    hold_permission: bool = False,
     extra_params: dict[str, Any] | None = None,
     timeout: float,
 ) -> PromptTurn:
-    """Drive one v2 `session/prompt` turn to completion, acting as a minimal mock ACP client for
-    whatever the agent sends meanwhile.
+    """Drive one v2 `session/prompt` turn to its end, acting as a minimal mock client.
 
-    The v1 `run_prompt` contract inverts in v2: the `session/prompt` response is no longer the
-    turn's terminator (it is only an acceptance receipt, `{messageId}`, sent at insertion time).
-    The turn ends only when a `session/update` `state_update {state: "idle"}` for `session_id` is
-    observed (`prompt-lifecycle.mdx:462`), or when the prompt is rejected outright with a
-    JSON-RPC error (no insertion happened, so no further obligations apply -- P6). Every wait
-    below is bounded by `timeout`, so a non-conforming agent that never reaches either terminator
-    produces an `AgentTimeout` (a FAIL for whatever the caller was asserting), never a hang.
+    The response is only an acceptance receipt; the turn's end is learned from `state_update`s
+    for `session_id` (a child session's states never count). Every wait is bounded by `timeout`;
+    an agent that never reaches a turn end raises `AgentTimeout`.
 
-    **Turn-end predicate**: a `state_update {state: "idle"}` observed for `session_id` ends the
-    turn iff it carries a `stopReason`, *or* a `state_update {state: "running"}` for `session_id`
-    was observed earlier in the same call. This deliberately excludes the legal "session-ready
-    idle" a spec-conforming agent may send with no preceding prompt at all (e.g. right after
-    `session/new`, observed live in the Python SDK's own v2 test agent) from ever being mistaken
-    for a turn's end. A bare idle matching neither condition is simply not treated as a
-    terminator; it is recorded like any other update, and reading continues (bounded by `timeout`
-    as always) -- no requirement or fixture needs finer-grained handling than that.
+    **Turn-end predicate.** `active` starts as "the session's last known state is `running` or
+    `requires_action`" and becomes true on either state during the turn. Then, once the response
+    has been read:
+    - the first `idle` after an active state ends the turn, whatever its `stopReason` (it is
+      SHOULD, and may be omitted; prompt-lifecycle.mdx:864) -- `terminated_by="idle"`;
+    - an error response with no active state ends the turn after a short peek finds none
+      (a rejection with no foreground work needs no state transition, :314) --
+      `terminated_by="error"`. If work is active, the driver keeps waiting for the idle the
+      agent still owes (:314,891);
+    - fallback for agents that never report an active state: an `idle` carrying a `stopReason`
+      ends the turn once `quiet_period(timeout)` passes with no active state after it and after
+      the response -- `terminated_by="idle_without_active"`. An active state inside that window
+      voids it, since repeated idle snapshots may carry the previous stopReason (:1004-1007).
+    `unknown` and custom states are recorded but neither start nor end a turn.
 
-    **Tolerating an initial ready-idle sent *before* `session/prompt`.** Unlike v1's
-    `run_prompt`, this does **not** drain `agent.pending()` before sending the request: doing so
-    would replay a ready-idle the caller's own earlier reads (e.g. after `session/new`) left
-    buffered there, and -- since it carries no `stopReason` and no `running` precedes it in
-    *this* call -- it is harmless either way, but draining it here would make its transcript
-    index appear to be part of this turn's own `updates`, which is not accurate. Any such
-    notification stays in `agent.pending()` for the caller to inspect directly if it cares
-    (mirrors `idle_before_running.py`'s fixture design: the ready-idle is sent before
-    `session/prompt` is even issued).
+    The trigger (`on_cancel`/`on_action`) fires on the first transition to an active state, after
+    a short race-aware peek, or once `cancel_wait` elapses. With `hold_permission=True` (needs
+    `on_cancel`), it instead fires when the first `session/request_permission` for `session_id`
+    arrives: that request is held, `session/cancel` is sent, and only then is it answered
+    `cancelled` (prompt-lifecycle.mdx:1098-1100). `cancel_wait` remains the fallback.
 
-    While waiting:
-    - `session/update` notifications are recorded (`updates`), in order, regardless of which
-      `sessionId` they carry -- a mismatched one is `ACP-PROMPT-205`'s evidence, not the driver's
-      business to filter out. Only `state_update`s whose enclosing `sessionId == session_id` are
-      considered for `running_seen`/the turn-end predicate.
-    - `session/request_permission` is answered `{"outcome": {"outcome": "selected", "optionId":
-      <first option's optionId>}}`, or `{"outcome": {"outcome": "cancelled"}}` once
-      `session/cancel` has actually been sent for this turn (`tool-calls.mdx:306`) -- defensively
-      tolerates `options: []` (no indexing crash) rather than assuming a conforming agent.
-    - any other agent -> client request gets `-32601` (the mock client advertises
-      `capabilities: {}`), and is recorded on `PromptTurn.client_requests_seen`; any other
-      agent -> client *notification* (needs no reply) is recorded there too, unacted-on.
+    While waiting, `session/request_permission` is answered with an `allow_*` option (else the
+    first), or `cancelled` for the prompted session once the trigger has fired; any other
+    agent -> client request gets `-32601` (the mock client advertises no capabilities).
 
-    `cancel_meta`, if given, is merged into the `session/cancel` notification's params as `_meta`
-    (`ACP-CANCEL-206`'s "accepts a cancel that additionally carries `_meta`" check) -- `None`
-    (the default) sends the bare `{"sessionId": session_id}` params every other caller relies on.
-
-    `on_cancel`/`on_action`/`cancel_wait`/`extra_params` mirror v1's `run_prompt` in shape and
-    fallback timing, but **not** in trigger condition: v1 fires its trigger on the *first*
-    `session/update` of any kind; v2 fires it specifically on the transition to `state_update
-    {state: "running"}` for `session_id` -- the MUST-guaranteed turn-start marker
-    (`prompt-lifecycle.mdx:192`) -- because v2's `user_message` echo update (which may arrive
-    before `running`) is not itself evidence that foreground work has started. If `session_id`
-    never reaches `running` (e.g. a non-conforming agent, or the prompt is rejected outright), the
-    trigger still fires once `cancel_wait` elapses, exactly as in v1.
-
-    Callers must serialize prompts per session themselves (never call this a second time for the
-    same session before a previous call has returned) -- v2 leaves concurrent `session/prompt`
-    on one session unspecified, and both reference agents reject it.
+    Callers must serialize prompts per session; v2 leaves concurrent prompts unspecified.
     """
+    seed_state = last_known_state(agent, session_id)
     params = {"sessionId": session_id, "prompt": blocks}
     if extra_params:
         params.update(extra_params)
     prompt_id = await agent.send_request("session/prompt", params)
 
+    loop = asyncio.get_running_loop()
+    overall_deadline = loop.time() + timeout
+    peek_timeout = cancel_race_peek(timeout)
+    confirm_window = quiet_period(timeout)
+
     response_entry: TranscriptEntry | None = None
+    response_index: int | None = None
+    response_at: float | None = None
+    response_error = False
     message_id: str | None = None
-    running_seen = False
+    active = seed_state in ACTIVE_STATES
+    active_seen = active
+    requires_action_seen = False
+    last_state = seed_state
+    states: list[tuple[int, dict[str, Any]]] = []
     idle_update: TranscriptEntry | None = None
+    idle_index: int | None = None
     stop_reason: Any = None
+    terminated_by: str | None = None
+    # (entry, line_index, stopReason, arrival time) of a stopReason-bearing idle with no active
+    # state before it -- see the fallback in the docstring.
+    provisional: tuple[TranscriptEntry, int, Any, float] | None = None
+    error_end_deadline: float | None = None
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
     cancelled_at_index: int | None = None
+    state_at_cancel: Any = None
+    held_permission: TranscriptEntry | None = None
     action_response: TranscriptEntry | None = None
     action_sent_at_index: int | None = None
     action_id: Any = None
-    ended_by_error = False
 
     trigger_armed = on_cancel or on_action is not None
+    trigger_on_active = trigger_armed and not hold_permission
     trigger_sent = False
-
-    loop = asyncio.get_running_loop()
-    overall_deadline = loop.time() + timeout
-    trigger_deadline = loop.time() + cancel_wait if trigger_armed else None
-    peek_timeout = cancel_race_peek(timeout)
+    trigger_deadline = loop.time() + cancel_wait
 
     async def _fire_trigger() -> None:
-        nonlocal trigger_sent, cancelled_at_index, action_id, action_sent_at_index
+        nonlocal trigger_sent, cancelled_at_index, state_at_cancel, action_id, action_sent_at_index
         if trigger_sent:
             return
         trigger_sent = True
+        state_at_cancel = last_state
         if on_cancel:
             cancel_params: dict[str, Any] = {"sessionId": session_id}
             if cancel_meta is not None:
@@ -832,49 +931,62 @@ async def run_prompt(
             action_id = await on_action()
             action_sent_at_index = len(agent.transcript) - 1
 
-    def _turn_ended() -> bool:
-        return response_entry is not None and (ended_by_error or idle_update is not None)
+    def _pending_end_deadline() -> float | None:
+        """When a not-yet-final turn end (error peek or fallback idle) becomes final."""
+        if response_entry is None or idle_update is not None or active:
+            return None
+        if response_error:
+            return error_end_deadline
+        if provisional is not None:
+            assert response_at is not None
+            return max(provisional[3], response_at) + confirm_window
+        return None
+
+    def _try_end() -> bool:
+        nonlocal idle_update, idle_index, stop_reason, terminated_by
+        if response_entry is None:
+            return False
+        if idle_update is not None:
+            return True
+        deadline = _pending_end_deadline()
+        if deadline is None or loop.time() < deadline:
+            return False
+        if response_error:
+            terminated_by = "error"
+        else:
+            assert provisional is not None
+            idle_update, idle_index, stop_reason, _ = provisional
+            terminated_by = "idle_without_active"
+        return True
 
     async def _handle_one(entry: TranscriptEntry) -> None:
-        """Dispatch one already-read line: mutate the outer turn state via `nonlocal`. Never
-        returns anything -- callers check `_turn_ended()` themselves after each call.
-
-        `entry.parsed` may itself be a JSON-RPC batch array rather than a single object --
-        `ACP-BATCH-207` permits an agent to spontaneously emit a batch of `session/update`
-        notifications, and this driver must not simply go blind to a turn's own updates just
-        because the agent chose to deliver them that way (`emits_batch_updates.py`'s self-test
-        is exactly this scenario). Each dict-shaped element is dispatched via `_handle_message`
-        through a synthetic
-        per-item entry (`dataclasses.replace(entry, parsed=item)`) that shares the parent line's
-        `raw`/`timestamp`/`direction` but carries just that one element as `.parsed`, so every
-        downstream consumer -- this function's own id/method matching, and any test that later
-        inspects `PromptTurn.updates`/`.response_entry` -- sees the same per-message shape it
-        would for an unbatched line. The transcript index recorded for an update extracted this
-        way is the *line's* own index (a batch has no separate transcript slot per element)."""
+        """Dispatch one line. A batch array (`ACP-BATCH-207` lets an agent batch its own
+        notifications) is dispatched element by element through synthetic per-item entries
+        sharing the line's raw/timestamp; their recorded index is the line's own."""
+        line_index = agent.transcript.index(entry)
         raw_msg = entry.parsed
         if isinstance(raw_msg, list):
-            line_index = agent.transcript.index(entry)
             for item in raw_msg:
                 if isinstance(item, dict):
                     await _handle_message(replace(entry, parsed=item), line_index)
-            return
-        if isinstance(raw_msg, dict):
-            await _handle_message(entry, agent.transcript.index(entry))
+        elif isinstance(raw_msg, dict):
+            await _handle_message(entry, line_index)
 
     async def _handle_message(entry: TranscriptEntry, line_index: int) -> None:
-        nonlocal response_entry, message_id, running_seen, idle_update, stop_reason
-        nonlocal action_response, ended_by_error
+        nonlocal response_entry, response_index, response_at, response_error, message_id
+        nonlocal active, active_seen, requires_action_seen, last_state, provisional
+        nonlocal idle_update, idle_index, stop_reason, terminated_by, error_end_deadline
+        nonlocal action_response, held_permission
         msg = entry.parsed
         if entry.matches_id(prompt_id):
-            response_entry = entry
+            response_entry, response_index, response_at = entry, line_index, loop.time()
             if "error" in msg:
-                ended_by_error = True
+                response_error = True
+                error_end_deadline = loop.time() + peek_timeout
             else:
                 result = msg.get("result")
-                if isinstance(result, dict):
-                    candidate = result.get("messageId")
-                    if isinstance(candidate, str):
-                        message_id = candidate
+                if isinstance(result, dict) and isinstance(result.get("messageId"), str):
+                    message_id = result["messageId"]
             return
         if action_id is not None and entry.matches_id(action_id):
             action_response = entry
@@ -883,35 +995,45 @@ async def run_prompt(
         method = msg.get("method")
         if method == "session/update":
             updates.append((line_index, entry))
-            params_ = msg.get("params")
-            if isinstance(params_, dict) and params_.get("sessionId") == session_id:
-                update = params_.get("update")
-                if isinstance(update, dict) and update.get("sessionUpdate") == "state_update":
-                    state = update.get("state")
-                    if state == "running":
-                        running_seen = True
-                    elif state == "idle" and idle_update is None:
-                        sr = update.get("stopReason")
-                        if sr is not None or running_seen:
-                            idle_update = entry
-                            stop_reason = sr
+            update = session_state_update(msg, session_id)
+            if update is None:
+                return
+            state = update.get("state")
+            states.append((line_index, update))
+            last_state = state
+            if state in ACTIVE_STATES:
+                active = active_seen = True
+                requires_action_seen = requires_action_seen or state == "requires_action"
+                provisional = None
+            elif state == "idle" and idle_update is None:
+                sr = update.get("stopReason")
+                if active:
+                    idle_update, idle_index, stop_reason = entry, line_index, sr
+                    terminated_by = "idle"
+                elif sr is not None and provisional is None:
+                    provisional = (entry, line_index, sr, loop.time())
             return
 
         if method == "session/request_permission" and "id" in msg:
-            options = (msg.get("params") or {}).get("options") or []
-            if trigger_sent:
+            client_requests_seen.append(entry)
+            req_params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            for_this_session = req_params.get("sessionId") == session_id
+            if hold_permission and not trigger_sent and for_this_session:
+                held_permission = entry
+                await _fire_trigger()
+            if trigger_sent and for_this_session:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
-                first_option_id = options[0].get("optionId") if options else None
-                outcome = {"outcome": "selected", "optionId": first_option_id}
+                outcome = {
+                    "outcome": "selected",
+                    "optionId": _pick_permission_option(req_params.get("options")),
+                }
             await agent.send_message(
                 {"jsonrpc": "2.0", "id": msg["id"], "result": {"outcome": outcome}}
             )
-            client_requests_seen.append(entry)
             return
 
         if method is not None and "id" in msg:
-            # Any other agent -> client request: our mock client advertised no capabilities.
             client_requests_seen.append(entry)
             await agent.send_message(
                 {
@@ -922,88 +1044,86 @@ async def run_prompt(
             )
             return
 
-        # Any other agent-authored notification (e.g. `elicitation/complete`, or an
-        # undefined/misspelled method name) -- not our concern to act on, but still recorded so
-        # `ACP-CLIENTCAP-202` can check it.
         if method is not None:
             client_requests_seen.append(entry)
-        return
 
-    while not _turn_ended():
+    def _clamped(seconds: float) -> float:
+        # A non-positive value still resolves: `read_line` forwards it to `asyncio.wait_for`,
+        # which then checks once without blocking.
+        return min(seconds, overall_deadline - loop.time())
+
+    ended = False
+    while not ended:
         now = loop.time()
         remaining = overall_deadline - now
         if remaining <= 0:
             raise AgentTimeout(
                 f"session/prompt {prompt_id!r} on session {session_id!r} did not reach a "
-                f"terminating idle state_update within {timeout}s",
+                f"turn end within {timeout}s",
                 agent.transcript,
                 stderr=agent.stderr_text(),
             )
-
+        read_timeout = remaining
         if trigger_armed and not trigger_sent:
-            wait_remaining = trigger_deadline - now  # type: ignore[operator]
-            read_timeout = (
-                min(remaining, wait_remaining) if wait_remaining > 0 else min(remaining, 0.05)
-            )
-        else:
-            read_timeout = remaining
+            wait_remaining = trigger_deadline - now
+            read_timeout = min(read_timeout, wait_remaining if wait_remaining > 0 else 0.05)
+        end_deadline = _pending_end_deadline()
+        if end_deadline is not None:
+            read_timeout = min(read_timeout, max(0.0, end_deadline - now))
 
         try:
             entry = await agent.read_line(timeout=read_timeout)
         except AgentTimeout:
-            if trigger_armed and not trigger_sent:
+            if trigger_armed and not trigger_sent and loop.time() >= trigger_deadline:
                 await _fire_trigger()
-                continue
-            raise
+            ended = _try_end()
+            continue
 
-        was_running = running_seen
+        was_active = active
         await _handle_one(entry)
-        just_started_running = running_seen and not was_running
+        ended = _try_end()
 
-        if not _turn_ended() and trigger_armed and not trigger_sent and just_started_running:
-            # Clamped to whatever of `overall_deadline` remains -- `peek_timeout` alone could
-            # otherwise push this call past `timeout` by up to ~1s, contradicting this function's
-            # own "every wait below is bounded by `timeout`" docstring claim. A non-positive
-            # remainder still resolves immediately: `read_line` forwards it to
-            # `asyncio.wait_for`, which treats `timeout <= 0` as "check once, don't block" rather
-            # than raising.
+        if not ended and trigger_on_active and not trigger_sent and active and not was_active:
+            # Race-aware peek: a turn end already sitting in the pipe is read before acting, so
+            # an agent that finished first is not misjudged as having ignored the trigger.
             try:
-                peek_entry = await agent.read_line(
-                    timeout=min(peek_timeout, overall_deadline - loop.time())
-                )
+                peek_entry = await agent.read_line(timeout=_clamped(peek_timeout))
             except AgentTimeout:
                 await _fire_trigger()
             else:
                 await _handle_one(peek_entry)
-                if not _turn_ended():
+                ended = _try_end()
+                if not ended:
                     await _fire_trigger()
 
-    assert response_entry is not None  # for type checkers; `_turn_ended()` guarantees this
+    assert response_entry is not None and response_index is not None and terminated_by is not None
 
-    if not ended_by_error:
-        # One short trailing peek for a response to `on_action` arriving just after the turn
-        # ended (mirrors v1's same peek right before returning) -- never for the error case,
-        # where no further obligations exist at all (P6).
-        if action_id is not None and action_response is None:
-            # Same clamp as the peek above, and for the same reason.
-            try:
-                peek_entry = await agent.read_line(
-                    timeout=min(peek_timeout, overall_deadline - loop.time())
-                )
-            except AgentTimeout:
-                pass
-            else:
-                await _handle_one(peek_entry)
+    if terminated_by != "error" and action_id is not None and action_response is None:
+        # One short trailing peek for `on_action`'s response arriving just after the turn ended.
+        try:
+            peek_entry = await agent.read_line(timeout=_clamped(peek_timeout))
+        except AgentTimeout:
+            pass
+        else:
+            await _handle_one(peek_entry)
 
     return PromptTurn(
-        response_entry,
-        message_id,
-        running_seen,
-        idle_update,
-        stop_reason,
-        updates,
-        client_requests_seen,
-        cancelled_at_index,
-        action_response,
-        action_sent_at_index,
+        session_id=session_id,
+        response_entry=response_entry,
+        response_index=response_index,
+        message_id=message_id,
+        idle_update=idle_update,
+        idle_index=idle_index,
+        stop_reason=stop_reason,
+        terminated_by=terminated_by,
+        active_seen=active_seen,
+        requires_action_seen=requires_action_seen,
+        states=states,
+        updates=updates,
+        client_requests_seen=client_requests_seen,
+        cancelled_at_index=cancelled_at_index,
+        state_at_cancel=state_at_cancel,
+        held_permission=held_permission,
+        action_response=action_response,
+        action_sent_at_index=action_sent_at_index,
     )

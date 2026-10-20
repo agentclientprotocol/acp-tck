@@ -9,7 +9,7 @@ on:
 env:
   # Pinned -- update both together when re-vendoring.
   # Must be new enough for rust-sdk's `unstable_protocol_v2` cargo feature (the v2 leg).
-  RUST_SDK_SHA: 28688b2d97a81975ff875180c3a3e46e6cad0161
+  RUST_SDK_SHA: 652d1003425319c170f1e677a1ca5af6a92269bb
   PYTHON_SDK_SHA: 9d07d7871ef4b220b8507e15fc4b1560f0950a64
 
 jobs:
@@ -103,6 +103,7 @@ jobs:
             cross-check/echo_agent.json echo_agent \
             --report cross-check/testy-v2.json testy_v2 \
             --report cross-check/python-v2.json python_v2_agent \
-            --expect-only-mandatory-fail ACP-INIT-003 \
-            --expect "testy_v2=" \
-            --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-201,ACP-INIT-202,ACP-JSONRPC-001,ACP-JSONRPC-003"
+            --expect "testy=" \
+            --expect "echo_agent=ACP-INIT-003" \
+            --expect "testy_v2=ACP-INIT-205,ACP-INIT-206" \
+            --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"

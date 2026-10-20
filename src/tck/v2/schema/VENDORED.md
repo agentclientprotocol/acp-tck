@@ -3,9 +3,9 @@
 `schema.unstable.json` and `meta.unstable.json` in this directory are verbatim copies of the ACP
 v2 JSON Schema, vendored from the spec's source-of-truth repository. Do not hand-edit them.
 
-**v2 is Draft** (schema version `2.0.0-alpha.5` as of the commit below) -- unlike `tck/v1/schema/`,
-this directory should be expected to churn: field shapes, capability markers, and even method
-inventories may still change upstream before v2 stabilizes.
+**v2 is Draft** (schema version `2.0.0-alpha.9` as of the commit below) -- unlike v1, where
+only RFD-gated additions churn, even v2's core may still change upstream before it stabilizes:
+field shapes, capability markers, and even method inventories.
 
 **v2 verifies entirely against the draft (unstable) schema.** The upstream repo publishes both a
 stable `schema.json`/`meta.json` and a superset `schema.unstable.json`/`meta.unstable.json` that
@@ -15,8 +15,8 @@ deliberately not vendored. The upstream file names are kept as-is.
 - **Source repo:** https://github.com/agentclientprotocol/agent-client-protocol
   (local read-only checkout used for the copy: the path configured by the
   `check-specification` skill, `.agents/skills/check-specification/.repo`)
-- **Commit:** `9af0e9f748db9f4cc4c410a7b212ead4f98ae78c`
-- **Date vendored:** 2026-09-29
+- **Commit:** `beac4ba96190018e9f6d82e148ff275084c5aa3e`
+- **Date vendored:** 2026-10-19
 - **Copy commands used:**
 
   ```

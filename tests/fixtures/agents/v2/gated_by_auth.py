@@ -26,6 +26,7 @@ AUTH_METHODS = [
 def main() -> None:
     ConformingAgent(
         agent_name="tck-fixture-gated-by-auth-v2",
+        capabilities={"session": {}},
         auth_methods=AUTH_METHODS,
         require_auth=True,
     ).run()

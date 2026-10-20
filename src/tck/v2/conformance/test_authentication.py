@@ -21,8 +21,14 @@ import pytest
 from tck.common.plugin import current_allow_logout, current_auth_method_id
 
 from .. import SPEC
-from ..protocol import is_valid_open_enum_value
-from ._helpers import connected_agent, new_session, skip_if_version_mismatch, validate_login_method_id
+from ..protocol import METHOD_NOT_FOUND, is_valid_open_enum_value
+from ._helpers import (
+    advertises_session,
+    connected_agent,
+    new_session,
+    skip_if_version_mismatch,
+    validate_login_method_id,
+)
 
 
 @contextlib.asynccontextmanager
@@ -147,9 +153,10 @@ async def test_login_then_session_new_succeeds(agent_launch, tmp_path):
     `validate_login_method_id` rejects an unadvertised/terminal id.
 
     `auth/login` succeeding is not a hard requirement -- an agent may legitimately reject
-    bad/expired credentials, which SKIPs with a diagnosable reason instead of failing. The one
-    hard assertion: a subsequent `session/new` on the same connection does not fail with
-    `-32000`.
+    bad/expired credentials, which SKIPs with a diagnosable reason instead of failing. But
+    `-32601` FAILs: an agent advertising `authMethods` MUST implement `auth/login`
+    (authentication.mdx:51-54). After a successful login, a `session/new` on the same connection
+    (only when `capabilities.session` is advertised) must not fail with `-32000`.
 
     The `--tck-auth-method` check happens inside `_initialized_agent`, after the
     version-mismatch check has already had a chance to fire, so a version-mismatched agent
@@ -168,9 +175,15 @@ async def test_login_then_session_new_succeeds(agent_launch, tmp_path):
         login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
         login_msg = login_entry.parsed
         if not (isinstance(login_msg, dict) and isinstance(login_msg.get("result"), dict)):
-            detail = (login_msg.get("error") if isinstance(login_msg, dict) else None) or login_entry.text
-            pytest.skip(f"auth/login with methodId={method_id!r} failed: {detail!r}")
+            error = login_msg.get("error") if isinstance(login_msg, dict) else None
+            assert not (isinstance(error, dict) and error.get("code") == METHOD_NOT_FOUND), (
+                "agent advertises authMethods but answered auth/login with -32601 (Method not "
+                f"found): {login_entry.text!r}"
+            )
+            pytest.skip(f"auth/login with methodId={method_id!r} failed: {error or login_entry.text!r}")
 
+        if not advertises_session(init_result):
+            return
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         assert isinstance(session_id, str) and session_id
 
@@ -180,11 +193,13 @@ async def test_session_new_not_gated_when_no_auth_methods_advertised(agent_launc
     """ACP-AUTH-205 (ADVISORY; re-cites v1's ACP-AUTH-005/AUTH-A1). If `initialize` advertises
     no `authMethods` at all, `session/new` must not fail with `-32000` -- there would be no
     defined remedy. SKIPs when the agent does advertise auth methods (that case is
-    ACP-AUTH-204's territory)."""
+    ACP-AUTH-204's territory), or does not advertise `capabilities.session`."""
     async with _initialized_agent(agent_launch) as (agent, init_result):
         auth_methods = init_result.get("authMethods") or []
         if auth_methods:
             pytest.skip("agent advertises authMethods; AUTH-205 only concerns the empty case")
+        if not advertises_session(init_result):
+            pytest.skip("capability 'capabilities.session' not advertised by the agent under test")
 
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         assert isinstance(session_id, str)

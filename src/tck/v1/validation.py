@@ -1,8 +1,10 @@
 """Schema validation for JSON-RPC messages the agent under test writes to stdout.
 
-Backed by the vendored `tck/v1/schema/schema.json` (see `tck/v1/schema/VENDORED.md`). The
-schema's top-level shape is `anyOf` of three side-annotated envelopes -- `Agent`, `Client`,
-`ProtocolLevel` (`schema/v1/schema.json:4-119`) -- each further split into `Request` /
+Backed by the vendored `tck/v1/schema/schema.unstable.json` (see `tck/v1/schema/VENDORED.md`):
+the draft superset of the stable schema, so RFD-gated fields and methods an agent uses are
+validated against their draft shapes. The schema's top-level shape is `anyOf` of three
+side-annotated envelopes -- `Agent`, `Client`, `ProtocolLevel`
+(`schema/v1/schema.unstable.json#/anyOf`) -- each further split into `Request` /
 `Response` / `Notification` branches. Every method-specific params/response `$def` carries
 `x-side` (which side implements the method) and `x-method` (its wire name); those annotations
 are what let us look up "the schema for `session/prompt`'s response" instead of hand-copying
@@ -52,7 +54,7 @@ def _validator_class() -> type[jsonschema.protocols.Validator]:
     validator_class = _DRAFT_VALIDATORS.get(dialect)
     if validator_class is None:
         raise RuntimeError(
-            f"vendored schema.json declares $schema={dialect!r}, which this module does not "
+            f"vendored schema.unstable.json declares $schema={dialect!r}, which this module does not "
             "have a jsonschema Draft validator mapped for -- add one to _DRAFT_VALIDATORS"
         )
     return validator_class
@@ -151,9 +153,13 @@ def _ref_names_under(node: Any) -> list[str]:
 def _response_schema_permits_null(def_name: str) -> bool:
     """True if `#/$defs/{def_name}` is an object type with no required properties, in which
     case `null` and `{}` are equivalent in practice even though the schema only spells out
-    `{}`. Quirk: `session/load`'s and `fs/write_text_file`'s docs show `"result": null`, but
-    their schema `$def`s are `type: "object"` with no required fields, which literally rejects
-    `null`.
+    `{}`. Deliberate leniency: these `$def`s are `type: "object"` with no required fields,
+    which literally rejects `null`, but upstream's Rust schema crate accepts `null` for such
+    defaultable payloads on receipt (`ac82df63`, `agent-client-protocol-schema/src/serde_util.rs`:
+    deserialization only, the schema is unchanged) and the Python SDK coerces it too, so a
+    `null` result still interoperates with both reference clients. Upstream's guidance is
+    "send `{}`, tolerate `null`" (the docs examples were corrected to `{}` in `d89c8d31`).
+    ACP-LOAD-003 (ADVISORY) still flags a `null` `session/load` result.
     """
     definition = load_schema()["$defs"].get(def_name, {})
     return definition.get("type") == "object" and not definition.get("required")
@@ -191,7 +197,7 @@ def _validate_error_envelope(error: Any, base_path: list[str]) -> list[Validatio
 
 
 def _is_valid_request_id(value: Any) -> bool:
-    """`RequestId` (`schema/v1/schema.json:245-264`) is `null | integer | string`."""
+    """`RequestId` (`schema/v1/schema.unstable.json#/$defs/RequestId`) is `null | integer | string`."""
     if value is None or isinstance(value, str):
         return True
     return isinstance(value, int) and not isinstance(value, bool)
@@ -361,7 +367,7 @@ def _allowed_root_properties(def_name: str) -> set[str] | None:
 def find_unknown_root_keys(def_name: str, obj: Any) -> list[str]:
     """ACP-SCHEMA-002 (ADVISORY): the root-level keys of an emitted spec object (`obj`, e.g. a
     request/notification `params`, or a successful response `result`) that are not part of
-    `#/$defs/{def_name}`'s resolved `properties` union (`_meta` is always allowed, per Req 41's
+    `#/$defs/{def_name}`'s resolved `properties` union (`_meta` is always allowed, per the
     "custom data goes in `_meta`" carve-out). Returns `[]` -- nothing to flag -- when `obj` is
     not a dict, or when `def_name`'s schema has no resolvable `properties` at all.
     """
@@ -371,6 +377,23 @@ def find_unknown_root_keys(def_name: str, obj: Any) -> list[str]:
     if allowed is None:
         return []
     return sorted(key for key in obj if key not in allowed)
+
+
+def validate_against_def(def_name: str, value: Any) -> list[ValidationIssue]:
+    """Validate `value` against `#/$defs/{def_name}` alone, e.g. one union variant that a lax
+    `anyOf` would otherwise let a malformed value dodge (see ACP-AUTH-006)."""
+    return _issues_from_errors(_def_validator(def_name).iter_errors(value))
+
+
+def find_unknown_error_keys(error: Any) -> list[str]:
+    """ACP-SCHEMA-002 for a JSON-RPC error object: keys outside `#/$defs/Error`'s own
+    `properties` (`code`, `message`, `data`). Unlike `find_unknown_root_keys`, `_meta` is not
+    allowed: `Error` is the spec's example of a type without `_meta` (extensibility.mdx:13-14).
+    """
+    if not isinstance(error, dict):
+        return []
+    allowed = load_schema()["$defs"]["Error"]["properties"].keys()
+    return sorted(key for key in error if key not in allowed)
 
 
 def validate_agent_response(method: str, msg: dict[str, Any]) -> list[ValidationIssue]:
@@ -412,7 +435,7 @@ def validate_agent_response(method: str, msg: dict[str, Any]) -> list[Validation
 
     result = msg["result"]
     if result is None and _response_schema_permits_null(def_name):
-        # Quirk: docs show `null` for all-optional object responses; treat as equivalent to `{}`.
+        # Reference receivers tolerate `null` for all-optional object responses; see above.
         return issues
 
     validator = _def_validator(def_name)

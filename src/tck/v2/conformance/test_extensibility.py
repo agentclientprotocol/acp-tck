@@ -1,5 +1,6 @@
 """Extensibility conformance: `ACP-EXT-001`, `ACP-META-001`, `ACP-SCHEMA-002` (re-cited from v1,
-unchanged) plus new hygiene rows `ACP-META-201`, `ACP-EXT-201`, `ACP-EXT-202`, `ACP-EXT-203`.
+unchanged) plus new hygiene rows `ACP-META-201`, `ACP-EXT-201`, `ACP-EXT-202`, `ACP-EXT-203`, and
+the receiver rule `ACP-EXT-204` (unknown `initialize` fields are ignored).
 
 `ACP-EXT-001`/`ACP-META-001` are connection-level rows with `capability=None`, matching their v1
 registry entries; `ACP-META-001`'s test still carries the `capabilities.session` marker since it
@@ -39,7 +40,7 @@ _PROMPT_TEXT = "hi"
 @pytest.mark.requirement("ACP-EXT-001")
 async def test_unknown_custom_method_receives_a_response(agent_launch):
     """ACP-EXT-001 (MANDATORY, re-cited from v1 unchanged --
-    `docs/protocol/v2/draft/extensibility.mdx:43,52,65,109`). *Some* response -- a result, or an error
+    `docs/protocol/v2/draft/extensibility.mdx:156,165,178,222`). *Some* response -- a result, or an error
     with any code -- must arrive for a `_`-prefixed custom method; the `-32601` code specifically
     remains `ACP-JSONRPC-004`'s ADVISORY concern, not re-checked here."""
     async with connected_agent(agent_launch) as agent:
@@ -93,8 +94,8 @@ async def test_meta_field_on_prompt_is_accepted(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
     """ACP-META-201 (ADVISORY, new). Every `_meta` the agent emits, anywhere in the transcript,
-    is a JSON object or `null` -- never a string/array/number (all 106 `_meta` sites in the
-    schema are typed `["object", "null"]`, e.g.
+    is a JSON object or `null` -- never a string/array/number (every `_meta` site in the
+    schema is typed `["object", "null"]`, e.g.
     `schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/properties/_meta`)."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -127,7 +128,7 @@ async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-EXT-201")
 async def test_unrecognized_custom_notification_produces_no_response(agent_launch):
     """ACP-EXT-201 (ADVISORY). An unrecognized `_`-prefixed *notification* sent to the agent
-    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:109`)
+    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:222`)
     -- the v2 analogue of v1's `answers_notifications.py` defect pattern, generalised to any
     custom notification rather than specifically `session/cancel`. Only a reply fails this
     (`_helpers.is_response_line`), not the agent's own notifications or requests."""
@@ -149,7 +150,7 @@ async def test_unrecognized_custom_notification_produces_no_response(agent_launc
 async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     """ACP-EXT-202 (ADVISORY). Any vendor extension the agent advertises lives under
     `initialize` -> `result.capabilities._meta`, not as a new root key of `capabilities` itself
-    (`docs/protocol/v2/draft/extensibility.mdx:93,126-149`) -- checked via a *nested* application of
+    (`docs/protocol/v2/draft/extensibility.mdx:239-245`) -- checked via a *nested* application of
     `find_unknown_root_keys` against the `AgentCapabilities` `$def`, rather than the
     whole-response root-level check `ACP-SCHEMA-002` already performs.
 
@@ -173,6 +174,40 @@ async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     assert not extras, (
         f"initialize result.capabilities has unrecognized root key(s) {extras!r} -- vendor "
         "extensions must be advertised under capabilities._meta instead"
+    )
+
+
+@pytest.mark.requirement("ACP-EXT-204")
+async def test_unknown_initialize_fields_are_ignored(agent_launch):
+    """ACP-EXT-204 (MANDATORY; initialization.mdx:134, extensibility.mdx:148). `initialize` with
+    unknown fields at the `capabilities` root, under `capabilities.auth`, and in `info` must not
+    be rejected, and "Unknown fields do not advertise support": `auth.tckFutureAuthMode` is not
+    `auth.terminal`, so no `type: "terminal"` auth method may appear. The names are deliberately
+    not `_`-prefixed: they stand in for fields of a future ACP revision (a `_` name would be a
+    custom capability, which extensibility.mdx:245 forbids at these positions)."""
+    params = SPEC.initialize_params()
+    params = {
+        **params,
+        "info": {**params["info"], "tckFutureField": 1},
+        "capabilities": {"tckFutureCapability": {}, "auth": {"tckFutureAuthMode": {}}},
+    }
+    async with connected_agent(agent_launch, handshake=False) as agent:
+        req_id = await agent.send_request("initialize", params)
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+
+    msg = entry.parsed
+    assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
+        f"initialize with unknown capability/info fields must not be rejected: {entry.text!r}"
+    )
+    skip_if_version_mismatch(msg["result"])
+    terminal = [
+        method
+        for method in msg["result"].get("authMethods") or []
+        if isinstance(method, dict) and method.get("type") == "terminal"
+    ]
+    assert not terminal, (
+        "an unknown capabilities.auth field advertised terminal auth support: "
+        f"{terminal!r}"
     )
 
 
@@ -206,7 +241,7 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
     `tck.v2.validation.find_unknown_root_keys` already skips detection for any object matched by
     an open `"other"`-titled fallback branch, since an unknown/`_`-prefixed variant is by
     construction not "a type that's part of the specification",
-    `docs/protocol/v2/draft/extensibility.mdx:39`). Swept over an ordinary
+    `docs/protocol/v2/draft/extensibility.mdx:95`). Swept over an ordinary
     initialize -> session/new -> session/prompt exchange, same trick as v1's version of this
     test: derive `method_by_id` from the SENT transcript to resolve each response's own method.
     Unwraps every transcript line via `iter_messages` rather than requiring

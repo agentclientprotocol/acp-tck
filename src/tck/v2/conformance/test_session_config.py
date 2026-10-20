@@ -28,15 +28,15 @@ from typing import Any
 
 import pytest
 
-from tck.v2.validation import validate_agent_response
+from tck.v2.validation import validate_agent_message, validate_agent_response
 
 from ._helpers import (
     drain_quiet,
+    iter_messages,
+    obtain_resumable_session,
     quiet_period,
-    resume_session,
     set_config_option,
     skip_if_auth_gated,
-    update_of,
     v2_only_agent,
 )
 
@@ -92,9 +92,10 @@ def _assert_config_options_shape_valid(config_options: list[Any]) -> None:
             assert "currentValue" in option, (
                 f"select config option {option['configId']!r} has no currentValue"
             )
-            opts = option.get("options") or []
-            assert isinstance(opts, list) and opts, (
-                f"select config option {option['configId']!r} has no options: {opts!r}"
+            opts = option.get("options")
+            # No minimum length: an empty list is shape-valid (ACP-CONFIG-204 judges currentValue).
+            assert isinstance(opts, list), (
+                f"select config option {option['configId']!r} options must be an array: {opts!r}"
             )
             is_flat = all(isinstance(o, dict) and "value" in o for o in opts)
             is_grouped = all(isinstance(o, dict) and "groupId" in o for o in opts)
@@ -108,7 +109,7 @@ def _assert_config_options_shape_valid(config_options: list[Any]) -> None:
 @pytest.mark.requirement("ACP-CONFIG-201")
 async def test_config_options_shape_is_valid(agent_launch, tmp_path):
     """ACP-CONFIG-201."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -139,12 +140,11 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
     when `session/new` advertised no `configOptions` at all -- there would be nothing legitimate
     to set.
 
-    Does not require `changed["currentValue"] == new_value` to hold: an agent may legitimately
-    reflect a dependent adjustment instead, so that sub-assertion stays ADVISORY rather than part
-    of this row's contract. Only the superset-of-ids check below is this row's actual contract;
-    whether the changed entry's own value echoes what was sent is recorded via
-    `record_property`, never asserted."""
-    async with v2_only_agent(agent_launch) as agent:
+    Asserts only array + schema validity + the changed `configId` being present. Recorded, never
+    asserted: whether every originally-advertised id is still there (a change may remove
+    dependent options) and whether the changed entry echoes the sent value (an agent may
+    reflect a dependent adjustment instead)."""
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -173,11 +173,10 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
         assert isinstance(returned, list), (
             f"session/set_config_option result.configOptions must be an array, got {returned!r}"
         )
+        issues = validate_agent_response("session/set_config_option", msg)
+        assert not issues, f"session/set_config_option result failed schema validation: {issues!r}"
         returned_ids = {option.get("configId") for option in returned if isinstance(option, dict)}
-        assert original_ids <= returned_ids, (
-            "session/set_config_option must return the *complete* configOptions list -- "
-            f"missing ids {original_ids - returned_ids!r}"
-        )
+        record_property("acp_tck_config_set_keeps_all_ids", original_ids <= returned_ids)
         changed = next(
             (o for o in returned if isinstance(o, dict) and o.get("configId") == target["configId"]),
             None,
@@ -193,19 +192,20 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
 
 @pytest.mark.requirement("ACP-CONFIG-203")
 async def test_resume_config_options_shape_is_valid_when_present(agent_launch, tmp_path):
-    """ACP-CONFIG-203. A new carrier in v2 -- v1's `session/load` had no analogous field."""
-    async with v2_only_agent(agent_launch) as agent:
+    """ACP-CONFIG-203. A new carrier in v2 -- v1's `session/load` had no analogous field.
+
+    The first connection only establishes that `configOptions` are offered at all (and keeps the
+    `VERSION-MISMATCH:` skip). The resume itself goes through `obtain_resumable_session`, whose
+    successful probe response is the one validated -- so a resume error SKIPs exactly as it
+    does for `ACP-RESUME-201`."""
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         if not result.get("configOptions"):
             pytest.skip("session/new returned no configOptions")
-        session_id = result["sessionId"]
-        response_entry, _updates = await resume_session(
-            agent, session_id, tmp_path, timeout=agent_launch.default_timeout
-        )
+    async with obtain_resumable_session(
+        agent_launch, tmp_path, timeout=agent_launch.default_timeout
+    ) as (_agent, _session_id, response_entry, _resume_cwd):
         msg = response_entry.parsed
-        assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
-            f"session/resume did not succeed: {response_entry.text!r}"
-        )
         config_options = msg["result"].get("configOptions")
         if config_options is None:
             pytest.skip("session/resume result carried no configOptions to validate")
@@ -215,7 +215,7 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
 @pytest.mark.requirement("ACP-CONFIG-204")
 async def test_select_config_option_current_value_is_declared(agent_launch, tmp_path):
     """ACP-CONFIG-204."""
-    async with v2_only_agent(agent_launch) as agent:
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -236,8 +236,10 @@ async def test_select_config_option_current_value_is_declared(agent_launch, tmp_
 @pytest.mark.requirement("ACP-CONFIG-206")
 async def test_config_option_update_is_complete_if_observed(agent_launch, tmp_path, record_property):
     """ACP-CONFIG-206. Conditional and vacuous (recorded, never FAILed) when no
-    `config_option_update` is ever observed during the run."""
-    async with v2_only_agent(agent_launch) as agent:
+    `config_option_update` is ever observed during the run. Whether the update still carries
+    every originally-advertised id is recorded, not asserted: the current state may drop
+    options."""
+    async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
         if not config_options:
@@ -267,21 +269,25 @@ async def test_config_option_update_is_complete_if_observed(agent_launch, tmp_pa
         # same-timing `config_option_update` into `agent.pending()`; a short quiet drain then
         # catches one sent just after the response too.
         observed = agent.pending() + await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
-        update_entries = [
-            update
+        update_msgs = [
+            msg
             for entry in observed
-            if (update := update_of(entry)) is not None and update.get("sessionUpdate") == "config_option_update"
+            for msg in iter_messages(entry)
+            if msg.get("method") == "session/update"
+            and ((msg.get("params") or {}).get("update") or {}).get("sessionUpdate")
+            == "config_option_update"
         ]
-        record_property("acp_tck_config_option_update_observed", bool(update_entries))
-        if not update_entries:
+        record_property("acp_tck_config_option_update_observed", bool(update_msgs))
+        if not update_msgs:
             return  # vacuous -- conforming, nothing further to check
-        for update in update_entries:
-            returned = update.get("configOptions")
+        keeps_all_ids = True
+        for update_msg in update_msgs:
+            returned = update_msg["params"]["update"].get("configOptions")
             assert isinstance(returned, list), (
                 f"config_option_update.configOptions must be an array, got {returned!r}"
             )
+            issues = validate_agent_message(update_msg)
+            assert not issues, f"config_option_update failed schema validation: {issues!r}"
             returned_ids = {o.get("configId") for o in returned if isinstance(o, dict)}
-            assert original_ids <= returned_ids, (
-                "config_option_update must carry the *complete* configuration state -- missing "
-                f"ids {original_ids - returned_ids!r}"
-            )
+            keeps_all_ids = keeps_all_ids and original_ids <= returned_ids
+        record_property("acp_tck_config_option_update_keeps_all_ids", keeps_all_ids)

@@ -215,18 +215,25 @@ current requirement set, `src/tck/v{1,2}/requirements.py` is the source of truth
 
 ### v1
 
-- `initialize` handshake and version negotiation, including the strengthened unsupported-version probe (`ACP-INIT-003`)
+v1 is checked against the upstream *draft* v1 schema (the unstable superset, including RFD-gated fields and methods).
+Those extras are optional for agents, but are validated against the draft shapes when used. The schema is pinned to the
+spec commit recorded in `src/tck/v1/schema/VENDORED.md`.
+
+- `initialize` handshake and version negotiation, including the unsupported-version probe (`ACP-INIT-003`)
 - Session lifecycle: `session/new`, `session/load`, `session/resume`, `session/list`, `session/delete`, `session/close`,
   `additionalDirectories`
 - `session/prompt` turns and `session/cancel`, including the cancellation race handling described above
 - Session `modes` and `configOptions`
 - Prompt content capabilities (`image`/`audio`/`embeddedContext`)
-- Authentication surface: `authMethods`, `authenticate`, `logout`
+- Authentication surface: `authMethods` (including `terminal` methods when the client enables them), `authenticate`,
+  `logout`
 - Client-capability negatives: the agent must never call `fs/*`, `terminal/*`, or `elicitation/create` when the client
   didn't advertise the matching capability (`ACP-CLIENTCAP-001`/`002`/`003`)
-- Extensibility and hygiene: `_`-prefixed custom methods must get a response (`ACP-EXT-001`), `_meta` passthrough,
-  unknown top-level response keys, error message shape, shutdown promptness
-- Transport/JSON-RPC hygiene: stdio framing, envelope validation, unrecognised-method handling
+- Extensibility and hygiene: `_`-prefixed custom methods must get a response (`ACP-EXT-001`), custom notifications
+  are ignored, `_meta` passthrough, unknown top-level keys (including on error objects), error message shape and
+  `-32602` for invalid params, shutdown promptness
+- Transport/JSON-RPC hygiene: stdio framing, envelope validation, unrecognised-method handling, no replies to
+  notifications, `$/cancel_request` (unknown ids, and an in-flight `session/prompt`)
 - `INFORMATIONAL` probes (reported only, spec silent or reference agents disagree): malformed JSON, structurally-invalid
   requests, unknown session ids, stderr volume
 - Not yet covered: MCP/terminal/filesystem capability surfaces

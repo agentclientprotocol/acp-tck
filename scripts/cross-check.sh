@@ -111,37 +111,47 @@ echo
 echo "== Comparison table =="
 set +e
 if [ "$CROSS_CHECK_V2" = "1" ]; then
-  # ACP-INIT-003 (MANDATORY): both v1 agents just echo the client's unsupported probe version
-  # (65535) verbatim instead of returning their own latest supported version -- a known,
-  # expected FAIL for both independent v1 implementations, not a TCK regression.
+  # echo_agent (1.0.0rc1) ACP-INIT-003 (MANDATORY): it echoes the client's unsupported probe
+  # version (65535) verbatim instead of returning its own latest supported version -- a known,
+  # expected FAIL for that independent v1 implementation, not a TCK regression. testy (v1) has
+  # answered 1 since rust-sdk 53dd268, so it is expected fully conformant (`testy=`).
   #
-  # testy_v2 (no expected MANDATORY FAILs): built with `unstable_protocol_v2`, testy correctly
-  # routes the probe to its native v2 `initialize` handler, which does not have the v1 echo bug.
+  # testy_v2: built with `unstable_protocol_v2`, testy routes the probe to its native v2
+  # `initialize` handler, which does not have the v1 echo bug. It still FAILs ACP-INIT-205
+  # (unsupported version -> -32022) and ACP-INIT-206 (malformed version -> -32602) because of an
+  # upstream race: after rejecting `initialize`, testy exits right away, usually before the error
+  # reply is flushed to stdout and while stdin is still open, so the TCK sees EOF with no
+  # response. The reply does appear if stdin closes immediately.
   #
   # python_v2_agent (repo-authored fixture, see `scripts/cross-check/python_v2_agent.py` docstring):
-  #   - ACP-INIT-003/201/202: the rc2 SDK itself rejects the probed protocol version with
-  #     `-32602 Invalid params` (`expectedProtocolVersion: 2`, `receivedProtocolVersion` 65535, or
-  #     1 in the downgrade case) before the fixture's `initialize()` runs, so the agent never
-  #     answers with a supported version.
+  #   - ACP-INIT-003/202/205: the rc2 SDK itself rejects every `protocolVersion` other than 2
+  #     with `-32602 Invalid params` before the fixture's `initialize()` runs. 65535 must select
+  #     2, and 1 and 0 must get `-32022` with `{requested, supported}` data.
+  #   - ACP-INIT-206: the SDK coerces a string `protocolVersion` such as "2" to an integer and
+  #     accepts it, where a non-integer value must get `-32602`.
   #   - ACP-BATCH-201/202, ACP-JSONRPC-001/003 (and the advisory batch/JSON-RPC checks): the rc2
   #     SDK crashes on any JSON array (batch) input -- `acp/connection.py` calls
   #     `message.get("method")` on a list (`AttributeError`) and the process exits 1. These are SDK
   #     limitations, not fixture bugs; the fixture delegates all JSON-RPC framing to the SDK.
+  #   - ACP-RESUME-208 (CAPABILITY, so not part of the MANDATORY-only `--expect` set below): the
+  #     rc2 SDK parses `replayFrom` with a default-on-error validator, so a malformed value
+  #     reaches the fixture as `None` (omitted) and the resume succeeds instead of `-32602`.
   python3 "$SCRIPT_DIR/cross-check-summary.py" \
     "$OUT_DIR/testy.json" testy \
     "$OUT_DIR/echo_agent.json" echo_agent \
     --report "$OUT_DIR/testy-v2.json" testy_v2 \
     --report "$OUT_DIR/python-v2.json" python_v2_agent \
-    --expect-only-mandatory-fail ACP-INIT-003 \
-    --expect "testy_v2=" \
-    --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-201,ACP-INIT-202,ACP-JSONRPC-001,ACP-JSONRPC-003"
+    --expect "testy=" \
+    --expect "echo_agent=ACP-INIT-003" \
+    --expect "testy_v2=ACP-INIT-205,ACP-INIT-206" \
+    --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"
 else
-  # ACP-INIT-003 (MANDATORY): known, expected FAIL for both v1 agents -- see the matching
-  # comment in the CROSS_CHECK_V2 branch above for why.
+  # Baselines: see the matching comment in the CROSS_CHECK_V2 branch above.
   python3 "$SCRIPT_DIR/cross-check-summary.py" \
     "$OUT_DIR/testy.json" testy \
     "$OUT_DIR/echo_agent.json" echo_agent \
-    --expect-only-mandatory-fail ACP-INIT-003
+    --expect "testy=" \
+    --expect "echo_agent=ACP-INIT-003"
 fi
 SUMMARY_EXIT=$?
 set -e

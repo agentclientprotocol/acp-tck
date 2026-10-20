@@ -22,10 +22,9 @@ _PROMPT_TEXT = "hi"
 @pytest.mark.capability("capabilities.session")
 async def test_request_permission_shape_and_turn_completes(agent_launch, tmp_path):
     """ACP-PERM-201. Any `session/request_permission` request observed during the turn
-    validates against the v2 schema, and specifically carries a non-empty string `title` (new in
-    v2) and a non-empty `options` array, each option carrying `optionId`/`name`/`kind`. Once the
-    mock client answers with a `selected` outcome (`run_prompt`'s default), the turn still
-    reaches a terminating idle.
+    validates against the v2 schema (required `sessionId`/`title`/`options`, at least one
+    option, each with `optionId`/`name`/`kind`). Once the mock client answers with a `selected`
+    outcome (`run_prompt` prefers an `allow_*` option), the turn still reaches an idle.
     """
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -50,23 +49,7 @@ async def test_request_permission_shape_and_turn_completes(agent_launch, tmp_pat
             issues = validate_agent_message(msg)
             assert not issues, f"session/request_permission failed schema validation: {issues!r}"
 
-            params = msg.get("params") or {}
-            title = params.get("title")
-            assert isinstance(title, str) and title, (
-                f"session/request_permission.title must be a non-empty string, got {title!r}"
-            )
-            options = params.get("options")
-            assert isinstance(options, list) and options, (
-                f"session/request_permission.options must be a non-empty array, got {options!r}"
-            )
-            for option in options:
-                assert isinstance(option, dict), f"permission option is not an object: {option!r}"
-                for field in ("optionId", "name", "kind"):
-                    assert field in option and option[field], (
-                        f"permission option missing/empty {field!r}: {option!r}"
-                    )
-
         assert turn.idle_update is not None, (
             "a session/request_permission was answered with a selected outcome, but the turn "
-            "never reached a terminating idle state_update"
+            "ended with an error response instead of an idle state_update"
         )

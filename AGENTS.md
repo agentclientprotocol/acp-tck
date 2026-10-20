@@ -64,6 +64,13 @@ failing, and the run is forced NOT CONFORMANT (`Verdict.blocked_by_version_misma
 zero FAILs. Requirements that judge only the negotiation *outcome* are judged normally and PASS
 on an honest downgrade.
 
+If the main `initialize` is instead *rejected* with `-32022` (unsupported protocol version --
+e.g. a v2-only agent under the default v1 suite), the connection is not initialized, so
+`tck.common.plugin`'s version-rejection gate SKIPs every test with `VERSION-MISMATCH:` and the
+run is blocked the same way. Only tests marked `@pytest.mark.negotiation` still run (v2's
+version-tolerant `ACP-INIT-*` rows); v1 marks none, because its negotiation rule ("respond with
+the latest version it supports") predates `-32022` and cannot judge a v2-only agent.
+
 **Exit code** is the four-status verdict, not pytest's own: `0` iff `verdict.conformant` (no
 MANDATORY FAIL/NOT_TESTED, no CAPABILITY FAIL, no auth/version-mismatch block), `1` otherwise.
 
@@ -94,17 +101,22 @@ statuses, not the overall verdict).
 informational `cross-check` job (`continue-on-error: true`) that runs the suite against
 independently-built upstream agents (Rust SDK's `testy`, Python SDK's example/experimental v2
 agents) via `scripts/cross-check.sh` and diffs the result against the expected-FAIL baseline (`--expect` lines
-in `scripts/cross-check.sh`). Both upstream v1 agents are expected to fail only the deliberately
-strengthened `ACP-INIT-003`; v2's `testy` is expected fully conformant; the Python v2 example
+in `scripts/cross-check.sh`). The Python v1 `echo_agent` is expected to fail only `ACP-INIT-003` (it
+echoes an unsupported requested version); v1 `testy` is expected fully conformant (it answers 1 from
+rust-sdk `53dd268`). v2's `testy` is expected to fail only `ACP-INIT-205`/`206`: it exits right after
+rejecting `initialize`, usually before the error reply is flushed to stdout (a known upstream race);
+the Python v2 example
 agent is expected to fail a small, documented set tied to known upstream limitations. Any other
 deviation is worth investigating as either a TCK bug or a genuine new upstream behavior.
 
 ## How to add a requirement + test
 
 (Describes v1; a future version's suite follows the same shape under its own package.)
-v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/StopReason`),
+v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/IdleStateUpdate`),
 never by line number; `tests/v2/test_registry.py` checks that every such pointer resolves.
 v2 prose citations point at the draft doc tree (`docs/protocol/v2/draft/*.mdx`), which pairs with the draft schema.
+v1 follows the same rules (`schema/v1/schema.unstable.json#/$defs/...`, `docs/protocol/v1/draft/*.mdx`),
+checked by `tests/v1/test_registry.py`.
 
 1. Add a `Requirement(...)` entry to `_DECLARATIONS` in `src/tck/v1/requirements.py`: pick an id
    (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the exact
@@ -179,20 +191,22 @@ an agent that resolves before the driver acts isn't misreported.
 v1 and v2 have genuinely different turn-end contracts and so have separate, non-shared
 implementations: in v1 the `session/prompt` response itself carries `stopReason` and *is* the
 turn's result; in v2 the response is only an acceptance receipt (`{messageId}`), and the turn's
-outcome is learned from a later `state_update{state:"idle", stopReason}` notification. Read
+outcome is learned from the `state_update{state:"idle"}` that follows an active state
+(`running`/`requires_action`); its `stopReason` is only SHOULD. Read
 `src/tck/v{1,2}/conformance/_helpers.py` directly for the exact turn-end predicate and
 cancel-race handling before writing a new prompt test.
 
 Cancellation tests never turn an unavoidable race into a false PASS/FAIL: they SKIP with
 "cancellation not exercised" when the response was read before cancel could be sent, or when a
-valid non-cancelled stop reason arrives within a short race window after cancel was sent.
+stop reason the agent could plausibly have reached on its own arrives within a short race window
+after cancel was sent (v2 never excuses `error` that way).
 `--cancel-prompt` exists specifically to make that race less likely against a real agent.
 
 ## Vendored schema
 
-`src/tck/v1/schema/schema.json`/`meta.json` and `src/tck/v2/schema/schema.unstable.json`/
-`meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. v1 uses the
-stable files; v2 (Draft) verifies entirely against the draft (unstable) superset. The RFD-gated
+`src/tck/v1/schema/schema.unstable.json`/`meta.unstable.json` and `src/tck/v2/schema/schema.unstable.json`/
+`meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. Both v1 and
+v2 (Draft) verify entirely against the draft (unstable) superset. The RFD-gated
 fields and methods it adds are optional for agents, but any an agent uses are validated against
 the draft shapes. Commit hash, vendor date, and
 refresh procedure live in each `schema/VENDORED.md`. Do not hand-edit the JSON files.

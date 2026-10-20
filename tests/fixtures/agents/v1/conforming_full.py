@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A conforming ACP v1 fixture agent that additionally advertises and correctly implements
 `loadSession` and every `sessionCapabilities` marker, plus modes, config options, prompt
-capabilities, and the authentication surface -- exercising the corresponding CAPABILITY-tier
+capabilities, and the authentication surface (including a `terminal` auth method for a client
+that advertises `auth.terminal`) -- exercising the corresponding CAPABILITY-tier
 tests end to end. `_base.py` already implements all the required behavior; this fixture only
 needs to turn the capabilities on and hand it the modes/config-options/auth-methods data.
 `conforming.py` deliberately stays at `agentCapabilities: {}` so these tests SKIP against it
@@ -16,6 +17,7 @@ that capability (see `test_session_config.py`).
 
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -29,6 +31,7 @@ CAPABILITIES = {
         "resume": {},
         "close": {},
         "additionalDirectories": {},
+        "systemPrompt": {},
     },
     "promptCapabilities": {
         "image": True,
@@ -71,9 +74,28 @@ AUTH_METHODS = [
     {"id": "tck", "name": "TCK", "description": None},
 ]
 
+TERMINAL_AUTH_METHOD = {
+    "type": "terminal",
+    "id": "tck-terminal",
+    "name": "TCK terminal login",
+    "args": ["--login"],
+    "env": {"TCK_LOGIN": "1"},
+}
+
+
+class ConformingFullAgent(ConformingAgent):
+    def _initialize_result(self) -> dict[str, Any]:
+        # A terminal method only for a client that advertised `auth.terminal` (ACP-AUTH-002),
+        # so ACP-AUTH-006 has a real one to validate.
+        result = super()._initialize_result()
+        auth = self._client_capabilities.get("auth")
+        if isinstance(auth, dict) and auth.get("terminal") is True:
+            result["authMethods"] = [*result.get("authMethods", []), TERMINAL_AUTH_METHOD]
+        return result
+
 
 def main() -> None:
-    ConformingAgent(
+    ConformingFullAgent(
         capabilities=CAPABILITIES,
         agent_name="tck-fixture-conforming-full",
         modes=dict(MODES),

@@ -47,6 +47,10 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-INIT-202",
         "ACP-INIT-203",
         "ACP-INIT-204",
+        "ACP-INIT-205",
+        "ACP-INIT-206",
+        "ACP-INIT-207",
+        "ACP-INIT-208",
         "ACP-SCHEMA-001",
         "ACP-SESSION-001",
         "ACP-SESSION-002",
@@ -59,7 +63,11 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PROMPTCAP-001",
         "ACP-PROMPTCAP-002",
         "ACP-PROMPTCAP-003",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-206",
+        "ACP-PROMPT-207",
+        "ACP-PROMPT-208",
+        "ACP-STATE-204",
+        "ACP-STATE-205",
         "ACP-PERM-201",
         "ACP-CLIENTCAP-201",
         "ACP-CLIENTCAP-202",
@@ -89,6 +97,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CANCEL-206",
         "ACP-CANCEL-207",
         "ACP-CANCEL-208",
+        "ACP-CANCEL-209",
         "ACP-INFO-BATCH-201",
         "ACP-INFO-BATCH-202",
         "ACP-INFO-CANCEL-201",
@@ -99,17 +108,27 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-RESUME-203",
         "ACP-RESUME-204",
         "ACP-RESUME-205",
+        "ACP-RESUME-206",
+        "ACP-RESUME-207",
+        "ACP-RESUME-208",
+        "ACP-RESUME-209",
         "ACP-LIST-201",
         "ACP-LIST-202",
         "ACP-LIST-203",
         "ACP-LIST-204",
         "ACP-CLOSE-201",
         "ACP-CLOSE-202",
+        "ACP-CLOSE-203",
+        "ACP-CLOSE-204",
         "ACP-DELETE-201",
         "ACP-DELETE-202",
         "ACP-DELETE-203",
         "ACP-ADDDIRS-201",
         "ACP-ADDDIRS-202",
+        "ACP-FORK-201",
+        "ACP-FORK-202",
+        "ACP-SYSPROMPT-201",
+        "ACP-SYSPROMPT-202",
         "ACP-MCP-201",
         "ACP-MCP-202",
         "ACP-CONFIG-201",
@@ -133,7 +152,6 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PATCH-208",
         "ACP-PATCH-209",
         "ACP-ENUM-201",
-        "ACP-ENUM-202",
         "ACP-ENUM-203",
         "ACP-META-001",
         "ACP-META-201",
@@ -141,6 +159,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-EXT-201",
         "ACP-EXT-202",
         "ACP-EXT-203",
+        "ACP-EXT-204",
         "ACP-ERROR-001",
         "ACP-SHUTDOWN-001",
         "ACP-SCHEMA-002",
@@ -159,10 +178,8 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-AUTH-205",
         "ACP-BATCH-203",
         "ACP-BATCH-204",
-        "ACP-BATCH-205",
+        "ACP-CLOSE-204",
         "ACP-DELETE-203",
-        "ACP-ENUM-202",
-        "ACP-ENUM-203",
         "ACP-ERROR-001",
         "ACP-EXT-201",
         "ACP-EXT-202",
@@ -172,17 +189,19 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-META-201",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
-        "ACP-PROMPT-003",
+        "ACP-PROMPT-208",
         "ACP-SCHEMA-002",
         "ACP-SHUTDOWN-001",
+        "ACP-STATE-204",
     }
 
 
 def test_informational_tier_is_exactly_these_ids():
     """Pins the INFORMATIONAL set -- see `test_advisory_tier_is_exactly_these_ids` above.
-    `ACP-BATCH-206/207/208` and `ACP-CANCEL-204` are here (not ADVISORY): each is always SKIPped,
-    never PASS/FAIL, so they belong in the record-only tier."""
+    `ACP-BATCH-205/206/207/208` and `ACP-CANCEL-204` are here (not ADVISORY): each is always
+    SKIPped, never PASS/FAIL, so they belong in the record-only tier."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.INFORMATIONAL} == {
+        "ACP-BATCH-205",
         "ACP-BATCH-206",
         "ACP-BATCH-207",
         "ACP-BATCH-208",
@@ -371,8 +390,13 @@ def test_schema_citation_pointers_resolve_in_the_vendored_schema():
 
 def test_unresolvable_pointer_is_reported():
     schema = json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
-    broken = {"x": ["/$defs/StopReason", "/$defs/NoSuchDef", "/$defs/StopReason/anyOf/99"]}
-    assert _unresolved_pointers(broken, schema) == ["x: /$defs/NoSuchDef", "x: /$defs/StopReason/anyOf/99"]
+    broken = {
+        "x": ["/$defs/IdleStateUpdate", "/$defs/NoSuchDef", "/$defs/IdleStateUpdate/anyOf/99"]
+    }
+    assert _unresolved_pointers(broken, schema) == [
+        "x: /$defs/NoSuchDef",
+        "x: /$defs/IdleStateUpdate/anyOf/99",
+    ]
 
 
 def test_no_v2_source_mentions_the_stable_schema_files():

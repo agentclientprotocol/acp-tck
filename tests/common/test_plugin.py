@@ -44,6 +44,20 @@ def test_object_marker_explicit_null_is_not_supported() -> None:
     assert capability_is_supported(result, "agentCapabilities.mcpCapabilities") is False
 
 
+def test_object_marker_explicit_false_is_not_supported() -> None:
+    # Schema-invalid, but must not count: e.g. `auth.logout: false` must not make the TCK call
+    # `logout`.
+    result = {"agentCapabilities": {"auth": {"logout": False}}}
+    assert capability_is_supported(result, "agentCapabilities.auth.logout") is False
+
+
+def test_object_marker_true_still_counts_as_supported() -> None:
+    # Schema-invalid too, but only `false`/`null`/missing are excluded; v2's
+    # `boolean_session_capability.py` self-test relies on `true` still gating tests in.
+    result = {"capabilities": {"session": True}}
+    assert capability_is_supported(result, "capabilities.session") is True
+
+
 # --- boolean-gate semantics (boolean=True: only `=== true` counts) ---
 
 

@@ -21,12 +21,12 @@ other's constant.
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "6d08f412a7a1370d3cc9a124e3be3d6acf92641e"
-"""The spec commit the vendored `schema/{schema,meta}.json` -- and every requirement citation
-in `tck.v1.requirements` -- are pinned to (see `schema/VENDORED.md`). Single source of truth:
-`tck.v1.requirements.SPEC_REVISION` and `Report.schema_revision` both read it from here."""
+SCHEMA_REVISION = "beac4ba96190018e9f6d82e148ff275084c5aa3e"
+"""The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every requirement
+citation in `tck.v1.requirements` -- are pinned to (see `schema/VENDORED.md`). Single source of
+truth: `tck.v1.requirements.SPEC_REVISION` and `Report.schema_revision` both read it from here."""
 
-# JSON-RPC / ACP error codes (schema/schema.json `ErrorCode`, :3503-3569). Names follow
+# JSON-RPC / ACP error codes (schema/v1/schema.unstable.json#/$defs/ErrorCode). Names follow
 # the schema's own `title` for each variant.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -37,7 +37,7 @@ REQUEST_CANCELLED = -32800
 AUTHENTICATION_REQUIRED = -32000
 RESOURCE_NOT_FOUND = -32002
 
-# `StopReason` values (schema/schema.json `StopReason`, :3447-3476). Closed enum in v1.
+# `StopReason` values (schema/v1/schema.unstable.json#/$defs/StopReason). Closed enum in v1.
 STOP_REASON_END_TURN = "end_turn"
 STOP_REASON_MAX_TOKENS = "max_tokens"
 STOP_REASON_MAX_TURN_REQUESTS = "max_turn_requests"
@@ -56,20 +56,20 @@ STOP_REASONS = frozenset(
 
 @lru_cache(maxsize=1)
 def load_meta() -> dict[str, Any]:
-    """Parse `schema/meta.json`.
+    """Parse `schema/meta.unstable.json`.
 
     Structure: a `version` int, plus three flat `{internal_name: "wire/method"}` dicts --
     `agentMethods`, `clientMethods`, `protocolMethods` (bidirectional, e.g. `$/cancel_request`).
     It doesn't distinguish requests from notifications -- that split is derived from
-    `schema.json` below.
+    `schema.unstable.json` below.
     """
-    return json.loads((SCHEMA_DIR / "meta.json").read_text())
+    return json.loads((SCHEMA_DIR / "meta.unstable.json").read_text())
 
 
 @lru_cache(maxsize=1)
 def load_schema() -> dict[str, Any]:
-    """Parse `schema/schema.json`."""
-    return json.loads((SCHEMA_DIR / "schema.json").read_text())
+    """Parse `schema/schema.unstable.json`."""
+    return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
 
 
 def _collect_ref_names(node: Any) -> list[str]:
@@ -117,7 +117,8 @@ PROTOCOL_METHODS: frozenset[str] = frozenset(load_meta()["protocolMethods"].valu
 """Bidirectional protocol-level notifications (`$/cancel_request`)."""
 
 AGENT_NOTIFICATIONS: frozenset[str] = _notification_methods("ClientNotification") & AGENT_METHODS
-"""Subset of `AGENT_METHODS` that are notifications, not requests (`session/cancel`)."""
+"""Subset of `AGENT_METHODS` that are notifications, not requests (`session/cancel`,
+`mcp/message`)."""
 
 CLIENT_NOTIFICATIONS: frozenset[str] = _notification_methods("AgentNotification") & CLIENT_METHODS
 """Subset of `CLIENT_METHODS` that are notifications, not requests (`session/update`,

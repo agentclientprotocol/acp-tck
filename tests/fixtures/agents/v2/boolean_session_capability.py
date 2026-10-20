@@ -16,15 +16,13 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _base import ConformingAgent, PROTOCOL_VERSION, _SUPPORTED_VERSIONS  # noqa: E402
+from _base import ConformingAgent, PROTOCOL_VERSION  # noqa: E402
 
 
 class BooleanSessionCapabilityAgent(ConformingAgent):
     def _initialize_result(self, params: dict[str, Any]) -> dict[str, Any]:
-        requested = params.get("protocolVersion")
-        negotiated = requested if requested in _SUPPORTED_VERSIONS else PROTOCOL_VERSION
         return {
-            "protocolVersion": negotiated,
+            "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"session": True},
             "info": {"name": "tck-fixture-boolean-session-capability", "version": "0.0.0"},
         }

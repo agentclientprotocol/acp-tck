@@ -3,7 +3,7 @@
 protocol versions 1 and 2. A request for exactly `1` gets an ordinary v1 handshake. A request
 for anything `>= 2` (including the TCK's unsupported-version probe, 65535) is routed to v2 --
 which means its params are validated as a v2 `InitializeRequest`, whose `info` field is
-REQUIRED (`schema/v2/schema.json:5838`). A caller that omits `info` (or sends a malformed one)
+REQUIRED (`schema/v2/schema.unstable.json#/$defs/InitializeRequest`). A caller that omits `info` (or sends a malformed one)
 gets `-32602` naming the missing field, exactly as `AgentProtocolRouter`/`role/acp.rs:633`
 does; a caller that includes a valid `info` gets back `protocolVersion: 2` in an otherwise
 v1-shaped result.
