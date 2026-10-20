@@ -7,7 +7,9 @@ implementation as a stdio subprocess, drives it through the protocol - initializ
 cancellation, error handling, transport hygiene - and reports which requirements pass, fail, don't apply, or were never
 exercised.
 
-Targets **v1** by default, with an opt-in **v2** (Draft) suite via `--protocol-version 2`.
+Targets **v1** by default, with an opt-in **v2** suite via `--protocol-version 2`.
+Both **v1** and **v2** target unstable spec versions (v1-unstable is a superset of v1-stable, so any v1-stable compatbile agent will be judged CONFORMANT).
+
 See ["What is covered"](#what-is-covered) below for the exact per-version breakdown.
 
 > [!NOTE]
