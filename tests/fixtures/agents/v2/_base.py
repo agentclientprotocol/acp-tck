@@ -2,82 +2,55 @@
 
 Not part of the installed `tck` package: fixture scripts are launched as standalone
 subprocesses (`python .../conforming.py`), so they import this module by inserting their own
-directory onto `sys.path` rather than a package-relative import -- same pattern as v1's
-`tests/fixtures/agents/v1/_base.py`, but a fresh, much smaller implementation (not imported from
-v1).
+directory onto `sys.path` rather than a package-relative import. Independent of v1's `_base.py`.
 
-Wire shapes are taken from the vendored `src/tck/v2/schema/schema.unstable.json` (`InitializeRequest`/
-`InitializeResponse`/`NewSessionRequest`/`NewSessionResponse`/...) -- verify against that schema,
-not memory, before changing a field name. Two v2-specific renames vs. v1: the agent's own identity
-is `info` (not `agentInfo`) and its capabilities are `capabilities` (not `agentCapabilities`).
+Wire shapes come from the vendored `src/tck/v2/schema/schema.unstable.json` -- verify against it,
+not memory, before changing a field name. v2 renames vs. v1: the agent's identity is `info` (not
+`agentInfo`) and its capabilities are `capabilities` (not `agentCapabilities`).
 
 Negotiates as a v2-only endpoint (`_handle_initialize`): a malformed `protocolVersion` gets
 `-32602`, one below 2 gets `-32022` with `data: {requested, supported: [2]}` and leaves the
 connection uninitialized (later requests are refused), and 2 or above selects 2.
 
-Implements the full `capabilities.session` baseline (advertising `session` even as `{}` commits
-the agent to `session/new`, `session/list`, `session/resume`, `session/close`, `session/prompt`,
-`session/cancel`, `session/update`), plus:
+Implements the full `capabilities.session` baseline (advertising `session`, even as `{}`, commits
+the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `update`), plus:
 
-- A `__hang__` cancel sentinel, mirroring v1's `conforming.py`: a prompt whose content is a
-  single `{"type": "text", "text": "__hang__"}` block withholds its terminating idle update
-  (`_finish_turn`) until `session/cancel` arrives for that session (`_handle_cancel`), or
-  `session/close` cancels it first (`_handle_close_session`, `ACP-CANCEL-208`). The hang check
-  runs right after the running update and *before* `_mid_turn_action`, preempting a subclass's
-  own mid-turn behavior for that one sentinel prompt only.
-- JSON-RPC batch dispatch: `run()` also accepts a top-level JSON array line. `_write` buffers a
-  *response* object into `self._batch_collector` while one is active (never a
-  request/notification the agent itself originates -- those stream out immediately, batch or
-  not); `_write_line` emits an actual line.
-  This lets `_handle_batch`/`_handle_batch_entry` reuse every `_handle_request`/`_handle_cancel`
-  method unchanged, just redirecting where their replies land.
-- `session/resume` replay: every `session/update` is recorded into a per-session history
-  (`_record_history`, from `_send_update`), and `_handle_resume_session` replays it verbatim (via
-  `_notify` directly, bypassing `_record_history` so a replay is never re-recorded) when
-  `replayFrom` is `{"type": "start"}`; omitted/`null` replays nothing. A `*_chunk` update is
-  preceded, the first time its `messageId` is seen, by a synthesized whole-message primer
-  (`content: []`) for the same id ("chunks build on a preceding whole message" shape) -- this
-  fixture only ever sends whole updates itself, but the primer keeps a chunk-emitting subclass's
-  history schema-correct too. `_handle_resume_session` accepts *any* `sessionId`, even an
-  unknown one, registering it as live -- so every route `_helpers.obtain_resumable_session`
-  tries succeeds. Any other `replayFrom` cursor type, or a malformed value, is rejected with
-  `-32602` (`_replay_from_rejection`, `ACP-RESUME-207/208`); every successful resume sends a
-  current-state `state_update` after the replay and before the response
-  (`_send_resume_snapshot`, `ACP-RESUME-206`). Each step is a small overridable hook so the
+- `__hang__` cancel sentinel (as in v1's `conforming.py`): a prompt that is a single `__hang__`
+  text block withholds its terminating idle update until `session/cancel` (`_handle_cancel`) or
+  `session/close` (`_handle_close_session`) arrives. It runs before `_mid_turn_action`,
+  preempting it for that prompt only.
+- JSON-RPC batch dispatch: `run()` also accepts a top-level JSON array line. While a batch is
+  active, `_write` buffers *responses* into `_batch_collector` (agent-originated requests and
+  notifications still stream out immediately), so every existing handler is reused unchanged.
+- `session/resume` replay: each `session/update` is recorded per session (`_record_history`);
+  `replayFrom: {"type": "start"}` replays it verbatim, omitted/`null` replays nothing, and any
+  other or malformed cursor gets `-32602` (`_replay_from_rejection`). Every successful resume
+  sends a current-state `state_update` before the response (`_send_resume_snapshot`). Resume
+  accepts *any* `sessionId`, even an unknown one, so every route
+  `_helpers.obtain_resumable_session` tries succeeds. The first `*_chunk` update for a `messageId`
+  is preceded by a synthesized whole-message primer (`content: []`), which keeps history
+  schema-correct for chunk-emitting subclasses. Each step is an overridable hook so the
   `resume_*.py` defect fixtures can break exactly one.
-- `session/close` keeps the closed session in `session/list` (it stays resumable) but no longer
-  accepts prompts for it. `session/delete` (`_handle_delete_session`) removes a session from the
-  list entirely, with no cancellation side effect (deleting an unknown/already-deleted id
-  succeeds silently, `ACP-DELETE-203`).
-- `session/fork` (only when `capabilities.session.fork` is advertised) creates a new live
-  session with a copy of the source's history. `systemPrompt` on `session/new` is accepted only
-  in an advertised mode with text content, else `-32602`.
-- `session/set_config_option` (`_handle_set_config_option`) looks up `configId` among the
-  constructor's `config_options`, updates its `currentValue`, and replies with the complete
-  updated list (`ACP-CONFIG-202`). `session/new`/`session/resume` include `configOptions` in
-  their result whenever any are configured (`ACP-CONFIG-201`/`203`). `additionalDirectories`/
-  `mcpServers` need no handling: the session handlers already ignore unknown `params` keys, which
-  is all `ACP-ADDDIRS-201/202`/`ACP-MCP-201/202` require (accepted, never rejected).
-- `_send_rich_turn_updates`, an opt-in hook (`emit_rich_turn_updates` constructor flag, default
-  `False`) fired once per turn right after the running update: a two-chunk `agent_message_chunk`
-  pair sharing one `messageId` (`ACP-PATCH-201`), a `tool_call_update` create (`ACP-PATCH-208`)
-  followed by a patch carrying `content` for the same `toolCallId` (`ACP-PATCH-204`), and a
-  `plan_update` with one entry (`ACP-PATCH-205`) -- gives every PATCH/ENUM requirement something
-  real to observe instead of vacuously SKIPping. Only `conforming_full.py` sets the flag.
-  `AsksPermissionAgent` additionally reports `state_update {state: "requires_action"}` before
-  its `session/request_permission` and `running` once an answer lets it resume, so
-  `ACP-PATCH-209`/`ACP-STATE-205` have something to observe too.
-- `terminal_auth_method`, a constructor-supplied `AuthMethod` dict (`type: "terminal"`), is
-  appended to whatever `auth_methods` `initialize` would otherwise answer, but only when the
-  request's own `params.capabilities.auth.terminal` object marker is present (`{}`/non-`null`) --
-  mirrors `ACP-AUTH-202`'s own gate exactly, so the default (no `auth.terminal` capability)
-  connection still advertises none and stays the negative control that id needs, while the
-  dedicated positive-capability connection `ACP-AUTH-207` opens sees one.
-- `_send_rich_turn_updates` also emits one `terminal_update` (with `command`/absolute `cwd`) and
-  one `terminal_output_chunk` (with independently-base64-encoded `data`) sharing a `terminalId`,
-  mirroring the pattern already used for `tool_call_update` (`ACP-PATCH-206`/`207`) -- so
-  `conforming_full.py` reaches `ACP-AUTH-207`/`ACP-PATCH-206`/`ACP-PATCH-207` PASS instead of
-  SKIP.
+- `session/close` keeps the session in `session/list` (resumable) but refuses further prompts.
+  `session/delete` removes it entirely, with no cancellation side effect; an unknown id succeeds
+  silently.
+- `session/fork` (only when `capabilities.session.fork` is advertised) creates a live session with
+  a copy of the source's history. `systemPrompt` on `session/new` is accepted only in an
+  advertised mode with text content, else `-32602`.
+- `session/set_config_option` updates `currentValue` and replies with the complete list;
+  `session/new`/`session/resume` include `configOptions` whenever any are configured.
+  `additionalDirectories`/`mcpServers` need no handling: unknown `params` keys are already
+  ignored, which is all the spec requires (accepted, never rejected).
+- `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
+  `_send_rich_turn_updates` fires once per turn after the running update, emitting two
+  `agent_message_chunk`s sharing a `messageId`, a `tool_call_update` create plus a content patch,
+  a one-entry `plan_update`, and a `terminal_update` + `terminal_output_chunk` sharing a
+  `terminalId` -- so the patch/enum requirements observe something instead of SKIPping.
+  `AsksPermissionAgent` also reports `requires_action`/`running` around its permission request.
+- `terminal_auth_method`: appended to `authMethods` only when the `initialize` request's
+  `capabilities.auth.terminal` object marker is present (the same gate the conformance test
+  applies), so the default connection stays the negative control while a positive-capability
+  connection sees it.
 """
 
 from __future__ import annotations
