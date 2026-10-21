@@ -1720,6 +1720,24 @@ def test_v2_garbage_after_response_fails_transport_201_and_schema_001_only():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
+def test_v2_message_split_across_multiple_lines_fails_transport_203():
+    """A JSON-RPC message split over three physical stdout lines must fail the dedicated
+    embedded-newline requirement as well as generic framing and schema validation."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "message_split_across_multiple_lines.py",
+        protocol_version=2,
+        k="transport or initialize",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-TRANSPORT-201", "ACP-TRANSPORT-203", "ACP-SCHEMA-001"}, result.stdout
+    assert statuses.get("ACP-TRANSPORT-002") == "PASS", result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
 def test_v2_wrong_id_echo_fails_id_dependent_requirements():
     """`wrong_id_echo.py` mangles every response id -- violates `ACP-JSONRPC-001`. Breaking id
     correlation for literally every request/response pair in the connection cascades into

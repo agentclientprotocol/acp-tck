@@ -89,23 +89,31 @@ async def test_no_embedded_newlines(agent_launch, tmp_path):
 
     The harness's `readuntil(b"\\n")` reader makes an embedded newline unobservable within one
     entry -- any literal `\\n` the agent writes ends that read right there. The real signal is
-    reassembly: if an entry failed to parse (an incomplete fragment) but concatenating it with
-    the next entry's raw bytes (rejoined by the stripped newline) parses as valid JSON, the agent
-    split one message across a literal embedded newline.
+    reassembly: if an entry failed to parse (an incomplete fragment) but concatenating it with one
+    or more following entries' raw bytes (rejoined by the stripped newlines) parses as valid JSON,
+    the agent split one message across literal embedded newlines.
     """
     received = await _drive_full_exchange(agent_launch, tmp_path)
 
     assert received, "the agent never wrote anything to stdout"
-    for index in range(len(received) - 1):
-        entry = received[index]
+    for index, entry in enumerate(received):
         if entry.parse_error is None:
             continue  # already a complete, valid message (or batch) on its own line
-        combined = entry.raw + b"\n" + received[index + 1].raw
-        try:
-            json.loads(combined.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            continue
-        pytest.fail(
-            "a message appears to have been split across a literal embedded newline: "
-            f"{entry.raw!r} + {received[index + 1].raw!r}"
-        )
+        combined = bytearray(entry.raw)
+        for following in received[index + 1 :]:
+            combined.extend(b"\n")
+            combined.extend(following.raw)
+            try:
+                text = combined.decode("utf-8")
+                json.loads(text)
+            except UnicodeDecodeError:
+                break
+            except json.JSONDecodeError as exc:
+                # Once malformed before the end, appending lines cannot repair it.
+                if exc.pos < len(text.rstrip()):
+                    break
+                continue
+            pytest.fail(
+                "a message appears to have been split across literal embedded newlines: "
+                f"{bytes(combined)!r}"
+            )
