@@ -1,7 +1,6 @@
 ---
 name: orchestrator
 description: Run this session as the orchestrator, delegating granular slices of ACP TCK work to the programmer, researcher, and (opt-in) reviewer subagents.
-disable-model-invocation: true
 argument-hint: "[goal | resume]"
 ---
 
