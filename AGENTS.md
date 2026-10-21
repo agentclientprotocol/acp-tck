@@ -119,9 +119,9 @@ v1 follows the same rules (`schema/v1/schema.unstable.json#/$defs/...`, `docs/pr
 checked by `tests/v1/test_registry.py`.
 
 1. Add a `Requirement(...)` entry to `_DECLARATIONS` in `src/tck/v1/requirements.py`: pick an id
-   (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the exact
-   `.agents/research/*.md` line(s) that back it -- those reports are the specification, not
-   memory of the protocol.
+   (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the upstream
+   spec/schema location that backs it. Take it from the research report for the task, not from
+   memory of the protocol, but never cite the report itself (see Conventions).
 2. Write a test under `src/tck/v1/conformance/`, marked `@pytest.mark.requirement("ACP-…")` with
    a docstring starting with the id(s). Use `connected_agent()` from `_helpers.py` to spawn the
    agent; `async def` tests work without extra setup.
@@ -226,14 +226,10 @@ requirement needs to assert on the harness's own outgoing traffic.
 - Keep comments and docstrings concise and straightforward. Use plain language. Note non-obvious
   rationale, gotchas, and spec citations; skip narrating what the code already says, restating
   history slice-by-slice, or listing exhaustive cascades/examples that belong in tests, not prose.
-  **Never mention intermediate research artifacts** (e.g., notes from researcher agents, work-in-progress
-  findings in `.agents/research/`) in final code comments. Research documents are temporary and will be
-  deleted once features are implemented. Only reference a research document in a comment if it is explicitly
-  work-in-progress and you or the next agent plan to return to that part in this or the next iteration.
-  After implementation, clean up or replace all research references with proper, permanent comments.
+- **Never reference anything under `.agents/`**  in the
+  final code: not in comments, docstrings, `Requirement` citations, tests, or scripts. Those files are
+  deleted before the PR merges, so such a reference would dangle. A temporary reference is fine
+  while the work that needs it is in progress, but it must be removed or replaced with a permanent
+  upstream citation or plain explanation by the time that work is done.
 - Dependency management is `uv` only, with exact pins (`==`), never bare `pip` or hand-edited
   `pyproject.toml` dependency entries.
-- `.agents/` is the orchestrator's workbench. `.agents/research/*.md` are read-only inputs --
-  they are the specification this code implements; do not edit them.
-- Licensed under Apache-2.0 (`LICENSE`); `pyproject.toml`'s `license`/`license-files` (PEP 639)
-  are the source of truth -- do not add a `License ::` classifier alongside them.
