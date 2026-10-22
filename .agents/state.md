@@ -29,6 +29,8 @@ mode: single · branch: orchestrator-skills · reviews: off
 ## Done
 - Core-docs research — 4a9df3c — reports core-docs-v1.md, core-docs-v2.md
 - S1 spec maps — 551d497 — maps, loader, registry checks; 406 passed
+- S1b section addressing — 369799f — heading paths, (intro), resolve_section(); 427 passed
 ## Next
-- S1b (programmer running), then S1c, then S2.
+- S1c (programmer running), then S2.
+- Note for user: full suite ~15.5 min locally vs CI `test` timeout-minutes: 20.
 ## Open questions (waiting on the user)
