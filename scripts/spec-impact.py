@@ -2,12 +2,16 @@
 """Inventory what changed between two ACP spec revisions, and which parts of the TCK it touches.
 
 Usage:
-  uv run python scripts/spec-impact.py <base> <target> --version {v1,v2} [--spec-repo PATH]
+  uv run python scripts/spec-impact.py <base> <target> --version {v1,v2} [--spec-repo PATH] [--fix]
 
 Prints a Markdown report to stdout for a researcher to interpret: changed files, the sections
 each doc hunk falls in, hits on the core docs and `$defs` listed in `src/tck/<version>/spec_map.toml`,
 the schema `$ref` closure, docs linking to changed docs, and the requirement ids and ledger
 entries whose citations fall in a changed region.
+
+With `--fix` it instead remaps the `.mdx` line citations in `src/tck/<version>/requirements.py`
+and `spec_map.toml` from base to target line numbers, in place (see "citation remapping"). Run it
+once per revision bump: a second run would shift the already-remapped lines again.
 
 Read-only on the spec checkout: it only runs `git rev-parse`, `git diff`, `git show` and
 `git ls-tree` on the given refs, so the checkout's branch and working tree do not matter.
@@ -20,6 +24,7 @@ run it with `uv run` so that package is importable.
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib
 import json
 import os
@@ -33,7 +38,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from tck.common.citations import line_refs, pointer_def, schema_pointers
+from tck.common.citations import find_line_refs, line_refs, pointer_def, schema_pointers
 from tck.common.spec_map import (
     INTRO,
     PATH_SEPARATOR,
@@ -42,6 +47,7 @@ from tck.common.spec_map import (
     SectionError,
     SpecMap,
     parse_headings,
+    parse_spec_map,
     resolve_section,
 )
 from tck.common.spec_repo import discover_spec_repo
@@ -170,7 +176,8 @@ def parse_diff(text: str) -> dict[str, list[Hunk]]:
         elif line.startswith("+++ "):
             new = line[4:]
             path = old_path if new == "/dev/null" else new.removeprefix("b/")
-            hunks.setdefault(path, [])
+            if path is not None:  # a `+++` line without a preceding `---` is not a git diff
+                hunks.setdefault(path, [])
         elif path is not None and (hunk := parse_hunk_header(line)):
             hunks[path].append(hunk)
     return hunks
@@ -530,6 +537,174 @@ def citation_hits(citation: str, version: str, changes: dict[str, FileChange], s
     return list(dict.fromkeys(hits))
 
 
+# --- citation remapping (--fix) --------------------------------------------------------------
+
+
+def last_base_line(hunk: Hunk) -> int:
+    """The last base line a hunk covers; for an insertion, the line it comes after."""
+    return hunk.old_start + hunk.old_count - 1 if hunk.old_count else hunk.old_start
+
+
+def remap_range(hunks: Sequence[Hunk], start: int, end: int) -> tuple[tuple[int, int] | None, list[Hunk]]:
+    """Base lines `start..end` at target, or `None` plus the hunks that change them. A range that
+    no hunk touches moves as a whole by the net size of the hunks above it."""
+    touching = [h for h in hunks if hunk_touches_base_range(h, start, end)]
+    if touching:
+        return None, touching
+    offset = sum(h.new_count - h.old_count for h in hunks if last_base_line(h) < start)
+    return (start + offset, end + offset), []
+
+
+@dataclass(frozen=True)
+class Remapped:
+    old: str
+    """The citation element as written, `path:lines`."""
+    new: str | None
+    """Its target-revision form; `None` when it could not be mapped (left as written)."""
+    why: str = ""
+    """For an unmapped element: the hunks (or other reason) that prevent it."""
+
+
+def remap_citation(text: str, changes: dict[str, FileChange]) -> tuple[str, list[Remapped]]:
+    """`text` with the line numbers of its `.mdx` citations moved from base to target, and what
+    was rewritten or could not be. Only digits change: ranges and comma lists keep their shape,
+    and an element that cannot be mapped stays as written."""
+    out = text
+    results: list[Remapped] = []
+    for match in reversed(find_line_refs(text)):
+        path, span = match.ref.path, match.spec_span
+        change = changes.get(path)
+        if change is None or change.status == "A" or span is None:
+            continue
+        elements, new_elements, ref_results = text[span[0] : span[1]].split(","), [], []
+        for element in elements:
+            start, _, end = element.partition("-")
+            first, last = int(start), int(end or start)
+            if not path.endswith(".mdx"):
+                mapped, why = None, "line citations into a non-doc file are not remapped"
+            elif change.status == "D":
+                mapped, why = None, "file removed"
+            else:
+                mapped, hunks = remap_range(change.hunks, first, last)
+                why = "overlaps hunk " + ", ".join(f"`{h.label()}`" for h in hunks)
+            if mapped is None:
+                new_elements.append(element)
+                ref_results.append(Remapped(f"{path}:{element}", None, why))
+                continue
+            new = f"{mapped[0]}-{mapped[1]}" if "-" in element else str(mapped[0])
+            new_elements.append(new)
+            if new != element:
+                ref_results.append(Remapped(f"{path}:{element}", f"{path}:{new}"))
+        out = out[: span[0]] + ",".join(new_elements) + out[span[1] :]
+        results = ref_results + results
+    return out, results
+
+
+Labelled = tuple[str, Remapped]
+
+
+def _char_offsets(source: str, node: ast.expr) -> tuple[int, int]:
+    """`node`'s `(start, end)` as indexes into `source` (ast columns are UTF-8 byte offsets)."""
+    lines = source.split("\n")
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line) + 1)
+
+    def offset(lineno: int, col: int) -> int:
+        return starts[lineno - 1] + len(lines[lineno - 1].encode()[:col].decode())
+
+    assert node.end_lineno is not None and node.end_col_offset is not None
+    return offset(node.lineno, node.col_offset), offset(node.end_lineno, node.end_col_offset)
+
+
+def fix_requirements_source(source: str, changes: dict[str, FileChange]) -> tuple[str, list[Labelled]]:
+    """Remap the `citation=` of every `Requirement(...)` in `source`, editing the text in place
+    so the diff is line numbers only."""
+    edits: list[tuple[int, int, str]] = []
+    results: list[Labelled] = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Requirement"):
+            continue
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        req_id, citation = keywords.get("id"), keywords.get("citation")
+        if not (isinstance(req_id, ast.Constant) and isinstance(citation, ast.expr)):
+            continue
+        start, end = _char_offsets(source, citation)
+        new, remapped = remap_citation(source[start:end], changes)
+        results += [(str(req_id.value), item) for item in remapped]
+        if new != source[start:end]:
+            edits.append((start, end, new))
+    for start, end, new in sorted(edits, reverse=True):
+        source = source[:start] + new + source[end:]
+    return source, results
+
+
+_LEDGER_TABLE = re.compile(r"^\s*\[\[not_requirement\]\]")
+_LEDGER_CITATION = re.compile(r"^\s*citation\s*=")
+
+
+def fix_spec_map_text(text: str, changes: dict[str, FileChange]) -> tuple[str, list[Labelled]]:
+    """Remap each ledger entry's `citation = "..."` line in a `spec_map.toml`."""
+    ledger = parse_spec_map(text).not_requirements
+    lines = text.split("\n")
+    results: list[Labelled] = []
+    index = -1
+    for number, line in enumerate(lines):
+        if _LEDGER_TABLE.match(line):
+            index += 1
+        elif index >= 0 and _LEDGER_CITATION.match(line):
+            lines[number], remapped = remap_citation(line, changes)
+            results += [(f"ledger `{ledger[index].statement}`", item) for item in remapped]
+    return "\n".join(lines), results
+
+
+@dataclass
+class FixResult:
+    rewritten: list[Labelled] = field(default_factory=list)
+    review: list[Labelled] = field(default_factory=list)
+
+
+def apply_fix(requirements: Path, spec_map: Path, changes: dict[str, FileChange]) -> FixResult:
+    """Remap citations in both files in place (only those that changed are rewritten)."""
+    result = FixResult()
+    for path, fixer in ((requirements, fix_requirements_source), (spec_map, fix_spec_map_text)):
+        original = path.read_bytes().decode("utf-8")
+        fixed, remapped = fixer(original, changes)
+        if fixed != original:
+            path.write_bytes(fixed.encode("utf-8"))
+        result.rewritten += [item for item in remapped if item[1].new is not None]
+        result.review += [item for item in remapped if item[1].new is None]
+    return result
+
+
+def render_fix(result: FixResult, version: str, base: str, target: str) -> str:
+    out = [
+        f"# Citation remap ({version}): `{base[:12]}` -> `{target[:12]}`",
+        "",
+        f"## Needs review ({len(result.review)})",
+        "",
+        "Left as written: the cited lines are inside a changed region, so no new line numbers can be derived.",
+        "",
+    ]
+    out += [f"- {label}: `{item.old}` {item.why}" for label, item in result.review] or ["None."]
+    out += ["", f"## Rewritten ({len(result.rewritten)})", ""]
+    out += [f"- {label}: `{item.old}` -> `{item.new}`" for label, item in result.rewritten] or ["None."]
+    out += [
+        "",
+        "## Summary",
+        "",
+        f"- {len(result.rewritten)} citation elements rewritten, {len(result.review)} need review.",
+        "- The revision pin (`SCHEMA_REVISION` / `SPEC_REVISION`) is untouched.",
+    ]
+    return "\n".join(out) + "\n"
+
+
+def version_files(version: str) -> tuple[Path, Path]:
+    """The version's `requirements.py` and `spec_map.toml`."""
+    requirements = Path(importlib.import_module(f"tck.{version}.requirements").__file__ or "")
+    return requirements, requirements.with_name("spec_map.toml")
+
+
 # --- report ----------------------------------------------------------------------------------
 
 
@@ -715,11 +890,17 @@ def registry_entries(version: str) -> list[tuple[str, str]]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0] or None)
     parser.add_argument("base", help="base spec revision (e.g. the commit pinned in VENDORED.md)")
     parser.add_argument("target", help="target spec revision")
     parser.add_argument("--version", required=True, choices=("v1", "v2"))
     parser.add_argument("--spec-repo", type=Path, help="spec checkout (default: $ACP_SPEC_REPO, else check-specification's)")
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="remap `.mdx` line citations in the version's requirements.py and spec_map.toml in place, "
+        "instead of printing the report",
+    )
     args = parser.parse_args(argv)
 
     path = args.spec_repo or discover_spec_repo()
@@ -730,6 +911,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         base, target = repo.commit(args.base), repo.commit(args.target)
     except GitError as error:
         parser.error(f"{path}: cannot resolve revision ({error})")
+    if args.fix:
+        changes = file_changes(repo, base, target, args.version)
+        result = apply_fix(*version_files(args.version), changes)
+        sys.stdout.write(render_fix(result, args.version, base, target))
+        return 0
     spec_map = importlib.import_module(f"tck.{args.version}.spec_map").load()
     report = analyze(repo, base, target, args.version, spec_map, registry_entries(args.version))
     sys.stdout.write(render(report))

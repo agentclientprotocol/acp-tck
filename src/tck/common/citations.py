@@ -71,14 +71,28 @@ _LINE_REF = re.compile(
 )
 
 
-def line_refs(text: str) -> list[LineRef]:
-    """Spec-repo file citations in `text` (`docs/...` or `schema/...`, `.mdx`/`.json`), with
-    their line ranges. Schema JSON Pointer citations are not included (see `schema_pointers`)."""
-    refs = []
-    for path, spec in _LINE_REF.findall(text):
+@dataclass(frozen=True)
+class LineRefMatch:
+    ref: LineRef
+    spec_span: tuple[int, int] | None
+    """Where the line spec (`578-590,598`, without the colon) sits in the searched text; `None`
+    for a whole-file citation."""
+
+
+def find_line_refs(text: str) -> list[LineRefMatch]:
+    """Like `line_refs`, but also locates each line spec in `text` (to rewrite it in place)."""
+    matches = []
+    for m in _LINE_REF.finditer(text):
+        spec = m.group(2)
         ranges = []
         for part in spec.split(",") if spec else ():
             start, _, end = part.partition("-")
             ranges.append((int(start), int(end or start)))
-        refs.append(LineRef(path, tuple(ranges)))
-    return refs
+        matches.append(LineRefMatch(LineRef(m.group(1), tuple(ranges)), m.span(2) if spec else None))
+    return matches
+
+
+def line_refs(text: str) -> list[LineRef]:
+    """Spec-repo file citations in `text` (`docs/...` or `schema/...`, `.mdx`/`.json`), with
+    their line ranges. Schema JSON Pointer citations are not included (see `schema_pointers`)."""
+    return [match.ref for match in find_line_refs(text)]

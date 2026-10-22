@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tck.common.citations import LineRef, line_refs, pointer_def, resolve_pointer, schema_pointers
+from tck.common.citations import LineRef, find_line_refs, line_refs, pointer_def, resolve_pointer, schema_pointers
 
 
 def test_resolve_pointer_handles_escapes_and_arrays():
@@ -57,3 +57,12 @@ def test_line_refs_skip_schema_pointers_and_non_spec_paths():
         "rust-sdk@d5e8bf4 src/agent-client-protocol/tests/x.rs:1"
     )
     assert line_refs(citation) == []
+
+
+def test_find_line_refs_locates_each_line_spec():
+    text = "see docs/a.mdx:5-7,9 and docs/b.mdx; schema/v1/schema.unstable.json#/$defs/X"
+    matches = find_line_refs(text)
+    assert [m.ref.path for m in matches] == ["docs/a.mdx", "docs/b.mdx"]
+    first, second = matches
+    assert first.spec_span is not None and text[slice(*first.spec_span)] == "5-7,9"
+    assert second.spec_span is None

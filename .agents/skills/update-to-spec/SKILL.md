@@ -87,9 +87,12 @@ slice plan. Tier choices and retirements are decisions: wait for the user's answ
 ## 6. Slices
 
 1. **Re-vendor, first and alone:** follow `VENDORED.md`'s refresh steps (copy the schema, update
-   the commit, date, and `SCHEMA_REVISION`), remap line citations
-   (`scripts/spec-impact.py ... --fix`, or by hand), and fix the citations `test_registry.py`
-   flags. Changes to the semantics of requirements don't belong in this slice.
+   the commit, date, and `SCHEMA_REVISION`), remap line citations, and fix the citations
+   `test_registry.py` flags. Remap with `uv run python scripts/spec-impact.py <old-pin> <new-pin>
+   --version vN --fix`, once: it rewrites the `.mdx` line numbers in `requirements.py` and
+   `spec_map.toml` in place (line numbers only, never the pin) and prints "Needs review" first,
+   listing citations inside changed regions that it left as written. Fix those by hand against
+   the new text. Changes to the semantics of requirements don't belong in this slice.
 2. **One slice per area:** registry rows, conformance tests, fixtures, the `test_cli.py`
    expectations, and the ledger additions for that area.
 3. **Cross-check:** if a change moves the upstream agents' expected results, update the

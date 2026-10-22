@@ -452,3 +452,170 @@ def test_cli_rejects_an_unknown_revision(spec_repo):
     )
     assert result.returncode == 2
     assert "cannot resolve revision" in result.stderr
+
+
+# --- citation remapping (--fix) --------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "expected"),
+    [
+        (5, 5, (5, 5)),  # above every hunk
+        (13, 13, (13, 13)),  # right before the insertion after line 13
+        (14, 15, (15, 16)),  # below the insertion
+        (11, 14, None),  # insertion strictly inside the range
+        (17, 17, None),  # replaced line
+        (16, 18, None),
+        (19, 22, (20, 23)),  # below both hunks: +1 and +0
+    ],
+)
+def test_remap_range_shifts_by_the_hunks_above_and_refuses_changed_ranges(start, end, expected):
+    hunks = [Hunk(13, 0, 14, 1), Hunk(17, 1, 18, 1)]
+    mapped, touching = si.remap_range(hunks, start, end)
+    assert mapped == expected
+    assert bool(touching) is (expected is None)
+
+
+def test_remap_range_after_a_pure_deletion_shifts_up():
+    assert si.remap_range([Hunk(3, 2, 2, 0)], 6, 8) == ((4, 6), [])
+    assert si.remap_range([Hunk(3, 2, 2, 0)], 4, 4)[0] is None
+
+
+def test_remap_citation_keeps_shape_and_leaves_unmappable_elements(spec_repo):
+    repo, base, target = spec_repo
+    changes = si.file_changes(si.SpecRepo(repo), base, target, "v1")
+    text = (
+        f"{D}/core.mdx:5,15,17,19-20; {D}/core.mdx:15-17; {D}/core.mdx:21 @ x; "
+        f"{D}/gone.mdx:1; docs/rfds/thing.mdx:3,5; {SCHEMA}:2-3; {D}/new.mdx:1; {D}/untouched.mdx:9; "
+        f"{D}/core.mdx; agent-client-protocol-schema/src/rpc.rs:14-16"
+    )
+    new, results = si.remap_citation(text, changes)
+    assert new == (
+        f"{D}/core.mdx:5,16,17,20-21; {D}/core.mdx:15-17; {D}/core.mdx:22 @ x; "
+        f"{D}/gone.mdx:1; docs/rfds/thing.mdx:3,5; {SCHEMA}:2-3; {D}/new.mdx:1; {D}/untouched.mdx:9; "
+        f"{D}/core.mdx; agent-client-protocol-schema/src/rpc.rs:14-16"
+    )
+    assert [(r.old, r.new, r.why) for r in results] == [
+        (f"{D}/core.mdx:15", f"{D}/core.mdx:16", ""),
+        (f"{D}/core.mdx:17", None, "overlaps hunk `-17,1 +18,1`"),
+        (f"{D}/core.mdx:19-20", f"{D}/core.mdx:20-21", ""),
+        (f"{D}/core.mdx:15-17", None, "overlaps hunk `-17,1 +18,1`"),
+        (f"{D}/core.mdx:21", f"{D}/core.mdx:22", ""),
+        (f"{D}/gone.mdx:1", None, "file removed"),
+        ("docs/rfds/thing.mdx:5", None, "overlaps hunk `-5,1 +5,1`"),
+        (f"{SCHEMA}:2-3", None, "line citations into a non-doc file are not remapped"),
+    ]
+
+
+_REQUIREMENTS_SOURCE = f'''\
+SPEC_REVISION = "abc"
+_cite = make_cite(SPEC_REVISION)
+
+_DECLARATIONS = (
+    Requirement(
+        id="REQ-A",
+        text="Mentions {D}/core.mdx:15 in prose, which is not a citation.",
+        citation=_cite("{D}/core.mdx:15,19"),
+    ),
+    Requirement(
+        id="REQ-B",
+        text="café — unicode before the citation",
+        citation=_cite(
+            "{D}/core.mdx:15-17; "
+            "agent-client-protocol-schema/src/rpc.rs:14-16; "
+            "{D}/core.mdx:18-19, {D}/core.mdx:5 — é"
+            "; {SCHEMA}#/$defs/Leaf"
+        ),
+    ),
+)
+'''
+
+_SPEC_MAP_SOURCE = f'''\
+# Ledger mentions {D}/core.mdx:15 in a comment.
+core_defs = []
+
+[[not_requirement]]
+citation = "{D}/core.mdx:15-16 @ abc"
+statement = "first"
+reason = "r"
+
+[[not_requirement]]
+citation = "{D}/core.mdx:17,19 @ abc"
+statement = "second"
+reason = "r"
+'''
+
+
+def test_apply_fix_edits_text_in_place_and_reports_each_entry(spec_repo, tmp_path):
+    repo, base, target = spec_repo
+    changes = si.file_changes(si.SpecRepo(repo), base, target, "v1")
+    requirements, spec_map = tmp_path / "requirements.py", tmp_path / "spec_map.toml"
+    requirements.write_text(_REQUIREMENTS_SOURCE)
+    spec_map.write_text(_SPEC_MAP_SOURCE)
+
+    result = si.apply_fix(requirements, spec_map, changes)
+
+    assert requirements.read_text() == (
+        _REQUIREMENTS_SOURCE.replace(f"citation=_cite(\"{D}/core.mdx:15,19\")", f"citation=_cite(\"{D}/core.mdx:16,20\")")
+        .replace(f"{D}/core.mdx:18-19, {D}/core.mdx:5", f"{D}/core.mdx:19-20, {D}/core.mdx:5")
+    )
+    assert spec_map.read_text() == _SPEC_MAP_SOURCE.replace("core.mdx:15-16 @", "core.mdx:16-17 @").replace(
+        "core.mdx:17,19 @", "core.mdx:17,20 @"
+    )
+    assert [(label, r.old, r.new) for label, r in result.rewritten] == [
+        ("REQ-A", f"{D}/core.mdx:15", f"{D}/core.mdx:16"),
+        ("REQ-A", f"{D}/core.mdx:19", f"{D}/core.mdx:20"),
+        ("REQ-B", f"{D}/core.mdx:18-19", f"{D}/core.mdx:19-20"),
+        ("ledger `first`", f"{D}/core.mdx:15-16", f"{D}/core.mdx:16-17"),
+        ("ledger `second`", f"{D}/core.mdx:19", f"{D}/core.mdx:20"),
+    ]
+    assert [(label, r.old, r.why) for label, r in result.review] == [
+        ("REQ-B", f"{D}/core.mdx:15-17", "overlaps hunk `-17,1 +18,1`"),
+        ("ledger `second`", f"{D}/core.mdx:17", "overlaps hunk `-17,1 +18,1`"),
+    ]
+
+
+def test_apply_fix_without_changes_leaves_files_byte_identical(spec_repo, tmp_path):
+    repo, _, target = spec_repo
+    changes = si.file_changes(si.SpecRepo(repo), target, target, "v1")
+    requirements, spec_map = tmp_path / "requirements.py", tmp_path / "spec_map.toml"
+    requirements.write_bytes(_REQUIREMENTS_SOURCE.replace("\n", "\r\n").encode())
+    spec_map.write_text(_SPEC_MAP_SOURCE)
+    before = requirements.read_bytes(), spec_map.read_bytes()
+    result = si.apply_fix(requirements, spec_map, changes)
+    assert (requirements.read_bytes(), spec_map.read_bytes()) == before
+    assert not result.rewritten and not result.review
+
+
+def test_apply_fix_preserves_crlf_line_endings(spec_repo, tmp_path):
+    repo, base, target = spec_repo
+    changes = si.file_changes(si.SpecRepo(repo), base, target, "v1")
+    requirements, spec_map = tmp_path / "requirements.py", tmp_path / "spec_map.toml"
+    requirements.write_bytes(_REQUIREMENTS_SOURCE.replace("\n", "\r\n").encode())
+    spec_map.write_text(_SPEC_MAP_SOURCE)
+    si.apply_fix(requirements, spec_map, changes)
+    fixed = requirements.read_bytes().decode()
+    assert fixed.count("\r\n") == _REQUIREMENTS_SOURCE.count("\n") and f"{D}/core.mdx:16,20" in fixed
+
+
+def test_cli_fix_prints_needs_review_first_and_does_not_print_the_report(spec_repo, tmp_path, monkeypatch, capsys):
+    repo, base, target = spec_repo
+    requirements, spec_map = tmp_path / "requirements.py", tmp_path / "spec_map.toml"
+    requirements.write_text(_REQUIREMENTS_SOURCE)
+    spec_map.write_text(_SPEC_MAP_SOURCE)
+    monkeypatch.setattr(si, "version_files", lambda version: (requirements, spec_map))
+
+    assert si.main([base, target, "--version", "v1", "--spec-repo", str(repo), "--fix"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith(f"# Citation remap (v1): `{base[:12]}` -> `{target[:12]}`")
+    headings = [line for line in out.splitlines() if line.startswith("## ")]
+    assert headings == ["## Needs review (2)", "## Rewritten (5)", "## Summary"]
+    assert f"- REQ-B: `{D}/core.mdx:15-17` overlaps hunk `-17,1 +18,1`" in out
+    assert f"- REQ-A: `{D}/core.mdx:15` -> `{D}/core.mdx:16`" in out
+    assert "## 1. Changed files" not in out
+    assert f"{D}/core.mdx:16,20" in requirements.read_text()
+
+
+def test_parse_diff_ignores_a_deletion_header_without_an_old_path():
+    assert si.parse_diff("+++ /dev/null\n@@ -1 +0,0 @@\n") == {}
