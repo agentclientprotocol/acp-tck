@@ -88,9 +88,18 @@ spec-tracker/    # member: pyproject.toml, src/spec_tracker/ (citations, spec_ma
   job syncs/tests `cross-check/`, outputs go to `scratch/cross-check`. Root 477 passed, cross-check
   14 passed, `run.sh` matched the baseline (run from `cross-check/` and `/tmp`).
 
+- S2 spec-tracker member — 3b5dc85 — root `[tool.uv.workspace]` (members/exclude); `spec-tracker/`
+  package with `spec-impact` entry point, maps in `spec-tracker/maps/`, map loading folded into
+  `spec_tracker.spec_map`; product registry tests got local pointer helpers; spec fetch + CI step
+  moved to spec-tracker. Root 365 passed, spec-tracker 115 passed; wheel holds no tooling.
+  `acp-tck` is unpinned in the member (workspace source; an `==` pin would break on version bumps).
+  Lock files are at uv lock revision 5 (uv 0.13; CI installs latest uv).
+
 ## Next
-- S2 (programmer, single mode).
-- Stale docs for S3 (reported by S1): `AGENTS.md`/`CLAUDE.md` lines ~102-105 (`scripts/cross-check.sh`,
+- S3 (programmer, single mode).
+- Stale docs for S3 (reported by S1 and S2): see the S3 brief; also AGENTS.md ~101 (spec fetch now
+  a spec-tracker step), ~227-239 (spec map section), update-to-spec SKILL.md 31-32/46/91-93.
+- Earlier S1 list: `AGENTS.md`/`CLAUDE.md` lines ~102-105 (`scripts/cross-check.sh`,
   echo_agent "pinned to rc1"); `update-to-spec/SKILL.md` line 102 (`--expect` lines in
   `scripts/cross-check.sh`); orchestrator `SKILL.md` line 12 (`scripts/` in the no-edit list);
   `run.sh` points at the AGENTS.md heading "Cross-checking against upstream agents" (check it exists).
