@@ -1,6 +1,6 @@
 # State: move maintenance tooling out of the `tck` package (spec-tracker workspace member, standalone cross-check)
 ## Settings
-mode: single · branch: orchestrator-skills · reviews: off (confirmed 2026-10-22)
+mode: single · branch: spec-update-tooling (renamed from orchestrator-skills) · reviews: off (confirmed 2026-10-22)
 
 ## Context
 The spec tooling built in the previous goal lives inside the product package:
