@@ -2,7 +2,7 @@
 synthetic spec repo with two commits.
 
 `scripts/` is not a package, so the module is loaded from its file path (as in
-`test_cross_check_summary.py`).
+`cross-check/tests/test_summary.py`).
 """
 
 from __future__ import annotations

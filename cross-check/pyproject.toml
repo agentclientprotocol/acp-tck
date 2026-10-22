@@ -1,0 +1,19 @@
+[project]
+name = "cross-check"
+version = "0.0.0"
+description = "Cross-checks the ACP TCK against independently built upstream agents."
+requires-python = ">=3.14"
+dependencies = [
+    "agent-client-protocol==1.0.0rc2",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+]

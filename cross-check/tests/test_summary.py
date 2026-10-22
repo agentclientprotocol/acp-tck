@@ -1,9 +1,8 @@
-"""Unit tests for `scripts/cross-check-summary.py`'s `--expect-only-mandatory-fail` check.
+"""Unit tests for `summary.py`'s `--expect-only-mandatory-fail` check.
 
-`scripts/` is not a package (it holds standalone, stdlib-only CLI scripts run via `python3`,
-not `uv run pytest` -- see `AGENTS.md` "Cross-checking against upstream agents"), so the module
-is loaded directly from its file path via `importlib`, keyed off this test file's own location
-so it works regardless of the current working directory.
+`summary.py` is a standalone, stdlib-only CLI script, not a package, so the module is loaded
+directly from its file path via `importlib`, keyed off this test file's own location so it
+works regardless of the current working directory.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPT_PATH = Path(__file__).resolve().parent.parent.parent / "scripts" / "cross-check-summary.py"
+_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "summary.py"
 
 
 def _load_module():
@@ -98,7 +97,7 @@ def test_main_end_to_end_exits_nonzero_on_unexpected_mandatory_fail(tmp_path: Pa
 
     exit_code = ccs.main(
         [
-            "cross-check-summary.py",
+            "summary.py",
             str(left),
             "left",
             str(right),
@@ -120,7 +119,7 @@ def test_main_end_to_end_exits_zero_when_expectation_holds(tmp_path: Path):
 
     exit_code = ccs.main(
         [
-            "cross-check-summary.py",
+            "summary.py",
             str(left),
             "left",
             str(right),
@@ -138,7 +137,7 @@ def test_main_without_the_flag_still_exits_zero_regardless_of_fails(tmp_path: Pa
     left.write_text(json.dumps(_report([_req("ACP-INIT-003", "MANDATORY", "FAIL")])))
     right.write_text(json.dumps(_report([])))
 
-    exit_code = ccs.main(["cross-check-summary.py", str(left), "left", str(right), "right"])
+    exit_code = ccs.main(["summary.py", str(left), "left", str(right), "right"])
     assert exit_code == 0
 
 
@@ -169,7 +168,7 @@ def test_main_accepts_extra_reports_via_report_flag(tmp_path: Path, capsys):
 
     exit_code = ccs.main(
         [
-            "cross-check-summary.py",
+            "summary.py",
             str(left),
             "left",
             str(right),
@@ -195,7 +194,7 @@ def test_main_per_report_expect_overrides_the_global_default(tmp_path: Path, cap
 
     exit_code = ccs.main(
         [
-            "cross-check-summary.py",
+            "summary.py",
             str(left),
             "left",
             str(right),
@@ -232,7 +231,7 @@ def test_main_per_report_expect_still_flags_a_genuine_deviation(tmp_path: Path, 
 
     exit_code = ccs.main(
         [
-            "cross-check-summary.py",
+            "summary.py",
             str(left),
             "left",
             str(right),
@@ -262,7 +261,7 @@ def test_main_expect_without_the_mandatory_fail_flag_still_checks_named_reports(
     # real MANDATORY FAIL and no override -- is simply not checked at all.
     exit_code = ccs.main(
         [
-            "cross-check-summary.py",
+            "summary.py",
             str(left),
             "left",
             str(right),

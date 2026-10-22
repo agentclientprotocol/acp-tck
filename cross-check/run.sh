@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Cross-check the ACP TCK against independently implemented agents:
 #   v1 -- `testy` (Rust SDK's own test fixture agent, built from a local checkout) and
-#         `examples/echo_agent.py` (Python SDK's example agent, pinned to 1.0.0rc1)
+#         `examples/echo_agent.py` (Python SDK's example agent)
 #   v2 -- `testy` again, this time built with the `unstable_protocol_v2` feature so it routes
 #         v2 connections to its native v2 agent, and a repo-authored minimal v2 agent
-#         (`scripts/cross-check/python_v2_agent.py`, pinned to 1.0.0rc2) since no upstream v2
-#         example agent exists yet
+#         (`python_v2_agent.py`) since no upstream v2 example agent exists yet
+#
+# Both Python agents run in this directory's own uv project, whose `agent-client-protocol`
+# pin (see `pyproject.toml`) is the SDK version they are checked at. The TCK itself runs as a
+# CLI from the repo-root project.
 #
 # This is a manual/CI cross-check, NOT part of `uv run pytest` -- it needs a Rust toolchain
 # and both SDK checkouts. See `AGENTS.md` "Cross-checking against upstream agents"
@@ -26,6 +29,13 @@ ACP_PYTHON_SDK="${ACP_PYTHON_SDK:-$(cat "$REPO_ROOT/.agents/skills/check-python-
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/scratch/cross-check}"
 CROSS_CHECK_V2="${ACP_CROSS_CHECK_V2:-1}"
 
+# Sync both envs once up front and run everything with --no-sync, so uv never touches a venv
+# while the TCK is using it. --inexact keeps the root sync from pruning other workspace members.
+uv sync --locked --inexact --project "$REPO_ROOT"
+uv sync --locked --project "$SCRIPT_DIR"
+TCK=(uv run --no-sync --project "$REPO_ROOT" acp-tck)
+AGENT_PYTHON=(uv run --no-sync --project "$SCRIPT_DIR" python)
+
 mkdir -p "$OUT_DIR"
 # Canonicalize to absolute: downstream cargo builds run in a subshell `cd`'d into
 # $ACP_RUST_SDK, and a relative OUT_DIR would then resolve --target-dir against that
@@ -45,17 +55,16 @@ if [ ! -x "$TESTY" ]; then
 fi
 
 echo "== Running acp-tck against testy ($TESTY) ==" >&2
-cd "$REPO_ROOT"
 set +e
-uv run acp-tck --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/testy.json" -- "$TESTY"
+"${TCK[@]}" --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/testy.json" -- "$TESTY"
 TESTY_EXIT=$?
 set -e
 echo "testy exit code: $TESTY_EXIT" >&2
 
-echo "== Running acp-tck against echo_agent.py (agent-client-protocol==1.0.0rc1) ==" >&2
+echo "== Running acp-tck against echo_agent.py ==" >&2
 set +e
-uv run acp-tck --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/echo_agent.json" -- \
-  uv run --no-project --with 'agent-client-protocol==1.0.0rc1' python "$ACP_PYTHON_SDK/examples/echo_agent.py"
+"${TCK[@]}" --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/echo_agent.json" -- \
+  "${AGENT_PYTHON[@]}" "$ACP_PYTHON_SDK/examples/echo_agent.py"
 ECHO_EXIT=$?
 set -e
 echo "echo_agent exit code: $ECHO_EXIT" >&2
@@ -88,18 +97,17 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
 
   echo "== Running acp-tck --protocol-version 2 against testy ($TESTY_V2) ==" >&2
   set +e
-  uv run acp-tck --protocol-version 2 --cancel-prompt wait_for_cancel \
+  "${TCK[@]}" --protocol-version 2 --cancel-prompt wait_for_cancel \
     --report-json "$OUT_DIR/testy-v2.json" -- "$TESTY_V2"
   TESTY_V2_EXIT=$?
   set -e
   echo "testy (v2) exit code: $TESTY_V2_EXIT" >&2
 
-  echo "== Running acp-tck --protocol-version 2 against python_v2_agent.py (agent-client-protocol==1.0.0rc2) ==" >&2
+  echo "== Running acp-tck --protocol-version 2 against python_v2_agent.py ==" >&2
   set +e
-  uv run acp-tck --protocol-version 2 --cancel-prompt wait_for_cancel \
+  "${TCK[@]}" --protocol-version 2 --cancel-prompt wait_for_cancel \
     --report-json "$OUT_DIR/python-v2.json" -- \
-    uv run --no-project --with 'agent-client-protocol==1.0.0rc2' python \
-      "$SCRIPT_DIR/cross-check/python_v2_agent.py"
+    "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/python_v2_agent.py"
   PYTHON_V2_EXIT=$?
   set -e
   echo "python_v2_agent exit code: $PYTHON_V2_EXIT" >&2
@@ -111,7 +119,7 @@ echo
 echo "== Comparison table =="
 set +e
 if [ "$CROSS_CHECK_V2" = "1" ]; then
-  # echo_agent (1.0.0rc1) ACP-INIT-003 (MANDATORY): it echoes the client's unsupported probe
+  # echo_agent ACP-INIT-003 (MANDATORY): it echoes the client's unsupported probe
   # version (65535) verbatim instead of returning its own latest supported version -- a known,
   # expected FAIL for that independent v1 implementation, not a TCK regression. testy (v1) has
   # answered 1 since rust-sdk 53dd268, so it is expected fully conformant (`testy=`).
@@ -123,7 +131,7 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   # reply is flushed to stdout and while stdin is still open, so the TCK sees EOF with no
   # response. The reply does appear if stdin closes immediately.
   #
-  # python_v2_agent (repo-authored fixture, see `scripts/cross-check/python_v2_agent.py` docstring):
+  # python_v2_agent (repo-authored fixture, see `python_v2_agent.py` docstring):
   #   - ACP-INIT-003/202/205: the rc2 SDK itself rejects every `protocolVersion` other than 2
   #     with `-32602 Invalid params` before the fixture's `initialize()` runs. 65535 must select
   #     2, and 1 and 0 must get `-32022` with `{requested, supported}` data.
@@ -136,7 +144,7 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   #   - ACP-RESUME-208 (CAPABILITY, so not part of the MANDATORY-only `--expect` set below): the
   #     rc2 SDK parses `replayFrom` with a default-on-error validator, so a malformed value
   #     reaches the fixture as `None` (omitted) and the resume succeeds instead of `-32602`.
-  python3 "$SCRIPT_DIR/cross-check-summary.py" \
+  "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
     "$OUT_DIR/testy.json" testy \
     "$OUT_DIR/echo_agent.json" echo_agent \
     --report "$OUT_DIR/testy-v2.json" testy_v2 \
@@ -147,7 +155,7 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
     --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"
 else
   # Baselines: see the matching comment in the CROSS_CHECK_V2 branch above.
-  python3 "$SCRIPT_DIR/cross-check-summary.py" \
+  "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
     "$OUT_DIR/testy.json" testy \
     "$OUT_DIR/echo_agent.json" echo_agent \
     --expect "testy=" \
@@ -163,6 +171,6 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   echo "testy (v2) exit code: $TESTY_V2_EXIT"
   echo "python_v2_agent exit code: $PYTHON_V2_EXIT"
 fi
-echo "cross-check-summary.py expectations exit code: $SUMMARY_EXIT"
+echo "summary.py expectations exit code: $SUMMARY_EXIT"
 
 exit 0

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Render a compact requirement-by-requirement comparison table from two or more `acp-tck
---report-json` reports (see `scripts/cross-check.sh`). Stdlib only -- no project dependency.
+--report-json` reports (see `run.sh`). Stdlib only -- no project dependency.
 
 Usage:
-  cross-check-summary.py <left.json> <left-label> <right.json> <right-label>
+  summary.py <left.json> <left-label> <right.json> <right-label>
                           [--report <path> <label> ...]
                           [--expect-only-mandatory-fail ID [ID ...]]
                           [--expect LABEL=ID,ID,...]
@@ -19,7 +19,7 @@ report is ACP-INIT-003. Passing no ids after the flag asserts zero MANDATORY FAI
 
 `--expect LABEL=ID,ID,...` (repeatable) overrides that default for one specific report by
 label -- needed because the v1 and v2 legs have different expected upstream baselines (e.g.
-`echo_agent (1.0.0rc1)=ACP-INIT-003` vs `python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,...`).
+`echo_agent=ACP-INIT-003` vs `python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,...`).
 `LABEL=` (an empty id list) asserts zero MANDATORY FAILs for that report. A report with
 neither a `--expect` override nor `--expect-only-mandatory-fail` given is not checked at all.
 
@@ -95,7 +95,7 @@ def _parse_expect(spec: str) -> tuple[str, set[str]]:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog=argv[0] if argv else "cross-check-summary.py",
+        prog=argv[0] if argv else "summary.py",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
