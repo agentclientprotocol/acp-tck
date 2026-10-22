@@ -14,12 +14,21 @@ mode: single · branch: orchestrator-skills · reviews: off
 - Script must normalize stable-tree links (`/protocol/v1/<page>`) to the draft tree, and remap
   `schema.mdx` line citations too.
 - Script: `scripts/spec-impact.py <base> <target> --version vN [--spec-repo PATH] [--fix]`, stdlib only.
+- Section addressing: heading paths (`"Agent > Baseline Methods"`) for duplicate titles; a
+  `(intro)` marker = text before the first child heading (doc level or under a heading path);
+  inclusion only, no exclusions. v1 session-setup adds its intro; v2 overview uses
+  `Agent > Baseline Methods`; v2 prompt-lifecycle lists explicitly every section except the five
+  standalone feature subsections (Session-directed messages, Session Notices, Session Compaction,
+  Session Usage Updates, End-Turn Token Usage).
+- CI `test` job: shallow-fetch the spec repo at SCHEMA_REVISION, export ACP_SPEC_REPO; under CI the
+  spec-doc checks fail instead of skip.
 ## Plan
-- M1 spec maps: S1 spec_map.toml x2 + loader + registry-test checks.
+- M1 spec maps: S1 spec_map.toml x2 + loader + registry-test checks; S1b section addressing; S1c CI fetch.
 - M2 script: S2 report mode (+ tests on a synthetic git repo); S3 `--fix` line-citation remap.
   Adjust update-to-spec/SKILL.md if the interface differs.
 ## Done
 - Core-docs research — 4a9df3c — reports core-docs-v1.md, core-docs-v2.md
+- S1 spec maps — 551d497 — maps, loader, registry checks; 406 passed
 ## Next
-- S1 (programmer running).
+- S1b (programmer running), then S1c, then S2.
 ## Open questions (waiting on the user)
