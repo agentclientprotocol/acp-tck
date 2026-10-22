@@ -11,6 +11,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -50,30 +51,45 @@ def _spec_repo() -> Path | None:
     return Path(configured) if configured else None
 
 
+def _in_ci() -> bool:
+    """GitHub Actions (and most CI systems) set `CI=true`."""
+    return os.environ.get("CI", "").lower() in {"1", "true"}
+
+
+def _spec_unavailable(reason: str) -> NoReturn:
+    """Skip locally; fail under CI, where a missing spec checkout means the fetch step broke and
+    skipping would silently hide the spec-map checks."""
+    if _in_ci():
+        pytest.fail(f"{reason} (CI is set, so this fails instead of skipping)", pytrace=False)
+    pytest.skip(reason)
+
+
+def read_spec_doc(repo: Path | None, revision: str, path: str) -> str:
+    """Read `path` from `repo` as of `revision` with `git show`. When the checkout or revision is
+    missing, skips locally and fails under CI (see `_spec_unavailable`)."""
+    if repo is None:
+        _spec_unavailable("no spec checkout (set ACP_SPEC_REPO or configure check-specification)")
+    result = subprocess.run(
+        ["git", "-C", str(repo), "show", f"{revision}:{path}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        if subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-e", f"{revision}^{{commit}}"],
+            capture_output=True,
+        ).returncode != 0:
+            _spec_unavailable(f"spec checkout {repo} does not contain revision {revision}")
+        raise AssertionError(f"{path} does not exist at spec revision {revision}: {result.stderr.strip()}")
+    return result.stdout
+
+
 @pytest.fixture(scope="session")
 def spec_doc() -> Callable[[str, str], str]:
     """`spec_doc(revision, path)` returns a file from the spec repo as of `revision`, read with
     `git show` so the checkout's working tree and current branch do not matter. Skips the test
-    when no spec checkout is available or it lacks `revision`."""
+    when no spec checkout is available or it lacks `revision`; fails instead under CI."""
 
     repo = _spec_repo()
-
-    def read(revision: str, path: str) -> str:
-        if repo is None:
-            pytest.skip("no spec checkout (set ACP_SPEC_REPO or configure check-specification)")
-        result = subprocess.run(
-            ["git", "-C", str(repo), "show", f"{revision}:{path}"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        if result.returncode != 0:
-            if subprocess.run(
-                ["git", "-C", str(repo), "cat-file", "-e", f"{revision}^{{commit}}"],
-                capture_output=True,
-            ).returncode != 0:
-                pytest.skip(f"spec checkout {repo} does not contain revision {revision}")
-            raise AssertionError(f"{path} does not exist at spec revision {revision}: {result.stderr.strip()}")
-        return result.stdout
-
-    return read
+    return lambda revision, path: read_spec_doc(repo, revision, path)

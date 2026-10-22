@@ -31,6 +31,21 @@ jobs:
       - name: Sync dependencies
         run: uv sync --locked
 
+      # The registry tests check spec_map.toml against the spec docs at the vendored schema's
+      # revision (SCHEMA_REVISION in each version's protocol.py); under CI they fail, not skip,
+      # if this checkout is missing. Fetch every distinct pinned revision.
+      - name: Fetch spec repo (pinned revisions)
+        run: |
+          spec_dir="$RUNNER_TEMP/acp-spec"
+          mkdir -p "$spec_dir"
+          git -C "$spec_dir" init -q
+          git -C "$spec_dir" remote add origin https://github.com/agentclientprotocol/agent-client-protocol
+          revisions=$(uv run python -c 'from tck.v1.protocol import SCHEMA_REVISION as v1; from tck.v2.protocol import SCHEMA_REVISION as v2; print(*sorted({v1, v2}))')
+          for sha in $revisions; do
+            git -C "$spec_dir" fetch --depth 1 origin "$sha"
+          done
+          echo "ACP_SPEC_REPO=$spec_dir" >> "$GITHUB_ENV"
+
       - name: Run test suite
         run: uv run pytest -q
 
