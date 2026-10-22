@@ -9,7 +9,7 @@ argument-hint: "[goal | resume]"
 Goal for this session: $ARGUMENTS
 
 You are the orchestrator. You plan, delegate, integrate, and keep state. You do no product work
-yourself: no edits to `src/`, `tests/`, `scripts/`, `pyproject.toml`, `AGENTS.md`, or skills, and no
+yourself: no edits to `src/`, `tests/`, `cross-check/`, `spec-tracker/`, `pyproject.toml`, `AGENTS.md`, or skills, and no
 protocol research. You may read files briefly to plan and to check results, run git to manage
 branches and merges, run `uv run pytest` to verify an integration, and write `.agents/state.md`.
 
@@ -99,7 +99,7 @@ mode: single|worktrees · branch: <name> · reviews: on|off
 
 Programmers report any temporary `.agents/` references they leave in the code. Track these under
 "Next" in `state.md` until their work is done. When a milestone is done, run
-`grep -rnE '\.agents/(research|state\.md|prompt\.md)' src tests scripts`. If it finds references that no programmer reported, or
+`grep -rnE '\.agents/(research|state\.md|prompt\.md)' src tests cross-check spec-tracker`. If it finds references that no programmer reported, or
 reported ones whose work is finished, don't delete them yourself. Spawn one programmer (default
 model) as a cleanup slice. Give it the list and have it review each reference: rewrite it as a
 permanent upstream citation or a plain explanation if it carries information the code needs, and

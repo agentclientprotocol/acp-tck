@@ -28,7 +28,7 @@ the orchestrator.
 
 Run one researcher (`sonnet`) per version. It writes `.agents/research/spec-diff-v<N>.md`:
 
-- the output of `uv run python scripts/spec-impact.py <base> <target> --version v<N>` (add
+- the output of `uv run --package spec-tracker spec-impact <base> <target> --version v<N>` (add
   `--spec-repo PATH` if the checkout is not `$ACP_SPEC_REPO` or the `check-specification` one);
 - the matching `CHANGELOG.md` entries and RFD status changes;
 - a one-line summary per changed area.
@@ -43,7 +43,7 @@ That content is:
 - the requirement ids and ledger entries whose citations fall inside a change;
 - the core docs that were touched.
 
-The core docs and the ledger of deliberate non-requirements live in `src/tck/v<N>/spec_map.toml`.
+The core docs and the ledger of deliberate non-requirements live in `spec-tracker/maps/v<N>.toml`.
 
 ## 3. Depth
 
@@ -88,9 +88,9 @@ slice plan. Tier choices and retirements are decisions: wait for the user's answ
 
 1. **Re-vendor, first and alone:** remap line citations, re-vendor per `VENDORED.md`'s refresh
    steps (copy the schema; update the commit, date, and `SCHEMA_REVISION`), and fix the citations
-   `test_registry.py` flags. Order matters: remap first, with the pin still at the old revision:
-   `uv run python scripts/spec-impact.py <old-pin> <new-pin> --version vN --fix`. It rewrites the
-   `.mdx` line numbers in `requirements.py` and `spec_map.toml` in place (line numbers only, never
+   `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag. Order matters: remap first, with the pin still at the old revision:
+   `uv run --package spec-tracker spec-impact <old-pin> <new-pin> --version vN --fix`. It rewrites the
+   `.mdx` line numbers in `requirements.py` and `spec-tracker/maps/vN.toml` in place (line numbers only, never
    the pin) and prints "Needs review" first, listing citations inside changed regions that it
    left as written. It is not idempotent, so it refuses unless `<old-pin>` equals the current
    `SCHEMA_REVISION`; bumping the pin afterwards blocks a second run. Fix the "Needs review"
@@ -99,6 +99,6 @@ slice plan. Tier choices and retirements are decisions: wait for the user's answ
 2. **One slice per area:** registry rows, conformance tests, fixtures, the `test_cli.py`
    expectations, and the ledger additions for that area.
 3. **Cross-check:** if a change moves the upstream agents' expected results, update the
-   `--expect` lines in `scripts/cross-check.sh` and say why.
+   `--expect` lines in `cross-check/run.sh` and say why.
 
 Then finish as the orchestrator skill says.

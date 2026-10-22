@@ -1,6 +1,6 @@
 ---
 name: programmer
-description: "Implements one well-scoped slice of the ACP TCK: writes code and tests, runs the suite, and iterates until it is green, in either single-worker or worktree mode as the brief specifies. Python + uv + pytest. Use for changes to src/, tests/, pyproject.toml, AGENTS.md, or skill definitions. Use ONLY when the `orchestrator` skill is active or the user explicitly asks for this agent. Do not use it to research protocol behavior; it must escalate unclear protocol questions instead of guessing."
+description: "Implements one well-scoped slice of the ACP TCK: writes code and tests, runs the suite, and iterates until it is green, in either single-worker or worktree mode as the brief specifies. Python + uv + pytest. Use for changes to src/, tests/, spec-tracker/, cross-check/, pyproject.toml, AGENTS.md, or skill definitions. Use ONLY when the `orchestrator` skill is active or the user explicitly asks for this agent. Do not use it to research protocol behavior; it must escalate unclear protocol questions instead of guessing."
 model: sonnet
 effort: high
 color: green
@@ -25,9 +25,12 @@ well-specified slices don't need it.
 ## Environment
 
 - Python, managed with `uv`. `requires-python = ">=3.14"`.
-- Package source: `src/tck/`.
-- Tests: `pytest`, run as `uv run pytest`.
-- Add dependencies with `uv add <pkg>` (or `uv add --dev <pkg>`), never by hand-editing
+- Package source: `src/tck/`. `spec-tracker/` (workspace member) and `cross-check/` (standalone uv
+  project) are maintenance tooling, not product.
+- Tests: `pytest`, run as `uv run pytest` (root `tests/` only). Also, when you touch them:
+  `uv run --package spec-tracker pytest spec-tracker/tests` and `uv run --directory cross-check pytest`.
+- Add dependencies with `uv add <pkg>` (or `uv add --dev <pkg>`; `uv add --package spec-tracker <pkg>` or
+  `uv add --project cross-check <pkg>` for the other projects), never by hand-editing
   `pyproject.toml` and never with bare `pip`.
 - Always pin dependencies to the exact version.
 - Read `AGENTS.md` before starting; read `.agents/state.md` if instructed. They describe current
