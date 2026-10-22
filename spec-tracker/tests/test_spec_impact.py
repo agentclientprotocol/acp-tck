@@ -1,13 +1,9 @@
-"""`scripts/spec-impact.py`: unit tests for its building blocks, plus a full report over a small
+"""`spec_tracker.impact`: unit tests for its building blocks, plus a full report over a small
 synthetic spec repo with two commits.
-
-`scripts/` is not a package, so the module is loaded from its file path (as in
-`cross-check/tests/test_summary.py`).
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -15,21 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from tck.common.spec_map import Heading, parse_spec_map
+from spec_tracker import impact as si
+from spec_tracker.spec_map import Heading, parse_spec_map
 
-_SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "spec-impact.py"
-
-
-def _load_module():
-    spec = importlib.util.spec_from_file_location("spec_impact", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses resolve annotations through sys.modules
-    spec.loader.exec_module(module)
-    return module
-
-
-si = _load_module()
 Hunk = si.Hunk
 
 
@@ -432,7 +416,7 @@ def test_cli_runs_read_only_against_a_spec_repo(spec_repo):
     repo, base, _ = spec_repo
     before = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"], capture_output=True, text=True).stdout
     result = subprocess.run(
-        [sys.executable, str(_SCRIPT_PATH), base, "HEAD", "--version", "v1", "--spec-repo", str(repo)],
+        [sys.executable, "-m", "spec_tracker.impact", base, "HEAD", "--version", "v1", "--spec-repo", str(repo)],
         capture_output=True,
         text=True,
     )
@@ -446,7 +430,7 @@ def test_cli_runs_read_only_against_a_spec_repo(spec_repo):
 def test_cli_rejects_an_unknown_revision(spec_repo):
     repo, base, _ = spec_repo
     result = subprocess.run(
-        [sys.executable, str(_SCRIPT_PATH), base, "0" * 40, "--version", "v1", "--spec-repo", str(repo)],
+        [sys.executable, "-m", "spec_tracker.impact", base, "0" * 40, "--version", "v1", "--spec-repo", str(repo)],
         capture_output=True,
         text=True,
     )
@@ -654,6 +638,13 @@ def test_pinned_revision_reads_each_versions_schema_revision():
     from tck.v2.protocol import SCHEMA_REVISION as v2_pin
 
     assert si.pinned_revision("v1") == v1_pin and si.pinned_revision("v2") == v2_pin
+
+
+def test_version_files_point_at_the_product_requirements_and_the_spec_map():
+    for version in ("v1", "v2"):
+        requirements, spec_map = si.version_files(version)
+        assert requirements.parts[-3:] == ("tck", version, "requirements.py") and requirements.is_file()
+        assert spec_map.name == f"{version}.toml" and spec_map.is_file()
 
 
 def test_parse_diff_ignores_a_deletion_header_without_an_old_path():

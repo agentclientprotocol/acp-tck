@@ -1,7 +1,7 @@
 # Spec map for ACP v1: which parts of the spec define rules that other parts assume without
 # linking to them, and which spec rules the TCK deliberately does not test. Used when comparing
 # spec revisions (a change to a core doc or core `$def` means re-checking every area that depends
-# on it, not just the changed lines). Loaded by `tck.common.spec_map`.
+# on it, not just the changed lines). Loaded by `spec_tracker.spec_map`.
 #
 # Core doc entries:
 #   path      doc path in the spec repo (draft tree, `docs/protocol/v1/draft/*.mdx`)

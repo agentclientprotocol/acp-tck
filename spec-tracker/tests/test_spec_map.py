@@ -1,12 +1,14 @@
-"""Unit tests for `tck.common.spec_map`: the TOML parser's shape checks and the heading scanner."""
+"""Unit tests for `spec_tracker.spec_map`: the TOML parser's shape checks and the heading scanner."""
 
 from __future__ import annotations
 
 import pytest
 
-from tck.common.spec_map import (
+from spec_tracker.spec_map import (
     SectionError,
     SpecMapError,
+    load_version_map,
+    map_path,
     markdown_headings,
     parse_spec_map,
     resolve_section,
@@ -221,3 +223,9 @@ def test_intro_and_sections_tile_a_doc_exactly():
     ranges = [resolve_section(_DOC, a) for a in ("(intro)", "Agent", "Client", "Last")]
     covered = [n for start, end in ranges for n in range(start, end + 1)]
     assert covered == list(range(1, len(_DOC.splitlines()) + 1))
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_each_version_has_a_loadable_spec_map(version):
+    assert map_path(version).is_file()
+    assert load_version_map(version).core_docs

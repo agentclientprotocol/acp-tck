@@ -1,10 +1,10 @@
-"""`tck.common.citations`: parsing the machine-readable parts of registry and ledger citations."""
+"""`spec_tracker.citations`: parsing the machine-readable parts of registry and ledger citations."""
 
 from __future__ import annotations
 
 import pytest
 
-from tck.common.citations import LineRef, find_line_refs, line_refs, pointer_def, resolve_pointer, schema_pointers
+from spec_tracker.citations import LineRef, find_line_refs, line_refs, pointer_def, resolve_pointer, schema_pointers
 
 
 def test_resolve_pointer_handles_escapes_and_arrays():

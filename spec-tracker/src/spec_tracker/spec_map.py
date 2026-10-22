@@ -1,8 +1,7 @@
-"""Loader for a version's `spec_map.toml`: which spec docs and schema `$defs` are cross-cutting
-("core"), and a ledger of rules the TCK deliberately does not test.
+"""Loader for a version's spec map (`maps/<version>.toml`): which spec docs and schema `$defs`
+are cross-cutting ("core"), and a ledger of rules the TCK deliberately does not test.
 
-Stdlib only (`tomllib`). Each version package points at its own file (`tck.v1.spec_map`,
-`tck.v2.spec_map`); this module holds the version-agnostic parsing.
+Stdlib only (`tomllib`).
 """
 
 from __future__ import annotations
@@ -10,6 +9,7 @@ from __future__ import annotations
 import re
 import tomllib
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -100,6 +100,19 @@ def parse_spec_map(text: str) -> SpecMap:
 
 def load_spec_map(path: Path) -> SpecMap:
     return parse_spec_map(path.read_text(encoding="utf-8"))
+
+
+MAPS_DIR = Path(__file__).resolve().parents[2] / "maps"
+
+
+def map_path(version: str) -> Path:
+    """The spec map file for `version` (`"v1"`, `"v2"`)."""
+    return MAPS_DIR / f"{version}.toml"
+
+
+@lru_cache(maxsize=None)
+def load_version_map(version: str) -> SpecMap:
+    return load_spec_map(map_path(version))
 
 
 _FENCE = re.compile(r"^\s*(```|~~~)")

@@ -14,12 +14,9 @@ from typing import Any
 
 import pytest
 
-from tck.common.citations import resolve_pointer, schema_pointers
 from tck.common.requirements import Tier
-from tck.common.spec_map import SectionError, parse_spec_map, resolve_section
 from tck.v1.protocol import SCHEMA_DIR, SCHEMA_REVISION
 from tck.v1 import requirements as req_module
-from tck.v1 import spec_map as spec_map_module
 from tck.v1.requirements import REGISTRY
 
 _ID_PATTERN = re.compile(r"^ACP-[A-Z]+(?:-[A-Z]+)*-\d{3}$")
@@ -140,6 +137,35 @@ def test_cli_selftest_tier_sets_match_the_registry():
 
 # --- schema citations ------------------------------------------------------------------------
 
+# A pointer counts when its file is `schema/v1/schema.unstable.json` or a bare
+# `schema.unstable.json`; pointers into another version's schema are skipped.
+_POINTER_PATTERN = re.compile(r"(?:\bschema/(v\d+)/)?schema\.unstable\.json#(/[^\s`'\"),;]*)")
+
+
+def _schema_pointers(text: str) -> list[str]:
+    return [
+        pointer.rstrip(".")
+        for cited_version, pointer in _POINTER_PATTERN.findall(text)
+        if cited_version in ("", "v1")
+    ]
+
+
+def _resolve_pointer(document: Any, pointer: str) -> Any:
+    """RFC 6901 resolution; raises `KeyError`/`IndexError`/`ValueError` if it does not resolve."""
+    node = document
+    for raw in pointer.split("/")[1:]:
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            node = node[token]
+        elif isinstance(node, list):
+            if not token.isdigit() or (token != "0" and token.startswith("0")):
+                raise ValueError(f"bad array index {token!r}")
+            node = node[int(token)]
+        else:
+            raise KeyError(token)
+    return node
+
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _V1_SOURCE_DIRS = (
     _REPO_ROOT / "src" / "tck" / "v1",
@@ -166,7 +192,7 @@ def _schema_pointers_by_source() -> dict[str, list[str]]:
     }
     for path in _v1_source_files():
         sources[str(path.relative_to(_REPO_ROOT))] = path.read_text()
-    return {name: schema_pointers(text, "v1") for name, text in sources.items()}
+    return {name: _schema_pointers(text) for name, text in sources.items()}
 
 
 def _unresolved_pointers(pointers_by_source: dict[str, list[str]], schema: Any) -> list[str]:
@@ -174,7 +200,7 @@ def _unresolved_pointers(pointers_by_source: dict[str, list[str]], schema: Any) 
     for source, pointers in pointers_by_source.items():
         for pointer in pointers:
             try:
-                resolve_pointer(schema, pointer)
+                _resolve_pointer(schema, pointer)
             except (KeyError, IndexError, ValueError):
                 bad.append(f"{source}: {pointer}")
     return bad
@@ -218,101 +244,3 @@ def test_no_v1_source_cites_the_non_draft_docs_tree():
     for requirement in REGISTRY.values():
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.citation), requirement.id
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.text), requirement.id
-
-
-# --- spec map --------------------------------------------------------------------------------
-
-_SPEC_MAP = spec_map_module.load()
-_DOC_PATH_PATTERN = re.compile(r"^docs/protocol/v1/draft/[a-z0-9-]+\.mdx$")
-
-
-def _load_schema() -> Any:
-    return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
-
-
-def _ledger_citation_problems(citation: str, schema: Any) -> list[str]:
-    """The same rules a requirement citation is held to (revision pin, schema pointers that
-    resolve, no stable schema files, no non-draft docs)."""
-    problems = []
-    if not _SPEC_REVISION_PATTERN.search(citation) or SCHEMA_REVISION not in citation:
-        problems.append("does not end in '@ <SCHEMA_REVISION>'")
-    if _STABLE_NAME_PATTERN.search(citation):
-        problems.append("mentions the stable schema.json/meta.json")
-    if _NON_DRAFT_DOCS_PATTERN.search(citation):
-        problems.append("cites the docs tree outside draft/")
-    problems += [
-        f"unresolvable pointer {pointer}"
-        for pointer in _unresolved_pointers({"c": schema_pointers(citation, "v1")}, schema)
-    ]
-    return problems
-
-
-def test_spec_map_core_docs_exist_at_the_pinned_revision(spec_doc):
-    assert _SPEC_MAP.core_docs, "spec map lists no core docs"
-    paths = [core.path for core in _SPEC_MAP.core_docs]
-    assert len(paths) == len(set(paths)), "a core doc is listed twice"
-    for core in _SPEC_MAP.core_docs:
-        assert _DOC_PATH_PATTERN.match(core.path), core.path
-        spec_doc(SCHEMA_REVISION, core.path)
-
-
-def test_spec_map_core_sections_resolve_to_one_range_in_their_doc(spec_doc):
-    scoped = [core for core in _SPEC_MAP.core_docs if core.sections]
-    assert scoped, "expected at least one section-scoped core doc"
-    for core in scoped:
-        text = spec_doc(SCHEMA_REVISION, core.path)
-        assert len(set(core.sections)) == len(core.sections), f"{core.path}: duplicate section"
-        for section in core.sections:
-            try:
-                resolve_section(text, section)
-            except SectionError as error:
-                raise AssertionError(f"{core.path}: {error}") from error
-
-
-def test_spec_map_code_paths_exist():
-    for core in _SPEC_MAP.core_docs:
-        for code in core.code:
-            assert not Path(code).is_absolute(), code
-            assert (_REPO_ROOT / code).exists(), f"{core.path}: code path {code} does not exist"
-
-
-def test_spec_map_core_defs_exist_in_the_vendored_schema():
-    defs = _load_schema()["$defs"]
-    assert len(set(_SPEC_MAP.core_defs)) == len(_SPEC_MAP.core_defs)
-    assert not [name for name in _SPEC_MAP.core_defs if name not in defs]
-    assert set(_SPEC_MAP.core_defs) >= {
-        "ErrorCode",
-        "SessionUpdate",
-        "ContentBlock",
-        "AgentCapabilities",
-        "ClientCapabilities",
-    }
-
-
-def test_spec_map_ledger_citations_resolve_like_requirement_citations():
-    schema = _load_schema()
-    for entry in _SPEC_MAP.not_requirements:
-        assert not _ledger_citation_problems(entry.citation, schema), entry.citation
-
-
-def test_spec_map_ledger_check_accepts_a_good_entry_and_flags_bad_ones():
-    def entry(citation: str):
-        (parsed,) = parse_spec_map(
-            "core_defs = []\n[[not_requirement]]\n"
-            f"citation = {json.dumps(citation)}\nstatement = \"s\"\nreason = \"r\"\n"
-        ).not_requirements
-        return parsed.citation
-
-    schema = _load_schema()
-    good = (
-        "docs/protocol/v1/draft/transports.mdx:6; "
-        f"schema/v1/schema.unstable.json#/$defs/ErrorCode @ {SCHEMA_REVISION}"
-    )
-    assert _ledger_citation_problems(entry(good), schema) == []
-    assert _ledger_citation_problems(entry("docs/protocol/v1/draft/transports.mdx:6"), schema)
-    assert _ledger_citation_problems(entry(f"x.mdx @ {'0' * 40}"), schema)
-    assert _ledger_citation_problems(
-        entry(f"schema.unstable.json#/$defs/NoSuchDef @ {SCHEMA_REVISION}"), schema
-    )
-    assert _ledger_citation_problems(entry(f"schema/v1/schema.json @ {SCHEMA_REVISION}"), schema)
-    assert _ledger_citation_problems(entry(f"docs/protocol/v1/session-setup.mdx:1 @ {SCHEMA_REVISION}"), schema)

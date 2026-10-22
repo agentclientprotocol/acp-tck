@@ -1,5 +1,5 @@
-"""Locating the local ACP spec checkout, for tests and `scripts/` tooling run from a source
-checkout of this repo."""
+"""Locating the local ACP spec checkout, for tests and tooling run from a source checkout of this
+repo."""
 
 from __future__ import annotations
 

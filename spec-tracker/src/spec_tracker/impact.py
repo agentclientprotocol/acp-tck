@@ -1,16 +1,15 @@
-#!/usr/bin/env python3
 """Inventory what changed between two ACP spec revisions, and which parts of the TCK it touches.
 
 Usage:
-  uv run python scripts/spec-impact.py <base> <target> --version {v1,v2} [--spec-repo PATH] [--fix]
+  uv run --package spec-tracker spec-impact <base> <target> --version {v1,v2} [--spec-repo PATH] [--fix]
 
 Prints a Markdown report to stdout for a researcher to interpret: changed files, the sections
-each doc hunk falls in, hits on the core docs and `$defs` listed in `src/tck/<version>/spec_map.toml`,
+each doc hunk falls in, hits on the core docs and `$defs` listed in `spec-tracker/maps/<version>.toml`,
 the schema `$ref` closure, docs linking to changed docs, and the requirement ids and ledger
 entries whose citations fall in a changed region.
 
 With `--fix` it instead remaps the `.mdx` line citations in `src/tck/<version>/requirements.py`
-and `spec_map.toml` from base to target line numbers, in place (see "citation remapping"). It is not
+and `spec-tracker/maps/<version>.toml` from base to target line numbers, in place (see "citation remapping"). It is not
 idempotent (a second run would shift the already-remapped lines again), so it refuses unless
 `<base>` resolves to the version's pinned `SCHEMA_REVISION` (`tck.<version>.protocol`). Run it
 before the re-vendor step bumps the pin, which then blocks a second run.
@@ -19,8 +18,8 @@ Read-only on the spec checkout: it only runs `git rev-parse`, `git diff`, `git s
 `git ls-tree` on the given refs, so the checkout's branch and working tree do not matter.
 `--spec-repo` defaults to `$ACP_SPEC_REPO`, else the `check-specification` skill's checkout.
 
-Stdlib only, apart from this repo's own `tck` package (registry, spec map, citation parsing);
-run it with `uv run` so that package is importable.
+Stdlib only, apart from the `tck` package (registry, pinned revision), which the workspace
+provides to `spec-tracker`.
 """
 
 from __future__ import annotations
@@ -40,19 +39,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from tck.common.citations import find_line_refs, line_refs, pointer_def, schema_pointers
-from tck.common.spec_map import (
+from .citations import find_line_refs, line_refs, pointer_def, schema_pointers
+from .spec_map import (
     INTRO,
     PATH_SEPARATOR,
     CoreDoc,
     Heading,
     SectionError,
     SpecMap,
+    load_version_map,
+    map_path,
     parse_headings,
     parse_spec_map,
     resolve_section,
 )
-from tck.common.spec_repo import discover_spec_repo
+from .spec_repo import discover_spec_repo
 
 RFDS_DIR = "docs/rfds/"
 
@@ -646,7 +647,7 @@ _LEDGER_CITATION = re.compile(r"^\s*citation\s*=")
 
 
 def fix_spec_map_text(text: str, changes: dict[str, FileChange]) -> tuple[str, list[Labelled]]:
-    """Remap each ledger entry's `citation = "..."` line in a `spec_map.toml`."""
+    """Remap each ledger entry's `citation = "..."` line in a spec map file."""
     ledger = parse_spec_map(text).not_requirements
     lines = text.split("\n")
     results: list[Labelled] = []
@@ -702,9 +703,9 @@ def render_fix(result: FixResult, version: str, base: str, target: str) -> str:
 
 
 def version_files(version: str) -> tuple[Path, Path]:
-    """The version's `requirements.py` and `spec_map.toml`."""
+    """The version's `requirements.py` and spec map file."""
     requirements = Path(importlib.import_module(f"tck.{version}.requirements").__file__ or "")
-    return requirements, requirements.with_name("spec_map.toml")
+    return requirements, map_path(version)
 
 
 def pinned_revision(version: str) -> str:
@@ -890,7 +891,7 @@ def render(report: Report) -> str:
 def registry_entries(version: str) -> list[tuple[str, str]]:
     """`(label, citation)` for every requirement and ledger entry of `version`."""
     registry = importlib.import_module(f"tck.{version}.requirements").REGISTRY
-    spec_map = importlib.import_module(f"tck.{version}.spec_map").load()
+    spec_map = load_version_map(version)
     entries = [(req_id, requirement.citation) for req_id, requirement in registry.items()]
     entries += [(f"ledger `{entry.statement}`", entry.citation) for entry in spec_map.not_requirements]
     return entries
@@ -905,7 +906,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--fix",
         action="store_true",
-        help="remap `.mdx` line citations in the version's requirements.py and spec_map.toml in place, "
+        help="remap `.mdx` line citations in the version's requirements.py and its spec map in place, "
         "instead of printing the report",
     )
     args = parser.parse_args(argv)
@@ -929,7 +930,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = apply_fix(*version_files(args.version), changes)
         sys.stdout.write(render_fix(result, args.version, base, target))
         return 0
-    spec_map = importlib.import_module(f"tck.{args.version}.spec_map").load()
+    spec_map = load_version_map(args.version)
     report = analyze(repo, base, target, args.version, spec_map, registry_entries(args.version))
     sys.stdout.write(render(report))
     return 0

@@ -1,0 +1,27 @@
+[project]
+name = "spec-tracker"
+version = "0.0.0"
+description = "Tracks ACP spec revisions against the TCK's requirement registry."
+requires-python = ">=3.14"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "acp-tck",
+]
+
+[project.scripts]
+spec-impact = "spec_tracker.impact:main"
+
+[build-system]
+requires = ["uv_build>=0.12.11,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.sources]
+acp-tck = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+]
