@@ -35,7 +35,7 @@ mode: single · branch: orchestrator-skills · reviews: off
 - S3 --fix remap — 1d39ae8 — in-place line remap, needs-review list, pyright fixes; 488 passed. M2 DONE (pending S4).
 - Cleanup — 0235c6f — python_v2_agent.py research ref rewritten as plain explanation
 ## Next
-- Waiting on user: --fix idempotence guard? S4 docs? narrow orchestrator grep? Then S4: document spec-impact.py, spec_map.toml, ACP_SPEC_REPO in AGENTS.md.
+- DECIDED: S3b --fix guard (base must == pinned SCHEMA_REVISION; --fix before pin bump) — programmer running. Then S4: narrow orchestrator grep to `\.agents/(research|state\.md|prompt\.md)`, and concisely document spec-impact.py, spec_map.toml, ACP_SPEC_REPO in AGENTS.md.
 - `.agents/skills/*/.repo` refs in VENDORED.md and cross-check.sh are legitimate (skills are permanent).
 - Note for user: full suite ~15.5 min locally vs CI `test` timeout-minutes: 20.
 ## Open questions (waiting on the user)
