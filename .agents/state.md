@@ -32,9 +32,10 @@ mode: single · branch: orchestrator-skills · reviews: off
 - S1b section addressing — 369799f — heading paths, (intro), resolve_section(); 427 passed
 - S1c CI spec fetch — 0cff7c4 — fetch pin in test job, spec_doc fails under CI; 435 passed. M1 DONE.
 - S2 spec-impact report — 408efbe — scripts/spec-impact.py + tck.common.citations/spec_repo; 473 passed
+- S3 --fix remap — 1d39ae8 — in-place line remap, needs-review list, pyright fixes; 488 passed. M2 DONE (pending S4).
 - Cleanup — 0235c6f — python_v2_agent.py research ref rewritten as plain explanation
 ## Next
-- S3 --fix (programmer running), then S4: document spec-impact.py, spec_map.toml, ACP_SPEC_REPO in AGENTS.md.
+- Waiting on user: --fix idempotence guard? S4 docs? narrow orchestrator grep? Then S4: document spec-impact.py, spec_map.toml, ACP_SPEC_REPO in AGENTS.md.
 - `.agents/skills/*/.repo` refs in VENDORED.md and cross-check.sh are legitimate (skills are permanent).
 - Note for user: full suite ~15.5 min locally vs CI `test` timeout-minutes: 20.
 ## Open questions (waiting on the user)
