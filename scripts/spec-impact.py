@@ -10,8 +10,10 @@ the schema `$ref` closure, docs linking to changed docs, and the requirement ids
 entries whose citations fall in a changed region.
 
 With `--fix` it instead remaps the `.mdx` line citations in `src/tck/<version>/requirements.py`
-and `spec_map.toml` from base to target line numbers, in place (see "citation remapping"). Run it
-once per revision bump: a second run would shift the already-remapped lines again.
+and `spec_map.toml` from base to target line numbers, in place (see "citation remapping"). It is not
+idempotent (a second run would shift the already-remapped lines again), so it refuses unless
+`<base>` resolves to the version's pinned `SCHEMA_REVISION` (`tck.<version>.protocol`). Run it
+before the re-vendor step bumps the pin, which then blocks a second run.
 
 Read-only on the spec checkout: it only runs `git rev-parse`, `git diff`, `git show` and
 `git ls-tree` on the given refs, so the checkout's branch and working tree do not matter.
@@ -705,6 +707,11 @@ def version_files(version: str) -> tuple[Path, Path]:
     return requirements, requirements.with_name("spec_map.toml")
 
 
+def pinned_revision(version: str) -> str:
+    """The spec commit the version's citations are currently pinned to."""
+    return importlib.import_module(f"tck.{version}.protocol").SCHEMA_REVISION
+
+
 # --- report ----------------------------------------------------------------------------------
 
 
@@ -912,6 +919,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except GitError as error:
         parser.error(f"{path}: cannot resolve revision ({error})")
     if args.fix:
+        pin = pinned_revision(args.version)
+        if base != pin:
+            parser.error(
+                f"--fix remaps citations from the pinned revision, but base {base} is not the "
+                f"{args.version} pin {pin}; citations may already be remapped (nothing was changed)"
+            )
         changes = file_changes(repo, base, target, args.version)
         result = apply_fix(*version_files(args.version), changes)
         sys.stdout.write(render_fix(result, args.version, base, target))

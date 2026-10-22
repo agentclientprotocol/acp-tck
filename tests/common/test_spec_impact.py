@@ -604,6 +604,7 @@ def test_cli_fix_prints_needs_review_first_and_does_not_print_the_report(spec_re
     requirements.write_text(_REQUIREMENTS_SOURCE)
     spec_map.write_text(_SPEC_MAP_SOURCE)
     monkeypatch.setattr(si, "version_files", lambda version: (requirements, spec_map))
+    monkeypatch.setattr(si, "pinned_revision", lambda version: base)
 
     assert si.main([base, target, "--version", "v1", "--spec-repo", str(repo), "--fix"]) == 0
 
@@ -615,6 +616,44 @@ def test_cli_fix_prints_needs_review_first_and_does_not_print_the_report(spec_re
     assert f"- REQ-A: `{D}/core.mdx:15` -> `{D}/core.mdx:16`" in out
     assert "## 1. Changed files" not in out
     assert f"{D}/core.mdx:16,20" in requirements.read_text()
+
+
+def test_cli_fix_refuses_a_base_that_is_not_the_pin_and_touches_nothing(spec_repo, tmp_path, monkeypatch, capsys):
+    repo, base, target = spec_repo
+    requirements, spec_map = tmp_path / "requirements.py", tmp_path / "spec_map.toml"
+    requirements.write_text(_REQUIREMENTS_SOURCE)
+    spec_map.write_text(_SPEC_MAP_SOURCE)
+    monkeypatch.setattr(si, "version_files", lambda version: (requirements, spec_map))
+    monkeypatch.setattr(si, "pinned_revision", lambda version: target)
+
+    # A short base resolves to the full SHA, but it is not the pin: already remapped.
+    with pytest.raises(SystemExit) as exit_info:
+        si.main([base[:12], target, "--version", "v1", "--spec-repo", str(repo), "--fix"])
+
+    assert exit_info.value.code != 0
+    err = capsys.readouterr().err
+    assert "not the v1 pin" in err and base in err and "nothing was changed" in err
+    assert requirements.read_text() == _REQUIREMENTS_SOURCE
+    assert spec_map.read_text() == _SPEC_MAP_SOURCE
+
+
+def test_cli_fix_accepts_an_abbreviated_base_that_resolves_to_the_pin(spec_repo, tmp_path, monkeypatch, capsys):
+    repo, base, target = spec_repo
+    requirements, spec_map = tmp_path / "requirements.py", tmp_path / "spec_map.toml"
+    requirements.write_text(_REQUIREMENTS_SOURCE)
+    spec_map.write_text(_SPEC_MAP_SOURCE)
+    monkeypatch.setattr(si, "version_files", lambda version: (requirements, spec_map))
+    monkeypatch.setattr(si, "pinned_revision", lambda version: base)
+
+    assert si.main([base[:12], target, "--version", "v1", "--spec-repo", str(repo), "--fix"]) == 0
+    assert requirements.read_text() != _REQUIREMENTS_SOURCE
+
+
+def test_pinned_revision_reads_each_versions_schema_revision():
+    from tck.v1.protocol import SCHEMA_REVISION as v1_pin
+    from tck.v2.protocol import SCHEMA_REVISION as v2_pin
+
+    assert si.pinned_revision("v1") == v1_pin and si.pinned_revision("v2") == v2_pin
 
 
 def test_parse_diff_ignores_a_deletion_header_without_an_old_path():
