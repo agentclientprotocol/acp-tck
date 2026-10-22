@@ -94,15 +94,15 @@ spec-tracker/    # member: pyproject.toml, src/spec_tracker/ (citations, spec_ma
   moved to spec-tracker. Root 365 passed, spec-tracker 115 passed; wheel holds no tooling.
   `acp-tck` is unpinned in the member (workspace source; an `==` pin would break on version bumps).
   Lock files are at uv lock revision 5 (uv 0.13; CI installs latest uv).
+- S3 docs — 37c47e3 — AGENTS.md (three projects, `--all-packages` + editor notes, CI, new
+  "Cross-checking against upstream agents" section, spec map section), update-to-spec and
+  orchestrator skills, programmer.md. Stale-path grep clean; `.agents/` reference grep over
+  `src tests cross-check spec-tracker` empty.
 
 ## Next
-- S3 (programmer, single mode).
-- Stale docs for S3 (reported by S1 and S2): see the S3 brief; also AGENTS.md ~101 (spec fetch now
-  a spec-tracker step), ~227-239 (spec map section), update-to-spec SKILL.md 31-32/46/91-93.
-- Earlier S1 list: `AGENTS.md`/`CLAUDE.md` lines ~102-105 (`scripts/cross-check.sh`,
-  echo_agent "pinned to rc1"); `update-to-spec/SKILL.md` line 102 (`--expect` lines in
-  `scripts/cross-check.sh`); orchestrator `SKILL.md` line 12 (`scripts/` in the no-edit list);
-  `run.sh` points at the AGENTS.md heading "Cross-checking against upstream agents" (check it exists).
+Goal complete. Before the PR merges: delete `.agents/state.md` and `.agents/research/`.
+Leftovers: an empty untracked `scripts/` dir on disk; README line 49 uses
+`.agents/reports/report.json` as a sample `--report-json` path (pre-existing, user-facing).
 
 ## Open questions (waiting on the user)
 None.
