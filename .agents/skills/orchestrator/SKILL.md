@@ -99,7 +99,7 @@ mode: single|worktrees · branch: <name> · reviews: on|off
 
 Programmers report any temporary `.agents/` references they leave in the code. Track these under
 "Next" in `state.md` until their work is done. When a milestone is done, run
-`grep -rn '\.agents/' src tests scripts`. If it finds references that no programmer reported, or
+`grep -rnE '\.agents/(research|state\.md|prompt\.md)' src tests scripts`. If it finds references that no programmer reported, or
 reported ones whose work is finished, don't delete them yourself. Spawn one programmer (default
 model) as a cleanup slice. Give it the list and have it review each reference: rewrite it as a
 permanent upstream citation or a plain explanation if it carries information the code needs, and

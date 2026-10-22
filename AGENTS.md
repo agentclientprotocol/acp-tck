@@ -97,7 +97,8 @@ statuses, not the overall verdict).
 
 ## CI
 
-`.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`) and an
+`.github/workflows/ci.yml`: a required `test` job (fetches the spec repo at each pinned
+`SCHEMA_REVISION` into `ACP_SPEC_REPO`, then `uv sync --locked && uv run pytest -q`) and an
 informational `cross-check` job (`continue-on-error: true`) that runs the suite against
 independently-built upstream agents (Rust SDK's `testy`, Python SDK's example/experimental v2
 agents) via `scripts/cross-check.sh` and diffs the result against the expected-FAIL baseline (`--expect` lines
@@ -220,6 +221,25 @@ v2's batch dispatch and open-enum discriminator carve-out).
 notifications to the client, and its responses to methods it implements) -- never a message the
 TCK's own mock client writes. There is no `validate_client_message`; add one only if a future
 requirement needs to assert on the harness's own outgoing traffic.
+
+## Spec map and spec updates
+
+Each version has `src/tck/vN/spec_map.toml` (loaded by `tck.common.spec_map`; the file header
+documents the format): the core docs whose rules other docs assume without linking (optionally
+narrowed to sections, addressed by heading title or `A > B` heading path, with `(intro)` for text
+before a heading's first child), the core schema `$defs`, the `code` paths implementing each core
+doc's cross-cutting rules, and the ledger of deliberate non-requirements (`[[not_requirement]]`).
+`tests/vN/test_registry.py` validates it against the spec docs at the pinned revision.
+
+`scripts/spec-impact.py <base> <target> --version vN` reports what a spec diff touches (core docs/
+`$defs`, `$ref` closure, linking docs, affected requirement ids and ledger entries). With `--fix` it
+instead remaps the `.mdx` line citations in `requirements.py` and `spec_map.toml` from base to
+target line numbers; it only runs from the pinned base, before the pin bump (see its docstring).
+
+The spec-doc checks and the script read the spec checkout at `$ACP_SPEC_REPO`, else the
+`check-specification` skill's. Locally a missing checkout or revision SKIPs those tests; under CI
+(`CI=true`) it fails instead. The `/update-to-spec` skill drives a whole spec update; follow it
+rather than refreshing by hand.
 
 ## Conventions
 

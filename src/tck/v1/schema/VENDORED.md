@@ -24,6 +24,8 @@ files are deliberately not vendored. The upstream file names are kept as-is.
 ## Refreshing
 
 1. Confirm the spec repo checkout's current HEAD: `git -C <spec-repo> rev-parse HEAD`.
+   Before step 3 bumps the pin, run `uv run python scripts/spec-impact.py <pinned> <new> --version v1 --fix`
+   to remap the doc line citations.
 2. Re-run the two `cp` commands above with the new checkout path.
 3. Update the commit hash and date in this file, and `SCHEMA_REVISION` in
    `src/tck/v1/protocol.py`.
