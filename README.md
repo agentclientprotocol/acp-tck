@@ -208,6 +208,11 @@ command after `--` is a usage error (`2`).
 
 ## Protocol scope
 
+For opt-in checks of a client's **stored v2 entity metadata**, see the separate
+[client metadata adapter runner](docs/client-metadata.md). It feeds deterministic
+updates into a client-supplied adapter and checks snapshots, including retention of
+untouched keys. It does not contribute to the agent conformance verdict below.
+
 The codebase is structured as a version-agnostic core plus one package per protocol version (`src/tck/common/` +
 `src/tck/v1/` + `src/tck/v2/`, see `AGENTS.md`), so each version's suite does not require forking the harness, report
 model, or pytest plugin. ACP **v1** is the default. ACP **v2** is available via `--protocol-version 2`. For the precise,
