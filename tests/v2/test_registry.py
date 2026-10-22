@@ -18,8 +18,10 @@ from typing import Any
 import pytest
 
 from tck.common.requirements import Tier
+from tck.common.spec_map import markdown_headings, parse_spec_map
 from tck.v2.protocol import SCHEMA_DIR, SCHEMA_REVISION
 from tck.v2 import requirements as req_module
+from tck.v2 import spec_map as spec_map_module
 from tck.v2.requirements import REGISTRY
 
 _ID_PATTERN = re.compile(r"^ACP-[A-Z]+(?:-[A-Z]+)*-\d{3}$")
@@ -424,3 +426,102 @@ def test_no_v2_source_cites_the_non_draft_docs_tree():
     for requirement in REGISTRY.values():
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.citation), requirement.id
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.text), requirement.id
+
+
+# --- spec map --------------------------------------------------------------------------------
+
+_SPEC_MAP = spec_map_module.load()
+_DOC_PATH_PATTERN = re.compile(r"^docs/protocol/v2/draft/[a-z0-9-]+\.mdx$")
+
+
+def _load_schema() -> Any:
+    return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
+
+
+def _ledger_citation_problems(citation: str, schema: Any) -> list[str]:
+    """The same rules a requirement citation is held to (revision pin, schema pointers that
+    resolve, no stable schema files, no non-draft docs)."""
+    problems = []
+    if not _SPEC_REVISION_PATTERN.search(citation) or SCHEMA_REVISION not in citation:
+        problems.append("does not end in '@ <SCHEMA_REVISION>'")
+    if _STABLE_NAME_PATTERN.search(citation):
+        problems.append("mentions the stable schema.json/meta.json")
+    if _NON_DRAFT_DOCS_PATTERN.search(citation):
+        problems.append("cites the docs tree outside draft/")
+    problems += [
+        f"unresolvable pointer {pointer}"
+        for pointer in _unresolved_pointers(
+            {"c": [m.rstrip(".") for m in _POINTER_PATTERN.findall(citation)]}, schema
+        )
+    ]
+    return problems
+
+
+def test_spec_map_core_docs_exist_at_the_pinned_revision(spec_doc):
+    assert _SPEC_MAP.core_docs, "spec map lists no core docs"
+    paths = [core.path for core in _SPEC_MAP.core_docs]
+    assert len(paths) == len(set(paths)), "a core doc is listed twice"
+    for core in _SPEC_MAP.core_docs:
+        assert _DOC_PATH_PATTERN.match(core.path), core.path
+        spec_doc(SCHEMA_REVISION, core.path)
+
+
+def test_spec_map_core_sections_are_headings_of_their_doc(spec_doc):
+    scoped = [core for core in _SPEC_MAP.core_docs if core.sections]
+    assert scoped, "expected at least one section-scoped core doc"
+    for core in scoped:
+        headings = markdown_headings(spec_doc(SCHEMA_REVISION, core.path))
+        for section in core.sections:
+            assert headings.count(section) == 1, (
+                f"{core.path}: section {section!r} appears {headings.count(section)} times "
+                f"(want exactly once); headings: {headings}"
+            )
+
+
+def test_spec_map_code_paths_exist():
+    for core in _SPEC_MAP.core_docs:
+        for code in core.code:
+            assert not Path(code).is_absolute(), code
+            assert (_REPO_ROOT / code).exists(), f"{core.path}: code path {code} does not exist"
+
+
+def test_spec_map_core_defs_exist_in_the_vendored_schema():
+    defs = _load_schema()["$defs"]
+    assert len(set(_SPEC_MAP.core_defs)) == len(_SPEC_MAP.core_defs)
+    assert not [name for name in _SPEC_MAP.core_defs if name not in defs]
+    assert set(_SPEC_MAP.core_defs) >= {
+        "ErrorCode",
+        "SessionUpdate",
+        "ContentBlock",
+        "AgentCapabilities",
+        "ClientCapabilities",
+    }
+
+
+def test_spec_map_ledger_citations_resolve_like_requirement_citations():
+    schema = _load_schema()
+    for entry in _SPEC_MAP.not_requirements:
+        assert not _ledger_citation_problems(entry.citation, schema), entry.citation
+
+
+def test_spec_map_ledger_check_accepts_a_good_entry_and_flags_bad_ones():
+    def entry(citation: str):
+        (parsed,) = parse_spec_map(
+            "core_defs = []\n[[not_requirement]]\n"
+            f"citation = {json.dumps(citation)}\nstatement = \"s\"\nreason = \"r\"\n"
+        ).not_requirements
+        return parsed.citation
+
+    schema = _load_schema()
+    good = (
+        "docs/protocol/v2/draft/transports.mdx:6; "
+        f"schema/v2/schema.unstable.json#/$defs/ErrorCode @ {SCHEMA_REVISION}"
+    )
+    assert _ledger_citation_problems(entry(good), schema) == []
+    assert _ledger_citation_problems(entry("docs/protocol/v2/draft/transports.mdx:6"), schema)
+    assert _ledger_citation_problems(entry(f"x.mdx @ {'0' * 40}"), schema)
+    assert _ledger_citation_problems(
+        entry(f"schema.unstable.json#/$defs/NoSuchDef @ {SCHEMA_REVISION}"), schema
+    )
+    assert _ledger_citation_problems(entry(f"schema/v2/schema.json @ {SCHEMA_REVISION}"), schema)
+    assert _ledger_citation_problems(entry(f"docs/protocol/v2/session-setup.mdx:1 @ {SCHEMA_REVISION}"), schema)
