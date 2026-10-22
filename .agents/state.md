@@ -30,7 +30,9 @@ mode: single · branch: orchestrator-skills · reviews: off
 - Core-docs research — 4a9df3c — reports core-docs-v1.md, core-docs-v2.md
 - S1 spec maps — 551d497 — maps, loader, registry checks; 406 passed
 - S1b section addressing — 369799f — heading paths, (intro), resolve_section(); 427 passed
+- S1c CI spec fetch — 0cff7c4 — fetch pin in test job, spec_doc fails under CI; 435 passed. M1 DONE.
 ## Next
-- S1c (programmer running), then S2.
+- Cleanup slice: scripts/cross-check/python_v2_agent.py:9 cites .agents/research (pre-existing, unreported). Programmer running. Then S2.
+- `.agents/skills/*/.repo` refs in VENDORED.md and cross-check.sh are legitimate (skills are permanent).
 - Note for user: full suite ~15.5 min locally vs CI `test` timeout-minutes: 20.
 ## Open questions (waiting on the user)
