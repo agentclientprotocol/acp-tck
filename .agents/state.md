@@ -83,10 +83,17 @@ spec-tracker/    # member: pyproject.toml, src/spec_tracker/ (citations, spec_ma
   notes. Then the `.agents/` reference check.
 
 ## Done
-(none yet)
+- S1 standalone cross-check — a8aae79 — `cross-check/` project (rc2, own lock, tests); `run.sh`
+  syncs both envs once (`--inexact` for the root) then runs everything `--no-sync`; CI cross-check
+  job syncs/tests `cross-check/`, outputs go to `scratch/cross-check`. Root 477 passed, cross-check
+  14 passed, `run.sh` matched the baseline (run from `cross-check/` and `/tmp`).
 
 ## Next
-- S1 (programmer, single mode).
+- S2 (programmer, single mode).
+- Stale docs for S3 (reported by S1): `AGENTS.md`/`CLAUDE.md` lines ~102-105 (`scripts/cross-check.sh`,
+  echo_agent "pinned to rc1"); `update-to-spec/SKILL.md` line 102 (`--expect` lines in
+  `scripts/cross-check.sh`); orchestrator `SKILL.md` line 12 (`scripts/` in the no-edit list);
+  `run.sh` points at the AGENTS.md heading "Cross-checking against upstream agents" (check it exists).
 
 ## Open questions (waiting on the user)
 None.
