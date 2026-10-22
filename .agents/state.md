@@ -31,8 +31,9 @@ mode: single · branch: orchestrator-skills · reviews: off
 - S1 spec maps — 551d497 — maps, loader, registry checks; 406 passed
 - S1b section addressing — 369799f — heading paths, (intro), resolve_section(); 427 passed
 - S1c CI spec fetch — 0cff7c4 — fetch pin in test job, spec_doc fails under CI; 435 passed. M1 DONE.
+- Cleanup — 0235c6f — python_v2_agent.py research ref rewritten as plain explanation
 ## Next
-- Cleanup slice: scripts/cross-check/python_v2_agent.py:9 cites .agents/research (pre-existing, unreported). Programmer running. Then S2.
+- S2 (programmer running), then S3.
 - `.agents/skills/*/.repo` refs in VENDORED.md and cross-check.sh are legitimate (skills are permanent).
 - Note for user: full suite ~15.5 min locally vs CI `test` timeout-minutes: 20.
 ## Open questions (waiting on the user)
