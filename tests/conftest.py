@@ -16,6 +16,7 @@ from typing import NoReturn
 import pytest
 
 from tck.common.harness import AgentLaunch
+from tck.common.spec_repo import discover_spec_repo
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "agents" / "v1"
 FIXTURES_DIR_V2 = Path(__file__).parent / "fixtures" / "agents" / "v2"
@@ -35,20 +36,6 @@ def agent_launch(script_name: str, *, version: str = "v1", **overrides: object) 
     }
     kwargs.update(overrides)
     return AgentLaunch(**kwargs)  # type: ignore[arg-type]
-
-
-_SPEC_REPO_POINTER = (
-    Path(__file__).resolve().parents[1] / ".agents" / "skills" / "check-specification" / ".repo"
-)
-
-
-def _spec_repo() -> Path | None:
-    """The local spec checkout: `$ACP_SPEC_REPO`, else the path the `check-specification` skill
-    keeps in its gitignored `.repo` file. `None` when neither is set (e.g. in CI)."""
-    configured = os.environ.get("ACP_SPEC_REPO")
-    if not configured and _SPEC_REPO_POINTER.is_file():
-        configured = _SPEC_REPO_POINTER.read_text().strip()
-    return Path(configured) if configured else None
 
 
 def _in_ci() -> bool:
@@ -91,5 +78,5 @@ def spec_doc() -> Callable[[str, str], str]:
     `git show` so the checkout's working tree and current branch do not matter. Skips the test
     when no spec checkout is available or it lacks `revision`; fails instead under CI."""
 
-    repo = _spec_repo()
+    repo = discover_spec_repo()
     return lambda revision, path: read_spec_doc(repo, revision, path)

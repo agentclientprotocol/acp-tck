@@ -28,7 +28,8 @@ the orchestrator.
 
 Run one researcher (`sonnet`) per version. It writes `.agents/research/spec-diff-v<N>.md`:
 
-- the output of `scripts/spec-impact.py <base> <target> --version v<N>`;
+- the output of `uv run python scripts/spec-impact.py <base> <target> --version v<N>` (add
+  `--spec-repo PATH` if the checkout is not `$ACP_SPEC_REPO` or the `check-specification` one);
 - the matching `CHANGELOG.md` entries and RFD status changes;
 - a one-line summary per changed area.
 

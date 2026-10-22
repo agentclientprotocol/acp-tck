@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from tck.common.citations import resolve_pointer, schema_pointers
 from tck.common.requirements import Tier
 from tck.common.spec_map import SectionError, parse_spec_map, resolve_section
 from tck.v1.protocol import SCHEMA_DIR, SCHEMA_REVISION
@@ -145,26 +146,8 @@ _V1_SOURCE_DIRS = (
     _REPO_ROOT / "tests" / "v1",
     _REPO_ROOT / "tests" / "fixtures" / "agents" / "v1",
 )
-# v1 pointers only; a v1 file may cite v2's schema (`schema/v2/schema.unstable.json#...`).
-_POINTER_PATTERN = re.compile(r"(?<!v2/)schema\.unstable\.json#(/[^\s`'\"),;]*)")
 # Any mention of the stable file names; `schema.unstable.json` does not match.
 _STABLE_NAME_PATTERN = re.compile(r"\b(?:schema|meta)\.json\b")
-
-
-def _resolve_pointer(document: Any, pointer: str) -> Any:
-    """RFC 6901 resolution; raises `KeyError`/`IndexError`/`ValueError` if it does not resolve."""
-    node = document
-    for raw in pointer.split("/")[1:]:
-        token = raw.replace("~1", "/").replace("~0", "~")
-        if isinstance(node, dict):
-            node = node[token]
-        elif isinstance(node, list):
-            if not token.isdigit() or (token != "0" and token.startswith("0")):
-                raise ValueError(f"bad array index {token!r}")
-            node = node[int(token)]
-        else:
-            raise KeyError(token)
-    return node
 
 
 def _v1_source_files() -> list[Path]:
@@ -183,9 +166,7 @@ def _schema_pointers_by_source() -> dict[str, list[str]]:
     }
     for path in _v1_source_files():
         sources[str(path.relative_to(_REPO_ROOT))] = path.read_text()
-    return {
-        name: [m.rstrip(".") for m in _POINTER_PATTERN.findall(text)] for name, text in sources.items()
-    }
+    return {name: schema_pointers(text, "v1") for name, text in sources.items()}
 
 
 def _unresolved_pointers(pointers_by_source: dict[str, list[str]], schema: Any) -> list[str]:
@@ -193,24 +174,10 @@ def _unresolved_pointers(pointers_by_source: dict[str, list[str]], schema: Any) 
     for source, pointers in pointers_by_source.items():
         for pointer in pointers:
             try:
-                _resolve_pointer(schema, pointer)
+                resolve_pointer(schema, pointer)
             except (KeyError, IndexError, ValueError):
                 bad.append(f"{source}: {pointer}")
     return bad
-
-
-def test_resolve_pointer_handles_escapes_and_arrays():
-    doc = {"a/b": {"c~d": [10, {"x": 1}]}}
-    assert _resolve_pointer(doc, "/a~1b/c~0d/1/x") == 1
-    assert _resolve_pointer(doc, "") is doc
-    for bad in ("/a~1b/c~0d/2", "/a~1b/c~0d/01", "/a/b", "/a~1b/c~0d/x"):
-        with pytest.raises((KeyError, IndexError, ValueError)):
-            _resolve_pointer(doc, bad)
-
-
-def test_pointer_pattern_skips_v2_schema_citations():
-    text = "schema/v1/schema.unstable.json#/$defs/A; schema/v2/schema.unstable.json#/$defs/B"
-    assert _POINTER_PATTERN.findall(text) == ["/$defs/A"]
 
 
 def test_schema_citation_pointers_resolve_in_the_vendored_schema():
@@ -275,9 +242,7 @@ def _ledger_citation_problems(citation: str, schema: Any) -> list[str]:
         problems.append("cites the docs tree outside draft/")
     problems += [
         f"unresolvable pointer {pointer}"
-        for pointer in _unresolved_pointers(
-            {"c": [m.rstrip(".") for m in _POINTER_PATTERN.findall(citation)]}, schema
-        )
+        for pointer in _unresolved_pointers({"c": schema_pointers(citation, "v1")}, schema)
     ]
     return problems
 
