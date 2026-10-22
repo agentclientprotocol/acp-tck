@@ -6,7 +6,7 @@
 # ///
 """Minimal, conforming ACP v2 agent used to cross-check the TCK's v2 suite against the
 upstream Python reference SDK's `acp.experimental.v2` runtime (there is no upstream v2 example
-agent to reuse, unlike v1's `examples/echo_agent.py` -- see `.agents/research/reference-sdks-v2-status.md`).
+agent to reuse in the SDK's `examples/`, unlike v1's `examples/echo_agent.py`).
 
 Implements the full 7-method v2 session baseline (`session/new`, `session/list`,
 `session/resume`, `session/close`, `session/prompt`, `session/cancel`, plus the
