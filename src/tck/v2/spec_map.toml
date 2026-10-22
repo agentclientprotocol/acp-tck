@@ -6,8 +6,13 @@
 #
 # Core doc entries:
 #   path      doc path in the spec repo (draft tree, `docs/protocol/v2/draft/*.mdx`)
-#   sections  optional: heading titles exactly as written in the doc; a section covers its
-#             subsections. Omit it when the whole doc is core.
+#   sections  optional: section addresses; omit it when the whole doc is core. An address is a
+#             heading title exactly as written in the doc, or a path of titles joined by " > "
+#             ("Agent > Baseline Methods") to tell apart duplicate titles. A section covers its
+#             subsections. "(intro)" alone is the text before the doc's first heading;
+#             "<path> > (intro)" is that heading's own text before its first child heading.
+#             Inclusion only: to leave a subsection out, list its siblings and the parent's
+#             "(intro)" instead of the parent.
 #   code      optional: repo-relative TCK paths that implement the doc's cross-cutting rules
 #   reason    why the doc is core
 #
@@ -28,6 +33,25 @@ core_defs = [
 
 [[core_doc]]
 path = "docs/protocol/v2/draft/prompt-lifecycle.mdx"
+# Everything except the standalone feature subsections: Session-directed messages (unstable),
+# Session Notices, Session Compaction, Session Usage Updates, End-Turn Token Usage (Unstable).
+sections = [
+    "(intro)",
+    "Session Updates > (intro)",
+    "Session Updates > Entity IDs",
+    "Foreground and Background Work",
+    "Prompt Lifecycle > (intro)",
+    "1. User Message",
+    "2. Prompt Accepted",
+    "3. Agent Reports Output > (intro)",
+    "4. Report Completion > (intro)",
+    "5. Tool Invocation and Status Reporting",
+    "6. Continue Conversation",
+    "Stop Reasons",
+    "Failures",
+    "Session States",
+    "Cancellation",
+]
 code = [
     "src/tck/v2/conformance/_helpers.py",
     "src/tck/v2/conformance/test_prompt.py",
@@ -75,7 +99,7 @@ reason = "session existence, initial state, replay and state synchronization, cl
 
 [[core_doc]]
 path = "docs/protocol/v2/draft/overview.mdx"
-sections = ["Agent", "Argument requirements", "Error Handling", "Conventions"]
+sections = ["Agent > Baseline Methods", "Argument requirements", "Error Handling", "Conventions"]
 code = [
     "src/tck/v2/conformance/test_jsonrpc.py",
     "src/tck/v2/validation.py",

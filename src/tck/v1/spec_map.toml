@@ -5,8 +5,13 @@
 #
 # Core doc entries:
 #   path      doc path in the spec repo (draft tree, `docs/protocol/v1/draft/*.mdx`)
-#   sections  optional: heading titles exactly as written in the doc; a section covers its
-#             subsections. Omit it when the whole doc is core.
+#   sections  optional: section addresses; omit it when the whole doc is core. An address is a
+#             heading title exactly as written in the doc, or a path of titles joined by " > "
+#             ("Agent > Baseline Methods") to tell apart duplicate titles. A section covers its
+#             subsections. "(intro)" alone is the text before the doc's first heading;
+#             "<path> > (intro)" is that heading's own text before its first child heading.
+#             Inclusion only: to leave a subsection out, list its siblings and the parent's
+#             "(intro)" instead of the parent.
 #   code      optional: repo-relative TCK paths that implement the doc's cross-cutting rules
 #   reason    why the doc is core
 #
@@ -62,7 +67,7 @@ reason = "version negotiation and the rule that omitted capabilities are unsuppo
 
 [[core_doc]]
 path = "docs/protocol/v1/draft/session-setup.mdx"
-sections = ["Session ID", "Working Directory"]
+sections = ["(intro)", "Session ID", "Working Directory"]
 code = [
     "src/tck/v1/conformance/test_session.py",
     "src/tck/v1/conformance/_helpers.py",

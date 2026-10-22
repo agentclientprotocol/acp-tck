@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from tck.common.requirements import Tier
-from tck.common.spec_map import markdown_headings, parse_spec_map
+from tck.common.spec_map import SectionError, parse_spec_map, resolve_section
 from tck.v1.protocol import SCHEMA_DIR, SCHEMA_REVISION
 from tck.v1 import requirements as req_module
 from tck.v1 import spec_map as spec_map_module
@@ -291,16 +291,17 @@ def test_spec_map_core_docs_exist_at_the_pinned_revision(spec_doc):
         spec_doc(SCHEMA_REVISION, core.path)
 
 
-def test_spec_map_core_sections_are_headings_of_their_doc(spec_doc):
+def test_spec_map_core_sections_resolve_to_one_range_in_their_doc(spec_doc):
     scoped = [core for core in _SPEC_MAP.core_docs if core.sections]
     assert scoped, "expected at least one section-scoped core doc"
     for core in scoped:
-        headings = markdown_headings(spec_doc(SCHEMA_REVISION, core.path))
+        text = spec_doc(SCHEMA_REVISION, core.path)
+        assert len(set(core.sections)) == len(core.sections), f"{core.path}: duplicate section"
         for section in core.sections:
-            assert headings.count(section) == 1, (
-                f"{core.path}: section {section!r} appears {headings.count(section)} times "
-                f"(want exactly once); headings: {headings}"
-            )
+            try:
+                resolve_section(text, section)
+            except SectionError as error:
+                raise AssertionError(f"{core.path}: {error}") from error
 
 
 def test_spec_map_code_paths_exist():
