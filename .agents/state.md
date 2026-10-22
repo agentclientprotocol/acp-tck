@@ -34,9 +34,8 @@ mode: single · branch: orchestrator-skills · reviews: off
 - S2 spec-impact report — 408efbe — scripts/spec-impact.py + tck.common.citations/spec_repo; 473 passed
 - S3 --fix remap — 1d39ae8 — in-place line remap, needs-review list, pyright fixes; 488 passed. M2 DONE (pending S4).
 - S3b --fix guard — dcab871 — base must equal pin; 491 passed
+- S4 docs — 56387a5 — AGENTS.md spec-map section + CI text, narrowed orchestrator grep, VENDORED.md --fix pointer. GOAL DONE.
 - Cleanup — 0235c6f — python_v2_agent.py research ref rewritten as plain explanation
 ## Next
-- S4 (programmer running): narrow orchestrator grep to `\.agents/(research|state\.md|prompt\.md)`, and concisely document spec-impact.py, spec_map.toml, ACP_SPEC_REPO in AGENTS.md.
-- `.agents/skills/*/.repo` refs in VENDORED.md and cross-check.sh are legitimate (skills are permanent).
-- Note for user: full suite ~15.5 min locally vs CI `test` timeout-minutes: 20.
+- Goal done. Before merging a PR: delete .agents/state.md, .agents/prompt.md, .agents/research/.
 ## Open questions (waiting on the user)
