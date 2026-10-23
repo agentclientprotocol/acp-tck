@@ -28,12 +28,12 @@ The repo holds three uv projects, with the product kept apart from the maintenan
 
 - Root `acp-tck` -- the product (`src/tck/`, `tests/`). It is also the uv workspace root, but
   depends on no member.
-- `spec-tracker/` -- a workspace member that depends on `acp-tck`, never the reverse. Spec-maintenance
-  tooling (spec maps, citation checks, the `spec-impact` CLI), not part of the product. Tests:
-  `uv run --package spec-tracker pytest spec-tracker/tests`.
-- `cross-check/` -- a standalone uv project, excluded from the workspace, with its own lock and
-  `.venv`. It never imports `tck`; it runs the TCK as a CLI against upstream agents. Tests:
-  `uv run --directory cross-check pytest`.
+- `spec-tracker/` -- a workspace member that depends on `acp-tck`: spec maps and the `spec-impact`
+  CLI for following spec updates. Read `spec-tracker/README.md` before working on it or on a spec
+  update.
+- `cross-check/` -- a standalone uv project, excluded from the workspace, that runs the TCK
+  against upstream agents and checks an expected baseline. Read `cross-check/README.md` before
+  working on it.
 
 Each version's `plugin.py` is a thin shim: it copies every hook/fixture from `tck.common.plugin`
 into its own module namespace (via `vars()`, not `import *`, so underscore-named autouse
@@ -100,7 +100,7 @@ The plugin shims are deliberately not auto-registered via `pytest11` entry point
 uv run pytest
 ```
 
-Runs only `tests/` (`spec-tracker/` and `cross-check/` have their own suites, see Architecture):
+Runs only `tests/` (`spec-tracker/` and `cross-check/` have their own suites, see their READMEs):
 harness unit tests, registry meta-tests, and end-to-end CLI tests against every fixture for
 both v1 and v2 (a few minutes -- most of it is v2's end-to-end subprocess runs). Some self-tests
 scope themselves with `-k` to just the module(s) owning the id(s) they assert on, which flips the
@@ -110,36 +110,14 @@ statuses, not the overall verdict).
 For local development run `uv sync --all-packages`. Plain `uv sync` is exact and removes the
 `spec-tracker` member from the venv (`uv run --package spec-tracker ...` puts it back).
 
-Editors: the root `.venv` covers the TCK and `spec-tracker`. `cross-check/` has its own env, so open
-it as its own editor/IDE root to get completion for its `acp` imports; Pyright/Pylance at the repo
-root resolve it against the root venv and won't find `acp`.
+Editors: the root `.venv` covers the TCK and `spec-tracker`; `cross-check/` has its own env (see
+its README).
 
 ## CI
 
-`.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`, then fetches
-the spec repo at each pinned `SCHEMA_REVISION` into `ACP_SPEC_REPO` and runs
-`uv run --locked --package spec-tracker pytest spec-tracker/tests -q`) and an informational
-`cross-check` job (`continue-on-error: true`) that tests `cross-check/` and then runs the suite
-against independently-built upstream agents (see "Cross-checking against upstream agents").
-
-## Cross-checking against upstream agents
-
-`cross-check/run.sh` runs the TCK against Rust SDK's `testy` (v1 and, built with
-`unstable_protocol_v2`, v2), Python SDK's `examples/echo_agent.py`, and the repo-owned
-`cross-check/python_v2_agent.py` (no upstream v2 Python example exists yet). It needs a Rust
-toolchain and both SDK checkouts (`ACP_RUST_SDK`, `ACP_PYTHON_SDK`; defaults come from the
-`check-rust-sdk`/`check-python-sdk` skills), writes reports under `scratch/cross-check/`, and is not
-part of any pytest run. The Python agents run in `cross-check/`'s own env, whose
-`agent-client-protocol` pin (`1.0.0rc2`) is the SDK version they are checked at.
-
-`cross-check/summary.py` prints the scorecard and diffs MANDATORY FAILs against the expected baseline
-(the `--expect` lines in `cross-check/run.sh`, mirrored in the CI workflow). The Python v1
-`echo_agent` is expected to fail only `ACP-INIT-003` (it echoes an unsupported requested version);
-v1 `testy` is expected fully conformant (it answers 1 from rust-sdk `53dd268`). v2's `testy` is
-expected to fail only `ACP-INIT-205`/`206`: it exits right after rejecting `initialize`, usually
-before the error reply is flushed to stdout (a known upstream race); the Python v2 example agent is
-expected to fail a small, documented set tied to known upstream limitations. Any other deviation is
-worth investigating as either a TCK bug or a genuine new upstream behavior.
+`.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`, then the
+spec-tracker tests against a fetched spec checkout) and an informational `cross-check` job
+(`continue-on-error: true`). See each project's README for what its CI step checks.
 
 ## How to add a requirement + test
 
@@ -253,24 +231,10 @@ notifications to the client, and its responses to methods it implements) -- neve
 TCK's own mock client writes. There is no `validate_client_message`; add one only if a future
 requirement needs to assert on the harness's own outgoing traffic.
 
-## Spec map and spec updates
+## Spec updates
 
-Each version has `spec-tracker/maps/vN.toml` (loaded by `spec_tracker.spec_map`; the file header
-documents the format): the core docs whose rules other docs assume without linking (optionally
-narrowed to sections, addressed by heading title or `A > B` heading path, with `(intro)` for text
-before a heading's first child), the core schema `$defs`, the `code` paths implementing each core
-doc's cross-cutting rules, and the ledger of deliberate non-requirements (`[[not_requirement]]`).
-`spec-tracker/tests/` validates it against the spec docs at the pinned revision.
-
-`uv run --package spec-tracker spec-impact <base> <target> --version vN` reports what a spec diff touches (core docs/
-`$defs`, `$ref` closure, linking docs, affected requirement ids and ledger entries). With `--fix` it
-instead remaps the `.mdx` line citations in `requirements.py` and the map from base to
-target line numbers; it only runs from the pinned base, before the pin bump (see its docstring).
-
-The spec-doc checks and `spec-impact` (also via `--spec-repo PATH`) read the spec checkout at
-`$ACP_SPEC_REPO`, else the `check-specification` skill's. Locally a missing checkout or revision SKIPs those tests; under CI
-(`CI=true`) it fails instead. The `/update-to-spec` skill drives a whole spec update; follow it
-rather than refreshing by hand.
+The `/update-to-spec` skill drives a whole spec update; follow it rather than refreshing by hand.
+The spec maps and the `spec-impact` CLI it uses are described in `spec-tracker/README.md`.
 
 ## Conventions
 

@@ -11,7 +11,7 @@
 # CLI from the repo-root project.
 #
 # This is a manual/CI cross-check, NOT part of `uv run pytest` -- it needs a Rust toolchain
-# and both SDK checkouts. See `AGENTS.md` "Cross-checking against upstream agents"
+# and both SDK checkouts. See `README.md` in this directory.
 #
 # Set ACP_CROSS_CHECK_V2=0 to skip both v2 legs and run only the v1 comparison (e.g. if the
 # local Rust toolchain lacks the v2 feature, or to keep a quick v1-only smoke run).
