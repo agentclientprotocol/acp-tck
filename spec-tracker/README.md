@@ -3,33 +3,23 @@
 Maintenance tooling that keeps the TCK aligned with the upstream ACP spec as it changes. It is not
 part of the shipped `tck` package.
 
-## Project layout
+A uv workspace member of the repo root: it depends on `acp-tck` (for the requirement registries and
+pinned `SCHEMA_REVISION`s), never the other way round, and shares the root `uv.lock` and `.venv`.
+Use `uv sync --all-packages` locally; plain `uv sync` removes this member from the venv. Add
+dependencies with `uv add --package spec-tracker ...`.
 
-A uv workspace member of the repo root. It depends on `acp-tck` (for the requirement registries
-and pinned `SCHEMA_REVISION`s), never the other way round, and shares the root `uv.lock` and
-`.venv`. Run `uv sync --all-packages` for local development: plain `uv sync` is exact and removes
-this member from the venv (`uv run --package spec-tracker ...` puts it back).
+`maps/` holds the spec maps, `src/spec_tracker/` the map loader, citation helpers and the
+`spec-impact` CLI, and `tests/` their tests plus checks of the maps against the spec.
 
-- `maps/v{1,2}.toml`: the per-version spec maps (below).
-- `src/spec_tracker/`: the map loader (`spec_map`), schema pointer and citation helpers
-  (`citations`), and the `spec-impact` CLI (`impact`).
-- `tests/`: unit tests, plus checks of the maps against the spec at the pinned revision.
-
-Add dependencies with `uv add --package spec-tracker ...` (exact `==` pins).
+Everything that reads the spec takes a local clone of the spec repo as `--spec-repo PATH`, with no
+default. It only reads revisions through git, so the clone's branch and working tree don't matter.
 
 ## Spec maps
 
-Each `maps/vN.toml` lists, for one protocol version:
-
-- the core docs whose rules other docs assume without linking to them, optionally narrowed to
-  sections (by heading title or `A > B` heading path, with `(intro)` for the text before a
-  heading's first child);
-- the core schema `$defs`;
-- the `code` paths in the TCK that implement each core doc's cross-cutting rules;
-- the ledger of deliberate non-requirements (`[[not_requirement]]`).
-
-The file header documents the format. A change to a core doc or `$def` means re-checking every area
-that depends on it, not just the changed lines.
+Each `maps/vN.toml` lists the core docs (and sections) whose rules other docs assume without
+linking to them, the core schema `$defs`, the TCK code implementing those rules, and a ledger of
+deliberate non-requirements. The file header documents the format. A change to a core doc or `$def`
+means re-checking every area that depends on it, not just the changed lines.
 
 ## spec-impact
 
@@ -37,24 +27,16 @@ that depends on it, not just the changed lines.
 uv run --package spec-tracker spec-impact <base> <target> --version vN --spec-repo PATH [--fix]
 ```
 
-Prints a Markdown report of what a spec diff touches: changed files and the sections each hunk
-falls in, hits on the map's core docs and `$defs`, the schema `$ref` closure, docs linking to
-changed docs, and the requirement ids and ledger entries whose citations fall in a changed region.
+Prints a Markdown report of what a spec diff touches: changed files and sections, hits on the
+map's core docs and `$defs`, the schema `$ref` closure, docs linking to changed docs, and the
+requirement ids and ledger entries whose citations fall in a changed region.
 
 With `--fix` it instead remaps the `.mdx` line citations in `src/tck/vN/requirements.py` and
-`maps/vN.toml` from base to target line numbers, in place. It is not idempotent, so it refuses
-unless `<base>` is the version's pinned `SCHEMA_REVISION`: run it before the pin bump. See the
-module docstring for details.
+`maps/vN.toml` from base to target, in place. It is not idempotent, so it refuses unless `<base>`
+is the pinned `SCHEMA_REVISION`: run it before the pin bump.
 
 The `/update-to-spec` skill drives a whole spec update with this tool; follow it rather than
 refreshing by hand.
-
-## Spec checkout
-
-The spec-doc checks and `spec-impact` read a local clone of the spec repo, always passed as
-`--spec-repo PATH`. There is no default and no environment variable, so what they read is always
-explicit. They only read revisions through git, so the checkout's branch and working tree don't
-matter.
 
 ## Tests and CI
 
@@ -62,7 +44,6 @@ matter.
 uv run --package spec-tracker pytest spec-tracker/tests --spec-repo PATH
 ```
 
-Locally, without `--spec-repo`, or when the checkout lacks a pinned revision, the spec-doc checks
-SKIP while the rest of the suite runs, so check the skip count. Under CI (`CI=true`) they
-fail instead, since a missing checkout means the fetch step broke. The CI `test` job runs these
-after the root suite, once it has fetched the spec repo at each pinned `SCHEMA_REVISION`.
+Without `--spec-repo`, or when the clone lacks a pinned revision, the spec-doc checks SKIP locally
+(check the skip count) and FAIL under `CI=true`. The CI `test` job runs these after the root suite,
+against a fetch of each pinned revision.
