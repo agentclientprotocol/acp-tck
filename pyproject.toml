@@ -32,3 +32,7 @@ markers = [
     "capability(path, boolean=False): skip this test unless the cached initialize result advertises the capability at this dotted JSON path.",
     "negotiation: this test judges version negotiation itself, so it still runs when the cached initialize was rejected with -32022.",
 ]
+
+[tool.uv.workspace]
+members = ["spec-tracker"]
+exclude = ["cross-check"]

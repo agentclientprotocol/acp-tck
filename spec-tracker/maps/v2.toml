@@ -1,0 +1,117 @@
+# Spec map for ACP v2 (Draft): which parts of the spec define rules that other parts assume
+# without linking to them, and which spec rules the TCK deliberately does not test. Used when
+# comparing spec revisions (a change to a core doc or core `$def` means re-checking every area
+# that depends on it, including the satellite docs that restate its rules, not just the changed
+# lines). Loaded by `spec_tracker.spec_map`.
+#
+# Core doc entries:
+#   path      doc path in the spec repo (draft tree, `docs/protocol/v2/draft/*.mdx`)
+#   sections  optional: section addresses; omit it when the whole doc is core. An address is a
+#             heading title exactly as written in the doc, or a path of titles joined by " > "
+#             ("Agent > Baseline Methods") to tell apart duplicate titles. A section covers its
+#             subsections. "(intro)" alone is the text before the doc's first heading;
+#             "<path> > (intro)" is that heading's own text before its first child heading.
+#             Inclusion only: to leave a subsection out, list its siblings and the parent's
+#             "(intro)" instead of the parent.
+#   code      optional: repo-relative TCK paths that implement the doc's cross-cutting rules
+#   reason    why the doc is core
+#
+# Ledger of deliberate non-requirements, one `[[not_requirement]]` table each (none yet):
+#   citation   where the rule is stated, same form as a requirement citation in requirements.py
+#              (doc path with lines, or `schema.unstable.json#/$defs/...`, ending `@ <spec commit>`)
+#   statement  the spec rule, in one sentence
+#   reason     why the TCK does not test it (not observable, unsafe, out of scope, ...)
+
+# Schema `$defs` whose changes are treated like a core doc change.
+core_defs = [
+    "ErrorCode",
+    "SessionUpdate",
+    "ContentBlock",
+    "AgentCapabilities",
+    "ClientCapabilities",
+]
+
+[[core_doc]]
+path = "docs/protocol/v2/draft/prompt-lifecycle.mdx"
+# Everything except the standalone feature subsections: Session-directed messages (unstable),
+# Session Notices, Session Compaction, Session Usage Updates, End-Turn Token Usage (Unstable).
+sections = [
+    "(intro)",
+    "Session Updates > (intro)",
+    "Session Updates > Entity IDs",
+    "Foreground and Background Work",
+    "Prompt Lifecycle > (intro)",
+    "1. User Message",
+    "2. Prompt Accepted",
+    "3. Agent Reports Output > (intro)",
+    "4. Report Completion > (intro)",
+    "5. Tool Invocation and Status Reporting",
+    "6. Continue Conversation",
+    "Stop Reasons",
+    "Failures",
+    "Session States",
+    "Cancellation",
+]
+code = [
+    "src/tck/v2/conformance/_helpers.py",
+    "src/tck/v2/conformance/test_prompt.py",
+    "src/tck/v2/conformance/test_cancel.py",
+    "src/tck/v2/conformance/test_patches.py",
+    "src/tck/v2/conformance/test_permission.py",
+]
+reason = "foreground state machine, insertion boundary, entity IDs, upserts, stop reasons and cancellation, restated by tool-calls, elicitation, cancellation, session-setup and others"
+
+[[core_doc]]
+path = "docs/protocol/v2/draft/extensibility.mdx"
+code = [
+    "src/tck/v2/conformance/test_extensibility.py",
+    "src/tck/v2/conformance/test_enums.py",
+    "src/tck/v2/validation.py",
+]
+reason = "open-enum and unknown-field rules, _meta and metadata patches, extension methods and when a capability is required; satellite docs restate the open-enum rule"
+
+[[core_doc]]
+path = "docs/protocol/v2/draft/initialization.mdx"
+code = [
+    "src/tck/common/plugin.py",
+    "src/tck/v2/conformance/test_initialize.py",
+    "src/tck/v2/conformance/test_prompt_capabilities.py",
+    "src/tck/v2/conformance/_helpers.py",
+]
+reason = "version negotiation and -32022, capability-marker semantics and the baseline session surface that every capability-gated feature relies on"
+
+[[core_doc]]
+path = "docs/protocol/v2/draft/session-setup.mdx"
+sections = [
+    "Creating a Session",
+    "Initial Session State",
+    "Resuming Sessions",
+    "Closing Active Sessions",
+    "Session ID",
+    "Working Directory",
+]
+code = [
+    "src/tck/v2/conformance/test_session.py",
+    "src/tck/v2/conformance/test_session_capabilities.py",
+    "src/tck/v2/conformance/_helpers.py",
+]
+reason = "session existence, initial state, replay and state synchronization, close, session ID and the cwd root set; additional roots, system prompt and MCP servers are individual features"
+
+[[core_doc]]
+path = "docs/protocol/v2/draft/overview.mdx"
+sections = ["Agent > Baseline Methods", "Argument requirements", "Error Handling", "Conventions"]
+code = [
+    "src/tck/v2/conformance/test_jsonrpc.py",
+    "src/tck/v2/validation.py",
+]
+reason = "baseline agent methods, absolute-path and naming conventions and the general JSON-RPC error and notification rules that other docs restate"
+
+[[core_doc]]
+path = "docs/protocol/v2/draft/transports.mdx"
+code = [
+    "src/tck/common/harness",
+    "src/tck/v2/conformance/test_transport.py",
+    "src/tck/v2/conformance/test_batch.py",
+    "src/tck/v2/validation.py",
+]
+reason = "stdio framing, message timing and JSON-RPC batch rules that every message exchange depends on"

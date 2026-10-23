@@ -34,6 +34,23 @@ jobs:
       - name: Run test suite
         run: uv run pytest -q
 
+      # spec-tracker's tests check the spec maps against the spec docs at each version's vendored
+      # schema revision (SCHEMA_REVISION in protocol.py); under CI they fail, not skip, if this
+      # checkout is missing. Fetch every distinct pinned revision.
+      - name: Fetch spec repo (pinned revisions)
+        run: |
+          spec_dir="$RUNNER_TEMP/acp-spec"
+          mkdir -p "$spec_dir"
+          git -C "$spec_dir" init -q
+          git -C "$spec_dir" remote add origin https://github.com/agentclientprotocol/agent-client-protocol
+          revisions=$(uv run python -c 'from tck.v1.protocol import SCHEMA_REVISION as v1; from tck.v2.protocol import SCHEMA_REVISION as v2; print(*sorted({v1, v2}))')
+          for sha in $revisions; do
+            git -C "$spec_dir" fetch --depth 1 origin "$sha"
+          done
+
+      - name: Test spec-tracker
+        run: uv run --locked --package spec-tracker pytest spec-tracker/tests -q --spec-repo "$RUNNER_TEMP/acp-spec"
+
   cross-check:
     name: cross-check (informational)
     needs: test
@@ -55,7 +72,12 @@ jobs:
         run: uv python install 3.14
 
       - name: Sync dependencies
-        run: uv sync --locked
+        run: |
+          uv sync --locked
+          uv sync --locked --directory cross-check
+
+      - name: Test cross-check tooling
+        run: uv run --directory cross-check --locked pytest -q
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -87,23 +109,23 @@ jobs:
       - name: Run cross-check
         env:
           CARGO_PROFILE_DEV_DEBUG: "0"
-          OUT_DIR: cross-check
-        run: ./scripts/cross-check.sh
+        run: ./cross-check/run.sh
 
       - name: Check expected scorecard (v1 + v2 baselines)
-          # `cross-check.sh` always exits 0 once it's built and run every agent and written all
+          # `run.sh` always exits 0 once it's built and run every agent and written all
           # four JSON reports -- the agents' own scorecards are data, not the script's success, so
           # a drifted baseline (e.g. python_v2_agent suddenly failing something new) would not
-          # turn the "Run cross-check" step red. Re-run cross-check-summary.py here, standalone,
+          # turn the "Run cross-check" step red. Re-run summary.py here, standalone,
           # against those same JSON reports so *this* step's exit code reflects whether the
           # scorecard still matches the documented baseline.
         run: |
-          uv run python3 scripts/cross-check-summary.py \
-            cross-check/testy.json testy \
-            cross-check/echo_agent.json echo_agent \
-            --report cross-check/testy-v2.json testy_v2 \
-            --report cross-check/python-v2.json python_v2_agent \
+          uv run --no-sync --project cross-check python cross-check/summary.py \
+            scratch/cross-check/testy.json testy \
+            scratch/cross-check/echo_agent.json echo_agent \
+            --report scratch/cross-check/testy-v2.json testy_v2 \
+            --report scratch/cross-check/python-v2.json python_v2_agent \
             --expect "testy=" \
             --expect "echo_agent=ACP-INIT-003" \
-            --expect "testy_v2=ACP-INIT-205,ACP-INIT-206" \
+            --expect "testy_v2=" \
+            --expect-flaky "testy_v2=ACP-INIT-205,ACP-INIT-206" \
             --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"

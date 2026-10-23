@@ -1,0 +1,85 @@
+# Spec map for ACP v1: which parts of the spec define rules that other parts assume without
+# linking to them, and which spec rules the TCK deliberately does not test. Used when comparing
+# spec revisions (a change to a core doc or core `$def` means re-checking every area that depends
+# on it, not just the changed lines). Loaded by `spec_tracker.spec_map`.
+#
+# Core doc entries:
+#   path      doc path in the spec repo (draft tree, `docs/protocol/v1/draft/*.mdx`)
+#   sections  optional: section addresses; omit it when the whole doc is core. An address is a
+#             heading title exactly as written in the doc, or a path of titles joined by " > "
+#             ("Agent > Baseline Methods") to tell apart duplicate titles. A section covers its
+#             subsections. "(intro)" alone is the text before the doc's first heading;
+#             "<path> > (intro)" is that heading's own text before its first child heading.
+#             Inclusion only: to leave a subsection out, list its siblings and the parent's
+#             "(intro)" instead of the parent.
+#   code      optional: repo-relative TCK paths that implement the doc's cross-cutting rules
+#   reason    why the doc is core
+#
+# Ledger of deliberate non-requirements, one `[[not_requirement]]` table each (none yet):
+#   citation   where the rule is stated, same form as a requirement citation in requirements.py
+#              (doc path with lines, or `schema.unstable.json#/$defs/...`, ending `@ <spec commit>`)
+#   statement  the spec rule, in one sentence
+#   reason     why the TCK does not test it (not observable, unsafe, out of scope, ...)
+
+# Schema `$defs` whose changes are treated like a core doc change.
+core_defs = [
+    "ErrorCode",
+    "SessionUpdate",
+    "ContentBlock",
+    "AgentCapabilities",
+    "ClientCapabilities",
+]
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/transports.mdx"
+code = [
+    "src/tck/common/harness",
+    "src/tck/v1/conformance/test_transport.py",
+    "src/tck/v1/conformance/test_diagnostics.py",
+]
+reason = "stdio framing, stderr/stdout split and shutdown; no other doc links here, yet every message and the whole harness depend on it"
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/overview.mdx"
+code = [
+    "src/tck/v1/conformance/test_jsonrpc.py",
+    "src/tck/v1/validation.py",
+]
+reason = "JSON-RPC model, lifecycle order, absolute paths, 1-based lines and the error and notification rules that feature docs restate without linking"
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/extensibility.mdx"
+code = [
+    "src/tck/v1/conformance/test_extensibility.py",
+    "src/tck/v1/validation.py",
+]
+reason = "_meta, _-prefixed methods, the no-custom-root-fields rule and -32601 for unknown methods apply to every type and method in every doc"
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/initialization.mdx"
+code = [
+    "src/tck/common/plugin.py",
+    "src/tck/v1/conformance/test_initialize.py",
+    "src/tck/v1/conformance/test_prompt_capabilities.py",
+    "src/tck/v1/conformance/_helpers.py",
+]
+reason = "version negotiation and the rule that omitted capabilities are unsupported, which every capability-gated feature relies on"
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/session-setup.mdx"
+sections = ["(intro)", "Session ID", "Working Directory"]
+code = [
+    "src/tck/v1/conformance/test_session.py",
+    "src/tck/v1/conformance/_helpers.py",
+]
+reason = "the session ID every session-scoped method addresses, and the absolute cwd that forms the root set; the other sections are individual features"
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/prompt-turn.mdx"
+sections = ["Session Updates", "Stop Reasons", "Cancellation"]
+code = [
+    "src/tck/v1/conformance/test_prompt.py",
+    "src/tck/v1/conformance/test_cancel.py",
+    "src/tck/v1/conformance/_helpers.py",
+]
+reason = "the session/update envelope, stop reasons and session/cancel semantics reused by many docs; the rest of the doc is feature walkthrough"

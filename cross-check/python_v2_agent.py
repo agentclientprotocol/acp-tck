@@ -1,12 +1,6 @@
-# /// script
-# requires-python = ">=3.10,<3.15"
-# dependencies = [
-#     "agent-client-protocol==1.0.0rc2",
-# ]
-# ///
 """Minimal, conforming ACP v2 agent used to cross-check the TCK's v2 suite against the
 upstream Python reference SDK's `acp.experimental.v2` runtime (there is no upstream v2 example
-agent to reuse, unlike v1's `examples/echo_agent.py` -- see `.agents/research/reference-sdks-v2-status.md`).
+agent to reuse in the SDK's `examples/`, unlike v1's `examples/echo_agent.py`).
 
 Implements the full 7-method v2 session baseline (`session/new`, `session/list`,
 `session/resume`, `session/close`, `session/prompt`, `session/cancel`, plus the
@@ -24,7 +18,7 @@ fixture does not implement, so the corresponding tests SKIP (not advertised) rat
 Cancellation: a prompt whose sole text block is exactly "wait_for_cancel" withholds its
 `idle` state update until `session/cancel` arrives (or a generous internal fallback elapses),
 mirroring the v1 fixture catalogue's `__hang__` convention and the `--cancel-prompt
-wait_for_cancel` value `scripts/cross-check.sh` already uses for the Rust v2 leg.
+wait_for_cancel` value `run.sh` already uses for the Rust v2 leg.
 """
 
 import asyncio
@@ -123,7 +117,7 @@ class V2CrossCheckAgent:
         # Only `start` is a supported cursor; any other well-formed type MUST be rejected with
         # -32602 rather than resumed without replay. A malformed value cannot be rejected here:
         # the rc2 SDK already turned it into `None` (a known ACP-RESUME-208 FAIL, see
-        # `scripts/cross-check.sh`).
+        # `run.sh`).
         if replay_from is not None and getattr(replay_from, "type", None) != "start":
             raise RequestError.invalid_params({"details": "unsupported replayFrom cursor type"})
         # No history is retained (no config options either); a resumed session is simply

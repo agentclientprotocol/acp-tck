@@ -24,6 +24,17 @@ report model, or plugin machinery. For the precise, current set of requirements 
 covers, read `src/tck/v{1,2}/requirements.py` (the registry, with citations) rather than this
 file -- it's the source of truth and won't drift the way a prose summary would.
 
+The repo holds three uv projects, with the product kept apart from the maintenance tooling:
+
+- Root `acp-tck` -- the product (`src/tck/`, `tests/`). It is also the uv workspace root, but
+  depends on no member.
+- `spec-tracker/` -- a workspace member that depends on `acp-tck`: spec maps and the `spec-impact`
+  CLI for following spec updates. Read `spec-tracker/README.md` before working on it or on a spec
+  update.
+- `cross-check/` -- a standalone uv project, excluded from the workspace, that runs the TCK
+  against upstream agents and checks an expected baseline. Read `cross-check/README.md` before
+  working on it.
+
 Each version's `plugin.py` is a thin shim: it copies every hook/fixture from `tck.common.plugin`
 into its own module namespace (via `vars()`, not `import *`, so underscore-named autouse
 fixtures aren't skipped), then overrides `pytest_configure` to stash that version's `SPEC` before
@@ -89,25 +100,24 @@ The plugin shims are deliberately not auto-registered via `pytest11` entry point
 uv run pytest
 ```
 
-Runs harness unit tests, registry meta-tests, and end-to-end CLI tests against every fixture for
+Runs only `tests/` (`spec-tracker/` and `cross-check/` have their own suites, see their READMEs):
+harness unit tests, registry meta-tests, and end-to-end CLI tests against every fixture for
 both v1 and v2 (a few minutes -- most of it is v2's end-to-end subprocess runs). Some self-tests
 scope themselves with `-k` to just the module(s) owning the id(s) they assert on, which flips the
 printed verdict to NOT CONFORMANT for that run (expected -- they're checking specific per-id
 statuses, not the overall verdict).
 
+For local development run `uv sync --all-packages`. Plain `uv sync` is exact and removes the
+`spec-tracker` member from the venv (`uv run --package spec-tracker ...` puts it back).
+
+Editors: the root `.venv` covers the TCK and `spec-tracker`; `cross-check/` has its own env (see
+its README).
+
 ## CI
 
-`.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`) and an
-informational `cross-check` job (`continue-on-error: true`) that runs the suite against
-independently-built upstream agents (Rust SDK's `testy`, Python SDK's example/experimental v2
-agents) via `scripts/cross-check.sh` and diffs the result against the expected-FAIL baseline (`--expect` lines
-in `scripts/cross-check.sh`). The Python v1 `echo_agent` is expected to fail only `ACP-INIT-003` (it
-echoes an unsupported requested version); v1 `testy` is expected fully conformant (it answers 1 from
-rust-sdk `53dd268`). v2's `testy` is expected to fail only `ACP-INIT-205`/`206`: it exits right after
-rejecting `initialize`, usually before the error reply is flushed to stdout (a known upstream race);
-the Python v2 example
-agent is expected to fail a small, documented set tied to known upstream limitations. Any other
-deviation is worth investigating as either a TCK bug or a genuine new upstream behavior.
+`.github/workflows/ci.yml`: a required `test` job (`uv sync --locked && uv run pytest -q`, then the
+spec-tracker tests against a fetched spec checkout) and an informational `cross-check` job
+(`continue-on-error: true`). See each project's README for what its CI step checks.
 
 ## How to add a requirement + test
 
@@ -119,9 +129,9 @@ v1 follows the same rules (`schema/v1/schema.unstable.json#/$defs/...`, `docs/pr
 checked by `tests/v1/test_registry.py`.
 
 1. Add a `Requirement(...)` entry to `_DECLARATIONS` in `src/tck/v1/requirements.py`: pick an id
-   (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the exact
-   `.agents/research/*.md` line(s) that back it -- those reports are the specification, not
-   memory of the protocol.
+   (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the upstream
+   spec/schema location that backs it. Take it from the research report for the task, not from
+   memory of the protocol, but never cite the report itself (see Conventions).
 2. Write a test under `src/tck/v1/conformance/`, marked `@pytest.mark.requirement("ACP-…")` with
    a docstring starting with the id(s). Use `connected_agent()` from `_helpers.py` to spawn the
    agent; `async def` tests work without extra setup.
@@ -221,19 +231,21 @@ notifications to the client, and its responses to methods it implements) -- neve
 TCK's own mock client writes. There is no `validate_client_message`; add one only if a future
 requirement needs to assert on the harness's own outgoing traffic.
 
+## Spec updates
+
+The `/update-to-spec` skill drives a whole spec update; follow it rather than refreshing by hand.
+The spec maps and the `spec-impact` CLI it uses are described in `spec-tracker/README.md`.
+
 ## Conventions
 
 - Keep comments and docstrings concise and straightforward. Use plain language. Note non-obvious
   rationale, gotchas, and spec citations; skip narrating what the code already says, restating
   history slice-by-slice, or listing exhaustive cascades/examples that belong in tests, not prose.
-  **Never mention intermediate research artifacts** (e.g., notes from researcher agents, work-in-progress
-  findings in `.agents/research/`) in final code comments. Research documents are temporary and will be
-  deleted once features are implemented. Only reference a research document in a comment if it is explicitly
-  work-in-progress and you or the next agent plan to return to that part in this or the next iteration.
-  After implementation, clean up or replace all research references with proper, permanent comments.
+- **Never reference anything under `.agents/`**  in the
+  final code: not in comments, docstrings, `Requirement` citations, tests, or scripts. Those files are
+  deleted before the PR merges, so such a reference would dangle. A temporary reference is fine
+  while the work that needs it is in progress, but it must be removed or replaced with a permanent
+  upstream citation or plain explanation by the time that work is done.
 - Dependency management is `uv` only, with exact pins (`==`), never bare `pip` or hand-edited
-  `pyproject.toml` dependency entries.
-- `.agents/` is the orchestrator's workbench. `.agents/research/*.md` are read-only inputs --
-  they are the specification this code implements; do not edit them.
-- Licensed under Apache-2.0 (`LICENSE`); `pyproject.toml`'s `license`/`license-files` (PEP 639)
-  are the source of truth -- do not add a `License ::` classifier alongside them.
+  `pyproject.toml` dependency entries. Add to the product with `uv add ...`, to the member with
+  `uv add --package spec-tracker ...`, and to cross-check with `uv add --project cross-check ...`.

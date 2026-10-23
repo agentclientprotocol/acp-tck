@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Render a compact requirement-by-requirement comparison table from two or more `acp-tck
---report-json` reports (see `scripts/cross-check.sh`). Stdlib only -- no project dependency.
+--report-json` reports (see `run.sh`). Stdlib only -- no project dependency.
 
 Usage:
-  cross-check-summary.py <left.json> <left-label> <right.json> <right-label>
+  summary.py <left.json> <left-label> <right.json> <right-label>
                           [--report <path> <label> ...]
                           [--expect-only-mandatory-fail ID [ID ...]]
                           [--expect LABEL=ID,ID,...]
+                          [--expect-flaky LABEL=ID,ID,...]
 
 The two positional (path, label) pairs are always required (e.g. the v1 testy/echo_agent leg).
 `--report PATH LABEL` may be repeated to add further reports to the same comparison table --
@@ -19,9 +20,12 @@ report is ACP-INIT-003. Passing no ids after the flag asserts zero MANDATORY FAI
 
 `--expect LABEL=ID,ID,...` (repeatable) overrides that default for one specific report by
 label -- needed because the v1 and v2 legs have different expected upstream baselines (e.g.
-`echo_agent (1.0.0rc1)=ACP-INIT-003` vs `python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,...`).
+`echo_agent=ACP-INIT-003` vs `python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,...`).
 `LABEL=` (an empty id list) asserts zero MANDATORY FAILs for that report. A report with
 neither a `--expect` override nor `--expect-only-mandatory-fail` given is not checked at all.
+
+`--expect-flaky LABEL=ID,ID,...` (repeatable) names ids that may or may not FAIL for one report
+(e.g. an upstream race): they are left out of that report's comparison on both sides.
 
 Checking is opt-in and per-report. For each report, its set of MANDATORY-tier requirement ids whose aggregated status is
 FAIL is compared against one *expected* id set, and fails loudly if the two sets differ in either direction -- an
@@ -61,30 +65,42 @@ def mandatory_fail_ids(report: dict) -> set[str]:
     }
 
 
-def check_only_mandatory_fail(report: dict, label: str, expected_ids: set[str]) -> bool:
+def check_only_mandatory_fail(
+    report: dict, label: str, expected_ids: set[str], flaky_ids: frozenset[str] = frozenset()
+) -> bool:
     """Print a one-line verdict for `label` and return whether its MANDATORY FAILs are
-    exactly `expected_ids`. A report that failed to load (`_error`) always fails the check.
+    exactly `expected_ids`, ignoring `flaky_ids` on both sides. A report that failed to load
+    (`_error`) always fails the check.
+    Prints to stdout, not stderr: stdout is block-buffered when piped (as in CI), so a stderr
+    line would come out before the whole summary instead of in place.
     """
     if "_error" in report:
-        print(f"{label}: FAIL -- could not read report ({report['_error']})", file=sys.stderr)
+        print(f"{label}: FAIL -- could not read report ({report['_error']})")
         return False
 
-    actual_ids = mandatory_fail_ids(report)
+    all_fail_ids = mandatory_fail_ids(report)
+    actual_ids = all_fail_ids - flaky_ids
+    expected_ids = expected_ids - flaky_ids
+    flaky_note = ""
+    if flaky_ids:
+        flaky_note = (
+            f" (flaky, ignored: {sorted(flaky_ids)}; "
+            f"FAILed this run: {sorted(all_fail_ids & flaky_ids) or '(none)'})"
+        )
     if actual_ids != expected_ids:
         print(
             f"{label}: FAIL -- expected MANDATORY FAIL(s) {sorted(expected_ids) or '(none)'}, "
-            f"got {sorted(actual_ids) or '(none)'}",
-            file=sys.stderr,
+            f"got {sorted(actual_ids) or '(none)'}{flaky_note}"
         )
         return False
 
-    print(f"{label}: OK -- only MANDATORY FAIL(s): {sorted(expected_ids) or '(none)'}")
+    print(f"{label}: OK -- only MANDATORY FAIL(s): {sorted(expected_ids) or '(none)'}{flaky_note}")
     return True
 
 
 def _parse_expect(spec: str) -> tuple[str, set[str]]:
-    """Parse one `--expect LABEL=ID,ID,...` argument. `LABEL=` (empty right-hand side) means
-    "expect zero MANDATORY FAILs for this report"."""
+    """Parse one `--expect`/`--expect-flaky` `LABEL=ID,ID,...` argument. For `--expect`,
+    `LABEL=` (empty right-hand side) means "expect zero MANDATORY FAILs for this report"."""
     if "=" not in spec:
         raise argparse.ArgumentTypeError(f"--expect value must be LABEL=ID,ID,... (got {spec!r})")
     label, _, ids = spec.partition("=")
@@ -95,7 +111,7 @@ def _parse_expect(spec: str) -> tuple[str, set[str]]:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog=argv[0] if argv else "cross-check-summary.py",
+        prog=argv[0] if argv else "summary.py",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -127,6 +143,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         type=_parse_expect,
         help="expected MANDATORY-tier FAIL id set for one specific report, by label "
         "(repeatable; overrides --expect-only-mandatory-fail for that label)",
+    )
+    parser.add_argument(
+        "--expect-flaky",
+        metavar="LABEL=ID,ID,...",
+        action="append",
+        default=[],
+        type=_parse_expect,
+        help="ids that may or may not FAIL for one specific report, by label; left out of "
+        "that report's check (repeatable)",
     )
     return parser.parse_args(argv[1:])
 
@@ -177,6 +202,9 @@ def main(argv: list[str]) -> int:
         )
 
     per_label_expect: dict[str, set[str]] = dict(args.expect)
+    per_label_flaky: dict[str, frozenset[str]] = {}
+    for label, ids in args.expect_flaky:
+        per_label_flaky[label] = per_label_flaky.get(label, frozenset()) | ids
     if args.expect_only_mandatory_fail is not None or per_label_expect:
         default_expected = set(args.expect_only_mandatory_fail or [])
         print()
@@ -187,8 +215,10 @@ def main(argv: list[str]) -> int:
             elif args.expect_only_mandatory_fail is not None:
                 expected = default_expected
             else:
+                print(f"{label}: NOT CHECKED -- no expectation given")
                 continue
-            all_ok = check_only_mandatory_fail(report, label, expected) and all_ok
+            flaky = per_label_flaky.get(label, frozenset())
+            all_ok = check_only_mandatory_fail(report, label, expected, flaky) and all_ok
         if not all_ok:
             return 1
 
