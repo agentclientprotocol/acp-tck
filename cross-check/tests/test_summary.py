@@ -67,9 +67,9 @@ def test_check_only_mandatory_fail_flags_unexpected_extra_fail(capsys):
     )
     ok = ccs.check_only_mandatory_fail(report, "echo_agent", {"ACP-INIT-003"})
     assert ok is False
-    err = capsys.readouterr().err
-    assert "FAIL" in err
-    assert "ACP-SESSION-001" in err
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert "ACP-SESSION-001" in out
 
 
 def test_check_only_mandatory_fail_flags_missing_expected_fail(capsys):
@@ -107,8 +107,8 @@ def test_main_end_to_end_exits_nonzero_on_unexpected_mandatory_fail(tmp_path: Pa
         ]
     )
     assert exit_code == 1
-    err = capsys.readouterr().err
-    assert "right" in err and "ACP-JSONRPC-001" in err
+    out = capsys.readouterr().out
+    assert "right" in out and "ACP-JSONRPC-001" in out
 
 
 def test_main_end_to_end_exits_zero_when_expectation_holds(tmp_path: Path):
@@ -246,8 +246,8 @@ def test_main_per_report_expect_still_flags_a_genuine_deviation(tmp_path: Path, 
         ]
     )
     assert exit_code == 1
-    err = capsys.readouterr().err
-    assert "extra" in err and "ACP-SESSION-001" in err
+    out = capsys.readouterr().out
+    assert "extra" in out and "ACP-SESSION-001" in out
 
 
 def test_main_expect_without_the_mandatory_fail_flag_still_checks_named_reports(tmp_path: Path):

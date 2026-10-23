@@ -64,17 +64,18 @@ def mandatory_fail_ids(report: dict) -> set[str]:
 def check_only_mandatory_fail(report: dict, label: str, expected_ids: set[str]) -> bool:
     """Print a one-line verdict for `label` and return whether its MANDATORY FAILs are
     exactly `expected_ids`. A report that failed to load (`_error`) always fails the check.
+    Prints to stdout, not stderr: stdout is block-buffered when piped (as in CI), so a stderr
+    line would come out before the whole summary instead of in place.
     """
     if "_error" in report:
-        print(f"{label}: FAIL -- could not read report ({report['_error']})", file=sys.stderr)
+        print(f"{label}: FAIL -- could not read report ({report['_error']})")
         return False
 
     actual_ids = mandatory_fail_ids(report)
     if actual_ids != expected_ids:
         print(
             f"{label}: FAIL -- expected MANDATORY FAIL(s) {sorted(expected_ids) or '(none)'}, "
-            f"got {sorted(actual_ids) or '(none)'}",
-            file=sys.stderr,
+            f"got {sorted(actual_ids) or '(none)'}"
         )
         return False
 
@@ -187,6 +188,7 @@ def main(argv: list[str]) -> int:
             elif args.expect_only_mandatory_fail is not None:
                 expected = default_expected
             else:
+                print(f"{label}: NOT CHECKED -- no expectation given")
                 continue
             all_ok = check_only_mandatory_fail(report, label, expected) and all_ok
         if not all_ok:
