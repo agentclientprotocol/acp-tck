@@ -32,13 +32,14 @@ checked by `summary.py` below.
 ## Expected baseline
 
 `summary.py` prints a requirement-by-requirement table and, with `--expect`, diffs each report's
-MANDATORY FAILs against an expected set. The baseline is the `--expect` lines at the end of
+MANDATORY FAILs against an expected set; `--expect-flaky LABEL=ID,...` leaves ids that PASS or FAIL
+run to run out of one report's check. The baseline is the `--expect` lines at the end of
 `run.sh`, mirrored in the CI workflow:
 
 - v1 `testy`: fully conformant.
 - `echo_agent`: only `ACP-INIT-003` (it echoes an unsupported requested version).
-- v2 `testy`: only `ACP-INIT-205`/`206` (it exits before flushing its `initialize` error reply, a
-  known upstream race).
+- v2 `testy`: none, with `ACP-INIT-205`/`206` passed to `--expect-flaky` (it often exits before
+  flushing its `initialize` error reply, a known upstream race, so they PASS or FAIL run to run).
 - `python_v2_agent`: a small set of known SDK limitations, explained above the `--expect` lines.
 
 ## Tests and CI

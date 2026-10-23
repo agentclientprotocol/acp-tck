@@ -12,6 +12,8 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Puts cross-check/ on sys.path so tests can `import summary` (the project is not installed).
+pythonpath = ["."]
 
 [dependency-groups]
 dev = [

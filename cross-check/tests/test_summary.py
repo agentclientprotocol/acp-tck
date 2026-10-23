@@ -1,31 +1,13 @@
-"""Unit tests for `summary.py`'s `--expect-only-mandatory-fail` check.
-
-`summary.py` is a standalone, stdlib-only CLI script, not a package, so the module is loaded
-directly from its file path via `importlib`, keyed off this test file's own location so it
-works regardless of the current working directory.
-"""
+"""Unit tests for `summary.py`'s MANDATORY-FAIL expectation checks."""
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "summary.py"
-
-
-def _load_module():
-    spec = importlib.util.spec_from_file_location("cross_check_summary", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-ccs = _load_module()
+import summary as ccs
 
 
 def _report(requirements: list[dict]) -> dict:
@@ -271,3 +253,51 @@ def test_main_expect_without_the_mandatory_fail_flag_still_checks_named_reports(
         ]
     )
     assert exit_code == 0
+
+
+@pytest.mark.parametrize("status", ["FAIL", "PASS"])
+def test_check_only_mandatory_fail_ignores_flaky_ids_either_way(status, capsys):
+    report = _report(
+        [_req("ACP-INIT-205", "MANDATORY", status), _req("ACP-INIT-206", "MANDATORY", "FAIL")]
+    )
+    ok = ccs.check_only_mandatory_fail(
+        report, "testy_v2", {"ACP-INIT-206"}, frozenset({"ACP-INIT-205"})
+    )
+    assert ok is True
+    assert "flaky" in capsys.readouterr().out
+
+
+def test_check_only_mandatory_fail_flaky_ids_do_not_hide_other_deviations():
+    report = _report(
+        [_req("ACP-INIT-205", "MANDATORY", "FAIL"), _req("ACP-SESSION-001", "MANDATORY", "FAIL")]
+    )
+    assert (
+        ccs.check_only_mandatory_fail(report, "testy_v2", set(), frozenset({"ACP-INIT-205"}))
+        is False
+    )
+
+
+def test_main_expect_flaky_applies_only_to_its_label(tmp_path: Path):
+    left = tmp_path / "left.json"
+    right = tmp_path / "right.json"
+    left.write_text(json.dumps(_report([_req("ACP-INIT-205", "MANDATORY", "FAIL")])))
+    right.write_text(json.dumps(_report([_req("ACP-INIT-205", "MANDATORY", "FAIL")])))
+
+    argv = [
+        "summary.py",
+        str(left),
+        "left",
+        str(right),
+        "right",
+        "--expect",
+        "left=",
+        "--expect",
+        "right=",
+    ]
+    assert ccs.main([*argv, "--expect-flaky", "left=ACP-INIT-205"]) == 1
+    assert (
+        ccs.main(
+            [*argv, "--expect-flaky", "left=ACP-INIT-205", "--expect-flaky", "right=ACP-INIT-205"]
+        )
+        == 0
+    )

@@ -125,11 +125,12 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   # answered 1 since rust-sdk 53dd268, so it is expected fully conformant (`testy=`).
   #
   # testy_v2: built with `unstable_protocol_v2`, testy routes the probe to its native v2
-  # `initialize` handler, which does not have the v1 echo bug. It still FAILs ACP-INIT-205
-  # (unsupported version -> -32022) and ACP-INIT-206 (malformed version -> -32602) because of an
-  # upstream race: after rejecting `initialize`, testy exits right away, usually before the error
+  # `initialize` handler, which does not have the v1 echo bug. ACP-INIT-205 (unsupported
+  # version -> -32022) and ACP-INIT-206 (malformed version -> -32602) are flaky because of an
+  # upstream race: after rejecting `initialize`, testy exits right away, often before the error
   # reply is flushed to stdout and while stdin is still open, so the TCK sees EOF with no
-  # response. The reply does appear if stdin closes immediately.
+  # response. The reply does appear if stdin closes immediately. Either may PASS or FAIL on a
+  # given run, so both are `--expect-flaky` rather than expected.
   #
   # python_v2_agent (repo-authored fixture, see `python_v2_agent.py` docstring):
   #   - ACP-INIT-003/202/205: the rc2 SDK itself rejects every `protocolVersion` other than 2
@@ -151,7 +152,8 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
     --report "$OUT_DIR/python-v2.json" python_v2_agent \
     --expect "testy=" \
     --expect "echo_agent=ACP-INIT-003" \
-    --expect "testy_v2=ACP-INIT-205,ACP-INIT-206" \
+    --expect "testy_v2=" \
+    --expect-flaky "testy_v2=ACP-INIT-205,ACP-INIT-206" \
     --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"
 else
   # Baselines: see the matching comment in the CROSS_CHECK_V2 branch above.
