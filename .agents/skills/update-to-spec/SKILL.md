@@ -28,8 +28,8 @@ the orchestrator.
 
 Run one researcher (`sonnet`) per version. It writes `.agents/research/spec-diff-v<N>.md`:
 
-- the output of `uv run --package spec-tracker spec-impact <base> <target> --version v<N>` (add
-  `--spec-repo PATH` if the checkout is not `$ACP_SPEC_REPO` or the `check-specification` one);
+- the output of `uv run --package spec-tracker spec-impact <base> <target> --version v<N>
+  --spec-repo <spec checkout>`, where the checkout is the `check-specification` skill's;
 - the matching `CHANGELOG.md` entries and RFD status changes;
 - a one-line summary per changed area.
 
@@ -88,8 +88,9 @@ slice plan. Tier choices and retirements are decisions: wait for the user's answ
 
 1. **Re-vendor, first and alone:** remap line citations, re-vendor per `VENDORED.md`'s refresh
    steps (copy the schema; update the commit, date, and `SCHEMA_REVISION`), and fix the citations
-   `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag. Order matters: remap first, with the pin still at the old revision:
-   `uv run --package spec-tracker spec-impact <old-pin> <new-pin> --version vN --fix`. It rewrites the
+   `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag (run the latter with
+   `--spec-repo <spec checkout>`; without it the spec-doc checks skip). Order matters: remap first, with the pin still at the old revision:
+   `uv run --package spec-tracker spec-impact <old-pin> <new-pin> --version vN --spec-repo <spec checkout> --fix`. It rewrites the
    `.mdx` line numbers in `requirements.py` and `spec-tracker/maps/vN.toml` in place (line numbers only, never
    the pin) and prints "Needs review" first, listing citations inside changed regions that it
    left as written. It is not idempotent, so it refuses unless `<old-pin>` equals the current

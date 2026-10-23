@@ -10,7 +10,6 @@ from typing import NoReturn
 
 import pytest
 
-from spec_tracker.spec_repo import discover_spec_repo
 
 
 def _in_ci() -> bool:
@@ -30,7 +29,7 @@ def read_spec_doc(repo: Path | None, revision: str, path: str) -> str:
     """Read `path` from `repo` as of `revision` with `git show`. When the checkout or revision is
     missing, skips locally and fails under CI (see `_spec_unavailable`)."""
     if repo is None:
-        _spec_unavailable("no spec checkout (set ACP_SPEC_REPO or configure check-specification)")
+        _spec_unavailable("no spec checkout (pass --spec-repo PATH)")
     result = subprocess.run(
         ["git", "-C", str(repo), "show", f"{revision}:{path}"],
         capture_output=True,
@@ -48,10 +47,10 @@ def read_spec_doc(repo: Path | None, revision: str, path: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def spec_doc() -> Callable[[str, str], str]:
+def spec_doc(request: pytest.FixtureRequest) -> Callable[[str, str], str]:
     """`spec_doc(revision, path)` returns a file from the spec repo as of `revision`, read with
     `git show` so the checkout's working tree and current branch do not matter. Skips the test
-    when no spec checkout is available or it lacks `revision`; fails instead under CI."""
+    when no spec checkout is given (`--spec-repo`) or it lacks `revision`; fails instead under CI."""
 
-    repo = discover_spec_repo()
+    repo = request.config.getoption("spec_repo")
     return lambda revision, path: read_spec_doc(repo, revision, path)

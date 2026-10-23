@@ -1,7 +1,7 @@
 """Inventory what changed between two ACP spec revisions, and which parts of the TCK it touches.
 
 Usage:
-  uv run --package spec-tracker spec-impact <base> <target> --version {v1,v2} [--spec-repo PATH] [--fix]
+  uv run --package spec-tracker spec-impact <base> <target> --version {v1,v2} --spec-repo PATH [--fix]
 
 Prints a Markdown report to stdout for a researcher to interpret: changed files, the sections
 each doc hunk falls in, hits on the core docs and `$defs` listed in `spec-tracker/maps/<version>.toml`,
@@ -16,7 +16,7 @@ before the re-vendor step bumps the pin, which then blocks a second run.
 
 Read-only on the spec checkout: it only runs `git rev-parse`, `git diff`, `git show` and
 `git ls-tree` on the given refs, so the checkout's branch and working tree do not matter.
-`--spec-repo` defaults to `$ACP_SPEC_REPO`, else the `check-specification` skill's checkout.
+`--spec-repo` is the local spec checkout; there is no default, so what it reads is always explicit.
 
 Stdlib only, apart from the `tck` package (registry, pinned revision), which the workspace
 provides to `spec-tracker`.
@@ -53,7 +53,6 @@ from .spec_map import (
     parse_spec_map,
     resolve_section,
 )
-from .spec_repo import discover_spec_repo
 
 RFDS_DIR = "docs/rfds/"
 
@@ -902,7 +901,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("base", help="base spec revision (e.g. the commit pinned in VENDORED.md)")
     parser.add_argument("target", help="target spec revision")
     parser.add_argument("--version", required=True, choices=("v1", "v2"))
-    parser.add_argument("--spec-repo", type=Path, help="spec checkout (default: $ACP_SPEC_REPO, else check-specification's)")
+    parser.add_argument("--spec-repo", type=Path, required=True, help="local clone of the ACP spec repo")
     parser.add_argument(
         "--fix",
         action="store_true",
@@ -911,9 +910,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    path = args.spec_repo or discover_spec_repo()
-    if path is None:
-        parser.error("no spec checkout: pass --spec-repo or set ACP_SPEC_REPO")
+    path = args.spec_repo
     repo = SpecRepo(path)
     try:
         base, target = repo.commit(args.base), repo.commit(args.target)

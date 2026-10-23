@@ -47,10 +47,9 @@ jobs:
           for sha in $revisions; do
             git -C "$spec_dir" fetch --depth 1 origin "$sha"
           done
-          echo "ACP_SPEC_REPO=$spec_dir" >> "$GITHUB_ENV"
 
       - name: Test spec-tracker
-        run: uv run --locked --package spec-tracker pytest spec-tracker/tests -q
+        run: uv run --locked --package spec-tracker pytest spec-tracker/tests -q --spec-repo "$RUNNER_TEMP/acp-spec"
 
   cross-check:
     name: cross-check (informational)

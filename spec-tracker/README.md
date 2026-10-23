@@ -12,7 +12,7 @@ this member from the venv (`uv run --package spec-tracker ...` puts it back).
 
 - `maps/v{1,2}.toml`: the per-version spec maps (below).
 - `src/spec_tracker/`: the map loader (`spec_map`), schema pointer and citation helpers
-  (`citations`), spec checkout discovery (`spec_repo`), and the `spec-impact` CLI (`impact`).
+  (`citations`), and the `spec-impact` CLI (`impact`).
 - `tests/`: unit tests, plus checks of the maps against the spec at the pinned revision.
 
 Add dependencies with `uv add --package spec-tracker ...` (exact `==` pins).
@@ -34,7 +34,7 @@ that depends on it, not just the changed lines.
 ## spec-impact
 
 ```
-uv run --package spec-tracker spec-impact <base> <target> --version vN [--spec-repo PATH] [--fix]
+uv run --package spec-tracker spec-impact <base> <target> --version vN --spec-repo PATH [--fix]
 ```
 
 Prints a Markdown report of what a spec diff touches: changed files and the sections each hunk
@@ -51,18 +51,18 @@ refreshing by hand.
 
 ## Spec checkout
 
-The spec-doc checks and `spec-impact` read a local clone of the spec repo: `--spec-repo`
-(`spec-impact` only), else `$ACP_SPEC_REPO`, else the path in the `check-specification` skill's
-`.repo` file. They only read
-revisions through git, so the checkout's branch and working tree don't matter.
+The spec-doc checks and `spec-impact` read a local clone of the spec repo, always passed as
+`--spec-repo PATH`. There is no default and no environment variable, so what they read is always
+explicit. They only read revisions through git, so the checkout's branch and working tree don't
+matter.
 
 ## Tests and CI
 
 ```
-uv run --package spec-tracker pytest spec-tracker/tests
+uv run --package spec-tracker pytest spec-tracker/tests --spec-repo PATH
 ```
 
-Locally, a missing spec checkout or revision SKIPs the spec-doc checks. Under CI (`CI=true`) they
+Locally, without `--spec-repo`, or when the checkout lacks a pinned revision, the spec-doc checks
+SKIP while the rest of the suite runs, so check the skip count. Under CI (`CI=true`) they
 fail instead, since a missing checkout means the fetch step broke. The CI `test` job runs these
-after the root suite, once it has fetched the spec repo at each pinned `SCHEMA_REVISION` into
-`ACP_SPEC_REPO`.
+after the root suite, once it has fetched the spec repo at each pinned `SCHEMA_REVISION`.
