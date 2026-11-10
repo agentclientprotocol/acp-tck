@@ -15,7 +15,7 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - v2 change inventory — .agents/research/spec-diff-v2.md (breaking: batching removed, ProtocolLevelNotification + AuthCapabilities $defs removed, RequestId no null, AvailableCommand.type required, ...)
 ## Next
 - Step 4 impact research. Reports go to .agents/research/impact-v<N>-<area>.md; shared briefs in /tmp/tckbrief/common-v{1,2}.md (regenerate from the v1 one if /tmp was wiped).
-  - v1 (12): error, session-setup, initialization, prompt-turn, overview-ext-transports, session-list-delete, config-modes-commands, tools-terminals-fs, agent-plan-content, auth-cancel-elicitation, security (done), schema
-  - v2 (13): prompt-lifecycle, cancellation, transports, initialization, session-setup, overview-error, extensibility, tool-calls-plan, config-commands running; NOT YET LAUNCHED (concurrency cap 20): list-delete-fork, auth-elicitation, content-security, schema
+  - v1 (12): error, session-setup, initialization, prompt-turn, overview-ext-transports, session-list-delete, config-modes-commands, tools-terminals-fs, agent-plan-content, auth-cancel-elicitation, security (done), schema; config-modes-commands done
+  - v2 (13): prompt-lifecycle, cancellation, transports, initialization, session-setup, overview-error, extensibility, tool-calls-plan, config-commands running; list-delete-fork running; NOT YET LAUNCHED (concurrency cap 20): auth-elicitation, content-security, schema
 - Step 5: consolidate into requirement-change table + slice plan, ask user for tier/retirement decisions
 ## Open questions (waiting on the user)
