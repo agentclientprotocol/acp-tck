@@ -11,6 +11,7 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - depth: v2 = full audit (schema version changed); v1 = diff mode with core escalation (inventory: schema change additive, no $defs removed; most doc hunks editorial). Escalated core docs re-read whole: error, session-setup, initialization, prompt-turn, overview, extensibility, transports
 ## Decisions (final)
 - C1 unstable methods: SPLIT — rows now for session/archive+unarchive and auth/status (v1+v2); ledger/defer session/status, session/set_title, tool_call/cancel, terminal/cancel, proxy/*
+- V2-D3 BATCH-209: ADVISORY (crashes_on_batch stays CONFORMANT). Background: upstream PR #2625 (2026-10-29) removed batching following MCP (added 2025-03-26, removed 2025-06-18): ambiguities telling call vs response batches apart, mixed arrays, batches before init, migration guide claim
 - C3 `_meta` key: KEEP "tck" (no rename; S-X2 dropped)
 ## Done
 - Impact research (25 reports) + consolidated plan — .agents/research/plan-spec-update.md (§4 decisions C1-C10, V1-D1..18, V2-D1..31; §8 slice plan)
