@@ -11,8 +11,8 @@ files are deliberately not vendored. The upstream file names are kept as-is.
 
 - **Source repo:** https://github.com/agentclientprotocol/agent-client-protocol
   (copied from a local clone, `<spec-repo>` below)
-- **Commit:** `beac4ba96190018e9f6d82e148ff275084c5aa3e`
-- **Date vendored:** 2026-10-19
+- **Commit:** `3961af94fa62d2386d993cadf1afc8b146fc799a`
+- **Date vendored:** 2026-11-10
 - **Copy commands used:**
 
   ```
@@ -31,7 +31,7 @@ files are deliberately not vendored. The upstream file names are kept as-is.
 4. Re-run `uv run pytest` -- `tests/v1/test_validation.py` will catch any shape the new schema
    changed that `src/tck/v1/protocol.py` / `src/tck/v1/validation.py` assumed.
 5. If method names, `x-side`/`x-method` annotations, or the top-level `anyOf` branch layout
-   (`Agent` / `Client` / `ProtocolLevel`) changed shape, re-check `src/tck/v1/protocol.py` and
+   (`Agent` / `Client` / `ProtocolLevel` / `Proxy`) changed shape, re-check `src/tck/v1/protocol.py` and
    `src/tck/v1/validation.py` by hand -- both parse the schema structurally, not just by value.
    Note that a wire method can appear under both `agentMethods` and `clientMethods` with a
    different kind per direction (`mcp/message`: an agent -> client request, a client -> agent

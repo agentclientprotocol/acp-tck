@@ -313,7 +313,7 @@ def test_banner_on_stdout_fails_transport_001_but_passes_transport_002():
     assert (
         "Every line the agent writes to stdout is a single valid JSON-RPC 2.0 message." in result.stdout
     ), result.stdout
-    assert "transports.mdx:23,24,26" in result.stdout, result.stdout
+    assert "transports.mdx:20,21,23" in result.stdout, result.stdout
     # ... and once as its own pytest FAILURES section, next to the traceback/transcript.
     assert "ACP requirement ACP-TRANSPORT-001" in result.stdout, result.stdout
     # A PASSing requirement's text is noise, not signal -- it must not be printed in the table.

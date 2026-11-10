@@ -67,7 +67,7 @@ reason = "version negotiation and the rule that omitted capabilities are unsuppo
 
 [[core_doc]]
 path = "docs/protocol/v1/draft/session-setup.mdx"
-sections = ["(intro)", "Session ID", "Working Directory"]
+sections = ["(intro)", "Session ID", "Working directory"]
 code = [
     "src/tck/v1/conformance/test_session.py",
     "src/tck/v1/conformance/_helpers.py",
@@ -76,7 +76,7 @@ reason = "the session ID every session-scoped method addresses, and the absolute
 
 [[core_doc]]
 path = "docs/protocol/v1/draft/prompt-turn.mdx"
-sections = ["Session Updates", "Stop Reasons", "Cancellation"]
+sections = ["Session updates", "Stop reasons", "Cancellation"]
 code = [
     "src/tck/v1/conformance/test_prompt.py",
     "src/tck/v1/conformance/test_cancel.py",

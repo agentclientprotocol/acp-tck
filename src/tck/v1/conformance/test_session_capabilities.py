@@ -223,7 +223,7 @@ async def test_list_with_unmatched_cwd_filter_returns_empty_array(agent_launch, 
 
 async def _close_then_delete(agent, session_id: str, init_result, *, timeout: float):
     """Delete `session_id` the way ACP-DELETE-001/003 need: deleting an *active* session is
-    implementation-defined (`docs/protocol/v1/draft/session-delete.mdx:89`), so close it first
+    implementation-defined (`docs/protocol/v1/draft/session-delete.mdx:90`), so close it first
     when `close` is advertised. Without `close`, an error from deleting the still-active
     session SKIPs. Returns the `session/delete` response entry; a failed close SKIPs (that is
     ACP-CLOSE-001's finding)."""

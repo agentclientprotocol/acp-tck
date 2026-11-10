@@ -21,7 +21,7 @@ other's constant.
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "beac4ba96190018e9f6d82e148ff275084c5aa3e"
+SCHEMA_REVISION = "3961af94fa62d2386d993cadf1afc8b146fc799a"
 """The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every requirement
 citation in `tck.v1.requirements` -- are pinned to (see `schema/VENDORED.md`). Single source of
 truth: `tck.v1.requirements.SPEC_REVISION` and `Report.schema_revision` both read it from here."""
@@ -58,8 +58,9 @@ STOP_REASONS = frozenset(
 def load_meta() -> dict[str, Any]:
     """Parse `schema/meta.unstable.json`.
 
-    Structure: a `version` int, plus three flat `{internal_name: "wire/method"}` dicts --
-    `agentMethods`, `clientMethods`, `protocolMethods` (bidirectional, e.g. `$/cancel_request`).
+    Structure: a `version` int, plus four flat `{internal_name: "wire/method"}` dicts --
+    `agentMethods`, `clientMethods`, `protocolMethods` (bidirectional, e.g. `$/cancel_request`),
+    `proxyMethods` (proxy-chain methods, not used here).
     It doesn't distinguish requests from notifications -- that split is derived from
     `schema.unstable.json` below.
     """

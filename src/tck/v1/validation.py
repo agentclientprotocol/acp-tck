@@ -2,8 +2,8 @@
 
 Backed by the vendored `tck/v1/schema/schema.unstable.json` (see `tck/v1/schema/VENDORED.md`):
 the draft superset of the stable schema, so RFD-gated fields and methods an agent uses are
-validated against their draft shapes. The schema's top-level shape is `anyOf` of three
-side-annotated envelopes -- `Agent`, `Client`, `ProtocolLevel`
+validated against their draft shapes. The schema's top-level shape is `anyOf` of four
+side-annotated envelopes -- `Agent`, `Client`, `ProtocolLevel`, `Proxy`
 (`schema/v1/schema.unstable.json#/anyOf`) -- each further split into `Request` /
 `Response` / `Notification` branches. Every method-specific params/response `$def` carries
 `x-side` (which side implements the method) and `x-method` (its wire name); those annotations
