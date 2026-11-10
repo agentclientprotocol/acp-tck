@@ -66,6 +66,8 @@ _ADVISORY_IDS = {
     "ACP-META-001",
     "ACP-ERROR-001",
     "ACP-ERROR-002",
+    "ACP-ERROR-003",
+    "ACP-ERROR-004",
     "ACP-EXT-002",
     "ACP-SCHEMA-002",
     "ACP-AUTH-005",
@@ -78,7 +80,6 @@ _INFORMATIONAL_IDS = {
     "ACP-STDERR-001",
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
-    "ACP-INFO-UNKNOWNSESSION-001",
 }
 _CAPABILITY_IDS = {
     "ACP-LOAD-001",
@@ -117,13 +118,14 @@ immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
 `ACP-JSONRPC-007`'s `$/cancel_request`) always loses the race and the cancel tests SKIP with
 "cancellation not exercised" rather than PASS or FAIL."""
 
-_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {"ACP-LOAD-003", "ACP-DELETE-002"}
+_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {"ACP-LOAD-003", "ACP-DELETE-002", "ACP-ERROR-004"}
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the two ADVISORY ids
-(`ACP-LOAD-003`, `ACP-DELETE-002`) that are still gated behind a `@pytest.mark.capability(...)`
-marker on their test function even though their `Requirement.tier` itself is ADVISORY, not
-CAPABILITY (see `test_session_capabilities.py` module docstring)."""
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the three ADVISORY ids
+(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`) whose tests are still gated (by a
+`@pytest.mark.capability(...)` marker, or for `ACP-ERROR-004` also by what `session/new`
+returned) even though their `Requirement.tier` itself is ADVISORY, not CAPABILITY (see
+`test_session_capabilities.py` module docstring)."""
 
 
 def _run_cli(
@@ -232,8 +234,8 @@ def test_conforming_agent_passes_everything():
     always loses the race against this fixture's immediate reply, and ACP-CANCEL-001/002 SKIP
     ("cancellation not exercised") rather than PASS. `conforming.py` also advertises
     `agentCapabilities: {}` (no `loadSession`, no `sessionCapabilities`), so every
-    CAPABILITY-tier id -- plus the two ADVISORY ids gated behind a capability marker
-    (`ACP-LOAD-003`, `ACP-DELETE-002`) -- SKIPs too, rather than PASSing or being NOT_TESTED.
+    CAPABILITY-tier id -- plus the three ADVISORY ids gated behind a capability
+    (`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`) -- SKIPs too, rather than PASSing or being NOT_TESTED.
     Everything else still PASSes."""
     result = _run_cli("conforming.py")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -433,8 +435,8 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
     symmetric, not "always `False` for a v1 run".
 
     v1's own MANDATORY/ADVISORY tests that judge a result's *shape* against v1's rules
-    (`ACP-INIT-002`/`004`, `ACP-META-001`, `ACP-PROMPT-001`/`003`/`004`, `ACP-SCHEMA-001`/`002`,
-    `ACP-SESSION-003`/`004`) call their
+    (`ACP-INIT-002`/`004`, `ACP-ERROR-003`/`004`, `ACP-META-001`, `ACP-PROMPT-001`/`003`/`004`,
+    `ACP-SCHEMA-001`/`002`, `ACP-SESSION-003`/`004`) call their
     own `skip_if_version_mismatch` twin (`tck.v1.conformance._helpers`) right after obtaining
     the `initialize` result, mirroring v2's `test_initialize.py`/`test_batch.py`/
     `test_transport.py` pattern -- so they SKIP with the `VERSION-MISMATCH:` marker here too,
@@ -452,6 +454,8 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
     for req_id in _CAPABILITY_IDS | {
         "ACP-INIT-002",
         "ACP-INIT-004",
+        "ACP-ERROR-003",
+        "ACP-ERROR-004",
         "ACP-META-001",
         "ACP-PROMPT-001",
         "ACP-PROMPT-003",
@@ -1197,6 +1201,29 @@ def test_invalid_params_internal_error_fails_error_002_advisory_only():
 
     statuses = _table_statuses(result.stdout)
     assert _fail_ids(statuses) == {"ACP-ERROR-002"}, result.stdout
+
+
+def test_unknown_session_wrong_code_fails_error_003_advisory_only():
+    """`unknown_session_wrong_code.py` answers a prompt for an unknown session with `-32602`
+    instead of `-32002` + `data.sessionId` -- ADVISORY, so the verdict stays CONFORMANT."""
+    result = _run_cli("unknown_session_wrong_code.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-003"}, result.stdout
+
+
+def test_load_upserts_unknown_session_fails_error_004_advisory_only():
+    """`load_upserts_unknown_session.py` advertises `loadSession` and `resume` but creates the
+    session on `session/load`/`session/resume` of an unknown id instead of answering `-32002`."""
+    result = _run_cli("load_upserts_unknown_session.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-004"}, result.stdout
+    assert statuses["ACP-ERROR-003"] == "PASS", result.stdout
 
 
 def test_terminal_auth_bad_shape_fails_auth_006_only():

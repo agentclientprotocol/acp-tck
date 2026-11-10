@@ -65,6 +65,12 @@ class ConformingAgent:
     behind a `@pytest.mark.capability(...)` marker that already SKIPs when unadvertised --
     keeping the logic ungated here just means it's available to any fixture that wants it via
     subclassing (see the `ACP-LOAD-*`/`ACP-RESUME-*` defect fixtures).
+
+    A session-scoped request naming a session this connection never created, loaded, or
+    resumed (or already closed) is answered by `_unknown_session`: `-32002` with
+    `data.sessionId` (`error.mdx` "Unknown sessions"). `session/load` and `session/resume`
+    behave the same; defect fixtures override `_unknown_session` or the handlers to break it.
+    `session/close` and `session/delete` of an unknown id succeed silently.
     """
 
     def __init__(
@@ -288,6 +294,9 @@ class ConformingAgent:
     def _handle_set_mode(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
         mode_id = params.get("modeId")
+        if session_id not in self._sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         if self._modes is not None:
             self._modes["currentModeId"] = mode_id
         self._reply(msg_id, {})
@@ -304,6 +313,10 @@ class ConformingAgent:
             )
 
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         config_id = params.get("configId")
         value = params.get("value")
         if self._config_options is not None:
@@ -333,15 +346,10 @@ class ConformingAgent:
 
     def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
-        # Fixture strictness: reject a `sessionId` this agent never created, and validate every
-        # content block's shape, instead of silently accepting anything -- this is the
-        # fixture's own outgoing-request-shape policy, scoped to
-        # `session/prompt` only (not `session/load`/`resume`/`list`/`delete`/`close`, whose
-        # existing upsert/silent-success semantics are deliberately exercised elsewhere and are
-        # not something the TCK asserts an error code for -- see
-        # `test_informational.py::test_unknown_session_id_behaviour`, which never asserts).
+        # Fixture strictness: validate every content block's shape, instead of silently
+        # accepting anything -- this is the fixture's own outgoing-request-shape policy.
         if session_id not in self._sessions:
-            self._error(msg_id, -32602, f"Invalid params: unknown sessionId {session_id!r}")
+            self._unknown_session(msg_id, session_id)
             return
         prompt = params.get("prompt")
         if not isinstance(prompt, list) or not prompt:
@@ -387,8 +395,8 @@ class ConformingAgent:
         session_id = params.get("sessionId")
         session = self._sessions.get(session_id)
         if session is None:
-            session = {"cwd": params.get("cwd"), "history": []}
-            self._sessions[session_id] = session
+            self._unknown_session(msg_id, session_id)
+            return
         for update_params in session["history"]:
             self._notify("session/update", update_params)
         self._reply(msg_id, {})
@@ -396,7 +404,8 @@ class ConformingAgent:
     def _handle_resume(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
         if session_id not in self._sessions:
-            self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
+            self._unknown_session(msg_id, session_id)
+            return
         # Deliberately no replay -- ACP-RESUME-002 requires history-kind updates not be sent
         # before this response.
         self._reply(msg_id, {})
@@ -428,8 +437,14 @@ class ConformingAgent:
     def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "id": msg_id, "result": result})
 
-    def _error(self, msg_id: Any, code: int, message: str) -> None:
-        self._write({"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}})
+    def _error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
+        error: dict[str, Any] = {"code": code, "message": message}
+        if data is not None:
+            error["data"] = data
+        self._write({"jsonrpc": "2.0", "id": msg_id, "error": error})
+
+    def _unknown_session(self, msg_id: Any, session_id: Any) -> None:
+        self._error(msg_id, -32002, "Resource not found", {"sessionId": session_id})
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})

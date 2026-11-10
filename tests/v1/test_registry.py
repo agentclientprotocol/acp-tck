@@ -21,7 +21,7 @@ from tck.v1.requirements import REGISTRY
 
 _ID_PATTERN = re.compile(r"^ACP-[A-Z]+(?:-[A-Z]+)*-\d{3}$")
 """`ACP-<AREA>-<NNN>`, where `<AREA>` may itself be hyphen-segmented (e.g.
-`ACP-INFO-PARSE-001`, `ACP-INFO-UNKNOWNSESSION-001`) -- the INFORMATIONAL-tier ids group under a
+`ACP-INFO-PARSE-001`, `ACP-INFO-INVALIDREQ-001`) -- the INFORMATIONAL-tier ids group under a
 shared `ACP-INFO-*` prefix rather than inventing an unrelated area name per id, since they are a
 related family of "record, never assert" probes (see
 `tck/v1/conformance/test_informational.py`)."""

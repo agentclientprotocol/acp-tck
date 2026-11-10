@@ -55,6 +55,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "integer `code` and a string `message`."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:6-10; "
             "docs/protocol/v1/draft/overview.mdx:235-239; "
             "agent-client-protocol-schema/src/v1/error.rs:25-49; "
             "schema/v1/schema.unstable.json#/$defs/Error"
@@ -85,7 +86,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "An unknown method yields error `-32601`. Only the code is a \"should\"; replying at all "
             "is ACP-EXT-001's concern."
         ),
-        citation=_cite("docs/protocol/v1/draft/extensibility.mdx:84-96"),
+        citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:41-43; docs/protocol/v1/draft/extensibility.mdx:84-96"
+        ),
     ),
     Requirement(
         id="ACP-JSONRPC-005",
@@ -980,6 +983,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "concern); passes vacuously if the agent returns no errors."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:9; "
             "agent-client-protocol-schema/src/v1/error.rs:40-42; "
             "schema/v1/schema.unstable.json#/$defs/Error/properties/message"
         ),
@@ -994,10 +998,42 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "authentication before params."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:31,45-47; "
             "schema/v1/schema.unstable.json#/$defs/ErrorCode; "
             "schema/v1/schema.unstable.json#/$defs/NewSessionRequest; JSON-RPC 2.0 section 5.1; "
             "rust-sdk@d5e8bf4 src/agent-client-protocol/tests/jsonrpc_error_handling.rs:746,846; "
             "python-sdk@11f8a4c tests/test_rpc.py:515-529"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-003",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/prompt` naming a session that does not exist, or that this connection "
+            "already closed (probed only when `sessionCapabilities.close` is advertised), gets "
+            "error `-32002` with `data.sessionId` set to the requested id. Only SHOULD; a "
+            "`-32000` reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:51-55; "
+            "schema/v1/schema.unstable.json#/$defs/ErrorCode"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/set_mode` and `session/set_config_option` naming an unknown session, and "
+            "`session/load` or `session/resume` of a session that does not exist, get error "
+            "`-32002` with `data.sessionId` set to the requested id (not a silent create-and-"
+            "succeed). One probe per method, each gated on what it needs: `modes`/`configOptions` "
+            "in `session/new`'s result, `loadSession`, `sessionCapabilities.resume`. Only SHOULD."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:51-55; "
+            "schema/v1/schema.unstable.json#/$defs/ErrorCode"
         ),
     ),
     Requirement(
@@ -1050,12 +1086,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Behaviour on a malformed (non-JSON) stdin line is recorded -- reply `-32700` with "
             "`id: null`, reply otherwise, or stay silent -- along with whether the connection "
-            "remains usable afterwards (a subsequent `session/new` still succeeds). Spec "
-            "silent; reference SDKs disagree (rust-sdk replies -32700, python-sdk silently "
-            "drops the line). Never asserts on the probed behaviour itself, but still FAILs if "
-            "the prerequisite `initialize` handshake fails."
+            "remains usable afterwards (a subsequent `session/new` still succeeds). The spec "
+            "assigns `-32700` to non-JSON input but requires no reply, and the client MUST NOT "
+            "send such a line; reference SDKs disagree (rust-sdk replies -32700, python-sdk "
+            "silently drops the line). Never asserts on the probed behaviour itself, but still "
+            "FAILs if the prerequisite `initialize` handshake fails."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:28; "
             "docs/protocol/v1/draft/transports.mdx:24 (the client MUST NOT send this, so agent "
             "behaviour is undefined); rust-sdk vs python-sdk divergence"
         ),
@@ -1066,27 +1104,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Behaviour on a syntactically-valid JSON value that is not a JSON-RPC envelope "
-            "(`{\"foo\": \"bar\"}`) is recorded, same shape as ACP-INFO-PARSE-001. Spec silent; "
-            "reference SDKs disagree (rust-sdk replies -32600, python-sdk silently drops it). "
-            "Never asserts on the probed behaviour itself, but still FAILs if the prerequisite "
-            "`initialize` handshake fails."
+            "(`{\"foo\": \"bar\"}`) is recorded, same shape as ACP-INFO-PARSE-001. The spec "
+            "assigns `-32600` to a message that is not a valid request object but requires no "
+            "reply, and the client MUST NOT send one; reference SDKs disagree (rust-sdk replies "
+            "-32600, python-sdk silently drops it). Never asserts on the probed behaviour "
+            "itself, but still FAILs if the prerequisite `initialize` handshake fails."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:29; "
             "docs/protocol/v1/draft/transports.mdx:24 (the client MUST NOT send this, so agent "
             "behaviour is undefined); rust-sdk vs python-sdk divergence"
         ),
-    ),
-    Requirement(
-        id="ACP-INFO-UNKNOWNSESSION-001",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "The error code (if any) returned for `session/prompt` against a `sessionId` the agent "
-            "never created is recorded, never asserted -- v1 does not specify one. Even a "
-            "successful result is only recorded. Never asserts on the probed behaviour itself, but "
-            "still FAILs if the prerequisite `initialize`/`session/new` handshake fails."
-        ),
-        citation=_cite("docs/protocol/v1/draft/error.mdx:6 (stub)"),
     ),
 )
 

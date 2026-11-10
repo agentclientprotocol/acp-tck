@@ -83,3 +83,16 @@ code = [
     "src/tck/v1/conformance/_helpers.py",
 ]
 reason = "the session/update envelope, stop reasons and session/cancel semantics reused by many docs; the rest of the doc is feature walkthrough"
+
+[[core_doc]]
+path = "docs/protocol/v1/draft/error.mdx"
+code = [
+    "src/tck/v1/protocol.py",
+    "src/tck/v1/conformance/test_jsonrpc.py",
+    "src/tck/v1/conformance/test_diagnostics.py",
+    "src/tck/v1/conformance/test_informational.py",
+    "src/tck/v1/conformance/test_errors.py",
+    "src/tck/v1/conformance/test_session_capabilities.py",
+    "src/tck/v1/conformance/_helpers.py",
+]
+reason = "the error object, the code table, and the per-case code rules (unknown method, invalid params, unknown session, before initialize) that no feature doc links to, yet every request that can fail depends on"

@@ -27,6 +27,9 @@ CONFIG_OPTIONS = [
 
 class BooleanOptionOnSetAgent(ConformingAgent):
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if params.get("sessionId") not in self._sessions:
+            self._unknown_session(msg_id, params.get("sessionId"))
+            return
         for option in self._config_options or []:
             if option.get("id") == params.get("configId"):
                 option["currentValue"] = params.get("value")
