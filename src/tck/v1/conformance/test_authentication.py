@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from tck.common.plugin import current_allow_logout, current_auth_method_id
-from tck.v1.protocol import AUTHENTICATION_REQUIRED
+from tck.v1.protocol import AUTH_STATES, AUTHENTICATION_REQUIRED
 from tck.v1.validation import validate_against_def, validate_agent_response
 
 from ._helpers import connected_agent, skip_if_version_mismatch, unusable_auth_method_reason
@@ -196,11 +196,6 @@ async def test_logout_succeeds(agent_launch):
         )
 
 
-# `schema/v1/schema.unstable.json#/$defs/AuthState`: the four defined values; any other string
-# must start with `_` (implementation-specific extension).
-_AUTH_STATES = {"authenticated", "unauthenticated", "not_required", "unknown"}
-
-
 async def _fresh_auth_status(agent_launch, agent_initialize_result) -> tuple[dict | None, str]:
     """Send `auth/status` on a fresh connection that has not authenticated (even with
     `--tck-auth-method`: `authenticate=False`). Returns the parsed response and its raw text.
@@ -247,7 +242,7 @@ async def test_auth_status_state_is_defined_or_underscore_prefixed(
     state = result.get("state") if isinstance(result, dict) else None
     if not isinstance(state, str):
         pytest.skip(f"auth/status returned no string state to judge: {text!r}")
-    assert state in _AUTH_STATES or state.startswith("_"), (
-        f"auth/status state {state!r} is neither a defined value ({sorted(_AUTH_STATES)}) nor "
+    assert state in AUTH_STATES or state.startswith("_"), (
+        f"auth/status state {state!r} is neither a defined value ({sorted(AUTH_STATES)}) nor "
         f"`_`-prefixed; other strings are reserved for future ACP variants: {text!r}"
     )

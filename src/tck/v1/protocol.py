@@ -73,6 +73,12 @@ def load_schema() -> dict[str, Any]:
     return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
 
 
+def _const_members(def_name: str) -> frozenset[Any]:
+    """The `const` values of a schema `anyOf` enum `$def`, ignoring its open "other" variant."""
+    variants = load_schema()["$defs"][def_name]["anyOf"]
+    return frozenset(v["const"] for v in variants if "const" in v)
+
+
 def _collect_ref_names(node: Any) -> list[str]:
     """Recursively collect every local `$ref` target name (`#/$defs/X` -> `X`) under `node`."""
     names: list[str] = []
@@ -124,3 +130,10 @@ AGENT_NOTIFICATIONS: frozenset[str] = _notification_methods("ClientNotification"
 CLIENT_NOTIFICATIONS: frozenset[str] = _notification_methods("AgentNotification") & CLIENT_METHODS
 """Subset of `CLIENT_METHODS` that are notifications, not requests (`session/update`,
 `elicitation/complete`)."""
+
+
+ERROR_CODES: frozenset[int] = _const_members("ErrorCode")
+"""The named `ErrorCode` values (`error.mdx`'s codes plus `-32800`); any other code is "other"."""
+
+AUTH_STATES: frozenset[str] = _const_members("AuthState")
+"""The defined `AuthState` values; any other string must start with `_`."""

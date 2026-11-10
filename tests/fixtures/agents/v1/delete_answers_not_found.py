@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `sessionCapabilities.list`, `.delete` and `.close`, and
 answers `session/delete` for a session it no longer holds with `-32002` + `data.sessionId`
-(closing already discarded it) instead of the empty result. Trips ACP-DELETE-001 (the delete of
-the just-closed session is an error) and ACP-DELETE-002 (advisory: the unknown id is an error).
-ACP-DELETE-003 still PASSes: clients treat `-32002` as a successful delete, so it goes on to
-check that the session is absent from `session/list`.
+(closing already discarded it) instead of the empty result. Trips only
+ACP-DELETE-002 (advisory: the unknown id is an error). ACP-DELETE-001 and -003 treat the `-32002`
+after the TCK's close as a successful delete (`session-delete.mdx:87`), so -003 goes on to check
+that the session is absent from `session/list`.
 """
 
 import sys

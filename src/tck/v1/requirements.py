@@ -483,10 +483,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/delete` for a session created earlier on the same connection succeeds "
             "with a schema-valid empty-object result. Deleting an active session is "
             "implementation-defined, so the session is closed first when `close` is advertised; "
-            "otherwise an error from deleting the still-active session SKIPs rather than FAILs."
+            "otherwise an error from deleting the still-active session SKIPs rather than FAILs. "
+            "After that close, a `-32002` answer counts as a successful delete (an agent that "
+            "forgets a session on close; ACP-DELETE-002 judges the SHOULD)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-delete.mdx:69-81,90; "
+            "docs/protocol/v1/draft/session-delete.mdx:69-81,85,87,90; "
             "schema/v1/schema.unstable.json#/$defs/DeleteSessionRequest; "
             "schema/v1/schema.unstable.json#/$defs/DeleteSessionResponse (C2, D1)"
         ),
@@ -551,10 +553,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema-valid empty results. After archive the session is absent from the default "
             "`session/list` view and present under `archived: \"only\"`; after unarchive it is "
             "back in the default view and absent from `only`. Needs `sessionCapabilities.list`; "
-            "SKIPs without it, or when the new session is not listed to begin with."
+            "SKIPs without it, or when the new session is not listed to begin with. An agent "
+            "that rejects `only` FAILs, on the Draft RFD's rule that an agent advertising "
+            "`archive` MUST support all three `archived` values."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-list.mdx:231,244-250; "
+            "docs/rfds/session-archive.mdx:112 (Draft RFD); "
             "schema/v1/schema.unstable.json#/$defs/ArchiveSessionResponse; "
             "schema/v1/schema.unstable.json#/$defs/UnarchiveSessionResponse; "
             "schema/v1/schema.unstable.json#/$defs/SessionArchiveFilter"
@@ -599,9 +604,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "After a successful `session/delete`, the deleted session appears under no "
             "`archived` filter value (`exclude`, `include`, `only`). Needs "
             "`sessionCapabilities.delete` and `.list`; SKIPs without them. The session is "
-            "closed first when `close` is advertised, as for ACP-DELETE-001."
+            "closed first when `close` is advertised, as for ACP-DELETE-001, and must be listed "
+            "(under `include`) before the delete, else the row SKIPs. An agent that rejects "
+            "`include` or `only` FAILs, on the Draft RFD's rule that an agent advertising "
+            "`archive` MUST support all three `archived` values."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-list.mdx:261"),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:261; "
+            "docs/rfds/session-archive.mdx:112 (Draft RFD)"
+        ),
     ),
     Requirement(
         id="ACP-CLOSE-001",

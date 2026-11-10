@@ -29,12 +29,10 @@ from tck.common.harness import AgentTimeout, TranscriptEntry
 from tck.common.plugin import capability_is_supported
 from tck.v1.protocol import (
     AUTHENTICATION_REQUIRED,
-    INTERNAL_ERROR,
+    ERROR_CODES,
     INVALID_PARAMS,
     INVALID_REQUEST,
     METHOD_NOT_FOUND,
-    PARSE_ERROR,
-    REQUEST_CANCELLED,
     RESOURCE_NOT_FOUND,
 )
 
@@ -42,19 +40,6 @@ from ._helpers import connected_agent, new_session, skip_if_auth_gated, skip_if_
 
 _UNKNOWN_SESSION_ID = "tck-never-created-session"
 
-# `ErrorCode`'s named members (`schema/v1/schema.unstable.json#/$defs/ErrorCode`).
-_ACP_DEFINED_CODES = frozenset(
-    {
-        PARSE_ERROR,
-        INVALID_REQUEST,
-        METHOD_NOT_FOUND,
-        INVALID_PARAMS,
-        INTERNAL_ERROR,
-        REQUEST_CANCELLED,
-        AUTHENTICATION_REQUIRED,
-        RESOURCE_NOT_FOUND,
-    }
-)
 # `error.mdx:37`: reserved for JSON-RPC and ACP.
 _RESERVED_RANGES = ((-32768, -32000), (-32899, -32800))
 
@@ -317,7 +302,8 @@ async def test_unadvertised_gated_methods_get_method_not_found(
     gets `-32601` when sent with well-formed params naming a real session (so a missing session
     is not an alternative explanation). The gate is inverted -- the test needs the methods
     that are *not* advertised -- so it is computed here instead of by a capability marker. SKIPs
-    if all are advertised, or on `-32000`."""
+    if all are advertised, or when no problem was found but a probe returned `-32000` (the
+    agent may check authentication first); problems already found still FAIL."""
     _skip_on_version_mismatch(agent_initialize_result)
     init_result = agent_initialize_result.result
     if init_result is None:
@@ -332,6 +318,7 @@ async def test_unadvertised_gated_methods_get_method_not_found(
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         problems = []
+        auth_required = []
         for method in unadvertised:
             entry = await _request(
                 agent,
@@ -343,10 +330,12 @@ async def test_unadvertised_gated_methods_get_method_not_found(
             if error is None:
                 problems.append(f"{method}: succeeded although not advertised")
             elif error.get("code") == AUTHENTICATION_REQUIRED:
-                pytest.skip(f"{method} returned -32000 (authentication required)")
+                auth_required.append(method)
             elif error.get("code") != METHOD_NOT_FOUND:
                 problems.append(f"{method}: expected -32601, got {error.get('code')!r}")
     assert not problems, "unadvertised methods should get -32601 -- " + "; ".join(problems)
+    if auth_required:
+        pytest.skip(f"{', '.join(auth_required)} returned -32000 (authentication required)")
 
 
 # --- ACP-ERROR-007: unknown mode / config option / value ---
@@ -485,7 +474,7 @@ async def test_reserved_range_codes_are_acp_defined(agent_launch, agent_initiali
         if isinstance(code, int)
         and not isinstance(code, bool)
         and _in_reserved_range(code)
-        and code not in _ACP_DEFINED_CODES
+        and code not in ERROR_CODES
     ]
     assert not offenders, (
         "error codes in a range reserved for JSON-RPC and ACP must be ACP-defined; "

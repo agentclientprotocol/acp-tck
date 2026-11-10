@@ -767,9 +767,10 @@ def last_known_state(agent: AgentProcess, session_id: str) -> Any:
 
 PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "cancelled"]
 """How `run_prompt` answers `session/request_permission` (until `session/cancel` is sent):
-`allow` (the default) selects `allow_once`; `reject_once` selects `reject_once`; `unknown_option`
-selects an `optionId` the agent never offered; `cancelled` answers the `cancelled` outcome
-without sending `session/cancel`."""
+`allow` (the default) selects `allow_once`; `reject_once` selects `reject_once` or, when none
+is offered, sends `session/cancel` and answers `cancelled` (never another option: that could
+persist an approval or a standing deny); `unknown_option` selects an `optionId` the agent never
+offered; `cancelled` answers the `cancelled` outcome without sending `session/cancel`."""
 
 UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
 """The `optionId` the `unknown_option` policy selects (`_`-prefixed per the extensibility rule)."""
@@ -781,29 +782,32 @@ def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str
     `allow_always` would persist a lasting approval in the operator's agent.
 
     `allow`: `allow_once`, else `allow_always`, else the first option. `reject_once`:
-    `reject_once`, else the first `reject_*`, else the first option. Tolerates malformed options."""
+    `reject_once` only. If none is offered it answers `cancelled` *with a note*; the caller must
+    then send `session/cancel` first, as a conforming client does before answering a pending
+    permission request `cancelled`. Tolerates malformed options."""
     if policy == "cancelled":
         return {"outcome": "cancelled"}, None
     if policy == "unknown_option":
         return {"outcome": "selected", "optionId": UNKNOWN_PERMISSION_OPTION_ID}, None
     candidates = [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
 
-    def first_of_kind(match: Callable[[Any], bool]) -> dict[str, Any] | None:
-        return next((o for o in candidates if match(o.get("kind"))), None)
+    def first_of_kind(kind: str) -> dict[str, Any] | None:
+        return next((o for o in candidates if o.get("kind") == kind), None)
 
-    wanted = "allow_once" if policy == "allow" else "reject_once"
-    chosen = first_of_kind(lambda kind: kind == wanted)
+    if policy == "reject_once":
+        chosen = first_of_kind("reject_once")
+        if chosen is None:
+            return {"outcome": "cancelled"}, "agent offered no reject_once option"
+        return {"outcome": "selected", "optionId": chosen.get("optionId")}, None
+    chosen = first_of_kind("allow_once")
     note = None
     if chosen is None:
-        if policy == "allow":
-            chosen = first_of_kind(lambda kind: kind == "allow_always")
-        else:
-            chosen = first_of_kind(lambda kind: isinstance(kind, str) and kind.startswith("reject_"))
+        chosen = first_of_kind("allow_always")
         if chosen is not None:
-            note = f"{chosen['kind']} selected ({wanted} not offered)"
+            note = "allow_always selected (allow_once not offered)"
     if chosen is None:
         chosen = candidates[0] if candidates else None
-        note = f"first option selected (no {wanted} offered)"
+        note = "first option selected (no allow_once offered)"
     return {"outcome": "selected", "optionId": chosen.get("optionId") if chosen else None}, note
 
 
@@ -868,6 +872,10 @@ class PromptTurn:
     permission_fallbacks: list[str] = field(default_factory=list)
     """A note per `session/request_permission` answered with other than the preferred option
     kind (`permission_outcome`); also recorded as the `acp_tck_permission_fallback` property."""
+    permission_cancels: list[str] = field(default_factory=list)
+    """A note per `session/request_permission` the `reject_once` policy could not satisfy: the
+    mock client sent `session/cancel` and answered `cancelled` instead. Also recorded as the
+    `acp_tck_permission_fallback` property."""
 
 
 async def run_prompt(
@@ -950,6 +958,7 @@ async def run_prompt(
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
     permission_fallbacks: list[str] = []
+    permission_cancels: list[str] = []
     cancelled_at_index: int | None = None
     state_at_cancel: Any = None
     held_permission: TranscriptEntry | None = None
@@ -968,7 +977,7 @@ async def run_prompt(
             return
         trigger_sent = True
         state_at_cancel = last_state
-        if on_cancel:
+        if on_cancel and cancelled_at_index is None:
             cancel_params: dict[str, Any] = {"sessionId": session_id}
             if cancel_meta is not None:
                 cancel_params["_meta"] = cancel_meta
@@ -1023,7 +1032,7 @@ async def run_prompt(
         nonlocal response_entry, response_index, response_at, response_error, message_id
         nonlocal active, active_seen, requires_action_seen, last_state, provisional
         nonlocal idle_update, idle_index, stop_reason, terminated_by, error_end_deadline
-        nonlocal action_response, held_permission
+        nonlocal action_response, held_permission, cancelled_at_index
         msg = entry.parsed
         if entry.matches_id(prompt_id):
             response_entry, response_index, response_at = entry, line_index, loop.time()
@@ -1068,11 +1077,23 @@ async def run_prompt(
             if hold_permission and not trigger_sent and for_this_session:
                 held_permission = entry
                 await _fire_trigger()
-            if trigger_sent and for_this_session:
+            if (trigger_sent or cancelled_at_index is not None) and for_this_session:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
-                if note is not None:
+                if note is not None and outcome["outcome"] == "cancelled":
+                    # The policy's option kind was not offered: cancel the request's session
+                    # first, then answer `cancelled` (prompt-lifecycle.mdx:1098-1100). The turn
+                    # then drains to its `idle` like any other cancelled turn.
+                    target = req_params.get("sessionId")
+                    await agent.send_notification(
+                        "session/cancel",
+                        {"sessionId": target if isinstance(target, str) else session_id},
+                    )
+                    if for_this_session:
+                        cancelled_at_index = len(agent.transcript) - 1
+                    permission_cancels.append(note)
+                elif note is not None:
                     permission_fallbacks.append(note)
             await agent.send_message(
                 {"jsonrpc": "2.0", "id": msg["id"], "result": {"outcome": outcome}}
@@ -1173,4 +1194,5 @@ async def run_prompt(
         action_response=action_response,
         action_sent_at_index=action_sent_at_index,
         permission_fallbacks=permission_fallbacks,
+        permission_cancels=permission_cancels,
     )

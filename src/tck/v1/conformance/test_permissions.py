@@ -3,7 +3,8 @@
 In v1 the agent runs its own tools, so the operation is not on the wire. The probe asks the
 agent to create a file in the session `cwd`; when it asks `session/request_permission`, the mock
 client answers with the response under test (`run_prompt(permission=...)`) and the file must not
-appear. An agent that never asks permission, or offers no `reject_once`, SKIPs (not exercised).
+appear. An agent that never asks permission, or offers no `reject_once`, SKIPs (not exercised);
+in the latter case the mock client cancels the turn instead of selecting any other option.
 
 ACP-PERM-002 sends a `selected` outcome naming an `optionId` the agent never offered
 (`_tck_unoffered_option`). That breaks the client rule that `optionId` names an offered option,
@@ -47,9 +48,11 @@ async def _run_permission_probe(agent_launch, agent_initialize_result, tmp_path,
     ]
     if not asked:
         pytest.skip("permission probe not exercised: the agent sent no session/request_permission")
-    if turn.permission_fallbacks:
-        # The preferred option kind was not offered, so another option was selected instead.
-        pytest.skip(f"permission probe not exercised: {turn.permission_fallbacks[0]}")
+    if turn.permission_cancels:
+        # No `reject_once` was offered. The mock client cancelled the turn rather than pick
+        # another option (which could persist an approval or a standing deny); nothing in the
+        # spec requires offering one, so this is not a failure.
+        pytest.skip(f"permission probe not exercised: {turn.permission_cancels[0]}")
     assert not (tmp_path / _PROBE_FILE).exists(), (
         f"agent created {_PROBE_FILE} after the permission request was answered with policy "
         f"{policy!r}"

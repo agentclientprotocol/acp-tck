@@ -4,7 +4,9 @@ Both rules only apply once the client advertised `clientCapabilities.plan`, whic
 connection in this suite leaves out (ACP-CLIENTCAP-006 depends on that). So each test opens its
 own connection with `plan: {}`, runs one plan-flavoured prompt turn, waits a quiet period, and
 scans every `session/update` the agent sent. Plans are unstable and optional (`agent-plan.mdx`
-only says the agent SHOULD plan), so an agent that sends none passes vacuously.
+only says the agent SHOULD plan), so an agent that sends none passes vacuously. A turn that
+outlasts `--timeout` is cancelled and judged on the updates seen so far: a slow turn is not a
+plan defect.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from ._helpers import (
     skip_if_version_mismatch,
 )
 
-_PLAN_PROMPT_TEXT = "Make a step-by-step plan for refactoring this project, then start on it."
+_PLAN_PROMPT_TEXT = "Make a step-by-step plan for refactoring this project. Do not start on it yet."
 
 
 async def _updates_with_plan_capability(agent_launch, agent_initialize_result, tmp_path) -> list[dict]:
@@ -34,12 +36,15 @@ async def _updates_with_plan_capability(agent_launch, agent_initialize_result, t
         skip_if_version_mismatch(init_result)
     async with connected_agent(agent_launch, client_capabilities={"plan": {}}) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
-        await run_prompt(
-            agent,
-            session_id,
-            [{"type": "text", "text": _PLAN_PROMPT_TEXT}],
-            timeout=agent_launch.default_timeout,
-        )
+        try:
+            await run_prompt(
+                agent,
+                session_id,
+                [{"type": "text", "text": _PLAN_PROMPT_TEXT}],
+                timeout=agent_launch.default_timeout,
+            )
+        except AgentTimeout:
+            await agent.send_notification("session/cancel", {"sessionId": session_id})
         try:
             await agent.wait_for_message(
                 lambda _entry: False, timeout=quiet_period(agent_launch.default_timeout)
@@ -68,7 +73,10 @@ async def test_plan_file_uri_is_absolute(agent_launch, agent_initialize_result, 
             and not is_absolute_uri(plan.get("uri"))
         ):
             relative.append(plan.get("uri"))
-    assert not relative, f"ACP-PLAN-001: plan_update file uri is not absolute: {relative!r}"
+    assert not relative, (
+        f"ACP-PLAN-001: plan_update file uri is not absolute: {relative!r} (the TCK reads "
+        "'absolute' as an RFC 3986 URI with a scheme, and for `file:` an RFC 8089 absolute path)"
+    )
 
 
 @pytest.mark.requirement("ACP-PLAN-002")

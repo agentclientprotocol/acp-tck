@@ -150,6 +150,16 @@ statement = "Calling `auth/status` MUST NOT modify any agent state."
 reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007 only checks the answer."
 
 [[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:291 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
+reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
+
+[[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD list the accounts and credentials they have configured in `auth/status` `accounts`, and SHOULD mark the ones in effect with `active: true`."
+reason = "Not observable: the TCK cannot know which accounts the agent has configured, so an empty or unmarked list proves nothing."
+
+[[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
@@ -220,6 +230,15 @@ citation = "docs/protocol/v1/draft/session-config-options.mdx:245-249 @ 3961af94
 statement = "Every config option's `currentValue` is the value the agent uses until the client changes it, and agents MUST be able to operate with it even if the client does not support, display or recognize the option."
 reason = "Not observable: it concerns the agent's internal operation. The observable part, `currentValue` being present and valid, is checked by schema validation and ACP-CONFIG-001."
 
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:235 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD place higher-priority config options first in the `configOptions` array."
+reason = "Not observable: which option is higher priority is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:462-471 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "During the transition from Session Modes, agents that provide mode-like configuration SHOULD send both a `category: \"mode\"` config option and `modes`, and SHOULD keep the two in sync."
+reason = "Out of scope for now: the spec does not map a mode option's values to `modes` ids, so sync cannot be checked deterministically, and Session Modes is superseded."
 
 # --- security.mdx ---
 
@@ -327,16 +346,6 @@ reason = "Deferred unstable method: `session/status` is not yet tested and no dr
 citation = "docs/rfds/session-set-title.mdx:178-179; docs/protocol/v1/draft/error.mdx:68; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
 reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
-
-[[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1041-1045 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A child's tool call that advertises its own `capabilities.cancel` enables `tool_call/cancel` for that item, sent with the child's `sessionId`."
-reason = "Deferred unstable method: the v1 schema does not define `tool_call/cancel`, it needs `subagents` (never advertised) and a per-tool-call dynamic gate the TCK cannot elicit."
-
-[[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1041-1045 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A child's terminal that advertises its own `capabilities.cancel` enables `terminal/cancel` for that item, sent with the child's `sessionId`."
-reason = "Deferred unstable method: the v1 schema does not define `terminal/cancel`, it needs `subagents` (never advertised) and a per-terminal dynamic gate the TCK cannot elicit."
 
 [[not_requirement]]
 citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"

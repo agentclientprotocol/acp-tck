@@ -291,14 +291,27 @@ async def _close_then_delete(
 @pytest.mark.requirement("ACP-DELETE-001")
 @pytest.mark.capability("agentCapabilities.sessionCapabilities.delete")
 async def test_delete_existing_session_succeeds(agent_launch, agent_initialize_result, tmp_path):
-    """ACP-DELETE-001. See `_close_then_delete` for the active-session handling."""
+    """ACP-DELETE-001. See `_close_then_delete` for the active-session handling. When the TCK
+    closed the session first, a `-32002` answer is a successful delete (`session-delete.mdx:87`;
+    ACP-DELETE-002 judges the SHOULD). Without `close`, any error SKIPs, `-32002` included."""
+    init_result = agent_initialize_result.result
+    closed_first = init_result is not None and capability_is_supported(
+        init_result, "agentCapabilities.sessionCapabilities.close"
+    )
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
 
         entry = await _close_then_delete(
-            agent, session_id, agent_initialize_result.result, timeout=agent_launch.default_timeout
+            agent,
+            session_id,
+            init_result,
+            timeout=agent_launch.default_timeout,
+            tolerate_not_found=closed_first,
         )
         msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        if closed_first and isinstance(error, dict) and error.get("code") == RESOURCE_NOT_FOUND:
+            return
         assert isinstance(msg, dict) and "result" in msg, (
             f"session/delete did not succeed: {entry.text!r}"
         )
@@ -399,6 +412,12 @@ def _require_sibling_capabilities(init_result, *names: str) -> None:
             pytest.skip(f"capability {path!r} not advertised by the agent under test")
 
 
+_ARCHIVE_FILTER_RFD = (
+    " (Draft RFD docs/rfds/session-archive.mdx:112: an agent that advertises `archive` MUST "
+    "support all three `archived` values, `exclude`, `include` and `only`)"
+)
+
+
 async def _list_sessions(agent, cwd, archived, *, timeout: float) -> list[dict]:
     """Every `SessionInfo` from `session/list` for `cwd` (and `archived`, unless `None`),
     following `nextCursor` up to `_MAX_LIST_PAGES` pages. Asserts each page succeeds."""
@@ -415,6 +434,7 @@ async def _list_sessions(agent, cwd, archived, *, timeout: float) -> list[dict]:
         msg = entry.parsed
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
             f"session/list (archived={archived!r}) did not succeed: {entry.text!r}"
+            + (_ARCHIVE_FILTER_RFD if archived in ("include", "only") else "")
         )
         page = msg["result"].get("sessions")
         assert isinstance(page, list), f"session/list result.sessions is not an array: {msg['result']!r}"
@@ -615,12 +635,18 @@ async def test_deleted_session_is_absent_under_every_archived_filter(
 ):
     """ACP-ARCHIVE-006. Closes the gap ACP-DELETE-003 leaves (it checks only the default view):
     an agent that implements delete as archive hides the session there but not under
-    `include`/`only`. As for ACP-DELETE-003, a `-32002` answer to the delete counts as success."""
+    `include`/`only`. As for ACP-DELETE-003, a `-32002` answer to the delete counts as success.
+    An agent that does not list the fresh session before the delete SKIPs, as ACP-ARCHIVE-003
+    does: its disappearance would otherwise be vacuous."""
     init_result = agent_initialize_result.result
     _require_sibling_capabilities(init_result, "delete", "list")
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)
+        listed_before = _ids(await _list_sessions(agent, tmp_path, "include", timeout=timeout))
+        if session_id not in listed_before:
+            await _delete_quietly(agent, session_id, init_result, timeout=timeout)
+            pytest.skip("the new session is not listed by session/list, so its deletion cannot be observed")
         delete_entry = await _close_then_delete(
             agent, session_id, init_result, timeout=timeout, tolerate_not_found=True
         )

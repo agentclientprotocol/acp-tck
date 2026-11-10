@@ -264,10 +264,9 @@ def test_conforming_agent_passes_everything():
     always loses the race against this fixture's immediate reply, and ACP-CANCEL-001/002 SKIP
     ("cancellation not exercised") rather than PASS. `conforming.py` also advertises
     `agentCapabilities: {}` (no `loadSession`, no `sessionCapabilities`), so every
-    CAPABILITY-tier id -- plus the four ADVISORY ids gated behind a capability or an
-    advertised mode/config option (`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`,
-    `ACP-ERROR-007`) -- SKIPs too, rather than PASSing or being NOT_TESTED. Everything else still
-    PASSes, including `ACP-ERROR-005`/`006` (this fixture rejects pre-initialize requests and
+    CAPABILITY-tier id -- plus the ADVISORY ids gated behind a capability or an advertised
+    mode/config option (`_CAPABILITY_GATED_IDS` above) -- SKIPs too, rather than PASSing or being
+    NOT_TESTED. Everything else still PASSes, including `ACP-ERROR-005`/`006` (this fixture rejects pre-initialize requests and
     every unadvertised gated method)."""
     result = _run_cli("conforming.py")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -1306,6 +1305,15 @@ def test_implements_unadvertised_list_fails_error_006_advisory_only():
     assert _fail_ids(statuses) == {"ACP-ERROR-006"}, result.stdout
 
 
+def test_auth_required_probe_does_not_hide_an_earlier_error_006_failure():
+    """`unadvertised_load_then_list_auth_required.py` serves unadvertised `session/load`, then
+    answers unadvertised `session/list` with `-32000`: the `-32000` SKIP must not discard the
+    problem already found."""
+    result = _run_cli("unadvertised_load_then_list_auth_required.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _fail_ids(_table_statuses(result.stdout)) == {"ACP-ERROR-006"}, result.stdout
+
+
 def test_set_unknown_value_accepts_fails_error_007_advisory_only():
     """`set_mode_unknown_accepts.py` / `set_config_option_unknown_accepts.py` accept a
     `session/set_mode` / `session/set_config_option` naming a mode, config option or value they
@@ -1494,6 +1502,16 @@ def test_relative_plan_file_uri_fails_plan_001_only():
     assert _table_statuses(result.stdout).get("ACP-CLIENTCAP-006") == "PASS", result.stdout
 
 
+def test_plan_turn_outlasting_the_timeout_is_judged_on_the_updates_seen():
+    """`plan_turn_never_ends.py` sends a valid file plan and never resolves the prompt: the turn
+    timeout is cancelled and judged on what arrived, so ACP-PLAN-001/002 PASS instead of FAILing."""
+    result = _run_cli("plan_turn_never_ends.py", k="plan")
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-PLAN-001") == "PASS", result.stdout
+    assert statuses.get("ACP-PLAN-002") == "PASS", result.stdout
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+
+
 def test_plan_despite_plan_capability_fails_plan_002_advisory_only():
     """`sends_plan_despite_plan_capability.py` keeps sending the baseline `plan` update to a client
     that advertised `plan` -- an ADVISORY FAIL, so the run stays CONFORMANT."""
@@ -1514,6 +1532,16 @@ def test_honors_permission_agent_passes_both_permission_probes():
     statuses = _table_statuses(result.stdout)
     assert statuses.get("ACP-PERM-001") == "PASS", result.stdout
     assert statuses.get("ACP-PERM-002") == "PASS", result.stdout
+
+
+def test_agent_without_a_reject_option_skips_perm_001_and_never_fails():
+    """`perm_without_reject_option.py` offers only allow options: the TCK cancels the turn rather
+    than select one, so ACP-PERM-001 SKIPs and nothing FAILs."""
+    result = _run_cli("perm_without_reject_option.py", timeout="5", k="permission or reject or unrecognised")
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-PERM-001") == "SKIPPED", result.stdout
+    assert statuses.get("ACP-PERM-002") == "PASS", result.stdout
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
 
 
 def test_perm_ignores_reject_fails_both_permission_ids_advisory_only():
@@ -1601,6 +1629,27 @@ def test_archive_filter_falling_back_fails_archive_004_only():
         assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
 
 
+def test_archive_rejecting_include_and_only_fails_the_views_that_need_them():
+    """`archive_rejects_include_and_only.py` answers `-32602` for `include`/`only`: ACP-ARCHIVE-002
+    (lists `only`), -003 (`only`) and -006 (`include`) FAIL, citing the Draft RFD's MUST."""
+    result = _run_cli("archive_rejects_include_and_only.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-006"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-001", "ACP-ARCHIVE-004", "ACP-ARCHIVE-005"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_archive_agent_listing_nothing_skips_the_view_comparisons_not_passes_them():
+    """`archive_lists_nothing_unprompted.py` never lists a fresh session, so ACP-ARCHIVE-002, -003
+    and -006 SKIP (the last used to PASS vacuously)."""
+    result = _run_cli("archive_lists_nothing_unprompted.py")
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-006"):
+        assert statuses.get(req_id) == "SKIPPED", f"{req_id}:\n{result.stdout}"
+
+
 def test_archive_unknown_succeeding_fails_archive_005_only():
     result = _run_cli("archive_unknown_succeeds.py")
     assert result.returncode != 0
@@ -1662,12 +1711,15 @@ def test_auth_status_is_judged_unauthenticated_even_with_auth_method():
 
 def test_delete_answering_not_found_still_runs_the_list_check():
     """`delete_answers_not_found.py` answers `session/delete` for a closed (or never-created)
-    session with `-32002`: ACP-DELETE-001 and ACP-DELETE-002 FAIL, but ACP-DELETE-003 treats the
-    `-32002` as a successful delete and PASSes on the list check instead of SKIPping."""
+    session with `-32002`: only the ADVISORY ACP-DELETE-002 FAILs. ACP-DELETE-001 and -003 treat
+    the `-32002` after the TCK's close as a successful delete and PASS (the latter on the list
+    check), so the run stays CONFORMANT."""
     result = _run_cli("delete_answers_not_found.py")
-    assert result.returncode != 0
-    assert _output_fail_ids(result.stdout) == {"ACP-DELETE-001", "ACP-DELETE-002"}, result.stdout
-    assert _table_statuses(result.stdout).get("ACP-DELETE-003") == "PASS", result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _output_fail_ids(result.stdout) == {"ACP-DELETE-002"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-DELETE-001") == "PASS", result.stdout
+    assert statuses.get("ACP-DELETE-003") == "PASS", result.stdout
 
 
 def test_refusing_to_delete_an_active_session_skips_delete_001_and_003():
