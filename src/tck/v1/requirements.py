@@ -691,10 +691,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.systemPrompt",
         text=(
-            "`session/new` with a `systemPrompt.mode` the agent cannot support (the "
-            "implementation-reserved `_tck_unsupported`) returns an error rather than creating "
-            "the session. The error code is recorded, not asserted (`-32602` is only "
-            "RECOMMENDED)."
+            "`session/new`, and `session/load`/`session/resume` of an existing session (each "
+            "also gated on its own capability, `loadSession`/`sessionCapabilities.resume`), "
+            "with a `systemPrompt.mode` the agent cannot support (the implementation-reserved "
+            "`_tck_unsupported`) returns an error rather than creating, loading or resuming "
+            "the session; after a refused load/resume, `session/prompt` on that id does not "
+            "succeed. The error code is recorded, not asserted (`-32602` is only RECOMMENDED)."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-setup.mdx:415,422; "
@@ -706,9 +708,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.systemPrompt",
         text=(
-            "`session/new` with a non-text `systemPrompt.content` block (`resource_link`) "
-            "returns an error rather than creating the session -- only text blocks are "
-            "supported for now."
+            "`session/new`, and `session/load`/`session/resume` of an existing session (each "
+            "also gated on its own capability, `loadSession`/`sessionCapabilities.resume`), "
+            "with a non-text `systemPrompt.content` block (`resource_link`) returns an error "
+            "rather than creating, loading or resuming the session -- only text blocks are "
+            "supported for now; after a refused load/resume, `session/prompt` on that id does "
+            "not succeed."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-setup.mdx:418,422; "

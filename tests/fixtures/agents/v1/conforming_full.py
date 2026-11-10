@@ -102,6 +102,9 @@ PLANS = [
 
 
 class ConformingFullAgent(HonorsPermissionAgent):
+    # So load/resume can be probed from a fresh process (ACP-SYSPROMPT-002/003).
+    _persist_sessions = True
+
     def _initialize_result(self) -> dict[str, Any]:
         # A terminal method only for a client that advertised `auth.terminal` (ACP-AUTH-002),
         # so ACP-AUTH-006 has a real one to validate.

@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 PROTOCOL_VERSION = 1
@@ -97,11 +98,18 @@ class ConformingAgent:
     `auth/status` without `auth.status`, get `-32601`), and
     `_validate_set_params` (an unknown `modeId`, `configId` or select value on a known session
     gets `-32602`).
+
+    `session/load` and `session/resume` validate a supplied `systemPrompt` like `session/new`
+    does and answer `-32602` without loading the session (`session-setup.mdx:422`). With
+    `_persist_sessions` on, sessions are also kept in `<cwd>/.tck-fixture-sessions.json`, so a
+    later connection to a fresh process can load or resume one (off by default: it writes a
+    file into the session's `cwd`).
     """
 
     _require_initialize = True
     _gate_unadvertised = True
     _validate_set_params = True
+    _persist_sessions = False
 
     def __init__(
         self,
@@ -323,6 +331,7 @@ class ConformingAgent:
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
+        self._persist(session_id)
         result: dict[str, Any] = {"sessionId": session_id}
         if self._modes is not None:
             result["modes"] = self._modes
@@ -330,6 +339,44 @@ class ConformingAgent:
         if visible_config is not None:
             result["configOptions"] = visible_config
         self._reply(msg_id, result)
+
+    @staticmethod
+    def _store_path(cwd: Any) -> Path | None:
+        return Path(cwd) / ".tck-fixture-sessions.json" if isinstance(cwd, str) else None
+
+    def _persist(self, session_id: str) -> None:
+        session = self._sessions.get(session_id)
+        path = self._store_path(session["cwd"]) if session is not None else None
+        if not self._persist_sessions or path is None:
+            return
+        stored = self._read_store(path)
+        stored[session_id] = {"cwd": session["cwd"], "history": session["history"]}
+        path.write_text(json.dumps(stored))
+
+    @staticmethod
+    def _read_store(path: Path) -> dict[str, Any]:
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def _restore(self, session_id: Any, cwd: Any) -> None:
+        """Bring a session persisted by an earlier process into `_sessions`, if there is one."""
+        path = self._store_path(cwd)
+        if not self._persist_sessions or path is None or session_id in self._sessions:
+            return
+        stored = self._read_store(path).get(session_id)
+        if isinstance(stored, dict):
+            self._sessions[session_id] = {"cwd": stored["cwd"], "history": stored["history"]}
+
+    def _refuses_system_prompt(self, msg_id: Any, params: dict[str, Any]) -> bool:
+        """Answer `-32602` and return `True` if `params` carries a `systemPrompt` this agent
+        cannot apply, before the session is loaded or resumed."""
+        error = self._system_prompt_error(params.get("systemPrompt"))
+        if error is None:
+            return False
+        self._error(msg_id, -32602, f"Invalid params: {error}")
+        return True
 
     def _system_prompt_error(self, system_prompt: Any) -> str | None:
         """`None` if `system_prompt` is absent/null or one this agent can apply: `append` mode
@@ -495,10 +542,14 @@ class ConformingAgent:
         session = self._sessions.get(session_id)
         if session is not None:
             session["history"].append(update_params)
+            self._persist(session_id)
         self._notify("session/update", update_params)
 
     def _handle_load(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if self._refuses_system_prompt(msg_id, params):
+            return
         session_id = params.get("sessionId")
+        self._restore(session_id, params.get("cwd"))
         session = self._sessions.get(session_id)
         if session is None:
             self._unknown_session(msg_id, session_id)
@@ -508,7 +559,10 @@ class ConformingAgent:
         self._reply(msg_id, {})
 
     def _handle_resume(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if self._refuses_system_prompt(msg_id, params):
+            return
         session_id = params.get("sessionId")
+        self._restore(session_id, params.get("cwd"))
         if session_id not in self._sessions:
             self._unknown_session(msg_id, session_id)
             return
@@ -560,7 +614,13 @@ class ConformingAgent:
     def _handle_delete(self, msg_id: Any, params: dict[str, Any]) -> None:
         # SHOULD succeed silently even for an unknown sessionId -- `dict.pop` with a default
         # already gives us that for free.
-        self._sessions.pop(params.get("sessionId"), None)
+        session_id = params.get("sessionId")
+        session = self._sessions.pop(session_id, None)
+        path = self._store_path(session["cwd"]) if session is not None else None
+        if self._persist_sessions and path is not None:
+            stored = self._read_store(path)
+            if stored.pop(session_id, None) is not None:
+                path.write_text(json.dumps(stored))
         self._reply(msg_id, {})
 
     def _handle_close(self, msg_id: Any, params: dict[str, Any]) -> None:

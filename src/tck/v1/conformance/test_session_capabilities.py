@@ -845,7 +845,9 @@ async def test_new_session_with_additional_directories_is_accepted(agent_launch,
 #
 # SYSPROMPT-002/003 deliberately send what a client MUST NOT (an unadvertised mode, a non-text
 # block): the spec defines the agent's answer to exactly those inputs, so they are legitimate
-# probes. "MUST NOT create the session" is only observable as the error itself.
+# probes. For `session/new`, "MUST NOT create the session" is only observable as the error
+# itself; for `session/load`/`session/resume` the session already exists, so the tests also
+# check that it was not loaded: a `session/prompt` on that id must not succeed.
 
 
 async def _new_session_with_system_prompt(agent, cwd, system_prompt, *, timeout):
@@ -919,3 +921,143 @@ async def test_new_session_with_non_text_system_prompt_content_errors(agent_laun
             "session/new with a non-text systemPrompt content block must return an error, got: "
             f"{entry.text!r}"
         )
+
+
+_SYSTEM_PROMPT_PATH = "agentCapabilities.sessionCapabilities.systemPrompt"
+
+
+async def _assert_existing_session_refused_with_system_prompt(
+    agent_launch, agent_initialize_result, tmp_path, record_property, *, method, system_prompt, what, kind
+):
+    """Create a session on one connection, then on a fresh one send `method` for it with a
+    `systemPrompt` the agent cannot apply (`session-setup.mdx:422`). The reply must be an error
+    (its code is recorded, not asserted: `-32602` is only RECOMMENDED), and a `session/prompt`
+    on that id must then not succeed, since the session was not loaded or resumed. An error
+    answer to the prompt (e.g. `-32002`) is fine. An agent that cannot restore a session across
+    connections answers the load/resume with `-32002` and so passes without being exercised.
+    A `-32000` answer SKIPs, like `session/new`."""
+    init_result = agent_initialize_result.result
+    if init_result is not None:
+        skip_if_version_mismatch(init_result)
+    if init_result is None or not capability_is_supported(init_result, _SYSTEM_PROMPT_PATH):
+        pytest.skip(f"capability {_SYSTEM_PROMPT_PATH!r} not advertised by the agent under test")
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(
+            method,
+            {
+                "sessionId": session_id,
+                "cwd": str(tmp_path),
+                "mcpServers": [],
+                "systemPrompt": system_prompt,
+            },
+        )
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        assert isinstance(msg, dict) and isinstance(msg.get("error"), dict), (
+            f"{method} with {what} must return an error, got: {entry.text!r}"
+        )
+        record_property(
+            f"acp_tck_sysprompt_{kind}_{method.removeprefix('session/')}_error_code",
+            msg["error"].get("code"),
+        )
+
+        turn = await run_prompt(agent, session_id, [{"type": "text", "text": "hello"}], timeout=timeout)
+        reply = turn.response_entry.parsed
+        assert not (isinstance(reply, dict) and "result" in reply), (
+            f"{method} with {what} returned an error, but the session was loaded anyway: "
+            f"session/prompt on it succeeded: {turn.response_entry.text!r}"
+        )
+
+
+_UNSUPPORTED_MODE_PROMPT = {
+    "mode": "_tck_unsupported",
+    "content": [{"type": "text", "text": "Answer concisely."}],
+}
+
+
+def _non_text_content_prompt(cwd):
+    return {
+        "mode": "append",
+        "content": [{"type": "resource_link", "uri": (cwd / "rules.md").as_uri(), "name": "rules.md"}],
+    }
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-002")
+@pytest.mark.capability("agentCapabilities.loadSession", boolean=True)
+async def test_load_with_unsupported_system_prompt_mode_errors(
+    agent_launch, agent_initialize_result, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-002 for `session/load`. Also gated on `systemPrompt` (checked in the helper).
+    Breaks the client rule to use only an advertised mode on purpose: the spec defines the
+    agent's answer (`session-setup.mdx:415,422`)."""
+    await _assert_existing_session_refused_with_system_prompt(
+        agent_launch,
+        agent_initialize_result,
+        tmp_path,
+        record_property,
+        method="session/load",
+        system_prompt=_UNSUPPORTED_MODE_PROMPT,
+        what="an unsupported systemPrompt mode",
+        kind="mode",
+    )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-002")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.resume")
+async def test_resume_with_unsupported_system_prompt_mode_errors(
+    agent_launch, agent_initialize_result, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-002 for `session/resume`. Also gated on `systemPrompt` (checked in the
+    helper). Breaks the client rule to use only an advertised mode on purpose, as for `load`."""
+    await _assert_existing_session_refused_with_system_prompt(
+        agent_launch,
+        agent_initialize_result,
+        tmp_path,
+        record_property,
+        method="session/resume",
+        system_prompt=_UNSUPPORTED_MODE_PROMPT,
+        what="an unsupported systemPrompt mode",
+        kind="mode",
+    )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-003")
+@pytest.mark.capability("agentCapabilities.loadSession", boolean=True)
+async def test_load_with_non_text_system_prompt_content_errors(
+    agent_launch, agent_initialize_result, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-003 for `session/load`. Also gated on `systemPrompt` (checked in the helper).
+    Breaks the client rule to send only text blocks on purpose (`session-setup.mdx:418,422`)."""
+    await _assert_existing_session_refused_with_system_prompt(
+        agent_launch,
+        agent_initialize_result,
+        tmp_path,
+        record_property,
+        method="session/load",
+        system_prompt=_non_text_content_prompt(tmp_path),
+        what="a non-text systemPrompt content block",
+        kind="content",
+    )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-003")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.resume")
+async def test_resume_with_non_text_system_prompt_content_errors(
+    agent_launch, agent_initialize_result, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-003 for `session/resume`. Also gated on `systemPrompt` (checked in the
+    helper). Breaks the client rule to send only text blocks on purpose, as for `load`."""
+    await _assert_existing_session_refused_with_system_prompt(
+        agent_launch,
+        agent_initialize_result,
+        tmp_path,
+        record_property,
+        method="session/resume",
+        system_prompt=_non_text_content_prompt(tmp_path),
+        what="a non-text systemPrompt content block",
+        kind="content",
+    )

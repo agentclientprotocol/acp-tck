@@ -1748,6 +1748,22 @@ def test_system_prompt_rejected_fails_sysprompt_001_only():
     assert _output_fail_ids(result.stdout) == {"ACP-SYSPROMPT-001"}, result.stdout
 
 
+def test_system_prompt_load_ignoring_content_fails_sysprompt_003_only():
+    """`session/load` loads the session despite a non-text `systemPrompt` block."""
+    result = _run_cli("system_prompt_load_ignores_content.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-SYSPROMPT-003"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-SYSPROMPT-002") == "PASS", result.stdout
+
+
+def test_system_prompt_resume_ignoring_mode_fails_sysprompt_002_only():
+    """`session/resume` resumes the session despite an unsupported `systemPrompt` mode."""
+    result = _run_cli("system_prompt_resume_ignores_mode.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-SYSPROMPT-002"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-SYSPROMPT-003") == "PASS", result.stdout
+
+
 def test_boolean_option_on_set_fails_config_003_only():
     """The boolean option is hidden from `session/new` but leaked by `set_config_option`."""
     result = _run_cli("boolean_option_on_set.py")
