@@ -17,13 +17,14 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - C2 null hint: ACCEPT NULL where schema node has x-deserialize-default-on-null (v1+v2, slice S-X3)
 - C3 `_meta` key: KEEP "tck" (no rename; S-X2 dropped)
 ## Done
+- S-X1 permission by kind + policy hook (v1+v2) — 4d88f27 — run_prompt(permission=allow|reject_once|unknown_option|cancelled); fallback recorded as acp_tck_permission_fallback; pytest 395 green
 - S-v1-0 v1 re-vendor — 61d40b5 — schema at 3961af94, 40 auto + 13 hand cite fixes, map re-cased; pytest 365 green, spec-tracker 115/0 skip
 - Impact research (25 reports) + consolidated plan — .agents/research/plan-spec-update.md (§4 decisions C1-C10, V1-D1..18, V2-D1..31; §8 slice plan)
 - v1 change inventory — .agents/research/spec-diff-v1.md
 - v2 change inventory — .agents/research/spec-diff-v2.md (breaking: batching removed, ProtocolLevelNotification + AuthCapabilities $defs removed, RequestId no null, AvailableCommand.type required, ...)
 ## Next
 - Remaining plan §4 recommendations (C5, C7-C10, V1-D*, V2-D1/D2, D4-D31): USER IS REVIEWING — do not start area slices that depend on them until answered
-- Running now (no pending decisions): S-X1 (permission by kind + policy hook), then S-v2-0
+- Running now (no pending decisions): S-v2-0 (v2 re-vendor)
 - Then slices per plan §8: S-v1-0 -> S-X1 -> S-v1-1..7 -> S-v1-9 -> S-v2-0 -> S-X2..4 -> S-v2-1..17 -> optional -> S-XC; review per milestone (v1 milestone, v2 milestone)
 ## Open questions (waiting on the user)
 - FYI: python-sdk checkout `git pull --ff-only` fails ("Cannot fast-forward to multiple branches"); sits at 8a99407 = origin/main. Not repaired.
