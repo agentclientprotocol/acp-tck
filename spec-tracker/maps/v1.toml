@@ -15,7 +15,7 @@
 #   code      optional: repo-relative TCK paths that implement the doc's cross-cutting rules
 #   reason    why the doc is core
 #
-# Ledger of deliberate non-requirements, one `[[not_requirement]]` table each (none yet):
+# Ledger of deliberate non-requirements, one `[[not_requirement]]` table each, grouped by doc below:
 #   citation   where the rule is stated, same form as a requirement citation in requirements.py
 #              (doc path with lines, or `schema.unstable.json#/$defs/...`, ending `@ <spec commit>`)
 #   statement  the spec rule, in one sentence
@@ -96,3 +96,25 @@ code = [
     "src/tck/v1/conformance/_helpers.py",
 ]
 reason = "the error object, the code table, and the per-case code rules (unknown method, invalid params, unknown session, before initialize) that no feature doc links to, yet every request that can fail depends on"
+
+# --- session-setup.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-setup.mdx:473-474 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD NOT treat model output, Agent content or replayed history as granting access outside the root set, and implementations that enforce the root set SHOULD check the resolved path at the time of use, compare paths by component and fail closed."
+reason = "Unobservable from a client: it needs the model to attempt out-of-root access, which a driven TCK cannot trigger reliably or safely, and the path-checking mechanics are internal to the agent."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-setup.mdx:658 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD launch a stdio MCP server's `command` with `args` as separate arguments, without a shell."
+reason = "Indistinguishable from correct behavior: a shell launch with correct quoting delivers the same arguments as a direct exec, so a client can only observe that arguments arrive verbatim, not whether a shell was involved."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-setup.mdx:660 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD NOT include `env` or `headers` values in model context or command lines, and SHOULD NOT log or persist them."
+reason = "Unobservable from a client (model context, disk persistence, logs other than stderr); ACP-SESSION-006 covers only the stdout, stderr and stub-command-line part of the same bullet, and `headers` values are not probed."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-setup.mdx:661 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD send `headers` only to the configured origin."
+reason = "Out of scope: it needs the agent to advertise `mcpCapabilities.http` and an HTTP MCP test server with a cross-origin redirect probe, which the TCK does not host."

@@ -61,8 +61,10 @@ _ADVISORY_IDS = {
     "ACP-JSONRPC-005",
     "ACP-INIT-004",
     "ACP-SESSION-004",
+    "ACP-SESSION-006",
     "ACP-LOAD-003",
     "ACP-DELETE-002",
+    "ACP-CLOSE-003",
     "ACP-META-001",
     "ACP-ERROR-001",
     "ACP-ERROR-002",
@@ -125,13 +127,14 @@ immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
 _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
     "ACP-LOAD-003",
     "ACP-DELETE-002",
+    "ACP-CLOSE-003",
     "ACP-ERROR-004",
     "ACP-ERROR-007",
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the four ADVISORY ids
-(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`, `ACP-ERROR-007`) whose tests are still gated
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the five ADVISORY ids
+(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-ERROR-004`, `ACP-ERROR-007`) whose tests are still gated
 (by a `@pytest.mark.capability(...)` marker, or for `ACP-ERROR-004`/`007` by what `session/new`
 returned) even though their `Requirement.tier` itself is ADVISORY, not CAPABILITY (see
 `test_session_capabilities.py` module docstring)."""
@@ -447,7 +450,7 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
 
     v1's own MANDATORY/ADVISORY tests that judge a result's *shape* against v1's rules
     (`ACP-INIT-002`/`004`, `ACP-ERROR-003`..`008`, `ACP-META-001`, `ACP-PROMPT-001`/`003`/`004`,
-    `ACP-SCHEMA-001`/`002`, `ACP-SESSION-003`/`004`) call their
+    `ACP-SCHEMA-001`/`002`, `ACP-SESSION-003`/`004`/`006`) call their
     own `skip_if_version_mismatch` twin (`tck.v1.conformance._helpers`) right after obtaining
     the `initialize` result, mirroring v2's `test_initialize.py`/`test_batch.py`/
     `test_transport.py` pattern -- so they SKIP with the `VERSION-MISMATCH:` marker here too,
@@ -479,6 +482,7 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-SCHEMA-002",
         "ACP-SESSION-003",
         "ACP-SESSION-004",
+        "ACP-SESSION-006",
     }:
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
 
@@ -1416,6 +1420,30 @@ def test_ignores_mcp_servers_fails_advisory_session_004_only():
     assert result.returncode == 0, result.stdout + result.stderr
     assert _output_fail_ids(result.stdout) == {"ACP-SESSION-004"}, result.stdout
     assert _table_statuses(result.stdout).get("ACP-SESSION-003") == "PASS", result.stdout
+
+
+def test_leaks_mcp_env_fixtures_fail_session_006_only_advisory():
+    """One fixture per leak channel (`_meta` on stdout, stderr, the stub's command line). The
+    leak is a SHOULD NOT, so the run stays CONFORMANT, and the stub still connects."""
+    for fixture in ("leaks_mcp_env_meta.py", "leaks_mcp_env_stderr.py", "leaks_mcp_env_argv.py"):
+        result = _run_cli(fixture)
+        assert result.returncode == 0, f"{fixture}:\n{result.stdout}{result.stderr}"
+        assert "VERDICT: CONFORMANT" in result.stdout, f"{fixture}:\n{result.stdout}"
+        assert _output_fail_ids(result.stdout) == {"ACP-SESSION-006"}, f"{fixture}:\n{result.stdout}"
+        statuses = _table_statuses(result.stdout)
+        assert statuses.get("ACP-SESSION-004") == "PASS", f"{fixture}:\n{result.stdout}"
+
+
+def test_close_not_idempotent_fails_close_003_advisory_only():
+    """`close_not_idempotent.py` answers a second close, and a close of a never-created id, with
+    `-32002` instead of the empty result -- an ADVISORY FAIL, so the run stays CONFORMANT."""
+    result = _run_cli("close_not_idempotent.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert _output_fail_ids(result.stdout) == {"ACP-CLOSE-003"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-CLOSE-001") == "PASS", result.stdout
+    assert statuses.get("ACP-ERROR-003") == "PASS", result.stdout
 
 
 def test_client_gated_update_fixtures_fail_only_their_own_clientcap_id():

@@ -251,6 +251,20 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v1/draft/session-setup.mdx:650"),
     ),
     Requirement(
+        id="ACP-SESSION-006",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The value of a stdio MCP server `env` entry (a random canary the TCK sends on "
+            "`session/new`) never appears on the agent's stdout or stderr: not in responses, "
+            "errors, `session/update`, `_meta`, `session/list` results or replayed history, and "
+            "not in the stub MCP server's own command line. SHOULD-level, and only the "
+            "client-observable part of the rule: model context, logging beyond stderr and "
+            "persistence are not covered."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:660"),
+    ),
+    Requirement(
         id="ACP-PROMPT-001",
         tier=Tier.MANDATORY,
         capability=None,
@@ -516,6 +530,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-CLOSE-003",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/close` is idempotent: closing a session this connection already closed, "
+            "or one it never created, succeeds with the same empty result instead of an error. "
+            "A `-32002` answer is the behavior clients are told to tolerate, but the agent "
+            "SHOULD still return the empty result, so it is an ADVISORY FAIL. Only callable "
+            "when `sessionCapabilities.close` is advertised; the test is gated on it."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-setup.mdx:347-350; "
+            "docs/protocol/v1/draft/error.mdx:55"
+        ),
+    ),
+    Requirement(
         id="ACP-ADDDIRS-001",
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.additionalDirectories",
@@ -533,7 +563,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/new` with `systemPrompt: {mode: \"append\", content: [<text block>]}` "
             "succeeds with a schema-valid result: every agent advertising the capability "
-            "supports `append`, and MUST accept text content blocks. Unstable feature."
+            "supports `append`, and MUST accept text content blocks."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-setup.mdx:414,418; "
@@ -549,7 +579,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/new` with a `systemPrompt.mode` the agent cannot support (the "
             "implementation-reserved `_tck_unsupported`) returns an error rather than creating "
             "the session. The error code is recorded, not asserted (`-32602` is only "
-            "RECOMMENDED). Unstable feature."
+            "RECOMMENDED)."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-setup.mdx:415,422; "
@@ -563,7 +593,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/new` with a non-text `systemPrompt.content` block (`resource_link`) "
             "returns an error rather than creating the session -- only text blocks are "
-            "supported for now. Unstable feature."
+            "supported for now."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-setup.mdx:418,422; "

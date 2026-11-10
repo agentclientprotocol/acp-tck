@@ -1,11 +1,11 @@
 """Capability-conditional session-method conformance: `session/load`, `session/resume`,
 `session/list`, `session/delete`, `session/close`, `additionalDirectories`, and `systemPrompt`
 (ACP-LOAD-001..003, ACP-RESUME-001/002, ACP-LIST-001/002, ACP-DELETE-001..003,
-ACP-CLOSE-001/002, ACP-ADDDIRS-001, ACP-SYSPROMPT-001..003).
+ACP-CLOSE-001..003, ACP-ADDDIRS-001, ACP-SYSPROMPT-001..003).
 
 Every test here is gated by `@pytest.mark.capability(...)`, including the ADVISORY-tier ones
-(`ACP-LOAD-003`, `ACP-DELETE-002`): per `tck.common.plugin._tck_capability_gate`, the marker's
-SKIP-if-unadvertised effect is independent of the bound `Requirement`'s tier, so gating an
+(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`): per `tck.common.plugin._tck_capability_gate`,
+the marker's SKIP-if-unadvertised effect is independent of the bound `Requirement`'s tier, so gating an
 ADVISORY requirement this way doesn't violate `Requirement.capability`'s "must be `None` for
 non-CAPABILITY tiers" invariant (checked in `tck.v1.requirements`).
 """
@@ -27,6 +27,7 @@ from ._helpers import (
     run_prompt,
     session_update_kind,
     skip_if_auth_gated,
+    skip_if_version_mismatch,
 )
 
 
@@ -354,6 +355,58 @@ async def test_close_idle_session_succeeds(agent_launch, tmp_path):
         assert not issues, f"session/close result failed schema validation: {issues!r}"
 
 
+async def _close(agent, session_id: str, *, timeout: float):
+    req_id = await agent.send_request("session/close", {"sessionId": session_id})
+    return await agent.wait_for_response(req_id, timeout=timeout)
+
+
+def _assert_close_succeeded_idempotently(entry, what: str) -> None:
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    assert not isinstance(error, dict), (
+        f"session/close of {what} should succeed with the empty result (closing is idempotent), "
+        f"but returned error {error.get('code')!r}: {entry.text!r}"
+    )
+    assert isinstance(msg, dict) and "result" in msg, (
+        f"session/close of {what} did not return a result: {entry.text!r}"
+    )
+    issues = validate_agent_response("session/close", msg)
+    assert not issues, f"session/close result failed schema validation: {issues!r}"
+
+
+@pytest.mark.requirement("ACP-CLOSE-003")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.close")
+async def test_close_already_closed_session_succeeds(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-CLOSE-003 (ADVISORY). A second `session/close` for the same id must answer like the
+    first. The first close failing SKIPs (ACP-CLOSE-001 judges it). A `-32002` answer is
+    an ADVISORY FAIL: clients tolerate it, but the agent SHOULD return the empty result."""
+    if agent_initialize_result.result is not None:
+        skip_if_version_mismatch(agent_initialize_result.result)
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        first = await _close(agent, session_id, timeout=agent_launch.default_timeout)
+        first_msg = first.parsed
+        if not (isinstance(first_msg, dict) and "result" in first_msg):
+            pytest.skip(
+                "prerequisite not met: the first session/close did not succeed "
+                f"(see ACP-CLOSE-001): {first.text!r}"
+            )
+        second = await _close(agent, session_id, timeout=agent_launch.default_timeout)
+        _assert_close_succeeded_idempotently(second, "an already-closed session")
+
+
+@pytest.mark.requirement("ACP-CLOSE-003")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.close")
+async def test_close_unknown_session_succeeds(agent_launch, agent_initialize_result):
+    """ACP-CLOSE-003 (ADVISORY). No `session/new` is ever sent -- this sessionId was never
+    created on this connection."""
+    if agent_initialize_result.result is not None:
+        skip_if_version_mismatch(agent_initialize_result.result)
+    async with connected_agent(agent_launch) as agent:
+        entry = await _close(agent, "tck-never-created-session", timeout=agent_launch.default_timeout)
+        _assert_close_succeeded_idempotently(entry, "a never-created session")
+
+
 @pytest.mark.requirement("ACP-CLOSE-002")
 @pytest.mark.capability("agentCapabilities.sessionCapabilities.close")
 async def test_close_in_flight_prompt_resolves_cancelled(
@@ -456,7 +509,7 @@ async def test_new_session_with_additional_directories_is_accepted(agent_launch,
         assert not issues, f"session/new result failed schema validation: {issues!r}"
 
 
-# --- systemPrompt (unstable) ---
+# --- systemPrompt ---
 #
 # SYSPROMPT-002/003 deliberately send what a client MUST NOT (an unadvertised mode, a non-text
 # block): the spec defines the agent's answer to exactly those inputs, so they are legitimate
