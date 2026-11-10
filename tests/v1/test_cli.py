@@ -101,6 +101,12 @@ _CAPABILITY_IDS = {
     "ACP-LIST-002",
     "ACP-DELETE-001",
     "ACP-DELETE-003",
+    "ACP-ARCHIVE-001",
+    "ACP-ARCHIVE-002",
+    "ACP-ARCHIVE-003",
+    "ACP-ARCHIVE-004",
+    "ACP-ARCHIVE-005",
+    "ACP-ARCHIVE-006",
     "ACP-CLOSE-001",
     "ACP-CLOSE-002",
     "ACP-ADDDIRS-001",
@@ -1549,6 +1555,65 @@ def test_list_ignores_bad_cursor_fails_list_003_advisory_only():
     assert _output_fail_ids(result.stdout) == {"ACP-LIST-003"}, result.stdout
     statuses = _table_statuses(result.stdout)
     for req_id in ("ACP-LIST-001", "ACP-LIST-002"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_archive_without_list_fails_archive_001_only():
+    """`archive_without_list.py` advertises `archive` but not `list`: ACP-ARCHIVE-001 FAILs, the
+    archive tests that also need `list` SKIP, and ACP-ARCHIVE-005 (archive/unarchive only) PASSes."""
+    result = _run_cli("archive_without_list.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-001"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-004", "ACP-ARCHIVE-006"):
+        assert statuses.get(req_id) == "SKIPPED", f"{req_id}:\n{result.stdout}"
+    assert statuses.get("ACP-ARCHIVE-005") == "PASS", result.stdout
+
+
+def test_archive_omits_archived_flag_fails_archive_002_only():
+    result = _run_cli("archive_omits_archived_flag.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-002"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-001", "ACP-ARCHIVE-003", "ACP-ARCHIVE-004", "ACP-ARCHIVE-005", "ACP-ARCHIVE-006"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_archive_still_listed_fails_archive_003_only():
+    result = _run_cli("archive_still_listed.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-003"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-001", "ACP-ARCHIVE-002", "ACP-ARCHIVE-004", "ACP-ARCHIVE-005", "ACP-ARCHIVE-006"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_archive_filter_falling_back_fails_archive_004_only():
+    result = _run_cli("archive_filter_falls_back.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-004"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-001", "ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-005", "ACP-ARCHIVE-006"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_archive_unknown_succeeding_fails_archive_005_only():
+    result = _run_cli("archive_unknown_succeeds.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-005"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-ARCHIVE-001", "ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-004", "ACP-ARCHIVE-006"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_delete_archiving_instead_fails_archive_006_only():
+    """`delete_archives_instead.py` hides a deleted session from the default view only, so
+    ACP-DELETE-003 PASSes while ACP-ARCHIVE-006 FAILs."""
+    result = _run_cli("delete_archives_instead.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-ARCHIVE-006"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-DELETE-003", "ACP-ARCHIVE-001", "ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-004", "ACP-ARCHIVE-005"):
         assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
 
 

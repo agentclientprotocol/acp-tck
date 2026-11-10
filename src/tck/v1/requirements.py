@@ -515,6 +515,95 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v1/draft/session-delete.mdx:85,87,90"),
     ),
     Requirement(
+        id="ACP-ARCHIVE-001",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.archive",
+        text=(
+            "An agent advertising `sessionCapabilities.archive` also advertises "
+            "`sessionCapabilities.list`. Judged from the `initialize` result alone."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:229; "
+            "schema/v1/schema.unstable.json#/$defs/SessionCapabilities/properties/archive"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-002",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.archive",
+        text=(
+            "Every `SessionInfo` in a `session/list` result carries a boolean (non-null) "
+            "`archived`: checked on the default view, and on the `only` view once the test's own "
+            "session is archived. Needs `sessionCapabilities.list`; SKIPs without it, or when "
+            "the list is empty."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:254; "
+            "schema/v1/schema.unstable.json#/$defs/SessionInfo/properties/archived"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.archive",
+        text=(
+            "`session/archive` then `session/unarchive` on an existing session both succeed with "
+            "schema-valid empty results. After archive the session is absent from the default "
+            "`session/list` view and present under `archived: \"only\"`; after unarchive it is "
+            "back in the default view and absent from `only`. Needs `sessionCapabilities.list`; "
+            "SKIPs without it, or when the new session is not listed to begin with."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:231,244-250; "
+            "schema/v1/schema.unstable.json#/$defs/ArchiveSessionResponse; "
+            "schema/v1/schema.unstable.json#/$defs/UnarchiveSessionResponse; "
+            "schema/v1/schema.unstable.json#/$defs/SessionArchiveFilter"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-004",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.archive",
+        text=(
+            "`session/list` with an `archived` filter value the agent does not support fails "
+            "with `-32602`, rather than falling back to the default (`exclude`) view. A success "
+            "or any other error code is a FAIL; `-32000` (authentication required) SKIPs. Needs "
+            "`sessionCapabilities.list`; SKIPs without it."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:252; "
+            "schema/v1/schema.unstable.json#/$defs/SessionArchiveFilter"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-005",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.archive",
+        text=(
+            "Archiving an already-archived session and unarchiving a not-archived one both "
+            "succeed. `session/archive` and `session/unarchive` of a never-created `sessionId` "
+            "fail with an error rather than succeeding silently; the error code is not "
+            "asserted."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:260; docs/protocol/v1/draft/error.mdx:67; "
+            "schema/v1/schema.unstable.json#/$defs/ArchiveSessionRequest; "
+            "schema/v1/schema.unstable.json#/$defs/UnarchiveSessionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-006",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.archive",
+        text=(
+            "After a successful `session/delete`, the deleted session appears under no "
+            "`archived` filter value (`exclude`, `include`, `only`). Needs "
+            "`sessionCapabilities.delete` and `.list`; SKIPs without them. The session is "
+            "closed first when `close` is advertised, as for ACP-DELETE-001."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-list.mdx:261"),
+    ),
+    Requirement(
         id="ACP-CLOSE-001",
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.close",

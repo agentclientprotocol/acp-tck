@@ -21,13 +21,19 @@ PROTOCOL_VERSION = 1
 # equivalent to `_handle_authenticate`'s `methodId` check.
 _VALID_CONTENT_BLOCK_TYPES = {"text", "image", "audio", "resource", "resource_link"}
 
-# Stable capability-gated methods keyed under `agentCapabilities.sessionCapabilities`.
+# Capability-gated methods keyed under `agentCapabilities.sessionCapabilities`.
 _SESSION_CAPABILITY_KEYS = {
     "session/list": "list",
     "session/resume": "resume",
     "session/close": "close",
     "session/delete": "delete",
+    "session/archive": "archive",
+    "session/unarchive": "archive",
 }
+
+# `schema/v1/schema.unstable.json#/$defs/SessionArchiveFilter`: the values every agent
+# advertising `archive` supports (omitted/`null` means `exclude`).
+_ARCHIVE_FILTERS = {"exclude", "include", "only"}
 
 
 def _content_block_error(block: Any) -> str | None:
@@ -78,13 +84,16 @@ class ConformingAgent:
     resumed (or already closed) is answered by `_unknown_session`: `-32002` with
     `data.sessionId` (`error.mdx` "Unknown sessions"). `session/load` and `session/resume`
     behave the same; defect fixtures override `_unknown_session` or the handlers to break it.
-    `session/close` and `session/delete` of an unknown id succeed silently.
+    `session/close` and `session/delete` of an unknown id succeed silently; `session/archive`
+    and `session/unarchive` of one get `-32002`. An archived session stays in `_sessions` (so it
+    can still be listed, unarchived and deleted) with an `archived` flag; `session/list` honors
+    the `archived` filter and reports the flag only when `archive` is advertised.
 
     Three further `error.mdx` behaviors are on by default, each switchable off by a defect
     fixture's class attribute: `_require_initialize` (any request but `initialize` before
     initialization gets `-32600`; the harness-only `_tck/*` probes are exempt),
     `_gate_unadvertised` (`session/load` without `loadSession`, and `session/list`/`resume`/
-    `close`/`delete` without the matching `sessionCapabilities` key, get `-32601`), and
+    `close`/`delete`/`archive`/`unarchive` without the matching `sessionCapabilities` key, get `-32601`), and
     `_validate_set_params` (an unknown `modeId`, `configId` or select value on a known session
     gets `-32602`).
     """
@@ -228,6 +237,10 @@ class ConformingAgent:
             self._handle_delete(msg_id, params)
         elif method == "session/close":
             self._handle_close(msg_id, params)
+        elif method == "session/archive":
+            self._handle_archive(msg_id, params, archived=True)
+        elif method == "session/unarchive":
+            self._handle_archive(msg_id, params, archived=False)
         elif method == "session/set_mode":
             self._handle_set_mode(msg_id, params)
         elif method == "session/set_config_option":
@@ -493,13 +506,41 @@ class ConformingAgent:
         if params.get("cursor") is not None:
             self._error(msg_id, -32602, "Invalid params: unknown cursor")
             return
+        archive_filter = params.get("archived")
+        archive_advertised = self._method_advertised("session/archive")
+        if archive_advertised and archive_filter is not None and archive_filter not in _ARCHIVE_FILTERS:
+            self._error(msg_id, -32602, f"Invalid params: unsupported archived filter {archive_filter!r}")
+            return
         cwd_filter = params.get("cwd")
         sessions = []
         for session_id, session in self._sessions.items():
             if cwd_filter is not None and session.get("cwd") != cwd_filter:
                 continue
-            sessions.append({"sessionId": session_id, "cwd": session.get("cwd")})
+            archived = session.get("archived", False)
+            if archive_advertised and not self._archive_filter_matches(archive_filter, archived):
+                continue
+            info: dict[str, Any] = {"sessionId": session_id, "cwd": session.get("cwd")}
+            if archive_advertised:
+                info["archived"] = archived
+            sessions.append(info)
         self._reply(msg_id, {"sessions": sessions})
+
+    @staticmethod
+    def _archive_filter_matches(archive_filter: str | None, archived: bool) -> bool:
+        if archive_filter == "include":
+            return True
+        return archived if archive_filter == "only" else not archived
+
+    def _handle_archive(self, msg_id: Any, params: dict[str, Any], *, archived: bool) -> None:
+        session_id = params.get("sessionId")
+        session = self._sessions.get(session_id)
+        if session is None:
+            self._unknown_session(msg_id, session_id)
+            return
+        if archived:
+            self._cancel_pending_prompt(session_id)  # archiving frees the session as if closed
+        session["archived"] = archived  # idempotent in both directions
+        self._reply(msg_id, {})
 
     def _handle_delete(self, msg_id: Any, params: dict[str, Any]) -> None:
         # SHOULD succeed silently even for an unknown sessionId -- `dict.pop` with a default
@@ -509,12 +550,15 @@ class ConformingAgent:
 
     def _handle_close(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
+        self._cancel_pending_prompt(session_id)
+        self._sessions.pop(session_id, None)
+        self._reply(msg_id, {})
+
+    def _cancel_pending_prompt(self, session_id: Any) -> None:
         if self._pending_prompt is not None and self._pending_prompt["session_id"] == session_id:
             pending = self._pending_prompt
             self._pending_prompt = None
             self._reply(pending["id"], {"stopReason": "cancelled"})
-        self._sessions.pop(session_id, None)
-        self._reply(msg_id, {})
 
     def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "id": msg_id, "result": result})

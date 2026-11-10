@@ -34,6 +34,7 @@ CAPABILITIES = {
     "sessionCapabilities": {
         "list": {},
         "delete": {},
+        "archive": {},
         "resume": {},
         "close": {},
         "additionalDirectories": {},
