@@ -15,6 +15,8 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - C4 permission choice: BY KIND (allow_once > allow_always (record property) > first) + per-test policy hook, v1+v2 (slice S-X1)
 - C6 ledger: AGENT-SIDE ONLY (rules binding the agent the TCK deliberately doesn't test; omit client/intermediary/UI rules and pure MAYs)
 - C2 null hint: ACCEPT NULL where schema node has x-deserialize-default-on-null (v1+v2, slice S-X3)
+- C9 keyword-less error codes: CAPABILITY rows assert error-vs-success; exact code only where a MUST names it (v2 error.mdx:54 -32002, v2 list cursor); SHOULD codes -> separate ADVISORY
+- C10 rule-breaking probes: ALLOWED where the spec defines the agent's answer; `_tck`-prefixed values; explain in docstring
 - C3 `_meta` key: KEEP "tck" (no rename; S-X2 dropped)
 ## Done
 - S-v2-0 v2 re-vendor — 7c76250 — schema alpha.14 @ 3961af94; 115 auto + 107 needs-review cites resolved by hand; enum sets +paused/session; map re-cased; pytest 395 green, spec-tracker 115/0 skip. ~50 stale comment/docstring line cites in v2 tests/fixtures left for area slices (plan §6)
@@ -25,7 +27,7 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - v2 change inventory — .agents/research/spec-diff-v2.md (breaking: batching removed, ProtocolLevelNotification + AuthCapabilities $defs removed, RequestId no null, AvailableCommand.type required, ...)
 ## Next
 - Remaining plan §4 recommendations (C5, C7-C10, V1-D*, V2-D1/D2, D4-D31): USER IS REVIEWING — do not start area slices that depend on them until answered
-- Nothing running. All remaining slices depend on pending decisions. Offered user: ask the 8 judgment calls (C9, C10, C5, V2-D7, V2-D16, V2-D18, V2-D19 part, V2-D31) and accept the other ~45 as recommended, or wait for their review
+- Nothing running. Discussing the judgment calls one by one in chat: C5 (in discussion), then V2-D7, V2-D16, V2-D18, V2-D19 part, V2-D31. Other ~45 recs: not yet accepted
 - Then slices per plan §8: S-v1-0 -> S-X1 -> S-v1-1..7 -> S-v1-9 -> S-v2-0 -> S-X2..4 -> S-v2-1..17 -> optional -> S-XC; review per milestone (v1 milestone, v2 milestone)
 ## Open questions (waiting on the user)
 - FYI: python-sdk checkout `git pull --ff-only` fails ("Cannot fast-forward to multiple branches"); sits at 8a99407 = origin/main. Not repaired.
