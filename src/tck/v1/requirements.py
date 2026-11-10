@@ -462,6 +462,20 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-LIST-003",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/list` with a `cursor` the agent never issued SHOULD fail with `-32602` "
+            "(Invalid params). A success (the cursor was ignored) or any other error code is an "
+            "ADVISORY FAIL; `-32000` (authentication required) SKIPs. Only callable when "
+            "`sessionCapabilities.list` is advertised; the test is gated on it."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-list.mdx:174; docs/protocol/v1/draft/error.mdx:47"
+        ),
+    ),
+    Requirement(
         id="ACP-DELETE-001",
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.delete",
@@ -495,9 +509,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "After a successful `session/delete`, the deleted `sessionId` does not appear in a "
             "subsequent `session/list` result (all pages, filtered by the session's `cwd`). Also "
             "needs `sessionCapabilities.list`; SKIPs without it. The session is closed first "
-            "when `close` is advertised, as for ACP-DELETE-001."
+            "when `close` is advertised, as for ACP-DELETE-001. A `-32002` answer to the delete "
+            "counts as a successful delete, so the list check still runs."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-delete.mdx:85,90"),
+        citation=_cite("docs/protocol/v1/draft/session-delete.mdx:85,87,90"),
     ),
     Requirement(
         id="ACP-CLOSE-001",

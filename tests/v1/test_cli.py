@@ -63,6 +63,7 @@ _ADVISORY_IDS = {
     "ACP-SESSION-004",
     "ACP-SESSION-006",
     "ACP-LOAD-003",
+    "ACP-LIST-003",
     "ACP-DELETE-002",
     "ACP-CLOSE-003",
     "ACP-META-001",
@@ -126,6 +127,7 @@ immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
 
 _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
     "ACP-LOAD-003",
+    "ACP-LIST-003",
     "ACP-DELETE-002",
     "ACP-CLOSE-003",
     "ACP-ERROR-004",
@@ -133,8 +135,8 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the five ADVISORY ids
-(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-ERROR-004`, `ACP-ERROR-007`) whose tests are still gated
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the six ADVISORY ids
+(`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-ERROR-004`, `ACP-ERROR-007`) whose tests are still gated
 (by a `@pytest.mark.capability(...)` marker, or for `ACP-ERROR-004`/`007` by what `session/new`
 returned) even though their `Requirement.tier` itself is ADVISORY, not CAPABILITY (see
 `test_session_capabilities.py` module docstring)."""
@@ -483,6 +485,7 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-SESSION-003",
         "ACP-SESSION-004",
         "ACP-SESSION-006",
+        "ACP-LIST-003",
     }:
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
 
@@ -1473,6 +1476,28 @@ def test_delete_keeps_listing_fails_delete_003_only():
     statuses = _table_statuses(result.stdout)
     for req_id in ("ACP-DELETE-001", "ACP-DELETE-002", "ACP-LIST-001", "ACP-LIST-002"):
         assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_list_ignores_bad_cursor_fails_list_003_advisory_only():
+    """`list_ignores_bad_cursor.py` answers a never-issued cursor with a result instead of
+    `-32602` -- an ADVISORY FAIL, so the run stays CONFORMANT."""
+    result = _run_cli("list_ignores_bad_cursor.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert _output_fail_ids(result.stdout) == {"ACP-LIST-003"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-LIST-001", "ACP-LIST-002"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_delete_answering_not_found_still_runs_the_list_check():
+    """`delete_answers_not_found.py` answers `session/delete` for a closed (or never-created)
+    session with `-32002`: ACP-DELETE-001 and ACP-DELETE-002 FAIL, but ACP-DELETE-003 treats the
+    `-32002` as a successful delete and PASSes on the list check instead of SKIPping."""
+    result = _run_cli("delete_answers_not_found.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-DELETE-001", "ACP-DELETE-002"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-DELETE-003") == "PASS", result.stdout
 
 
 def test_refusing_to_delete_an_active_session_skips_delete_001_and_003():

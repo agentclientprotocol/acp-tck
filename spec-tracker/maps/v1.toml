@@ -118,3 +118,15 @@ reason = "Unobservable from a client (model context, disk persistence, logs othe
 citation = "docs/protocol/v1/draft/session-setup.mdx:661 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD send `headers` only to the configured origin."
 reason = "Out of scope: it needs the agent to advertise `mcpCapabilities.http` and an HTTP MCP test server with a cross-origin redirect probe, which the TCK does not host."
+
+# --- session-list.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-list.mdx:175 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD enforce reasonable page sizes internally."
+reason = "Not observable as a pass/fail: \"reasonable\" has no threshold, and a client sees a page's size only if the agent holds enough sessions to paginate."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-list.mdx:221 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`session/list` only discovers sessions: it does not restore or modify them."
+reason = "Absence of side effects is not observable from a client; only negative evidence such as an unchanged listing is available, and the agent's store may change for unrelated reasons."

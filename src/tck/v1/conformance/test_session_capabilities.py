@@ -1,10 +1,10 @@
 """Capability-conditional session-method conformance: `session/load`, `session/resume`,
 `session/list`, `session/delete`, `session/close`, `additionalDirectories`, and `systemPrompt`
-(ACP-LOAD-001..003, ACP-RESUME-001/002, ACP-LIST-001/002, ACP-DELETE-001..003,
+(ACP-LOAD-001..003, ACP-RESUME-001/002, ACP-LIST-001..003, ACP-DELETE-001..003,
 ACP-CLOSE-001..003, ACP-ADDDIRS-001, ACP-SYSPROMPT-001..003).
 
 Every test here is gated by `@pytest.mark.capability(...)`, including the ADVISORY-tier ones
-(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`): per `tck.common.plugin._tck_capability_gate`,
+(`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`): per `tck.common.plugin._tck_capability_gate`,
 the marker's SKIP-if-unadvertised effect is independent of the bound `Requirement`'s tier, so gating an
 ADVISORY requirement this way doesn't violate `Requirement.capability`'s "must be `None` for
 non-CAPABILITY tiers" invariant (checked in `tck.v1.requirements`).
@@ -16,7 +16,7 @@ import pytest
 
 from tck.common.harness import AgentExited, AgentTimeout
 from tck.common.plugin import capability_is_supported
-from tck.v1.protocol import STOP_REASONS
+from tck.v1.protocol import AUTHENTICATION_REQUIRED, INVALID_PARAMS, RESOURCE_NOT_FOUND, STOP_REASONS
 from tck.v1.validation import validate_agent_response
 
 from ._helpers import (
@@ -219,15 +219,45 @@ async def test_list_with_unmatched_cwd_filter_returns_empty_array(agent_launch, 
         )
 
 
+@pytest.mark.requirement("ACP-LIST-003")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.list")
+async def test_list_invalid_cursor_gets_invalid_params(agent_launch, agent_initialize_result):
+    """ACP-LIST-003 (ADVISORY). Cursors are opaque, so the TCK cannot prove a made-up one is
+    invalid; a `_tck`-prefixed value is simply one no agent will have issued. Probing with it
+    breaks the client rule against inventing cursors, but the spec defines the agent's answer
+    (`-32602`), so the probe is allowed. A result (the cursor was ignored) or another error code
+    is an advisory FAIL."""
+    if agent_initialize_result.result is not None:
+        skip_if_version_mismatch(agent_initialize_result.result)
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request("session/list", {"cursor": "_tck-never-issued-cursor"})
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+        msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        if isinstance(error, dict) and error.get("code") == AUTHENTICATION_REQUIRED:
+            pytest.skip("session/list returned -32000 (authentication required)")
+        assert isinstance(error, dict), (
+            f"session/list with a never-issued cursor should fail with -32602, but did not "
+            f"return an error: {entry.text!r}"
+        )
+        assert error.get("code") == INVALID_PARAMS, (
+            f"session/list with a never-issued cursor should fail with -32602, got "
+            f"{error.get('code')!r}: {entry.text!r}"
+        )
+
+
 # --- session/delete ---
 
 
-async def _close_then_delete(agent, session_id: str, init_result, *, timeout: float):
+async def _close_then_delete(
+    agent, session_id: str, init_result, *, timeout: float, tolerate_not_found: bool = False
+):
     """Delete `session_id` the way ACP-DELETE-001/003 need: deleting an *active* session is
     implementation-defined (`docs/protocol/v1/draft/session-delete.mdx:90`), so close it first
     when `close` is advertised. Without `close`, an error from deleting the still-active
-    session SKIPs. Returns the `session/delete` response entry; a failed close SKIPs (that is
-    ACP-CLOSE-001's finding)."""
+    session SKIPs, except a `-32002` one when `tolerate_not_found` (clients treat that as a
+    successful delete, `session-delete.mdx:87`). Returns the `session/delete` response entry; a
+    failed close SKIPs (that is ACP-CLOSE-001's finding)."""
     can_close = init_result is not None and capability_is_supported(
         init_result, "agentCapabilities.sessionCapabilities.close"
     )
@@ -243,7 +273,11 @@ async def _close_then_delete(agent, session_id: str, init_result, *, timeout: fl
     req_id = await agent.send_request("session/delete", {"sessionId": session_id})
     entry = await agent.wait_for_response(req_id, timeout=timeout)
     msg = entry.parsed
-    if not can_close and isinstance(msg, dict) and "error" in msg and "result" not in msg:
+    error = msg.get("error") if isinstance(msg, dict) else None
+    refused = isinstance(error, dict) and "result" not in msg
+    if refused and tolerate_not_found and error.get("code") == RESOURCE_NOT_FOUND:
+        refused = False
+    if not can_close and refused:
         pytest.skip(
             "deleting an active session is implementation-defined, and the agent does not "
             f"advertise session/close to end it first: {entry.text!r}"
@@ -292,7 +326,9 @@ _MAX_LIST_PAGES = 10
 @pytest.mark.capability("agentCapabilities.sessionCapabilities.delete")
 async def test_deleted_session_is_absent_from_list(agent_launch, agent_initialize_result, tmp_path):
     """ACP-DELETE-003. Lists with a `cwd` filter, so the pages hold only this test's session,
-    and follows `nextCursor` up to `_MAX_LIST_PAGES` pages."""
+    and follows `nextCursor` up to `_MAX_LIST_PAGES` pages. A `-32002` answer to the delete
+    counts as a successful delete (`session-delete.mdx:87`), so the list check still runs;
+    ACP-DELETE-001 judges whether that answer is acceptable."""
     init_result = agent_initialize_result.result
     list_path = "agentCapabilities.sessionCapabilities.list"
     if init_result is None or not capability_is_supported(init_result, list_path):
@@ -301,10 +337,16 @@ async def test_deleted_session_is_absent_from_list(agent_launch, agent_initializ
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
 
         delete_entry = await _close_then_delete(
-            agent, session_id, init_result, timeout=agent_launch.default_timeout
+            agent,
+            session_id,
+            init_result,
+            timeout=agent_launch.default_timeout,
+            tolerate_not_found=True,
         )
         delete_msg = delete_entry.parsed
-        if not (isinstance(delete_msg, dict) and "result" in delete_msg):
+        delete_error = delete_msg.get("error") if isinstance(delete_msg, dict) else None
+        delete_gone = isinstance(delete_error, dict) and delete_error.get("code") == RESOURCE_NOT_FOUND
+        if not (isinstance(delete_msg, dict) and "result" in delete_msg) and not delete_gone:
             pytest.skip(
                 "prerequisite not met: session/delete did not succeed (see ACP-DELETE-001): "
                 f"{delete_entry.text!r}"

@@ -489,6 +489,10 @@ class ConformingAgent:
         self._reply(msg_id, {})
 
     def _handle_list(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # The fixture never paginates, so it never issues a cursor and every one is invalid.
+        if params.get("cursor") is not None:
+            self._error(msg_id, -32602, "Invalid params: unknown cursor")
+            return
         cwd_filter = params.get("cwd")
         sessions = []
         for session_id, session in self._sessions.items():
