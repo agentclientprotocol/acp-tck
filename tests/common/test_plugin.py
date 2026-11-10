@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from tck.common.plugin import _status_markup, _verdict_reason, capability_is_supported
+from tck.common.plugin import (
+    _TEST_PROPERTIES,
+    _status_markup,
+    _verdict_reason,
+    capability_is_supported,
+    record_test_property,
+)
 from tck.common.report import Status, Verdict
 from tck.common.requirements import Tier
 
@@ -191,3 +197,20 @@ def test_status_markup_nonzero_count_keeps_status_colour() -> None:
     assert _status_markup(Status.FAIL, count=2) == {"red": True}
     assert _status_markup(Status.SKIPPED, count=17) == {"yellow": True}
     assert _status_markup(Status.NOT_TESTED, count=17) == {"light": True}
+
+
+# --- record_test_property ---
+
+
+def test_record_test_property_is_a_noop_outside_a_test_scope() -> None:
+    record_test_property("k", "v")  # must not raise
+
+
+def test_record_test_property_appends_to_the_scoped_list() -> None:
+    props: list[tuple[str, object]] = []
+    token = _TEST_PROPERTIES.set(props)
+    try:
+        record_test_property("k", "v")
+    finally:
+        _TEST_PROPERTIES.reset(token)
+    assert props == [("k", "v")]

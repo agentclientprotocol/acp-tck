@@ -6,12 +6,17 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable, Literal
 
 import pytest
 
 from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, TranscriptEntry
-from tck.common.plugin import current_auth_method_id, current_initialize_auth_methods, register_active_process
+from tck.common.plugin import (
+    current_auth_method_id,
+    current_initialize_auth_methods,
+    record_test_property,
+    register_active_process,
+)
 from tck.v1.protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
 
 
@@ -253,6 +258,56 @@ def cancel_race_peek(timeout: float) -> float:
     return max(0.05, min(0.5, timeout / 50))
 
 
+PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "cancelled"]
+"""How `run_prompt` answers `session/request_permission` (until `session/cancel` is sent):
+`allow` (the default) selects `allow_once`; `reject_once` selects `reject_once`; `unknown_option`
+selects an `optionId` the agent never offered; `cancelled` answers the `cancelled` outcome
+without sending `session/cancel`."""
+
+UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
+"""The `optionId` the `unknown_option` policy selects (`_`-prefixed per the extensibility rule)."""
+
+
+def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
+    """The `RequestPermissionOutcome` for `policy`, plus a note when the preferred option kind
+    was not offered (else `None`). Options are picked by `kind`, never by position: an
+    `allow_always` would persist a lasting approval in the operator's agent.
+
+    `allow`: `allow_once`, else `allow_always`, else the first option. `reject_once`:
+    `reject_once`, else the first `reject_*`, else the first option. Tolerates malformed options."""
+    if policy == "cancelled":
+        return {"outcome": "cancelled"}, None
+    if policy == "unknown_option":
+        return {"outcome": "selected", "optionId": UNKNOWN_PERMISSION_OPTION_ID}, None
+    candidates = [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
+
+    def first_of_kind(match: Callable[[Any], bool]) -> dict[str, Any] | None:
+        return next((o for o in candidates if match(o.get("kind"))), None)
+
+    wanted = "allow_once" if policy == "allow" else "reject_once"
+    chosen = first_of_kind(lambda kind: kind == wanted)
+    note = None
+    if chosen is None:
+        if policy == "allow":
+            chosen = first_of_kind(lambda kind: kind == "allow_always")
+        else:
+            chosen = first_of_kind(lambda kind: isinstance(kind, str) and kind.startswith("reject_"))
+        if chosen is not None:
+            note = f"{chosen['kind']} selected ({wanted} not offered)"
+    if chosen is None:
+        chosen = candidates[0] if candidates else None
+        note = f"first option selected (no {wanted} offered)"
+    return {"outcome": "selected", "optionId": chosen.get("optionId") if chosen else None}, note
+
+
+def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
+    """`permission_outcome`, recording any fallback note on the current test's report entry."""
+    outcome, note = permission_outcome(options, policy)
+    if note is not None:
+        record_test_property("acp_tck_permission_fallback", note)
+    return outcome, note
+
+
 @dataclass(frozen=True)
 class PromptTurn:
     """The outcome of one `session/prompt` turn driven by `run_prompt`."""
@@ -280,6 +335,9 @@ class PromptTurn:
     action_sent_at_index: int | None = None
     """The transcript index at which `on_action`'s request was sent, mirroring
     `cancelled_at_index` -- `None` if `on_action` was not given or never fired."""
+    permission_fallbacks: list[str] = field(default_factory=list)
+    """A note per `session/request_permission` answered with other than the preferred option
+    kind (`permission_outcome`); also recorded as the `acp_tck_permission_fallback` property."""
 
 
 async def run_prompt(
@@ -290,6 +348,7 @@ async def run_prompt(
     on_cancel: bool = False,
     on_action: Callable[[], Awaitable[Any]] | None = None,
     cancel_wait: float = 0.5,
+    permission: PermissionPolicy = "allow",
     extra_params: dict[str, Any] | None = None,
     timeout: float,
 ) -> PromptTurn:
@@ -297,9 +356,10 @@ async def run_prompt(
     agent sends meanwhile, until the prompt's own response arrives.
 
     While waiting:
-    - `session/request_permission` is answered `{"outcome": {"outcome": "selected",
-      "optionId": <first option's optionId>}}`, or `{"outcome": {"outcome": "cancelled"}}` once
-      `session/cancel` has been sent for this turn (`docs/protocol/v1/draft/prompt-turn.mdx:641`).
+    - `session/request_permission` is answered per `permission` (see `PermissionPolicy`;
+      options are picked by `kind`, never by position), or `{"outcome": {"outcome":
+      "cancelled"}}` once `session/cancel` has been sent for this turn
+      (`docs/protocol/v1/draft/prompt-turn.mdx:641`).
     - any other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) gets
       `-32601`, since the mock client advertised `clientCapabilities: {}`; the request is also
       recorded on `PromptTurn.client_requests_seen`.
@@ -336,6 +396,7 @@ async def run_prompt(
     prompt_id = await agent.send_request("session/prompt", params)
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
+    permission_fallbacks: list[str] = []
     cancelled_at_index: int | None = None
     action_response: TranscriptEntry | None = None
     action_sent_at_index: int | None = None
@@ -388,6 +449,7 @@ async def run_prompt(
                 cancelled_at_index,
                 action_response,
                 action_sent_at_index,
+                permission_fallbacks,
             )
         if action_id is not None and entry.matches_id(action_id):
             action_response = entry
@@ -407,8 +469,9 @@ async def run_prompt(
                 # cancelled rather than picking an option on the user's behalf.
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
-                first_option_id = options[0].get("optionId") if options else None
-                outcome = {"outcome": "selected", "optionId": first_option_id}
+                outcome, note = _answer_permission(options, permission)
+                if note is not None:
+                    permission_fallbacks.append(note)
             await agent.send_message(
                 {"jsonrpc": "2.0", "id": msg["id"], "result": {"outcome": outcome}}
             )

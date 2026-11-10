@@ -509,6 +509,29 @@ def _tck_track_processes(request: pytest.FixtureRequest) -> Any:
     _ACTIVE_PROCESSES.reset(token)
 
 
+# --- per-test property recording, for helpers with no fixture access ---
+
+_TEST_PROPERTIES: contextvars.ContextVar[list[tuple[str, object]] | None] = contextvars.ContextVar(
+    "_TEST_PROPERTIES", default=None
+)
+
+
+def record_test_property(name: str, value: object) -> None:
+    """Like pytest's `record_property` fixture, for plain helper functions (e.g. `run_prompt`):
+    the property lands in the current test's report entry. No-op outside a conformance test's
+    scope (e.g. when a helper is used from a unit test)."""
+    properties = _TEST_PROPERTIES.get()
+    if properties is not None:
+        properties.append((name, value))
+
+
+@pytest.fixture(autouse=True)
+def _tck_record_properties(request: pytest.FixtureRequest) -> Any:
+    token = _TEST_PROPERTIES.set(request.node.user_properties)
+    yield
+    _TEST_PROPERTIES.reset(token)
+
+
 def _format_transcript(transcript: list[TranscriptEntry]) -> str:
     lines = []
     for entry in transcript:
