@@ -18,6 +18,7 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - C9 keyword-less error codes: CAPABILITY rows assert error-vs-success; exact code only where a MUST names it (v2 error.mdx:54 -32002, v2 list cursor); SHOULD codes -> separate ADVISORY
 - C10 rule-breaking probes: ALLOWED where the spec defines the agent's answer; `_tck`-prefixed values; explain in docstring
 - C5 auth hazards: (i) login timeout -> AUTH-GATED SKIP with hint (v1+v2); (ii) new marker `@pytest.mark.revokes("auth", reason=...)` in common plugin: marked tests moved to end, collection order otherwise kept; UsageError if >1 `revokes` test collected (design dependency ordering when a 2nd is needed); mark only tests that take away something other tests rely on (NOT archive/delete of own sessions); unit test + registry test that each logout test carries it + CLAUDE.md note; (iii) leave unknown-type --auth-method as is
+- V2-D7: INIT-211/212/213 all MANDATORY; INIT-211 retries after -32602 only (never after -32022); INIT-213 MANDATORY asserts rejection, exact -32600 as separate ADVISORY (per C9); INIT-207 stays narrow
 - C3 `_meta` key: KEEP "tck" (no rename; S-X2 dropped)
 ## Done
 - S-v2-0 v2 re-vendor — 7c76250 — schema alpha.14 @ 3961af94; 115 auto + 107 needs-review cites resolved by hand; enum sets +paused/session; map re-cased; pytest 395 green, spec-tracker 115/0 skip. ~50 stale comment/docstring line cites in v2 tests/fixtures left for area slices (plan §6)
@@ -28,7 +29,7 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 - v2 change inventory — .agents/research/spec-diff-v2.md (breaking: batching removed, ProtocolLevelNotification + AuthCapabilities $defs removed, RequestId no null, AvailableCommand.type required, ...)
 ## Next
 - Remaining plan §4 recommendations (C5, C7-C10, V1-D*, V2-D1/D2, D4-D31): USER IS REVIEWING — do not start area slices that depend on them until answered
-- Nothing running. Discussing the judgment calls one by one in chat: C5 done; V2-D7 (in discussion), V2-D16, V2-D18, V2-D19 part, V2-D31. Other ~45 recs: not yet accepted
+- Nothing running. Discussing the judgment calls one by one in chat: C5 done; V2-D7 done; V2-D16 (in discussion), V2-D16, V2-D18, V2-D19 part, V2-D31. Other ~45 recs: not yet accepted
 - Then slices per plan §8: S-v1-0 -> S-X1 -> S-v1-1..7 -> S-v1-9 -> S-v2-0 -> S-X2..4 -> S-v2-1..17 -> optional -> S-XC; review per milestone (v1 milestone, v2 milestone)
 ## Open questions (waiting on the user)
 - FYI: python-sdk checkout `git pull --ff-only` fails ("Cannot fast-forward to multiple branches"); sits at 8a99407 = origin/main. Not repaired.
