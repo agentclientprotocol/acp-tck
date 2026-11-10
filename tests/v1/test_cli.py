@@ -68,6 +68,10 @@ _ADVISORY_IDS = {
     "ACP-ERROR-002",
     "ACP-ERROR-003",
     "ACP-ERROR-004",
+    "ACP-ERROR-005",
+    "ACP-ERROR-006",
+    "ACP-ERROR-007",
+    "ACP-ERROR-008",
     "ACP-EXT-002",
     "ACP-SCHEMA-002",
     "ACP-AUTH-005",
@@ -118,12 +122,17 @@ immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
 `ACP-JSONRPC-007`'s `$/cancel_request`) always loses the race and the cancel tests SKIP with
 "cancellation not exercised" rather than PASS or FAIL."""
 
-_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {"ACP-LOAD-003", "ACP-DELETE-002", "ACP-ERROR-004"}
+_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
+    "ACP-LOAD-003",
+    "ACP-DELETE-002",
+    "ACP-ERROR-004",
+    "ACP-ERROR-007",
+}
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the three ADVISORY ids
-(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`) whose tests are still gated (by a
-`@pytest.mark.capability(...)` marker, or for `ACP-ERROR-004` also by what `session/new`
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the four ADVISORY ids
+(`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`, `ACP-ERROR-007`) whose tests are still gated
+(by a `@pytest.mark.capability(...)` marker, or for `ACP-ERROR-004`/`007` by what `session/new`
 returned) even though their `Requirement.tier` itself is ADVISORY, not CAPABILITY (see
 `test_session_capabilities.py` module docstring)."""
 
@@ -234,9 +243,11 @@ def test_conforming_agent_passes_everything():
     always loses the race against this fixture's immediate reply, and ACP-CANCEL-001/002 SKIP
     ("cancellation not exercised") rather than PASS. `conforming.py` also advertises
     `agentCapabilities: {}` (no `loadSession`, no `sessionCapabilities`), so every
-    CAPABILITY-tier id -- plus the three ADVISORY ids gated behind a capability
-    (`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`) -- SKIPs too, rather than PASSing or being NOT_TESTED.
-    Everything else still PASSes."""
+    CAPABILITY-tier id -- plus the four ADVISORY ids gated behind a capability or an
+    advertised mode/config option (`ACP-LOAD-003`, `ACP-DELETE-002`, `ACP-ERROR-004`,
+    `ACP-ERROR-007`) -- SKIPs too, rather than PASSing or being NOT_TESTED. Everything else still
+    PASSes, including `ACP-ERROR-005`/`006` (this fixture rejects pre-initialize requests and
+    every unadvertised gated method)."""
     result = _run_cli("conforming.py")
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -435,7 +446,7 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
     symmetric, not "always `False` for a v1 run".
 
     v1's own MANDATORY/ADVISORY tests that judge a result's *shape* against v1's rules
-    (`ACP-INIT-002`/`004`, `ACP-ERROR-003`/`004`, `ACP-META-001`, `ACP-PROMPT-001`/`003`/`004`,
+    (`ACP-INIT-002`/`004`, `ACP-ERROR-003`..`008`, `ACP-META-001`, `ACP-PROMPT-001`/`003`/`004`,
     `ACP-SCHEMA-001`/`002`, `ACP-SESSION-003`/`004`) call their
     own `skip_if_version_mismatch` twin (`tck.v1.conformance._helpers`) right after obtaining
     the `initialize` result, mirroring v2's `test_initialize.py`/`test_batch.py`/
@@ -456,6 +467,10 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-INIT-004",
         "ACP-ERROR-003",
         "ACP-ERROR-004",
+        "ACP-ERROR-005",
+        "ACP-ERROR-006",
+        "ACP-ERROR-007",
+        "ACP-ERROR-008",
         "ACP-META-001",
         "ACP-PROMPT-001",
         "ACP-PROMPT-003",
@@ -768,7 +783,8 @@ def test_conforming_full_agent_passes_everything_with_cancel_prompt_hang():
     `ACP-AUTH-005` (AUTH-A1) is the one ADVISORY id that legitimately SKIPs here rather than
     PASSing: it only concerns an agent that advertises *no* `authMethods`, and
     `conforming_full.py` deliberately advertises one -- that is inapplicability, not a
-    conformance gap, exactly like `ACP-AUTH-003` SKIPping without `--auth-method`."""
+    conformance gap, exactly like `ACP-AUTH-003` SKIPping without `--auth-method`. `ACP-ERROR-006`
+    likewise SKIPs: it probes only unadvertised gated methods, and this fixture advertises all."""
     result = _run_cli(
         "conforming_full.py", cancel_prompt="__hang__", auth_method="tck", allow_logout=True
     )
@@ -779,22 +795,23 @@ def test_conforming_full_agent_passes_everything_with_cancel_prompt_hang():
     assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
         f"requirement table missing/extra ids: {result.stdout}"
     )
+    not_applicable = {"ACP-AUTH-005", "ACP-ERROR-006"}
     for req_id, status in statuses.items():
-        if req_id == "ACP-AUTH-005":
+        if req_id in not_applicable:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED (not applicable):\n{result.stdout}"
             continue
         assert status == "PASS", f"{req_id} is {status}, expected PASS for conforming_full.py:\n{result.stdout}"
     assert "NOT TESTED" not in result.stdout
     assert all(
-        status != "SKIPPED" for req_id, status in statuses.items() if req_id != "ACP-AUTH-005"
+        status != "SKIPPED" for req_id, status in statuses.items() if req_id not in not_applicable
     ), result.stdout
 
 
 def test_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     """Acceptance criterion: the same `conforming_full.py --auth-method tck` run, but WITHOUT
     `--allow-logout`, must SKIP ONLY `ACP-AUTH-004` in addition to the baseline's own SKIP
-    (`ACP-AUTH-005`, per `test_conforming_full_agent_passes_everything_with_cancel_prompt_hang`
-    above) -- every other id keeps the exact same status. Calling `logout` for real is opt-in
+    (`ACP-AUTH-005`/`ACP-ERROR-006`, per
+    `test_conforming_full_agent_passes_everything_with_cancel_prompt_hang` above) -- every other id keeps the exact same status. Calling `logout` for real is opt-in
     (mirrors v2's `ACP-AUTH-203` gating); a SKIPPED CAPABILITY does not affect the verdict."""
     result = _run_cli(
         "conforming_full.py", cancel_prompt="__hang__", auth_method="tck", allow_logout=False
@@ -806,7 +823,7 @@ def test_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
         f"requirement table missing/extra ids: {result.stdout}"
     )
-    expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005"}
+    expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005", "ACP-ERROR-006"}
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -1224,6 +1241,65 @@ def test_load_upserts_unknown_session_fails_error_004_advisory_only():
     statuses = _table_statuses(result.stdout)
     assert _fail_ids(statuses) == {"ACP-ERROR-004"}, result.stdout
     assert statuses["ACP-ERROR-003"] == "PASS", result.stdout
+
+
+def test_set_unknown_session_accepts_fails_error_004_advisory_only():
+    """`set_unknown_session_accepts.py` advertises modes and a select config option but answers
+    `session/set_mode`/`session/set_config_option` for an unknown session with a success."""
+    result = _run_cli("set_unknown_session_accepts.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-004"}, result.stdout
+    assert statuses["ACP-ERROR-003"] == "PASS", result.stdout
+    assert statuses["ACP-ERROR-007"] == "PASS", result.stdout
+
+
+def test_serves_before_initialize_fails_error_005_advisory_only():
+    """`serves_before_initialize.py` serves a `session/new` that arrives before `initialize`
+    instead of answering `-32600`."""
+    result = _run_cli("serves_before_initialize.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-005"}, result.stdout
+
+
+def test_implements_unadvertised_list_fails_error_006_advisory_only():
+    """`implements_unadvertised_list.py` answers `session/list` without advertising
+    `sessionCapabilities.list`; its other unadvertised gated methods still get `-32601`."""
+    result = _run_cli("implements_unadvertised_list.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-006"}, result.stdout
+
+
+def test_set_unknown_value_accepts_fails_error_007_advisory_only():
+    """`set_mode_unknown_accepts.py` / `set_config_option_unknown_accepts.py` accept a
+    `session/set_mode` / `session/set_config_option` naming a mode, config option or value they
+    never offered, instead of `-32602`. Each advertises only one of the two surfaces."""
+    for fixture in ("set_mode_unknown_accepts.py", "set_config_option_unknown_accepts.py"):
+        result = _run_cli(fixture)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+        statuses = _table_statuses(result.stdout)
+        assert _fail_ids(statuses) == {"ACP-ERROR-007"}, f"{fixture}: {result.stdout}"
+
+
+def test_legacy_server_error_code_fails_error_008_and_jsonrpc_004_advisory_only():
+    """`legacy_server_error_code.py` answers an unrecognised method with `-32001`, a code in the
+    reserved range that ACP does not define -- also not the `-32601` ACP-JSONRPC-004 wants."""
+    result = _run_cli("legacy_server_error_code.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-ERROR-008", "ACP-JSONRPC-004"}, result.stdout
 
 
 def test_terminal_auth_bad_shape_fails_auth_006_only():

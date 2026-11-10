@@ -1037,6 +1037,60 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-ERROR-005",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A request other than `initialize` sent before initialization (a valid `session/new` "
+            "as the connection's first message) gets error `-32600`. Only SHOULD; nothing is "
+            "asserted about the connection afterwards."
+        ),
+        citation=_cite("docs/protocol/v1/draft/error.mdx:29,59-61"),
+    ),
+    Requirement(
+        id="ACP-ERROR-006",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A stable capability-gated method the agent did not advertise (`session/load` without "
+            "`loadSession`; `session/list`/`resume`/`close`/`delete` without the matching "
+            "`sessionCapabilities` key), sent with well-formed params, gets error `-32601`. "
+            "Probes every unadvertised method in one run and SKIPs if all are advertised (an "
+            "inverted gate, computed in the test rather than by a capability marker). Only "
+            "SHOULD; a `-32000` reply SKIPs."
+        ),
+        citation=_cite("docs/protocol/v1/draft/error.mdx:30,41-43"),
+    ),
+    Requirement(
+        id="ACP-ERROR-007",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "On a known session, `session/set_mode` with an unknown `modeId`, and "
+            "`session/set_config_option` with an unknown `configId` or an unsupported value for a "
+            "select option, get error `-32602`. One probe each, gated on `modes`/`configOptions` "
+            "in `session/new`'s result; the probe ids and values are `_tck`-prefixed so they "
+            "cannot collide with real ones. The sentence has no RFC keyword, so ADVISORY."
+        ),
+        citation=_cite("docs/protocol/v1/draft/error.mdx:31,45-47"),
+    ),
+    Requirement(
+        id="ACP-ERROR-008",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every error code the agent returns that lies in a range reserved for JSON-RPC and "
+            "ACP (`-32768..-32000` or `-32899..-32800`) is an ACP-defined one (`-32700`, "
+            "`-32600`..`-32603`, `-32800`, `-32000`, `-32002`); implementation-specific errors "
+            "SHOULD use codes outside those ranges. Sampled from the error replies to an "
+            "unrecognised method, an invalid `session/new`, and a `session/prompt` for an "
+            "unknown session; passes vacuously if none is an error."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:37; schema/v1/schema.unstable.json#/$defs/ErrorCode"
+        ),
+    ),
+    Requirement(
         id="ACP-SHUTDOWN-001",
         tier=Tier.INFORMATIONAL,
         capability=None,

@@ -21,6 +21,14 @@ PROTOCOL_VERSION = 1
 # equivalent to `_handle_authenticate`'s `methodId` check.
 _VALID_CONTENT_BLOCK_TYPES = {"text", "image", "audio", "resource", "resource_link"}
 
+# Stable capability-gated methods keyed under `agentCapabilities.sessionCapabilities`.
+_SESSION_CAPABILITY_KEYS = {
+    "session/list": "list",
+    "session/resume": "resume",
+    "session/close": "close",
+    "session/delete": "delete",
+}
+
 
 def _content_block_error(block: Any) -> str | None:
     """`None` if `block` is a structurally valid `ContentBlock`, else a short description of what
@@ -71,7 +79,19 @@ class ConformingAgent:
     `data.sessionId` (`error.mdx` "Unknown sessions"). `session/load` and `session/resume`
     behave the same; defect fixtures override `_unknown_session` or the handlers to break it.
     `session/close` and `session/delete` of an unknown id succeed silently.
+
+    Three further `error.mdx` behaviors are on by default, each switchable off by a defect
+    fixture's class attribute: `_require_initialize` (any request but `initialize` before
+    initialization gets `-32600`; the harness-only `_tck/*` probes are exempt),
+    `_gate_unadvertised` (`session/load` without `loadSession`, and `session/list`/`resume`/
+    `close`/`delete` without the matching `sessionCapabilities` key, get `-32601`), and
+    `_validate_set_params` (an unknown `modeId`, `configId` or select value on a known session
+    gets `-32602`).
     """
+
+    _require_initialize = True
+    _gate_unadvertised = True
+    _validate_set_params = True
 
     def __init__(
         self,
@@ -104,6 +124,7 @@ class ConformingAgent:
         self._mode_update_field = mode_update_field
         self._ignore_boolean_gating = ignore_boolean_gating
         self._client_capabilities: dict[str, Any] = {}
+        self._initialized = False
         self._mcp_processes: list[subprocess.Popen] = []
 
     def run(self) -> None:
@@ -128,9 +149,66 @@ class ConformingAgent:
             return  # a response, or otherwise not a request/notification -- ignore
         params = message.get("params") or {}
         if "id" in message:
-            self._handle_request(method, message["id"], params)
+            if not self._reject_request(method, message["id"], params):
+                self._handle_request(method, message["id"], params)
         else:
             self._handle_notification(method, params)
+
+    def _method_advertised(self, method: str) -> bool:
+        """Whether `method`'s capability gate (if it has one) is advertised."""
+        if method == "session/load":
+            return self._capabilities.get("loadSession") is True
+        key = _SESSION_CAPABILITY_KEYS.get(method)
+        if key is None:
+            return True
+        return (self._capabilities.get("sessionCapabilities") or {}).get(key) is not None
+
+    def _set_params_error(self, method: str, params: dict[str, Any]) -> str | None:
+        """Why a `session/set_mode`/`session/set_config_option` on a known session names a mode,
+        config option or select value this agent does not offer, else `None`."""
+        if method == "session/set_mode":
+            available = (self._modes or {}).get("availableModes") or []
+            if params.get("modeId") not in {m.get("id") for m in available}:
+                return f"unknown modeId {params.get('modeId')!r}"
+            return None
+        option = next(
+            (o for o in self._visible_config_options() or [] if o.get("id") == params.get("configId")),
+            None,
+        )
+        if option is None:
+            return f"unknown configId {params.get('configId')!r}"
+        if option.get("type") in (None, "select"):
+            values = set()
+            for entry in option.get("options") or []:
+                # flat `{value, name}` entries, or `{group, name, options: [...]}` groups
+                for choice in entry.get("options") or [entry]:
+                    values.add(choice.get("value"))
+            if params.get("value") not in values:
+                return f"unsupported value {params.get('value')!r} for {option['id']!r}"
+        return None
+
+    def _reject_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> bool:
+        """The `error.mdx` checks that sit in front of every handler (so a fixture overriding
+        `_handle_request` keeps them). Answers the request and returns `True` if it is rejected."""
+        if method == "initialize":
+            self._initialized = True
+            return False
+        if self._require_initialize and not self._initialized and not method.startswith("_tck/"):
+            self._error(msg_id, -32600, "Invalid request: initialize must come first")
+            return True
+        if self._gate_unadvertised and not self._method_advertised(method):
+            self._error(msg_id, -32601, "Method not found")
+            return True
+        if (
+            self._validate_set_params
+            and method in ("session/set_mode", "session/set_config_option")
+            and params.get("sessionId") in self._sessions
+        ):
+            problem = self._set_params_error(method, params)
+            if problem is not None:
+                self._error(msg_id, -32602, f"Invalid params: {problem}")
+                return True
+        return False
 
     def _handle_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
         if method == "initialize":
