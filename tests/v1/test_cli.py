@@ -79,6 +79,7 @@ _ADVISORY_IDS = {
     "ACP-EXT-002",
     "ACP-SCHEMA-002",
     "ACP-AUTH-005",
+    "ACP-AUTH-008",
     "ACP-PLAN-002",
     "ACP-PERM-001",
     "ACP-PERM-002",
@@ -121,6 +122,7 @@ _CAPABILITY_IDS = {
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
     "ACP-AUTH-004",
+    "ACP-AUTH-007",
     # ACP-AUTH-003: CAPABILITY with capability="inferred:authMethods" -- runs only when
     # `authMethods` is non-empty and `--tck-auth-method` was given, otherwise SKIPPED.
     "ACP-AUTH-003",
@@ -140,6 +142,7 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
     "ACP-LIST-003",
     "ACP-DELETE-002",
     "ACP-CLOSE-003",
+    "ACP-AUTH-008",
     "ACP-ERROR-004",
     "ACP-ERROR-007",
     "ACP-PERM-001",
@@ -147,8 +150,8 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the eight ADVISORY ids
-(`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-ERROR-004`, `ACP-ERROR-007`,
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the nine ADVISORY ids
+(`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-AUTH-008`, `ACP-ERROR-004`, `ACP-ERROR-007`,
 `ACP-PERM-001`, `ACP-PERM-002`) whose tests are still gated (by a `@pytest.mark.capability(...)`
 marker, for `ACP-ERROR-004`/`007` by what `session/new` returned, for `ACP-PERM-*` by the agent
 never sending `session/request_permission`) even though their `Requirement.tier` itself is
@@ -499,6 +502,7 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-SESSION-004",
         "ACP-SESSION-006",
         "ACP-LIST-003",
+        "ACP-AUTH-008",
         "ACP-PLAN-001",
         "ACP-PLAN-002",
         "ACP-PERM-001",
@@ -1615,6 +1619,45 @@ def test_delete_archiving_instead_fails_archive_006_only():
     statuses = _table_statuses(result.stdout)
     for req_id in ("ACP-DELETE-003", "ACP-ARCHIVE-001", "ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-004", "ACP-ARCHIVE-005"):
         assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_auth_status_auth_required_fails_auth_007_only():
+    """`auth_status_auth_required.py` answers `auth/status` with `-32000`; ACP-AUTH-008 SKIPs
+    for want of a `state` to judge."""
+    result = _run_cli("auth_status_auth_required.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-AUTH-007"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-AUTH-008") == "SKIPPED", result.stdout
+    assert "-32000" in result.stdout, result.stdout
+
+
+def test_auth_status_missing_state_fails_auth_007_only():
+    result = _run_cli("auth_status_missing_state.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-AUTH-007"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-AUTH-008") == "SKIPPED", result.stdout
+
+
+def test_auth_status_unreserved_state_fails_auth_008_advisory_only():
+    """`auth_status_unreserved_state.py` answers `state: "logged_in"`: schema-valid (ACP-AUTH-007
+    PASSes) but an ADVISORY failure, so the run stays CONFORMANT."""
+    result = _run_cli("auth_status_unreserved_state.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _output_fail_ids(result.stdout) == {"ACP-AUTH-008"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-AUTH-007") == "PASS", result.stdout
+
+
+def test_auth_status_is_judged_unauthenticated_even_with_auth_method():
+    """`gated_by_auth_with_status.py` is unauthenticated until `authenticate`: ACP-AUTH-007/008
+    PASS against it both without `--auth-method` and with `--auth-method tck`, whose
+    auto-`authenticate` the `auth/status` tests skip. Scoped with `-k` to those tests only."""
+    for auth_method in (None, "tck"):
+        result = _run_cli(
+            "gated_by_auth_with_status.py", k="auth_status", auth_method=auth_method
+        )
+        statuses = _table_statuses(result.stdout)
+        assert statuses.get("ACP-AUTH-007") == "PASS", result.stdout
+        assert statuses.get("ACP-AUTH-008") == "PASS", result.stdout
 
 
 def test_delete_answering_not_found_still_runs_the_list_check():

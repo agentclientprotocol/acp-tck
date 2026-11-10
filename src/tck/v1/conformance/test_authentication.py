@@ -1,5 +1,6 @@
 """The authentication surface: `authMethods` shape, the terminal-method client-capability
-gate, the `authenticate`/`session/new` flow, and `logout` (ACP-AUTH-001..006).
+gate, the `authenticate`/`session/new` flow, `logout`, and the unstable `auth/status` query
+(ACP-AUTH-001..008).
 
 Deliberately not asserted here: that a non-empty `authMethods` implies `session/new` fails with
 `-32000` before authentication (v1: MAY, not MUST -- `testy` itself does not enforce it), and
@@ -12,7 +13,7 @@ import pytest
 
 from tck.common.plugin import current_allow_logout, current_auth_method_id
 from tck.v1.protocol import AUTHENTICATION_REQUIRED
-from tck.v1.validation import validate_against_def
+from tck.v1.validation import validate_against_def, validate_agent_response
 
 from ._helpers import connected_agent, skip_if_version_mismatch, unusable_auth_method_reason
 
@@ -193,3 +194,60 @@ async def test_logout_succeeds(agent_launch):
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
             f"logout did not succeed with an object result: {entry.text!r}"
         )
+
+
+# `schema/v1/schema.unstable.json#/$defs/AuthState`: the four defined values; any other string
+# must start with `_` (implementation-specific extension).
+_AUTH_STATES = {"authenticated", "unauthenticated", "not_required", "unknown"}
+
+
+async def _fresh_auth_status(agent_launch, agent_initialize_result) -> tuple[dict | None, str]:
+    """Send `auth/status` on a fresh connection that has not authenticated (even with
+    `--tck-auth-method`: `authenticate=False`). Returns the parsed response and its raw text.
+    `auth/status` is a pure query, so this never changes the agent's authentication."""
+    if agent_initialize_result.result is not None:
+        skip_if_version_mismatch(agent_initialize_result.result)
+    async with connected_agent(agent_launch, authenticate=False) as agent:
+        req_id = await agent.send_request("auth/status", {})
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+        msg = entry.parsed
+        return (msg if isinstance(msg, dict) else None), entry.text
+
+
+@pytest.mark.requirement("ACP-AUTH-007")
+@pytest.mark.capability("agentCapabilities.auth.status")
+async def test_auth_status_succeeds_before_authenticating(agent_launch, agent_initialize_result):
+    """ACP-AUTH-007. `auth/status` right after `initialize`, with no `authenticate`, returns a
+    schema-valid `AuthStatusResponse`; an error, `-32000` above all, is a FAIL. Does not go
+    through `skip_if_auth_gated`: the method exists to be answerable while unauthenticated."""
+    msg, text = await _fresh_auth_status(agent_launch, agent_initialize_result)
+    error = msg.get("error") if msg is not None else None
+    if isinstance(error, dict):
+        if error.get("code") == AUTHENTICATION_REQUIRED:
+            raise AssertionError(
+                "auth/status was rejected with -32000 (authentication required) before "
+                f"authenticating; it is how a client learns whether authentication is needed: {text!r}"
+            )
+        raise AssertionError(f"auth/status returned an error instead of a result: {text!r}")
+    assert msg is not None and "result" in msg, f"auth/status returned no result: {text!r}"
+    issues = validate_agent_response("auth/status", msg)
+    assert not issues, f"auth/status result failed AuthStatusResponse validation: {issues!r}"
+
+
+@pytest.mark.requirement("ACP-AUTH-008")
+@pytest.mark.capability("agentCapabilities.auth.status")
+async def test_auth_status_state_is_defined_or_underscore_prefixed(
+    agent_launch, agent_initialize_result
+):
+    """ACP-AUTH-008 (ADVISORY). The `state` of an `auth/status` result is one of the four
+    defined values or `_`-prefixed. SKIPs when the call yields no string `state`: that is
+    ACP-AUTH-007's failure, not a second one."""
+    msg, text = await _fresh_auth_status(agent_launch, agent_initialize_result)
+    result = msg.get("result") if msg is not None else None
+    state = result.get("state") if isinstance(result, dict) else None
+    if not isinstance(state, str):
+        pytest.skip(f"auth/status returned no string state to judge: {text!r}")
+    assert state in _AUTH_STATES or state.startswith("_"), (
+        f"auth/status state {state!r} is neither a defined value ({sorted(_AUTH_STATES)}) nor "
+        f"`_`-prefixed; other strings are reserved for future ACP variants: {text!r}"
+    )

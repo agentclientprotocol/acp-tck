@@ -140,3 +140,28 @@ reason = "\"Before pagination\" is not observable without knowing the agent's pa
 citation = "docs/protocol/v1/draft/session-list.mdx:258 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Archive state persists across connections and restarts; closing, loading or resuming a session does not change it."
 reason = "Out of scope for now: it needs a two-process test against the agent's real persistent store, and `session/load`/`session/resume` of an archived session MAY be rejected (line 257), which makes the load half inconclusive."
+
+[[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:297 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Calling `auth/status` MUST NOT modify any agent state."
+reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007 only checks the answer."
+
+[[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`auth/status` `accounts` MUST NOT include secrets."
+reason = "Not observable: the TCK cannot tell a secret from a display label."
+
+[[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:295,301 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
+reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
+
+[[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:307 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD send `auth/status_update` when their status changes (including after `authenticate` or `logout`), and only when it differs from the last one sent on the connection."
+reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/authentication.mdx:194 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A terminal auth method's `env` values SHOULD NOT contain secrets."
+reason = "Not observable: the TCK cannot classify an `env` value as secret."

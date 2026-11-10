@@ -47,6 +47,7 @@ CAPABILITIES = {
     },
     "auth": {
         "logout": {},
+        "status": {},
     },
 }
 

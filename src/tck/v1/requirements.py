@@ -959,6 +959,44 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-AUTH-007",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.auth.status",
+        text=(
+            "When `agentCapabilities.auth.status` is advertised (object marker), `auth/status` "
+            "sent with `{}` params right after `initialize`, before any `authenticate` on the "
+            "connection, returns a result that validates against `AuthStatusResponse` (an object "
+            "with a string `state`). It is never an error, and in particular never `-32000` "
+            "(authentication required): clients call it to learn whether authentication is "
+            "needed. The test skips the `--tck-auth-method` auto-authenticate so the agent is "
+            "observed unauthenticated."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/initialization.mdx:300-304; "
+            "schema/v1/schema.unstable.json#/$defs/AgentAuthCapabilities/properties/status; "
+            "schema/v1/schema.unstable.json#/$defs/AuthStatusRequest; "
+            "schema/v1/schema.unstable.json#/$defs/AuthStatusResponse; "
+            "docs/rfds/get-auth-state.mdx:293,297"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-008",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When `auth.status` is advertised, the `state` in the `auth/status` result is one of "
+            "`authenticated`, `unauthenticated`, `not_required`, `unknown`, or begins with `_`; "
+            "other strings are reserved for future ACP variants. The schema accepts any string, "
+            "so ACP-AUTH-007 cannot catch this. Only the result is judged: SKIPs when the call "
+            "returns no string `state` (ACP-AUTH-007's concern). The test is gated on "
+            "`agentCapabilities.auth.status`."
+        ),
+        citation=_cite(
+            "schema/v1/schema.unstable.json#/$defs/AuthState; "
+            "docs/rfds/get-auth-state.mdx:160-161"
+        ),
+    ),
+    Requirement(
         id="ACP-CLIENTCAP-001",
         tier=Tier.MANDATORY,
         capability=None,

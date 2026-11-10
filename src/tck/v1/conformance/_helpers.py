@@ -26,6 +26,7 @@ async def connected_agent(
     launch: AgentLaunch,
     *,
     handshake: bool = True,
+    authenticate: bool = True,
     client_capabilities: dict[str, Any] | None = None,
 ) -> AsyncIterator[AgentProcess]:
     """Spawn a fresh `AgentProcess` for `launch`, optionally perform an `initialize` handshake,
@@ -35,16 +36,17 @@ async def connected_agent(
     test failure attaches its transcript and stderr to the pytest report, regardless of which
     requirement(s) the test is checking.
 
-    When `handshake` is true and `--tck-auth-method` was given (`current_auth_method_id()`),
-    an `authenticate` call for that method id is sent right after `initialize` (or the test
-    SKIPs, see `unusable_auth_method_reason`, if that id is not advertised or is a `terminal`
-    method) -- this lets
-    every existing/new test that calls `new_session()` afterwards just work against an agent
-    that requires authentication before `session/new`, without each test having to know about
-    auth at all. Note: this auto-authenticate step only fires for `handshake=True` callers --
+    When `handshake` and `authenticate` are true and `--tck-auth-method` was given
+    (`current_auth_method_id()`), an `authenticate` call for that method id is sent right after
+    `initialize` (or the test SKIPs, see `unusable_auth_method_reason`, if that id is not
+    advertised or is a `terminal` method) -- this lets every existing/new test that calls
+    `new_session()` afterwards just work against an agent that requires authentication before
+    `session/new`, without each test having to know about auth at all. Note: this auto-authenticate step only fires for `handshake=True` callers --
     `test_initialize.py::test_full_exchange_validates_against_schema` deliberately drives its
     own `initialize` with `handshake=False` and is out of scope for auth-gating (it never
-    exercises an auth-gated fixture).
+    exercises an auth-gated fixture). A caller that must observe the agent unauthenticated
+    (`auth/status`, ACP-AUTH-007) passes `authenticate=False` to keep the handshake but skip
+    this step.
     """
     async with AgentProcess(launch) as agent:
         register_active_process(agent)
@@ -59,7 +61,7 @@ async def connected_agent(
                 },
             )
             init_entry = await agent.wait_for_response(req_id, timeout=launch.startup_timeout)
-            method_id = current_auth_method_id()
+            method_id = current_auth_method_id() if authenticate else None
             if method_id is not None:
                 init_msg = init_entry.parsed if isinstance(init_entry.parsed, dict) else {}
                 init_result = init_msg.get("result")

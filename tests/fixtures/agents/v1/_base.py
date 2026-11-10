@@ -93,7 +93,8 @@ class ConformingAgent:
     fixture's class attribute: `_require_initialize` (any request but `initialize` before
     initialization gets `-32600`; the harness-only `_tck/*` probes are exempt),
     `_gate_unadvertised` (`session/load` without `loadSession`, and `session/list`/`resume`/
-    `close`/`delete`/`archive`/`unarchive` without the matching `sessionCapabilities` key, get `-32601`), and
+    `close`/`delete`/`archive`/`unarchive` without the matching `sessionCapabilities` key, and
+    `auth/status` without `auth.status`, get `-32601`), and
     `_validate_set_params` (an unknown `modeId`, `configId` or select value on a known session
     gets `-32602`).
     """
@@ -167,6 +168,8 @@ class ConformingAgent:
         """Whether `method`'s capability gate (if it has one) is advertised."""
         if method == "session/load":
             return self._capabilities.get("loadSession") is True
+        if method == "auth/status":
+            return (self._capabilities.get("auth") or {}).get("status") is not None
         key = _SESSION_CAPABILITY_KEYS.get(method)
         if key is None:
             return True
@@ -249,6 +252,8 @@ class ConformingAgent:
             self._handle_authenticate(msg_id, params)
         elif method == "logout":
             self._handle_logout(msg_id, params)
+        elif method == "auth/status":
+            self._handle_auth_status(msg_id, params)
         elif method == "_tck/env":
             self._reply(msg_id, {"value": os.environ.get(params.get("name", ""))})
         elif method == "_tck/big":
@@ -434,6 +439,16 @@ class ConformingAgent:
     def _handle_logout(self, msg_id: Any, params: dict[str, Any]) -> None:
         self._authenticated = False
         self._reply(msg_id, {})
+
+    def _handle_auth_status(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # A pure query, answered whether or not the connection is authenticated
+        # (`schema/v1/schema.unstable.json#/$defs/AuthStatusRequest`).
+        if self._authenticated:
+            self._reply(
+                msg_id, {"state": "authenticated", "accounts": [{"label": "TCK", "active": True}]}
+            )
+        else:
+            self._reply(msg_id, {"state": "unauthenticated" if self._require_auth else "not_required"})
 
     def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
