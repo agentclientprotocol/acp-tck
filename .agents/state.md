@@ -16,7 +16,7 @@ mode: single · branch: eugenethedev/update-spec · reviews: on
 ## Next
 - Step 4 impact research. Reports go to .agents/research/impact-v<N>-<area>.md; shared briefs in /tmp/tckbrief/common-v{1,2}.md (regenerate from the v1 one if /tmp was wiped).
   - v1 (12): error, session-setup, initialization, prompt-turn, overview-ext-transports, session-list-delete, config-modes-commands, tools-terminals-fs, agent-plan-content, auth-cancel-elicitation, security (done), schema; config-modes-commands done; agent-plan-content done; prompt-turn done; overview-ext-transports done; initialization done; session-list-delete done; session-setup done; auth-cancel-elicitation done; error done; tools-terminals-fs done (flags harness safety: v1 mock client picks FIRST permission option, could persist allow_always — check v2 helper too)
-  - v2 (13): initialization done; prompt-lifecycle done; cancellation done; transports done; overview-error done; session-setup, extensibility running; tool-calls-plan done; config-commands done; list-delete-fork done; auth-elicitation running; content-security done, schema running (all launched)
+  - v2 (13): initialization done; prompt-lifecycle done; cancellation done; transports done; overview-error done; session-setup done; extensibility running; tool-calls-plan done; config-commands done; list-delete-fork done; auth-elicitation running; content-security done, schema running (all launched)
 - Step 5: consolidate into requirement-change table + slice plan, ask user for tier/retirement decisions
 ## Open questions (waiting on the user)
 - FYI: python-sdk checkout `git pull --ff-only` fails ("Cannot fast-forward to multiple branches"); sits at 8a99407 = origin/main. Not repaired.
