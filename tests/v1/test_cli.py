@@ -1764,6 +1764,26 @@ def test_system_prompt_resume_ignoring_mode_fails_sysprompt_002_only():
     assert _table_statuses(result.stdout).get("ACP-SYSPROMPT-003") == "PASS", result.stdout
 
 
+def test_system_prompt_probes_skip_when_agent_cannot_restore_sessions(tmp_path):
+    """The load/resume probes need the agent to load the session without a `systemPrompt`
+    first; one that only keeps sessions in memory SKIPs them instead of passing vacuously."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "system_prompt_no_restore.py",
+        k="system_prompt and (load or resume)",
+        report_json=str(report_path),
+    )
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    report = json.loads(report_path.read_text())
+    by_id = {r["id"]: r for r in report["requirements"]}
+    for req_id in ("ACP-SYSPROMPT-002", "ACP-SYSPROMPT-003"):
+        tests = by_id[req_id]["tests"]
+        assert len(tests) == 2, tests
+        for test in tests:
+            assert test["status"] == "SKIPPED", test
+            assert "cannot judge" in test["message"], test
+
+
 def test_boolean_option_on_set_fails_config_003_only():
     """The boolean option is hidden from `session/new` but leaked by `set_config_option`."""
     result = _run_cli("boolean_option_on_set.py")

@@ -933,26 +933,35 @@ async def _assert_existing_session_refused_with_system_prompt(
     `systemPrompt` the agent cannot apply (`session-setup.mdx:422`). The reply must be an error
     (its code is recorded, not asserted: `-32602` is only RECOMMENDED), and a `session/prompt`
     on that id must then not succeed, since the session was not loaded or resumed. An error
-    answer to the prompt (e.g. `-32002`) is fine. An agent that cannot restore a session across
-    connections answers the load/resume with `-32002` and so passes without being exercised.
-    A `-32000` answer SKIPs, like `session/new`."""
+    answer to the prompt (e.g. `-32002`) is fine.
+
+    A control step comes first, on its own connection that is closed before the probe's: the
+    same `method` without a `systemPrompt` must succeed. An agent that cannot restore a session
+    across connections would otherwise refuse the probe for the wrong reason (`-32002`) and pass
+    vacuously, so a failed control SKIPs. A `-32000` answer to either call SKIPs, like
+    `session/new`."""
     init_result = agent_initialize_result.result
     if init_result is not None:
         skip_if_version_mismatch(init_result)
     if init_result is None or not capability_is_supported(init_result, _SYSTEM_PROMPT_PATH):
         pytest.skip(f"capability {_SYSTEM_PROMPT_PATH!r} not advertised by the agent under test")
     timeout = agent_launch.default_timeout
+    base_params = {"cwd": str(tmp_path), "mcpServers": []}
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)
     async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(method, {"sessionId": session_id, **base_params})
+        control = await agent.wait_for_response(req_id, timeout=timeout)
+        skip_if_auth_gated(control)
+        control_msg = control.parsed
+        if not (isinstance(control_msg, dict) and "result" in control_msg):
+            pytest.skip(
+                f"cannot judge: the agent did not {method.removeprefix('session/')} the session "
+                f"without a systemPrompt either: {control.text!r}"
+            )
+    async with connected_agent(agent_launch) as agent:
         req_id = await agent.send_request(
-            method,
-            {
-                "sessionId": session_id,
-                "cwd": str(tmp_path),
-                "mcpServers": [],
-                "systemPrompt": system_prompt,
-            },
+            method, {"sessionId": session_id, **base_params, "systemPrompt": system_prompt}
         )
         entry = await agent.wait_for_response(req_id, timeout=timeout)
         skip_if_auth_gated(entry)
