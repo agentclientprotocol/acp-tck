@@ -36,13 +36,15 @@ code = [
     "src/tck/common/harness",
     "src/tck/v1/conformance/test_transport.py",
     "src/tck/v1/conformance/test_diagnostics.py",
+    "src/tck/v1/conformance/test_informational.py",
 ]
-reason = "stdio framing, stderr/stdout split and shutdown; no other doc links here, yet every message and the whole harness depend on it"
+reason = "stdio framing, stderr/stdout split and shutdown, which every message and the whole harness depend on (only security.mdx links here)"
 
 [[core_doc]]
 path = "docs/protocol/v1/draft/overview.mdx"
 code = [
     "src/tck/v1/conformance/test_jsonrpc.py",
+    "src/tck/v1/conformance/test_prompt.py",
     "src/tck/v1/validation.py",
 ]
 reason = "JSON-RPC model, lifecycle order, absolute paths, 1-based lines and the error and notification rules that feature docs restate without linking"
@@ -51,6 +53,7 @@ reason = "JSON-RPC model, lifecycle order, absolute paths, 1-based lines and the
 path = "docs/protocol/v1/draft/extensibility.mdx"
 code = [
     "src/tck/v1/conformance/test_extensibility.py",
+    "src/tck/v1/conformance/test_jsonrpc.py",
     "src/tck/v1/validation.py",
 ]
 reason = "_meta, _-prefixed methods, the no-custom-root-fields rule and -32601 for unknown methods apply to every type and method in every doc"
@@ -165,3 +168,177 @@ reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential 
 citation = "docs/protocol/v1/draft/authentication.mdx:194 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "A terminal auth method's `env` values SHOULD NOT contain secrets."
 reason = "Not observable: the TCK cannot classify an `env` value as secret."
+
+# --- initialization.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/initialization.mdx:107 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD support all possible combinations of their peer's capabilities."
+reason = "Out of scope: the combinations are combinatorial. The TCK exercises the empty set (`{}`) and targeted single-capability connections such as `auth.terminal: true`."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/initialization.mdx:246 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD specify whether they support each of the listed agent capabilities."
+reason = "Not observable: an omitted capability is defined as unsupported (line 109), so an agent that omits one cannot be told apart from one that sets it to false or null."
+
+
+# --- prompt-turn.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/prompt-turn.mdx:106-111 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD report the task a parent gives a subagent as an incoming `session_message` in the child's transcript, with `senderSessionId` set to the parent, and SHOULD NOT report it as a `user_message_chunk`."
+reason = "Not observable: it needs the unstable `clientCapabilities.subagents`, which the TCK never advertises, and an agent that actually delegates, which no prompt can force."
+
+[[not_requirement]]
+citation = "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A `subagent_update`'s `cwd` and each `additionalDirectories` entry must be absolute paths."
+reason = "Out of scope: `subagent_update` is only legitimate when `clientCapabilities.subagents` is advertised, which the TCK never does; any `subagent_update` it sees already fails ACP-CLIENTCAP-007."
+
+
+# --- extensibility.mdx and transports.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/extensibility.mdx:117 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Extension names SHOULD be prefixed with dot-separated labels in reverse-DNS order of a domain the implementer controls, followed by `/`: `com.example/<name>` for `_meta` keys (including capability entries) and `_com.example/<name>` for custom methods."
+reason = "Not observable: domain ownership cannot be checked, and a syntax check cannot tell reverse-DNS from forward-DNS. The paragraph's own SHOULD covers advertising extensions in `_meta`, not the naming, so the guidance is not a MUST."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/extensibility.mdx:97,117 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Extensions SHOULD advertise their custom capabilities in the `_meta` field of capability objects, so callers can check availability first."
+reason = "Not observable: a client cannot know which extensions an agent has unless it uses them."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/transports.mdx:10,45 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD support stdio whenever possible, and an agent that implements a custom transport MUST preserve the JSON-RPC message format and lifecycle requirements."
+reason = "Out of scope: the TCK only launches agents over stdio, so the first rule is vacuous for any agent it can run and a custom transport is never reached."
+
+
+# --- session-config-options.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:245-249 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Every config option's `currentValue` is the value the agent uses until the client changes it, and agents MUST be able to operate with it even if the client does not support, display or recognize the option."
+reason = "Not observable: it concerns the agent's internal operation. The observable part, `currentValue` being present and valid, is checked by schema validation and ACP-CONFIG-001."
+
+
+# --- security.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/security.mdx:13 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Implementations SHOULD NOT use `clientInfo` and `agentInfo` for security decisions."
+reason = "Not observable: it concerns the agent's internal decision logic."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/security.mdx:38 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD apply the root set and the client fetch rules to URIs in prompts."
+reason = "Unsafe and out of scope: seeing it needs a network canary (a TCK-hosted listener or an out-of-root `file:` target), and agents are not required to dereference links, so a quiet agent proves nothing."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/security.mdx:42 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Implementations SHOULD NOT put credentials in `_meta`, including `traceparent`, `tracestate` and `baggage`."
+reason = "Not observable: the TCK cannot tell a credential from any other string in `_meta`."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/security.mdx:47-49 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD treat embedded resources, files, tool results and MCP results as data and not as user instructions, SHOULD request permission before sending data off the machine after reading untrusted content, and SHOULD request permission before writing files that control execution or approval."
+reason = "Not testable deterministically: it depends on model behavior and agent-specific tool use, and prompt-injection detection is out of scope (line 15)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/security.mdx:57 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "An agent serving more than one user SHOULD scope `session/list`, session loading and resumption, permission requests and elicitations to the user that owns the session."
+reason = "Out of scope: ACP has no user identity on the wire, so a client cannot present as a second user."
+
+
+# --- tool-calls.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/tool-calls.mdx:247 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD NOT give a permission option a `name` that contradicts its `kind`."
+reason = "Not mechanically decidable: it needs a natural-language judgement of `name`. ACP-PERM-001/002 cover the other half of the line (acting on a selected option)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/tool-calls.mdx:250 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD perform only the operation the approved permission request described, and SHOULD request again if the command or resolved target changes."
+reason = "Not observable: the operation is not on the wire in v1, and the TCK cannot tell a changed target from the original."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/tool-calls.mdx:238-242,251 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "The agent owns remembered (`allow_always`/`reject_always`) decisions, SHOULD state their scope in the option `name`, and SHOULD NOT apply them beyond that scope."
+reason = "Unsafe and unobservable: scope and lifetime are agent-defined free text, and probing needs `allow_always`, which may persist on the operator's machine."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/tool-calls.mdx:252 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD NOT switch to a mode or configuration that reduces user oversight without user action."
+reason = "Not observable: whether a change \"reduces oversight\" is semantic, and agents may legitimately change modes themselves."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/tool-calls.mdx:377-381; docs/protocol/v1/draft/overview.mdx:231; schema/v1/schema.unstable.json#/$defs/ToolCallLocation/properties/line @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`ToolCallLocation.line` is a 1-based line number."
+reason = "Not enforced: the statement carries no RFC 2119 keyword and the v1 schema deliberately keeps `minimum: 0`, so a `0` is schema-valid and the TCK does not fail it."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/tool-calls.mdx:349-351; docs/rfds/subagents.mdx:636-638 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A `session` tool-call reference names a session already known through ordinary session setup or a prior `subagent_update`."
+reason = "Out of scope: it applies only when the client advertises `subagents`, which the TCK never does, and provoking subagent spawns is model-driven. Revisit if a `subagents`-advertising test is added."
+
+
+# --- agent-plan.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/agent-plan.mdx:179,181 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "The agent MUST send the complete list of plan entries, with their current status, in each `plan` update and in each item-based `plan_update`."
+reason = "Not observable: the TCK cannot know the agent's full internal plan, so a shorter list cannot be told from a plan the agent legitimately shrank (line 185 allows removing entries)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/agent-plan.mdx:147 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD send `plan_removed` when a plan is cancelled, for example when the user rejects it or the agent abandons it."
+reason = "Not observable: no protocol event marks a plan as rejected or abandoned, and `session/cancel` cancels a turn, not a plan."
+
+
+# --- error.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/error.mdx:37 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Receivers MUST treat an unrecognized error code as a generic failure."
+reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes."
+
+
+# --- schema.unstable.json ---
+
+[[not_requirement]]
+citation = "schema/v1/schema.unstable.json#/$defs/NewSessionRequest/properties/mcpServers; schema/v1/schema.unstable.json#/$defs/McpServerStdio/properties/args @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents treat a `null` in a client-authored list field marked `x-deserialize-default-on-null` as the default."
+reason = "Out of scope: it is a receiver hint, not a stated agent MUST, and the field type is still `array`, so a TCK sending `null` would itself emit schema-invalid traffic."
+
+
+# --- deferred unstable methods and rules ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-list.mdx:256 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`session/archive` of a loaded session cancels any ongoing work and frees the session's resources as if `session/close` had been called, then archives it, without requiring the `close` capability."
+reason = "Deferred (unstable archive): needs a prompt still in flight when the session is archived, which is race-prone against a real agent, and it is not yet tested."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-list.mdx:259; docs/protocol/v1/draft/error.mdx:66; docs/rfds/session-status.mdx:126,130; schema/v1/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`session/status` reports an archived session as `saved`, answers an unknown session with `-32002` and the requested `sessionId` in `data`, and MUST NOT have side effects."
+reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
+
+[[not_requirement]]
+citation = "docs/rfds/session-set-title.mdx:178-179; docs/protocol/v1/draft/error.mdx:68; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
+reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:1041-1045 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A child's tool call that advertises its own `capabilities.cancel` enables `tool_call/cancel` for that item, sent with the child's `sessionId`."
+reason = "Deferred unstable method: the v1 schema does not define `tool_call/cancel`, it needs `subagents` (never advertised) and a per-tool-call dynamic gate the TCK cannot elicit."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:1041-1045 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A child's terminal that advertises its own `capabilities.cancel` enables `terminal/cancel` for that item, sent with the child's `sessionId`."
+reason = "Deferred unstable method: the v1 schema does not define `terminal/cancel`, it needs `subagents` (never advertised) and a per-terminal dynamic gate the TCK cannot elicit."
+
+[[not_requirement]]
+citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents receive `initialize` and are terminal; only a conductor sends `proxy/initialize`, and `proxy/successor` is exchanged only between a conductor and its proxies."
+reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediary-only methods of a Draft RFD that the TCK does not exercise; an agent that sends one is still caught by ACP-SCHEMA-001 as an unknown method."
