@@ -6,7 +6,7 @@ fixture agents -- unit tests of the validator itself.
 
 from __future__ import annotations
 
-from tck.v2 import protocol
+from tck.v2 import protocol, validation
 from tck.v2.validation import find_unknown_root_keys, validate_agent_message, validate_agent_response
 
 
@@ -228,3 +228,43 @@ def test_non_object_markers_accepts_draft_fields_and_ignores_unknown_ones():
     assert find_non_object_markers("AgentCapabilities", {"providers": False}) == ["providers"]
     # `nes`/`positionEncoding` left the draft schema; unknown fields are never judged.
     assert find_non_object_markers("AgentCapabilities", {"nes": False}) == []
+
+
+# --- x-deserialize-default-on-null carve-out ---
+
+_TERMINAL = {"methodId": "t", "name": "Terminal", "type": "terminal"}
+
+
+def validate_against_def(def_name: str, value: object) -> list:
+    return validation._issues_from_errors(validation._def_validator(def_name).iter_errors(value))
+
+
+def test_null_accepted_at_default_on_null_nodes() -> None:
+    """`AuthMethodTerminal`'s `args`/`env` carry the hint, so `null` counts as omitted."""
+    method = {**_TERMINAL, "args": None, "env": None}
+    assert validate_against_def("AuthMethodTerminal", method) == []
+
+
+def test_null_accepted_at_hinted_node_nested_in_a_union() -> None:
+    """The `AuthMethod` union wraps the terminal branch; the hint still applies inside it."""
+    method = {**_TERMINAL, "args": None, "env": None}
+    assert validate_against_def("AuthMethod", method) == []
+
+
+def test_null_still_rejected_at_node_without_the_hint() -> None:
+    # Same `type: string` as the hinted nodes' siblings, but no hint.
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "name": None})
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "methodId": None})
+
+
+def test_wrong_non_null_type_still_rejected_at_hinted_node() -> None:
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "args": "--flag"})
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "env": {"A": "B"}})
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "args": [None]})
+
+
+def test_skip_invalid_items_hint_is_not_honored() -> None:
+    """`InitializeResponse.authMethods` carries `x-deserialize-skip-invalid-items`; an invalid
+    item stays a violation."""
+    result = {"protocolVersion": 2, "authMethods": [{**_TERMINAL, "args": "--flag"}]}
+    assert validate_against_def("InitializeResponse", result)

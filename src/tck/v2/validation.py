@@ -3,7 +3,7 @@ vendored ACP v2 (Draft) schema (`tck/v2/schema/schema.unstable.json`, see `VENDO
 
 Mirrors `tck.v1.validation`'s API (`validate_agent_message`, `validate_agent_response`,
 `find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in three
-ways this module encodes:
+ways this module encodes, and carries one schema-hint carve-out (4):
 
 1. **Batching.** v2's top-level schema adds four batch-call/-response branches alongside the
    three v1-style single-message branches (`Agent`/`Client`/`ProtocolLevel`) -- a bare JSON
@@ -25,6 +25,13 @@ ways this module encodes:
    fallback and the check is skipped (`[]`) instead of flagging extra fields. A missing/`null`/
    non-`_`-prefixed discriminator does not count, so a malformed discriminator can't dodge the
    check.
+4. **`x-deserialize-default-on-null` hint.** `null` at a property schema carrying
+   `x-deserialize-default-on-null: true` (e.g. `AuthMethodTerminal`'s `args`/`env`) means "use
+   the default / treat as omitted", and the reference receivers accept it, so a `type` error on
+   `null` is dropped where the node itself carries the hint. A non-`null` wrong type, and `null`
+   at a node without the hint, still fail. The hint is read from the schema, so a refresh
+   self-updates. `x-deserialize-skip-invalid-items` is deliberately *not* honored: receivers
+   silently drop an invalid array item, but the agent authored it, so it stays a violation.
 """
 
 from __future__ import annotations
@@ -35,11 +42,27 @@ from typing import Any
 
 import jsonschema
 from jsonschema import Draft202012Validator
+from jsonschema.validators import extend
 
 from .protocol import load_schema
 
+_DEFAULT_ON_NULL_HINT = "x-deserialize-default-on-null"
+
+
+def _type_keyword(validator: Any, types: Any, instance: Any, schema: dict[str, Any]) -> Any:
+    """Draft 2020-12 `type`, except that `null` is accepted where the node itself carries
+    `x-deserialize-default-on-null: true` (see the module docstring)."""
+    if instance is None and schema.get(_DEFAULT_ON_NULL_HINT) is True:
+        return
+    yield from Draft202012Validator.VALIDATORS["type"](validator, types, instance, schema)
+
+
+# Overriding `type` on the validator class (not filtering top-level errors afterwards) keeps the
+# carve-out working inside `anyOf`/`oneOf` branches, where jsonschema only reports one wrapper error.
+_HintAwareDraft202012Validator = extend(Draft202012Validator, {"type": _type_keyword})
+
 _DRAFT_VALIDATORS: dict[str, type[jsonschema.protocols.Validator]] = {
-    "https://json-schema.org/draft/2020-12/schema": Draft202012Validator,
+    "https://json-schema.org/draft/2020-12/schema": _HintAwareDraft202012Validator,
 }
 
 

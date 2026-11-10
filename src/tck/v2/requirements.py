@@ -1503,9 +1503,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "On a connection that advertised `capabilities.auth.terminal: {}`, every "
-            "`type: \"terminal\"` entry's `args` (if present) is an array of strings, `env` "
-            "(if present) is an array of well-formed `EnvVariable` objects (`name`/`value` "
-            "both required strings), and `env` entries' `name`s are unique within that "
+            "`type: \"terminal\"` entry's `args` (if present; `null` counts as omitted) is an array "
+            "of strings, `env` (if present; `null` counts as omitted) is an array of well-formed "
+            "`EnvVariable` objects (`name`/`value` both required strings), and `env` entries' `name`s are unique within that "
             "descriptor. Conditional on at least one terminal entry actually appearing; SKIPs "
             "otherwise. New in v2 -- v1's terminal auth descriptor had no `args`/`env` fields."
         ),

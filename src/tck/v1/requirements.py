@@ -962,7 +962,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "When the client advertises `clientCapabilities.auth.terminal: true`, the `initialize` "
             "result validates against the schema, including any `type: \"terminal\"` auth methods "
-            "it now advertises (`args` an array of strings, `env` a string map). `type` is the "
+            "it now advertises (`args` an array of strings, `env` a string map; `null` `args`/`env` "
+            "counts as omitted). `type` is the "
             "`AuthMethod` discriminator, so a `type: \"terminal\"` entry is also checked against "
             "`AuthMethodTerminal` itself (the schema's `anyOf` would otherwise accept it as an "
             "`agent` method). Passes with no terminal-specific evidence if the agent advertises "
