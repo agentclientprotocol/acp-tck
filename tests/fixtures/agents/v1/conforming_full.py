@@ -13,6 +13,12 @@ The single config option with `type: "boolean"` is only visible to a client that
 `_visible_config_options` enforces this) -- so `ACP-CONFIG-003` also passes against this fixture
 even though it *does* have a boolean option, as long as the TCK's own probe connects without
 that capability (see `test_session_config.py`).
+
+For a client that advertised `clientCapabilities.plan` (only the `ACP-PLAN-*` tests do), each
+prompt turn also sends two `plan_update` messages -- an item plan and a file plan with an
+absolute `uri` -- so ACP-PLAN-001/002 PASS non-vacuously. Without `plan`, no plan is sent.
+It also inherits `HonorsPermissionAgent`'s permission probe, so ACP-PERM-001/002 PASS
+non-vacuously; ordinary prompts never request permission.
 """
 
 import sys
@@ -21,7 +27,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _base import ConformingAgent  # noqa: E402
+from honors_permission import HonorsPermissionAgent  # noqa: E402
 
 CAPABILITIES = {
     "loadSession": True,
@@ -83,7 +89,17 @@ TERMINAL_AUTH_METHOD = {
 }
 
 
-class ConformingFullAgent(ConformingAgent):
+PLANS = [
+    {
+        "type": "items",
+        "planId": "steps",
+        "entries": [{"content": "Read the code", "priority": "medium", "status": "pending"}],
+    },
+    {"type": "file", "planId": "design-doc", "uri": "file:///tmp/plan.md"},
+]
+
+
+class ConformingFullAgent(HonorsPermissionAgent):
     def _initialize_result(self) -> dict[str, Any]:
         # A terminal method only for a client that advertised `auth.terminal` (ACP-AUTH-002),
         # so ACP-AUTH-006 has a real one to validate.
@@ -92,6 +108,16 @@ class ConformingFullAgent(ConformingAgent):
         if isinstance(auth, dict) and auth.get("terminal") is True:
             result["authMethods"] = [*result.get("authMethods", []), TERMINAL_AUTH_METHOD]
         return result
+
+    def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
+        session_id = params.get("sessionId")
+        if session_id in self._sessions and "plan" in self._client_capabilities:
+            for plan in PLANS:
+                self._notify(
+                    "session/update",
+                    {"sessionId": session_id, "update": {"sessionUpdate": "plan_update", "plan": plan}},
+                )
+        super()._handle_prompt(msg_id, params)
 
 
 def main() -> None:

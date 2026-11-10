@@ -303,15 +303,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A prompt containing a `resource_link` content block alongside text resolves with a "
-            "successful result whose `stopReason` is a defined value. `initialization.mdx:264` "
-            "and the schema's `PromptCapabilities` description both make Text and ResourceLink "
-            "the baseline every agent MUST support; `content.mdx:31` only mentions text but does "
-            "not exclude `resource_link`, which carries no prompt-capability requirement."
+            "successful result whose `stopReason` is a defined value. All agents MUST support "
+            "`resource_link` in prompts: it is part of the baseline every agent supports, "
+            "independent of any prompt capability."
         ),
         citation=_cite(
+            "docs/protocol/v1/draft/content.mdx:170; "
             "docs/protocol/v1/draft/initialization.mdx:264; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
-            "docs/protocol/v1/draft/content.mdx:31"
+            "schema/v1/schema.unstable.json#/$defs/ContentBlock"
         ),
     ),
     Requirement(
@@ -966,14 +966,82 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "The agent MUST NOT send `subagent_update`, `session_message`, or "
-            "`session_message_chunk` unless the client advertised `clientCapabilities.subagents` "
-            "-- checked the same way as ACP-CLIENTCAP-004. Unstable feature: an agent that does "
-            "not expose subagents never sends these and passes vacuously."
+            "`session_message_chunk`, nor `session` content (`{\"type\": \"session\"}`) in a "
+            "`tool_call`, a `tool_call_update`, or a `session/request_permission` `toolCall`, "
+            "unless the client advertised `clientCapabilities.subagents` -- checked the same way "
+            "as ACP-CLIENTCAP-004. Unstable feature: an agent that does not expose subagents "
+            "never sends these and passes vacuously."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/prompt-turn.mdx:19-21,42; "
-            "docs/rfds/subagents.mdx:76-78; "
-            "schema/v1/schema.unstable.json#/$defs/SubagentCapabilities"
+            "docs/protocol/v1/draft/tool-calls.mdx:358; "
+            "docs/rfds/subagents.mdx:76-78,644-645; "
+            "schema/v1/schema.unstable.json#/$defs/SubagentCapabilities; "
+            "schema/v1/schema.unstable.json#/$defs/SessionReference"
+        ),
+    ),
+    Requirement(
+        id="ACP-PLAN-001",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.plan`, every `plan_update` whose "
+            "`plan.type` is `\"file\"` carries an absolute `plan.uri`. The spec does not define "
+            "\"absolute\"; the TCK reads it as an RFC 3986 URI with a scheme and, for `file:`, "
+            "an RFC 8089 absolute path (`file:///tmp/plan.md`, `file:/tmp/plan.md`), so "
+            "`plan.md`, `/tmp/plan.md` and `file:plan.md` fail. Unstable feature: an agent that "
+            "sends no file plan passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:127; "
+            "docs/rfds/plan-operations.mdx:63; "
+            "schema/v1/schema.unstable.json#/$defs/PlanFile"
+        ),
+    ),
+    Requirement(
+        id="ACP-PLAN-002",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.plan`, the agent SHOULD send its "
+            "plans with `plan_update` instead of the baseline `plan` update. Unstable feature: "
+            "an agent that does not implement plan operations may keep sending `plan`, and an "
+            "agent that sends no plan passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:57; "
+            "docs/protocol/v1/draft/initialization.mdx:172-179; "
+            "schema/v1/schema.unstable.json#/$defs/PlanCapabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-PERM-001",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "After the client answers `session/request_permission` by selecting the offered "
+            "`reject_once` option, the agent does not carry out the operation. Observed as a "
+            "file the agent was asked to create in its `cwd` not appearing; SKIPs when the agent "
+            "asks no permission or offers no `reject_once` option."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/tool-calls.mdx:247; "
+            "docs/protocol/v1/draft/security.mdx:12"
+        ),
+    ),
+    Requirement(
+        id="ACP-PERM-002",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "After the client answers `session/request_permission` with a `selected` outcome "
+            "whose `optionId` the agent never offered, the agent does not carry out the "
+            "operation: an outcome it does not recognise is not approval. Observed the same way "
+            "as ACP-PERM-001; SKIPs when the agent asks no permission."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/tool-calls.mdx:249; "
+            "schema/v1/schema.unstable.json#/$defs/SelectedPermissionOutcome"
         ),
     ),
     Requirement(

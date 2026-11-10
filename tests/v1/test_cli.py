@@ -54,6 +54,7 @@ _MANDATORY_IDS = {
     "ACP-CLIENTCAP-005",
     "ACP-CLIENTCAP-006",
     "ACP-CLIENTCAP-007",
+    "ACP-PLAN-001",
     "ACP-EXT-001",
 }
 _ADVISORY_IDS = {
@@ -78,6 +79,9 @@ _ADVISORY_IDS = {
     "ACP-EXT-002",
     "ACP-SCHEMA-002",
     "ACP-AUTH-005",
+    "ACP-PLAN-002",
+    "ACP-PERM-001",
+    "ACP-PERM-002",
     # ACP-AUTH-001: its only assertion, AUTH-A5 (auth method ids are unique), is advisory in
     # the auth research -- not in _MANDATORY_IDS.
     "ACP-AUTH-001",
@@ -132,14 +136,17 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
     "ACP-CLOSE-003",
     "ACP-ERROR-004",
     "ACP-ERROR-007",
+    "ACP-PERM-001",
+    "ACP-PERM-002",
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the six ADVISORY ids
-(`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-ERROR-004`, `ACP-ERROR-007`) whose tests are still gated
-(by a `@pytest.mark.capability(...)` marker, or for `ACP-ERROR-004`/`007` by what `session/new`
-returned) even though their `Requirement.tier` itself is ADVISORY, not CAPABILITY (see
-`test_session_capabilities.py` module docstring)."""
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the eight ADVISORY ids
+(`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-ERROR-004`, `ACP-ERROR-007`,
+`ACP-PERM-001`, `ACP-PERM-002`) whose tests are still gated (by a `@pytest.mark.capability(...)`
+marker, for `ACP-ERROR-004`/`007` by what `session/new` returned, for `ACP-PERM-*` by the agent
+never sending `session/request_permission`) even though their `Requirement.tier` itself is
+ADVISORY, not CAPABILITY (see `test_session_capabilities.py` module docstring)."""
 
 
 def _run_cli(
@@ -486,6 +493,10 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-SESSION-004",
         "ACP-SESSION-006",
         "ACP-LIST-003",
+        "ACP-PLAN-001",
+        "ACP-PLAN-002",
+        "ACP-PERM-001",
+        "ACP-PERM-002",
     }:
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
 
@@ -1457,10 +1468,61 @@ def test_client_gated_update_fixtures_fail_only_their_own_clientcap_id():
         ("replays_compaction_unadvertised.py", "ACP-CLIENTCAP-005"),
         ("emits_plan_update_unadvertised.py", "ACP-CLIENTCAP-006"),
         ("emits_subagent_update_unadvertised.py", "ACP-CLIENTCAP-007"),
+        ("session_content_without_subagents.py", "ACP-CLIENTCAP-007"),
     ):
         result = _run_cli(fixture)
         assert result.returncode != 0, f"{fixture}:\n{result.stdout}"
         assert _output_fail_ids(result.stdout) == {expected}, f"{fixture}:\n{result.stdout}"
+
+
+def test_relative_plan_file_uri_fails_plan_001_only():
+    """`emits_relative_plan_file_uri.py` sends a relative file-plan `uri`, only to a client that
+    advertised `plan` -- so ACP-CLIENTCAP-006's `plan`-less connection stays clean."""
+    result = _run_cli("emits_relative_plan_file_uri.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-PLAN-001"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-CLIENTCAP-006") == "PASS", result.stdout
+
+
+def test_plan_despite_plan_capability_fails_plan_002_advisory_only():
+    """`sends_plan_despite_plan_capability.py` keeps sending the baseline `plan` update to a client
+    that advertised `plan` -- an ADVISORY FAIL, so the run stays CONFORMANT."""
+    result = _run_cli("sends_plan_despite_plan_capability.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert _output_fail_ids(result.stdout) == {"ACP-PLAN-002"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-PLAN-001") == "PASS", result.stdout
+    assert statuses.get("ACP-CLIENTCAP-006") == "PASS", result.stdout
+
+
+def test_honors_permission_agent_passes_both_permission_probes():
+    """`honors_permission.py` asks permission for the probe file and creates it only after
+    `allow-once`: the TCK's `reject_once` and unknown-option answers both leave no file."""
+    result = _run_cli("honors_permission.py", timeout="5", k="permission or reject or unrecognised")
+    assert result.returncode != 0  # scoped run: other ids are NOT_TESTED
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-PERM-001") == "PASS", result.stdout
+    assert statuses.get("ACP-PERM-002") == "PASS", result.stdout
+
+
+def test_perm_ignores_reject_fails_both_permission_ids_advisory_only():
+    """`perm_ignores_reject.py` creates the file whatever the client answered -- two ADVISORY
+    FAILs, so the run stays CONFORMANT."""
+    result = _run_cli("perm_ignores_reject.py", timeout="5")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert _output_fail_ids(result.stdout) == {"ACP-PERM-001", "ACP-PERM-002"}, result.stdout
+
+
+def test_perm_unknown_option_is_approval_fails_perm_002_advisory_only():
+    """`perm_unknown_option_is_approval.py` honours `reject_once` but approves on an unknown
+    `optionId` -- only ACP-PERM-002 FAILs (ADVISORY)."""
+    result = _run_cli("perm_unknown_option_is_approval.py", timeout="5")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert _output_fail_ids(result.stdout) == {"ACP-PERM-002"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-PERM-001") == "PASS", result.stdout
 
 
 def test_relative_tool_call_path_fails_prompt_004_only():

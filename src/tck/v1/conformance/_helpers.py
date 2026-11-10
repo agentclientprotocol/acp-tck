@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Literal
@@ -175,6 +176,27 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
             f"{PROTOCOL_VERSION!r} -- this agent does not speak v1, so its result cannot be "
             "judged against v1-only shape requirements"
         )
+
+
+# RFC 3986 scheme (two or more characters, so a Windows drive path `C:\x` is not read as a
+# URI); `file:` further needs an RFC 8089 absolute path (`file:///p`, `file://host/p`, `file:/p`,
+# `file:c:/p`).
+_URI_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]+):")
+_FILE_ABSOLUTE_PATH_RE = re.compile(r"^file:(//[^/]*/|/(?!/)|[A-Za-z]:/)", re.IGNORECASE)
+
+
+def is_absolute_uri(uri: Any) -> bool:
+    """Whether `uri` is absolute for ACP-PLAN-001: an RFC 3986 URI with a scheme, and for the
+    `file` scheme an RFC 8089 absolute path. The spec leaves "absolute" undefined; this is the
+    TCK's reading."""
+    if not isinstance(uri, str):
+        return False
+    match = _URI_SCHEME_RE.match(uri)
+    if match is None:
+        return False
+    if match.group(1).lower() == "file":
+        return _FILE_ABSOLUTE_PATH_RE.match(uri) is not None
+    return True
 
 
 def quiet_period(timeout: float) -> float:
