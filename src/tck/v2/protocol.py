@@ -21,10 +21,10 @@ string, same as v1."""
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "beac4ba96190018e9f6d82e148ff275084c5aa3e"
+SCHEMA_REVISION = "3961af94fa62d2386d993cadf1afc8b146fc799a"
 """The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every
 requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VENDORED.md`). v2 is
-Draft (schema version `2.0.0-alpha.9` at this commit); expect this to change more often than
+Draft (schema version `2.0.0-alpha.14` at this commit); expect this to change more often than
 v1's pin."""
 
 # JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1,
@@ -73,7 +73,9 @@ STOP_REASONS = frozenset(
 TOOL_KIND = frozenset(
     {"read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other"}
 )
-TOOL_CALL_STATUS = frozenset({"pending", "in_progress", "completed", "failed", "cancelled"})
+TOOL_CALL_STATUS = frozenset(
+    {"pending", "in_progress", "paused", "completed", "failed", "cancelled"}
+)
 PLAN_ENTRY_PRIORITY = frozenset({"high", "medium", "low"})
 PLAN_ENTRY_STATUS = frozenset({"pending", "in_progress", "completed", "cancelled"})
 SESSION_UPDATE_KIND = frozenset(
@@ -104,7 +106,7 @@ SESSION_UPDATE_KIND = frozenset(
     }
 )
 STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"})
-TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal"})
+TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal", "session"})
 PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
 
 
@@ -126,10 +128,11 @@ def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
 
 @lru_cache(maxsize=1)
 def load_meta() -> dict[str, Any]:
-    """Parse `schema/meta.unstable.json`: a `version` int, plus three flat `{internal_name: "wire/
+    """Parse `schema/meta.unstable.json`: a `version` int, plus four flat `{internal_name: "wire/
     method"}` dicts -- `agentMethods`, `clientMethods`, `protocolMethods` (just
-    `cancel_request` -> `$/cancel_request`, same as v1). Does not itself distinguish requests
-    from notifications -- that split is derived from the schema below."""
+    `cancel_request` -> `$/cancel_request`, same as v1), and `proxyMethods` (proxy-chain
+    methods, not used here). Does not itself distinguish requests from notifications -- that
+    split is derived from the schema below."""
     return json.loads((SCHEMA_DIR / "meta.unstable.json").read_text())
 
 
@@ -191,4 +194,5 @@ CLIENT_NOTIFICATIONS: frozenset[str] = _notification_methods("AgentNotification"
 `elicitation/complete`)."""
 
 KNOWN_METHODS: frozenset[str] = AGENT_METHODS | CLIENT_METHODS | PROTOCOL_METHODS
-"""The full "known method" union across all three inventories."""
+"""The full "known method" union across the agent, client, and protocol inventories (not
+`proxyMethods`)."""

@@ -214,10 +214,11 @@ async def test_unknown_initialize_fields_are_ignored(agent_launch):
 @pytest.mark.requirement("ACP-EXT-203")
 async def test_dollar_prefixed_protocol_notification_behaviour(agent_launch, record_property):
     """ACP-EXT-203 (INFORMATIONAL -- the spec explicitly says the agent "is free to ignore" a
-    `$/`-prefixed protocol-level notification it does not implement,
-    `schema/v2/schema.unstable.json#/$defs/ProtocolLevelNotification`; there is no conforming/non-conforming distinction, so this
-    only records what happens, never asserts). Like `ACP-EXT-201`, only a reply counts, not the
-    agent's own notifications or requests."""
+    `$/`-prefixed protocol-level notification it does not implement (the `ProtocolLevel` branch
+    of `schema/v2/schema.unstable.json#/anyOf`; `extensibility.mdx:165,231`, `error.mdx:44`);
+    there is no conforming/non-conforming distinction, so this only records what happens, never
+    asserts). Like `ACP-EXT-201`, only a reply counts, not the agent's own notifications or
+    requests."""
     async with connected_agent(agent_launch) as agent:
         await agent.send_notification("$/does_not_exist", {})
         try:

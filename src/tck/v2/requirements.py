@@ -63,7 +63,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "for the request of 2 is accepted only if the `65535` probe selects nothing <= 2."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:98; "
+            "docs/protocol/v2/draft/initialization.mdx:110; "
             "schema/v2/schema.unstable.json#/$defs/InitializeResponse/properties/protocolVersion"
         ),
     ),
@@ -79,7 +79,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`2`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:98,117; "
+            "docs/protocol/v2/draft/initialization.mdx:108,110; "
             "schema/v2/schema.unstable.json#/$defs/ProtocolVersion"
         ),
     ),
@@ -93,7 +93,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "agent). Selecting 2 or higher FAILs, and so does `-32602`, which is reserved for "
             "a malformed `protocolVersion`."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98,100,117"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:108,110,112"),
     ),
     Requirement(
         id="ACP-INIT-205",
@@ -108,7 +108,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`VERSION-MISMATCH` unless the main handshake selected 2."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:100-115; "
+            "docs/protocol/v2/draft/initialization.mdx:112-127; "
             "schema/v2/schema.unstable.json#/$defs/ErrorCode"
         ),
     ),
@@ -123,7 +123,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "handshake selected 2."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:117; "
+            "docs/protocol/v2/draft/initialization.mdx:108; "
             "schema/v2/schema.unstable.json#/$defs/ProtocolVersion"
         ),
     ),
@@ -138,7 +138,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "SKIPPED when no `-32022` is observed, and with `VERSION-MISMATCH` unless the main "
             "handshake selected 2."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:117"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:129"),
     ),
     Requirement(
         id="ACP-INIT-208",
@@ -149,7 +149,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "request selects 1, the result has no v2-only root `info` or `capabilities` key. "
             "SKIPPED when the agent does not select 1."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:110"),
     ),
     Requirement(
         id="ACP-INIT-203",
@@ -166,7 +166,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/InitializeResponse/properties/info; "
             "schema/v2/schema.unstable.json#/$defs/InitializeResponse/required; "
             "schema/v2/schema.unstable.json#/$defs/Implementation; "
-            "docs/protocol/v2/draft/initialization.mdx:293"
+            "docs/protocol/v2/draft/initialization.mdx:360"
         ),
     ),
     Requirement(
@@ -211,7 +211,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "non-empty string `sessionId`, and the response validates against the v2 schema."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:72; "
+            "docs/protocol/v2/draft/session-setup.mdx:84; "
             "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/required (`cwd`); "
             "schema/v2/schema.unstable.json#/$defs/NewSessionResponse/required (`sessionId`)"
         ),
@@ -222,7 +222,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text="Two `session/new` calls on one connection return distinct `sessionId`s.",
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:72,478; "
+            "docs/protocol/v2/draft/session-setup.mdx:84,511; "
             "schema/v2/schema.unstable.json#/$defs/SessionId"
         ),
     ),
@@ -247,8 +247,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/required; "
             "schema/v2/schema.unstable.json#/$defs/SessionUpdate; "
-            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
-            "docs/protocol/v2/draft/schema.mdx:8397-8401"
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate"
         ),
     ),
     Requirement(
@@ -262,7 +261,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`MessageId` is a plain string."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:253-255,271-274; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:323-325,341-344; "
             "schema/v2/schema.unstable.json#/$defs/PromptResponse/required; "
             "schema/v2/schema.unstable.json#/$defs/MessageId"
         ),
@@ -278,7 +277,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "response, no later than the turn-ending idle."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:276,731; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:346,803; "
             "schema/v2/schema.unstable.json#/$defs/UserMessage; "
             "schema/v2/schema.unstable.json#/$defs/ContentChunk"
         ),
@@ -294,7 +293,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "period); SKIPPED when the prompt was rejected with no foreground work."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:124,318-321,993,1000-1002,1042-1047; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:152,394-397,1073,1080-1082,1121-1126; "
             "schema/v2/schema.unstable.json#/$defs/StateUpdate"
         ),
     ),
@@ -309,7 +308,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "work observed' when no active state was seen."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:126,314,714,996,1034,1042-1045"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:154,390,786,1076,1114,1121-1124"
         ),
     ),
     Requirement(
@@ -323,10 +322,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "stopReason is SKIPPED here (it is only SHOULD; see `ACP-STATE-204`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:714,733,864,887; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:786,805,936,965; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/stopReason; "
-            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/7; "
-            "docs/protocol/v2/draft/extensibility.mdx:226-231"
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/6; "
+            "docs/protocol/v2/draft/extensibility.mdx:235-240"
         ),
     ),
     Requirement(
@@ -339,7 +338,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`capabilities.session`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:126,714,864,1012; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:154,786,936,1092; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate"
         ),
     ),
@@ -356,7 +355,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "SKIPPED when `requires_action` is never observed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:125,773,995,1024-1025; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:153,845,1075,1104-1105; "
             "schema/v2/schema.unstable.json#/$defs/RequiresActionStateUpdate"
         ),
     ),
@@ -372,7 +371,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "contradictory)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:248; "
+            "docs/protocol/v2/draft/initialization.mdx:308; "
             "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/prompt; "
             "schema/v2/schema.unstable.json#/$defs/ResourceLink"
         ),
@@ -389,8 +388,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "succeeded."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:255,276,312; "
-            "docs/protocol/v2/draft/cancellation.mdx:53"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,346,388; "
+            "docs/protocol/v2/draft/cancellation.mdx:59"
         ),
     ),
     Requirement(
@@ -403,7 +402,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "foreground work to finish. ADVISORY because wire order is only a proxy for "
             "insertion timing. The test is gated on `capabilities.session`."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:255,302"),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:325,372"),
     ),
     Requirement(
         id="ACP-PROMPTCAP-001",
@@ -415,7 +414,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "advertises `capabilities.session.prompt.image`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:246-271; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/ImageContent"
         ),
@@ -430,7 +429,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "advertises `capabilities.session.prompt.audio`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:246-271; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/AudioContent"
         ),
@@ -445,7 +444,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "when the agent advertises `capabilities.session.prompt.embeddedContext`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:246-271; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/EmbeddedResource"
         ),
@@ -466,7 +465,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionRequest/required; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionRequest/properties/options (minItems: 1); "
             "schema/v2/schema.unstable.json#/$defs/PermissionOption/required; "
-            "docs/protocol/v2/draft/tool-calls.mdx:201,236-263,337-355"
+            "docs/protocol/v2/draft/tool-calls.mdx:209,244-278,356-374"
         ),
     ),
     Requirement(
@@ -478,7 +477,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`elicitation/create` request is observed during a prompt turn."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/elicitation.mdx:54,187; "
+            "docs/protocol/v2/draft/elicitation.mdx:56-57,59; "
             "schema/v2/schema.unstable.json#/$defs/CreateElicitationRequest (x-method: elicitation/create)"
         ),
     ),
@@ -494,8 +493,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "separate `ACP-CLIENTCAP-001/002` rows)."
         ),
         citation=_cite(
-            "schema/v2/meta.unstable.json:31-37 (agent->client method inventory); "
-            "docs/protocol/v2/draft/extensibility.mdx:156,165 (only `_`-prefixed custom methods may be called)"
+            "schema/v2/meta.unstable.json:28-38 (agent->client method inventory); "
+            "docs/protocol/v2/draft/extensibility.mdx:165,174 (only `_`-prefixed custom methods may be called)"
         ),
     ),
     Requirement(
@@ -509,9 +508,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "design."
         ),
         citation=_cite(
-            "docs/rfds/v2/prompt.mdx:88 ('This RFD does not specify queueing, steering, or "
-            "whether agents insert new prompts while busy'); "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1039-1040"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:382-384,1118-1119; "
+            "docs/rfds/v2/prompt.mdx:88"
         ),
     ),
     Requirement(
@@ -536,9 +534,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "cancelled before insertion (`-32800`) with no active state owes no idle."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1013,1109-1117,1124; "
-            "docs/protocol/v2/draft/cancellation.mdx:35-38; "
-            "docs/protocol/v2/draft/schema.mdx:461-465"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1093,1185-1192,1199; "
+            "docs/protocol/v2/draft/cancellation.mdx:41-44; "
+            "docs/protocol/v2/draft/schema.mdx:603-607"
         ),
     ),
     Requirement(
@@ -552,8 +550,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the cancelled turn. Repeated idle snapshots, `unknown`, and new work are allowed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:731,1004-1007,1128; "
-            "docs/protocol/v2/draft/schema.mdx:473-475"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:803,1084-1087,1203; "
+            "docs/protocol/v2/draft/schema.mdx:615-617"
         ),
     ),
     Requirement(
@@ -568,8 +566,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`error` or `end_turn`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:255,312,926,1094,1119-1126; "
-            "docs/protocol/v2/draft/cancellation.mdx:53; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,388,1004,1173,1194-1201; "
+            "docs/protocol/v2/draft/cancellation.mdx:59; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/4 (`cancelled` branch description)"
         ),
     ),
@@ -587,7 +585,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "ever SKIPped, belongs in the record-only tier, not the SHOULD tier."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1103; docs/protocol/v2/draft/schema.mdx:458-459"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1179; "
+            "docs/protocol/v2/draft/schema.mdx:595-597"
         ),
     ),
     Requirement(
@@ -599,11 +598,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(result or error) for it."
         ),
         citation=_cite(
-            "schema/v2/schema.unstable.json#/$defs/ClientNotification/properties/params/anyOf/0/anyOf/0 "
-            "(CancelSessionNotification sits under ClientNotification); "
+            "schema/v2/schema.unstable.json#/$defs/ClientNotification/properties/params/anyOf/0/anyOf/0 (CancelSessionNotification sits under ClientNotification); "
             "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification; "
-            "docs/protocol/v2/draft/overview.mdx:197; "
-            "docs/protocol/v2/draft/transports.mdx:78-79"
+            "docs/protocol/v2/draft/overview.mdx:13,151-153,227"
         ),
     ),
     Requirement(
@@ -617,7 +614,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1084-1092"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1163-1171"
         ),
     ),
     Requirement(
@@ -630,7 +627,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "assertion itself: the agent may not substitute e.g. `aborted` for `cancelled`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:887; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:965; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/6 (`other` branch description)"
         ),
     ),
@@ -646,7 +643,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "to both ids via a second `@pytest.mark.requirement(...)` marker) -- deliberately "
             "counted twice, once under each id."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:360-366"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:389-395"),
     ),
     Requirement(
         id="ACP-CANCEL-209",
@@ -660,8 +657,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "was not reported blocked."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1074,1098-1101,1109-1113; "
-            "docs/protocol/v2/draft/cancellation.mdx:33-37; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1153,1177,1185-1189; "
+            "docs/protocol/v2/draft/cancellation.mdx:40; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome"
         ),
     ),
@@ -676,8 +673,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`sessionId` is not specified."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1078,1115-1117; "
-            "docs/protocol/v2/draft/cancellation.mdx:37-38"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1157,1191-1192; "
+            "docs/protocol/v2/draft/cancellation.mdx:43-44"
         ),
     ),
     Requirement(
@@ -690,7 +687,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "that request unanswered while sending `session/cancel`. Not required (MAY at best)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/cancellation.mdx:14,18,57 (non-normative; propagation is explicitly left to the agent)"
+            "docs/protocol/v2/draft/cancellation.mdx:14,18,63 (non-normative; "
+            "propagation is explicitly left to the agent)"
         ),
     ),
     Requirement(
@@ -703,8 +701,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "JSON-RPC 2.0 message object (an empty array on stdout is itself non-conformant)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:23-24,27; "
-            "schema/v2/schema.unstable.json#/anyOf/2, schema/v2/schema.unstable.json#/anyOf/3 (AgentBatchCall/AgentBatchResponse, minItems: 1)"
+            "docs/protocol/v2/draft/transports.mdx:20,23,67; "
+            "schema/v2/schema.unstable.json#/anyOf (Agent/Client/ProtocolLevel/Proxy envelopes; "
+            "no batch branch)"
         ),
     ),
     Requirement(
@@ -722,7 +721,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Messages are newline-delimited and MUST NOT contain embedded newlines -- a batch "
             "array is therefore serialised on one line too."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:25"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:21"),
     ),
     Requirement(
         id="ACP-JSONRPC-001",
@@ -735,10 +734,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "are results or errors."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:76-81; "
-            "schema/v2/schema.unstable.json#/anyOf/3/items (AgentBatchResponse.items -> Result/Error, both required id); "
-            "docs/protocol/v2/draft/overview.mdx:201 (JSON-RPC envelope fields, including `id`, "
-            "follow the base JSON-RPC 2.0 spec, where id-echo is itself normative)"
+            "docs/protocol/v2/draft/overview.mdx:15-17,233 (JSON-RPC envelope fields, including `id`, follow the base JSON-RPC 2.0 spec, where id-echo is itself normative); "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse (Result/Error, both required id)"
         ),
     ),
     Requirement(
@@ -750,8 +747,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "integer `code` and a string `message`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:195-196; "
-            "schema/v2/schema.unstable.json#/anyOf/3/items (disjoint Result/Error branches)"
+            "docs/protocol/v2/draft/overview.mdx:225-226; "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse (disjoint Result/Error branches)"
         ),
     ),
     Requirement(
@@ -763,16 +760,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "notification inside a batch. Messages the agent itself initiates (they carry "
             "`method`) are not responses."
         ),
-        citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:197; docs/protocol/v2/draft/transports.mdx:76-79"
-        ),
+        citation=_cite("docs/protocol/v2/draft/overview.mdx:10,227"),
     ),
     Requirement(
         id="ACP-JSONRPC-004",
         tier=Tier.ADVISORY,
         capability=None,
         text="An unknown method yields `-32601`. Spec wording is still 'should'.",
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:193-204"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:202-213"),
     ),
     Requirement(
         id="ACP-JSONRPC-005",
@@ -783,7 +778,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "connection remains usable."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:191-197; docs/protocol/v2/draft/extensibility.mdx:193-204"
+            "docs/protocol/v2/draft/overview.mdx:221-227; "
+            "docs/protocol/v2/draft/extensibility.mdx:202-213"
         ),
     ),
     Requirement(
@@ -796,11 +792,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "batch MUST be an array with at least one value. An empty array receives a single "
             "`Invalid Request` response'), matching JSON-RPC 2.0 §6's single Response object."
         ),
-        citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:69-71; "
-            "schema/v2/schema.unstable.json#/anyOf/2/minItems, schema/v2/schema.unstable.json#/anyOf/3/minItems, schema/v2/schema.unstable.json#/anyOf/4/minItems, "
-            "schema/v2/schema.unstable.json#/anyOf/5/minItems (minItems: 1 on all four batch envelopes)"
-        ),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-202",
@@ -811,7 +803,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "notification-only batch gets no reply at all -- never an empty array. Messages "
             "the agent itself initiates (they carry `method`) are not replies."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:78-79,82-84"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-203",
@@ -823,7 +815,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Phrased without an RFC-2119 keyword in ACP's own text -- ADVISORY, per the v1 "
             "ACP-JSONRPC-005 precedent."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:85-87"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-204",
@@ -834,7 +826,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "of the corresponding response objects (results or errors), emitted after all "
             "batch requests have been processed."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:74-77"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-205",
@@ -845,7 +837,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "requests by `id`, never by position. Binds the TCK as sender, not the agent -- "
             "record-only, always SKIPped (the TCK's own batch checks match by `id`)."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:80-81"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-206",
@@ -857,7 +849,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "INFORMATIONAL, not ADVISORY: a row that can never be judged "
             "belongs in the record-only tier."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:72-73"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-207",
@@ -869,10 +861,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "record-only, always SKIPped. INFORMATIONAL, not ADVISORY: a "
             "row that can never be judged belongs in the record-only tier."
         ),
-        citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:59-63; "
-            "schema/v2/schema.unstable.json#/anyOf/4/items (ClientBatchCall.items)"
-        ),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-BATCH-208",
@@ -885,9 +874,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "INFORMATIONAL, not ADVISORY: a row that can never be judged "
             "belongs in the record-only tier."
         ),
-        citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:94-97"
-        ),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-INFO-BATCH-201",
@@ -898,7 +885,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "says a single Parse error (`-32700`) with `id: null`, but SDKs disagree (same "
             "unasserted behaviour as v1's ACP-INFO-PARSE-001)."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:67-68"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
     ),
     Requirement(
         id="ACP-INFO-BATCH-202",
@@ -910,7 +897,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "prose states this and JSON-RPC 2.0 itself does not either."
         ),
         citation=_cite(
-            "schema/v2/schema.unstable.json#/anyOf/2 vs schema/v2/schema.unstable.json#/anyOf/3"
+            "docs/protocol/v2/draft/transports.mdx:65-67; "
+            "schema/v2/schema.unstable.json#/anyOf"
         ),
     ),
     Requirement(
@@ -939,7 +927,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "three routes SKIPs -- no route is spec-guaranteed to work."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:129-130; "
+            "docs/protocol/v2/draft/session-setup.mdx:144-145; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
         ),
@@ -959,9 +947,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "hatch) and is recorded, never FAILed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:123,192-193,212-215,301-303,319-322; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:483-493,535-538,966,1004-1007; "
-            "docs/protocol/v2/draft/session-list.mdx:197-198"
+            "docs/protocol/v2/draft/session-setup.mdx:138,207-209,225-229,321-323,339-342; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:561-571,613-616,1044,1084-1087; "
+            "docs/protocol/v2/draft/session-list.mdx:204-205"
         ),
     ),
     Requirement(
@@ -974,8 +962,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "FAILed on that account -- for an agent that retains no history to replay."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:164-169 (the current-state snapshot is "
-            "live sync, not history)"
+            "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history)"
         ),
     ),
     Requirement(
@@ -989,7 +976,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "check rather than FAILing it."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:261-266; docs/protocol/v2/draft/prompt-lifecycle.mdx:300; schema/v2/schema.unstable.json#/$defs/PromptResponse/properties/messageId"
+            "docs/protocol/v2/draft/session-setup.mdx:282-287; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:370; "
+            "schema/v2/schema.unstable.json#/$defs/PromptResponse/properties/messageId"
         ),
     ),
     Requirement(
@@ -1004,7 +993,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "recorded, never FAILed -- for an agent whose replay uses only whole-message "
             "updates."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:279-292"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:299-312"),
     ),
     Requirement(
         id="ACP-RESUME-206",
@@ -1016,8 +1005,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "resumed session, sent after every replayed history update and before the response."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:36-37,301-303,319-324; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:975-981; "
+            "docs/protocol/v2/draft/session-setup.mdx:36-37,321-323,339-344; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1055-1061; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
         ),
     ),
@@ -1032,7 +1021,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "FAILs, as does any other error code."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:197-201; "
+            "docs/protocol/v2/draft/session-setup.mdx:211-215; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/replayFrom; "
             "schema/v2/schema.unstable.json#/$defs/ReplayFrom/anyOf/1"
         ),
@@ -1047,7 +1036,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "omitted -- and is not probed here."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:200-201; "
+            "docs/protocol/v2/draft/session-setup.mdx:214-215; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/replayFrom"
         ),
     ),
@@ -1061,7 +1050,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "against the v2 schema and carries the resumed `sessionId`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:192-195,261-263; "
+            "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
     ),
@@ -1074,7 +1063,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "present as an array, and the response validates against the v2 schema."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-list.mdx:10,73,108; "
+            "docs/protocol/v2/draft/session-list.mdx:10,76,111; "
             "schema/v2/schema.unstable.json#/$defs/ListSessionsResponse"
         ),
     ),
@@ -1086,7 +1075,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/list` filtered by a `cwd` no session plausibly uses returns "
             "`sessions: []` -- never `null`, never an error."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-list.mdx:145"),
+        citation=_cite("docs/protocol/v2/draft/session-list.mdx:148"),
     ),
     Requirement(
         id="ACP-LIST-203",
@@ -1098,7 +1087,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "session at that `cwd` is returned at all -- is not asserted, since no upstream "
             "statement guarantees a freshly created session appears in `session/list`)."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-list.mdx:63-66"),
+        citation=_cite("docs/protocol/v2/draft/session-list.mdx:63-68"),
     ),
     Requirement(
         id="ACP-LIST-204",
@@ -1106,7 +1095,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text="Every returned `SessionInfo.cwd` is an absolute path.",
         citation=_cite(
-            "docs/protocol/v2/draft/session-list.mdx:115-117; docs/protocol/v2/draft/overview.mdx:188"
+            "docs/protocol/v2/draft/session-list.mdx:118-120; "
+            "docs/protocol/v2/draft/overview.mdx:218"
         ),
     ),
     Requirement(
@@ -1119,7 +1109,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "side effect `ACP-CLOSE-202`/`ACP-CANCEL-208` covers."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:338-340,360-376; "
+            "docs/protocol/v2/draft/session-setup.mdx:367-369,389-405; "
             "schema/v2/schema.unstable.json#/$defs/CloseSessionRequest; "
             "schema/v2/schema.unstable.json#/$defs/CloseSessionResponse"
         ),
@@ -1137,8 +1127,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "legibility."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:360-364; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:304,1109-1112,1124"
+            "docs/protocol/v2/draft/session-setup.mdx:389-393; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:374,1185-1188,1199"
         ),
     ),
     Requirement(
@@ -1151,7 +1141,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/close` response. SKIPs when the turn did not end `cancelled` (that is "
             "`ACP-CLOSE-202`'s finding) or the close lost the race."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:364"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:393"),
     ),
     Requirement(
         id="ACP-CLOSE-204",
@@ -1166,8 +1156,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "does not by itself fail the verdict."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:366; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:304"
+            "docs/protocol/v2/draft/session-setup.mdx:395; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:374"
         ),
     ),
     Requirement(
@@ -1180,7 +1170,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "active session is implementation-defined."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-delete.mdx:35,57,74-86,94; "
+            "docs/protocol/v2/draft/session-delete.mdx:35,57,74-86,95; "
             "schema/v2/schema.unstable.json#/$defs/DeleteSessionResponse"
         ),
     ),
@@ -1195,7 +1185,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "declarative, not an RFC keyword, but it is what `session/delete` means (mirrored by "
             "the sequence diagram), so this stays CAPABILITY."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,94"),
+        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,95"),
     ),
     Requirement(
         id="ACP-DELETE-203",
@@ -1214,7 +1204,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session.additionalDirectories",
         text="`session/new` with an absolute `additionalDirectories` entry is accepted.",
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:383-411; "
+            "docs/protocol/v2/draft/session-setup.mdx:412-441; "
             "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/additionalDirectories"
         ),
     ),
@@ -1228,7 +1218,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/resume`/`session/load` analogue to this rule at all."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:385-386,409; "
+            "docs/protocol/v2/draft/session-setup.mdx:416,439; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/additionalDirectories"
         ),
     ),
@@ -1241,8 +1231,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "result whose `sessionId` is a non-empty string distinct from the source session's."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/schema.mdx:614-624; "
+            "docs/protocol/v2/draft/initialization.mdx:269-273; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse/properties/sessionId; "
             "schema/v2/schema.unstable.json#/$defs/SessionCapabilities/properties/fork"
         ),
     ),
@@ -1256,7 +1247,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the turn reaches a terminating idle. Definitional prose without an RFC keyword."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/schema.mdx:622-624; docs/rfds/session-fork.mdx:67"
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
+            "docs/protocol/v2/draft/error.mdx:54; "
+            "docs/rfds/session-fork.mdx:67"
         ),
     ),
     Requirement(
@@ -1269,7 +1262,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "non-text content) would require the TCK to break a client MUST."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:441-445,450; "
+            "docs/protocol/v2/draft/session-setup.mdx:473-477,483; "
             "schema/v2/schema.unstable.json#/$defs/SystemPromptMode/anyOf/0"
         ),
     ),
@@ -1282,8 +1275,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "succeeds when `session.systemPrompt.mode.override` is advertised."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:444-445,450; "
-            "docs/protocol/v2/draft/initialization.mdx:238-244; "
+            "docs/protocol/v2/draft/session-setup.mdx:476-477,483; "
+            "docs/protocol/v2/draft/initialization.mdx:298-304; "
             "schema/v2/schema.unstable.json#/$defs/SessionSystemPromptModeCapabilities"
         ),
     ),
@@ -1300,7 +1293,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "provably non-conformant, so this never asserts on the outcome."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:508-558,612,637; "
+            "docs/protocol/v2/draft/session-setup.mdx:555-607,656,681; "
             "schema/v2/schema.unstable.json#/$defs/McpServerStdio"
         ),
     ),
@@ -1314,7 +1307,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "session.mcp.http` is advertised. Never asserts on the outcome."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:560-608; "
+            "docs/protocol/v2/draft/session-setup.mdx:609-652; "
             "schema/v2/schema.unstable.json#/$defs/McpServerHttp"
         ),
     ),
@@ -1342,7 +1335,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/SessionConfigGroupId; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigBoolean; "
-            "docs/protocol/v2/draft/session-config-options.mdx:93-146"
+            "docs/protocol/v2/draft/session-config-options.mdx:93-154"
         ),
     ),
     Requirement(
@@ -1358,7 +1351,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`configOptions`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:279,324-329; "
+            "docs/protocol/v2/draft/session-config-options.mdx:291,367-371; "
             "docs/rfds/session-config-options.mdx:45; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionResponse"
         ),
@@ -1374,7 +1367,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "error other than `-32601` SKIPs."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:94,313-315; "
+            "docs/protocol/v2/draft/session-setup.mdx:108,333-335; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse/properties/configOptions"
         ),
     ),
@@ -1388,7 +1381,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "descriptions, not itself schema-enforced."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:116-125,214; "
+            "docs/protocol/v2/draft/session-config-options.mdx:116-133,222; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
         ),
     ),
@@ -1404,7 +1397,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "and vacuous (recorded, never FAILed) when no such update is ever observed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:331-386; "
+            "docs/protocol/v2/draft/session-config-options.mdx:373-375,459; "
             "docs/rfds/session-config-options.mdx:45; "
             "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
         ),
@@ -1435,9 +1428,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal; "
-            "schema/v2/schema.unstable.json#/$defs/AuthCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/ClientAuthCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/TerminalAuthCapabilities; "
-            "docs/protocol/v2/draft/authentication.mdx:151-154"
+            "docs/protocol/v2/draft/authentication.mdx:149-151"
         ),
     ),
     Requirement(
@@ -1472,7 +1465,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`auth/login` fails with any other error."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/authentication.mdx:51-54; "
+            "docs/protocol/v2/draft/authentication.mdx:51-53; "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthRequest/required (`methodId`); "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthResponse"
         ),
@@ -1486,7 +1479,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`authMethods` is empty or absent. Re-cites v1's `ACP-AUTH-005`/AUTH-A1; not "
             "promoted. SKIPs unless `capabilities.session` is advertised."
         ),
-        citation=_cite("docs/protocol/v2/draft/schema.mdx:785 (-32000 is a MAY, not a MUST)"),
+        citation=_cite("docs/protocol/v2/draft/schema.mdx:954 (-32000 is a MAY, not a MUST)"),
     ),
     Requirement(
         id="ACP-AUTH-206",
@@ -1499,7 +1492,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "\"agent\" when absent and had no enum-closure rule at all."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/authentication.mdx:120-122; docs/protocol/v2/draft/extensibility.mdx:224-234; schema/v2/schema.unstable.json#/$defs/AuthMethod"
+            "docs/protocol/v2/draft/authentication.mdx:118-120; "
+            "docs/protocol/v2/draft/extensibility.mdx:233-242; "
+            "schema/v2/schema.unstable.json#/$defs/AuthMethod"
         ),
     ),
     Requirement(
@@ -1517,7 +1512,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal/properties/env (\"Names MUST be "
             "unique\"); schema/v2/schema.unstable.json#/$defs/EnvVariable; "
-            "docs/protocol/v2/draft/authentication.mdx:201-203"
+            "docs/protocol/v2/draft/authentication.mdx:203-205"
         ),
     ),
     Requirement(
@@ -1530,7 +1525,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`agent_thought_chunk`/`agent_thought`) carries a non-empty string `messageId`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:406; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:484; "
             "schema/v2/schema.unstable.json#/$defs/ContentChunk; "
             "schema/v2/schema.unstable.json#/$defs/UserMessage; "
             "schema/v2/schema.unstable.json#/$defs/AgentMessage; "
@@ -1546,7 +1541,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "values -- the v2 analogue of v1's `duplicate_session_id.py` defect pattern, "
             "applied to message ids instead of session ids."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:298"),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:368"),
     ),
     Requirement(
         id="ACP-PATCH-204",
@@ -1578,7 +1573,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "observed, else SKIP."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/agent-plan.mdx:143; "
+            "docs/protocol/v2/draft/agent-plan.mdx:147; "
             "schema/v2/schema.unstable.json#/$defs/PlanUpdateContent; "
             "schema/v2/schema.unstable.json#/$defs/PlanId"
         ),
@@ -1593,7 +1588,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "earlier one. Conditional on at least one `terminal_update` being observed, else "
             "SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:413-419,439-447"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:493-499,523-531"),
     ),
     Requirement(
         id="ACP-PATCH-207",
@@ -1604,7 +1599,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "standalone, valid RFC 4648 base64 -- independent of any other chunk. Conditional "
             "on at least one such field being observed, else SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:448-449,478-482"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:536-537,566-570"),
     ),
     Requirement(
         id="ACP-PATCH-208",
@@ -1618,7 +1613,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "corresponding test is still `@pytest.mark.capability(\"capabilities.session\")`-"
             "gated for its own SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:42-55"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:41-54"),
     ),
     Requirement(
         id="ACP-PATCH-209",
@@ -1631,8 +1626,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "The test is gated on `capabilities.session`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:125,773,994; "
-            "docs/protocol/v2/draft/tool-calls.mdx:201"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:153,845,1074; "
+            "docs/protocol/v2/draft/tool-calls.mdx:209"
         ),
     ),
     Requirement(
@@ -1651,9 +1646,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "curated, non-exhaustive subset of the schema's roughly 30 open-enum sites."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:226-231; "
-            "docs/protocol/v2/draft/tool-calls.mdx:77,353,380; "
-            "docs/protocol/v2/draft/agent-plan.mdx:160,172; "
+            "docs/protocol/v2/draft/extensibility.mdx:235-240; "
+            "docs/protocol/v2/draft/tool-calls.mdx:76,372,419; "
+            "docs/protocol/v2/draft/agent-plan.mdx:164,176; "
             "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),
@@ -1669,7 +1664,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "value internally; only survival is checked."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:49-53,228,235; "
+            "docs/protocol/v2/draft/extensibility.mdx:51-55,237,249; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome/anyOf/2"
         ),
     ),
@@ -1684,8 +1679,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "remains `ACP-JSONRPC-004`'s separate ADVISORY concern."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:156,165,178,222; "
-            "docs/protocol/v2/draft/overview.mdx:193 (JSON-RPC 2.0 §4: every request gets a response)"
+            "docs/protocol/v2/draft/extensibility.mdx:165,174,187,231; "
+            "docs/protocol/v2/draft/overview.mdx:223 (JSON-RPC 2.0 §4: every request gets a response)"
         ),
     ),
     Requirement(
@@ -1697,7 +1692,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "still proceeds normally. Re-cited from v1 unchanged: `PromptRequest._meta` "
             "still exists in v2."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:66,89-93,95"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:72,74,97-102,104"),
     ),
     Requirement(
         id="ACP-META-201",
@@ -1722,7 +1717,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`answers_notifications.py` defect pattern, generalised from `session/cancel` "
             "specifically to any custom notification."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:222"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:231"),
     ),
     Requirement(
         id="ACP-EXT-202",
@@ -1733,7 +1728,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`result.capabilities._meta`, not as an unrecognized root key of `capabilities` "
             "itself."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:239-245"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:253-261"),
     ),
     Requirement(
         id="ACP-EXT-204",
@@ -1747,8 +1742,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "stand in for fields of a future ACP revision."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:134; "
-            "docs/protocol/v2/draft/extensibility.mdx:49-50,148"
+            "docs/protocol/v2/draft/initialization.mdx:156; "
+            "docs/protocol/v2/draft/extensibility.mdx:51-52,157"
         ),
     ),
     Requirement(
@@ -1760,7 +1755,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "is recorded, never asserted -- the spec explicitly says the agent \"is free to "
             "ignore\" it, so there is no conforming/non-conforming distinction to enforce."
         ),
-        citation=_cite("schema/v2/schema.unstable.json#/$defs/ProtocolLevelNotification"),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:165,231; "
+            "docs/protocol/v2/draft/error.mdx:44"
+        ),
     ),
     Requirement(
         id="ACP-ERROR-001",
@@ -1772,7 +1770,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`$def` is byte-identical between v1 and v2."
         ),
         citation=_cite(
-            "schema/v2/schema.unstable.json#/$defs/Error; docs/protocol/v2/draft/overview.mdx:193-197"
+            "schema/v2/schema.unstable.json#/$defs/Error; docs/protocol/v2/draft/overview.mdx:223-227"
         ),
     ),
     Requirement(
@@ -1785,7 +1783,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "and no stdin-EOF MUST -- only the mermaid step \"Close stdin, terminate "
             "subprocess\"."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:41"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:37"),
     ),
     Requirement(
         id="ACP-SCHEMA-002",
@@ -1799,7 +1797,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "\"a type that's part of the specification\" -- already implemented in "
             "`tck.v2.validation.find_unknown_root_keys`."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:95,226-233"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:104,235-242"),
     ),
     Requirement(
         id="ACP-STDERR-001",
@@ -1809,7 +1807,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Stderr byte count is recorded for a human reading the report. The agent MAY "
             "write UTF-8 logging to stderr, so there is nothing to assert."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:26"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:22"),
     ),
     Requirement(
         id="ACP-INFO-PARSE-001",
