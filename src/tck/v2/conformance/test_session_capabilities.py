@@ -1,4 +1,4 @@
-"""Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..209, ACP-RESUME-211),
+"""Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..214, ACP-RESUME-216),
 `session/list` (ACP-LIST-201..204), `session/close`'s own contract (ACP-CLOSE-201/203/204/206/207
 -- `ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
 `tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..203), the
@@ -6,7 +6,8 @@
 MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201/202) and `systemPrompt`
 (ACP-SYSPROMPT-201/202, and the error paths ACP-SYSPROMPT-002/003) surfaces.
 
-Every id here except `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`, `ACP-MCP-201`/`202`/`204`/`205` is
+Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`,
+`ACP-MCP-201`/`202`/`204`/`205` is
 `Tier.CAPABILITY`; see the requirements module for the exact capability path each uses. Those
 still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate even though
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
@@ -35,6 +36,8 @@ from tck.v2.validation import validate_agent_message, validate_agent_response
 
 from ..protocol import INVALID_PARAMS, REQUEST_CANCELLED, RESOURCE_NOT_FOUND
 from ._helpers import (
+    ACTIVE_STATES,
+    BACKGROUND_ID_FIELDS,
     assert_unknown_session_error,
     close_session,
     connected_agent,
@@ -42,7 +45,9 @@ from ._helpers import (
     drain_quiet,
     iter_messages,
     list_sessions,
+    background_keys,
     new_session,
+    new_session_result,
     obtain_resumable_session,
     quiet_period,
     resume_session,
@@ -86,7 +91,7 @@ def _assert_resume_succeeded(entry: TranscriptEntry, what: str) -> dict[str, Any
     return msg
 
 
-# --- session/new / session/resume (ACP-SESSION-203, ACP-RESUME-201..209) ---
+# --- session/new / session/resume (ACP-SESSION-203, ACP-RESUME-201..216) ---
 
 
 @pytest.mark.requirement("ACP-SESSION-203")
@@ -439,6 +444,186 @@ async def test_resume_unknown_session_gets_resource_not_found(agent_launch, tmp_
             agent, unknown_id, tmp_path, timeout=agent_launch.default_timeout
         )
         assert_unknown_session_error(entry, "session/resume", unknown_id)
+
+
+def _resume_updates_for(
+    updates: list[tuple[int, TranscriptEntry]], session_id: str
+) -> list[tuple[tuple[int, int], dict[str, Any]]]:
+    """The `session/update` payloads `resume_session` collected for `session_id`, in wire order,
+    each with its `(line_index, position_in_line)`."""
+    return [
+        (order, update)
+        for order, msg in _session_update_messages(updates)
+        if (update := _update_for(msg, session_id)) is not None
+    ]
+
+
+@pytest.mark.requirement("ACP-RESUME-210")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_carries_the_lists_session_new_carried(agent_launch, tmp_path):
+    """ACP-RESUME-210. The session is resumed on the connection that created it (the route
+    `ACP-RESUME-201` tries first), so `session/new`'s own response is the evidence that it has
+    options or commands. A resume that errors SKIPs here; `ACP-RESUME-216` judges that."""
+    async with connected_agent(agent_launch) as agent:
+        created = await new_session_result(agent, tmp_path, timeout=agent_launch.default_timeout)
+        expected = [
+            name
+            for name in ("configOptions", "availableCommands")
+            if isinstance(created.get(name), list) and created[name]
+        ]
+        if not expected:
+            pytest.skip("session/new carried neither configOptions nor availableCommands")
+        entry, _updates = await resume_session(
+            agent, created["sessionId"], tmp_path, timeout=agent_launch.default_timeout
+        )
+        msg = entry.parsed
+        if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
+            pytest.skip(f"session/resume of the just-created session did not succeed: {entry.text!r}")
+        missing = [
+            name
+            for name in expected
+            if not (isinstance(msg["result"].get(name), list) and msg["result"][name])
+        ]
+        assert not missing, (
+            f"session/new carried {expected} but session/resume's result omits or empties "
+            f"{missing}: {entry.text!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-RESUME-212")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_replay_has_no_historical_active_state_update(agent_launch, tmp_path):
+    """ACP-RESUME-212. After a turn that reached idle, any `running`/`requires_action`
+    `state_update` that is not the final one before the response (the snapshot) can only be a
+    replayed historical state. A lone active update is the snapshot, which may report live
+    work, so it is not judged."""
+    async with obtain_resumable_session(
+        agent_launch, tmp_path, timeout=agent_launch.default_timeout
+    ) as (agent, session_id, _entry, resume_cwd):
+        await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        response_entry, updates = await resume_session(
+            agent,
+            session_id,
+            resume_cwd,
+            replay_from={"type": "start"},
+            timeout=agent_launch.default_timeout,
+        )
+        _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
+        states = [
+            update
+            for _, update in _resume_updates_for(updates, session_id)
+            if update.get("sessionUpdate") == "state_update"
+        ]
+        replayed_active = [u for u in states[:-1] if u.get("state") in ACTIVE_STATES]
+        assert not replayed_active, (
+            f"session/resume replayed historical state_update(s) as current activity before "
+            f"the snapshot: {states!r}"
+        )
+
+
+_BACKGROUND_UPDATE_KINDS = {
+    "terminal": "terminal_update",
+    "tool_call": "tool_call_update",
+    "subagent": "subagent_update",
+}
+
+
+@pytest.mark.requirement("ACP-RESUME-213")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_announces_background_items_before_the_snapshot(agent_launch, tmp_path):
+    """ACP-RESUME-213. Resumes with `replayFrom` omitted, so replay cannot have delivered an
+    item and each one needs an update of its own. The scenario only exists when the snapshot
+    lists background work; otherwise the test SKIPs rather than passing vacuously. A turn runs
+    first so work it left running is live at the resume."""
+    async with obtain_resumable_session(
+        agent_launch, tmp_path, timeout=agent_launch.default_timeout
+    ) as (agent, session_id, _entry, resume_cwd):
+        await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        response_entry, updates = await resume_session(
+            agent, session_id, resume_cwd, timeout=agent_launch.default_timeout
+        )
+        _assert_resume_succeeded(response_entry, "session/resume")
+        ordered = _resume_updates_for(updates, session_id)
+        snapshots = [
+            (order, update)
+            for order, update in ordered
+            if update.get("sessionUpdate") == "state_update"
+        ]
+        if not snapshots:
+            pytest.skip("session/resume sent no current-state snapshot (ACP-RESUME-206 judges that)")
+        snapshot_order, snapshot = snapshots[-1]
+        listed = background_keys(snapshot)
+        if not listed:
+            pytest.skip("the resume snapshot lists no background work, so nothing is judged")
+        unannounced = sorted(
+            (kind, item_id)
+            for kind, item_id in listed
+            if not any(
+                order < snapshot_order
+                and update.get("sessionUpdate") == _BACKGROUND_UPDATE_KINDS[kind]
+                and update.get(BACKGROUND_ID_FIELDS[kind]) == item_id
+                for order, update in ordered
+            )
+        )
+        assert not unannounced, (
+            f"the resume snapshot lists background item(s) {unannounced} that no update sent "
+            f"before it announced: {[update for _, update in ordered]!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-RESUME-214")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_sends_session_info_before_responding(agent_launch, tmp_path):
+    """ACP-RESUME-214. Checked once with `replayFrom` omitted and once with `start`, both after
+    a history-producing turn; with `start` the update must follow every replayed history
+    update."""
+    async with obtain_resumable_session(
+        agent_launch, tmp_path, timeout=agent_launch.default_timeout
+    ) as (agent, session_id, _entry, resume_cwd):
+        await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        for replay_from in (None, {"type": "start"}):
+            label = f"session/resume with replayFrom={replay_from!r}"
+            response_entry, updates = await resume_session(
+                agent,
+                session_id,
+                resume_cwd,
+                replay_from=replay_from,
+                timeout=agent_launch.default_timeout,
+            )
+            _assert_resume_succeeded(response_entry, label)
+            ordered = _resume_updates_for(updates, session_id)
+            last_history = max(
+                (
+                    order
+                    for order, update in ordered
+                    if update.get("sessionUpdate") in _REPLAYED_HISTORY_KINDS
+                ),
+                default=None,
+            )
+            infos = [
+                order for order, update in ordered if update.get("sessionUpdate") == "session_info_update"
+            ]
+            assert infos, (
+                f"{label} responded without a session_info_update for the session: "
+                f"{[update for _, update in ordered]!r}"
+            )
+            assert last_history is None or max(infos) > last_history, (
+                f"{label}: the session_info_update must follow every replayed history update: "
+                f"{[update for _, update in ordered]!r}"
+            )
+
+
+@pytest.mark.requirement("ACP-RESUME-216")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_of_a_session_active_on_this_connection_succeeds(agent_launch, tmp_path):
+    """ACP-RESUME-216. The session is created and resumed on one connection, with no turn in
+    between: it is active, so resuming it again must work."""
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        entry, _updates = await resume_session(
+            agent, session_id, tmp_path, timeout=agent_launch.default_timeout
+        )
+        _assert_resume_succeeded(entry, "session/resume of a session active on this connection")
 
 
 # --- session/list (ACP-LIST-201..204) ---

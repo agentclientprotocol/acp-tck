@@ -197,7 +197,8 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
     The first connection only establishes that `configOptions` are offered at all (and keeps the
     `VERSION-MISMATCH:` skip). The resume itself goes through `obtain_resumable_session`, whose
     successful probe response is the one validated -- so a resume error SKIPs exactly as it
-    does for `ACP-RESUME-201`."""
+    does for `ACP-RESUME-201`. Shape only: a resume that omits `configOptions` SKIPs here and is
+    `ACP-RESUME-210`'s to FAIL."""
     async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         if not result.get("configOptions"):

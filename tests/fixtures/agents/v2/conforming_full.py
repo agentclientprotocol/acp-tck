@@ -3,7 +3,8 @@
 permission on every turn: `capabilities.session.prompt.{image,audio,embeddedContext}`,
 `session.delete`/`additionalDirectories`/`mcp: {stdio, http}`/`fork`/`systemPrompt` (with
 `mode.override`), plus one `select`-type
-`configOptions` entry (`_base.ConformingAgent`'s `config_options` param), one `type: "agent"`
+`configOptions` entry (`_base.ConformingAgent`'s `config_options` param), one `availableCommands`
+entry (so `ACP-RESUME-210` checks both lists), one `type: "agent"`
 auth method (`methodId: "tck"`), `emit_rich_turn_updates=True`, and `persist_sessions=True` (so
 `ACP-SYSPROMPT-002`/`003`'s resume probes can restore a session on a fresh process). Built on
 `AsksPermissionAgent`, so every turn also exercises the permission-request shape. Must PASS every
@@ -59,6 +60,9 @@ def main() -> None:
                     {"value": "verbose", "name": "Verbose"},
                 ],
             },
+        ],
+        available_commands=[
+            {"type": "command", "name": "tck", "description": "A TCK command"},
         ],
         auth_methods=[
             {"methodId": "tck", "type": "agent", "name": "TCK"},

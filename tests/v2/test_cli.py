@@ -107,7 +107,10 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-207",
     "ACP-RESUME-208",
     "ACP-RESUME-209",
+    "ACP-RESUME-210",
     "ACP-RESUME-211",
+    "ACP-RESUME-212",
+    "ACP-RESUME-213",
     "ACP-ERROR-201",
     "ACP-LIST-201",
     "ACP-LIST-202",
@@ -156,6 +159,8 @@ _ADVISORY_IDS = {
     "ACP-CLOSE-207",
     "ACP-SESSION-206",
     "ACP-SESSION-207",
+    "ACP-RESUME-214",
+    "ACP-RESUME-216",
     "ACP-MCP-204",
     "ACP-MCP-205",
     "ACP-AUTH-201",
@@ -226,6 +231,12 @@ _CANCEL_RACE_SKIP_IDS = {
 # (`reports_background_work.py` and the `background_*.py` defect fixtures).
 _BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
 
+# `ACP-RESUME-213` judges only a resume snapshot that lists background work, and SKIPs otherwise.
+# Only a fixture with `background_on_resume` (`resume_lists_background_work.py` and its defect
+# sibling) leaves live work at resume; no other fixture does, not even
+# `reports_background_work.py`, whose turns finish their work before they end.
+_RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
+
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
 # `capabilities.session.prompt.*` marker, and `ACP-PERM-201` SKIPs whenever a turn never
 # actually triggers a `session/request_permission` -- both legitimate, expected SKIPs (not
@@ -258,7 +269,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
 # session-related at all) legitimately SKIPs the session-management extras below -- `delete`,
@@ -290,6 +301,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-CONFIG-203",
     "ACP-CONFIG-204",
     "ACP-CONFIG-206",
+    "ACP-RESUME-210",  # neither `configOptions` nor `availableCommands` to carry over
 }
 
 # A fixture that advertises no `authMethods` at all, run with no `--auth-method`/
@@ -393,6 +405,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CONFIG-203",
     "ACP-CONFIG-204",
     "ACP-CONFIG-206",
+    "ACP-RESUME-210",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-SYSPROMPT-201",
@@ -419,7 +432,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
 def _assert_conforming_baseline(result: subprocess.CompletedProcess[str], fixture: str) -> None:
@@ -489,7 +502,7 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-ERROR-204",
     "ACP-META-203",
     "ACP-META-204",
-} | _BACKGROUND_SKIP_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -1149,6 +1162,9 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
         "ACP-TRANSPORT-201",
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
@@ -1313,6 +1329,9 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
         "ACP-TRANSPORT-201",
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
@@ -1707,6 +1726,9 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -1808,6 +1830,9 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
         "ACP-ENUM-201",
@@ -1907,6 +1932,9 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -2260,6 +2288,7 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
         | _BACKGROUND_SKIP_IDS
+        | _RESUME_BACKGROUND_SKIP_IDS
         | {
             "ACP-PROMPT-207",
             "ACP-PROMPTCAP-201",  # every prompt capability is advertised
@@ -2398,7 +2427,9 @@ def test_resume_always_errors_all_resume_rows_skip_together():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == set(), f"expected no FAILs, got {fails}: {result.stdout}"
+    # `ACP-RESUME-216` (ADVISORY) FAILs any error on resuming an active session, where the other
+    # resume rows SKIP on one.
+    assert fails == {"ACP-RESUME-216"}, f"expected only ACP-RESUME-216, got {fails}: {result.stdout}"
     for req_id in (
         "ACP-RESUME-201",
         "ACP-RESUME-202",
@@ -2409,6 +2440,9 @@ def test_resume_always_errors_all_resume_rows_skip_together():
         "ACP-RESUME-207",
         "ACP-RESUME-208",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
         "ACP-ADDDIRS-202",
     ):
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
@@ -2428,7 +2462,7 @@ def test_resume_lists_foreign_session_is_never_resumed():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-LIST-202", "ACP-LIST-203"}, result.stdout
+    assert fails == {"ACP-LIST-202", "ACP-LIST-203", "ACP-RESUME-216"}, result.stdout
     for req_id in (
         "ACP-RESUME-201",
         "ACP-RESUME-202",
@@ -2439,6 +2473,9 @@ def test_resume_lists_foreign_session_is_never_resumed():
         "ACP-RESUME-207",
         "ACP-RESUME-208",
         "ACP-RESUME-209",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
     ):
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
     assert "session/list has no session created in the TCK's own cwd" in result.stdout
@@ -2456,6 +2493,57 @@ def test_resume_no_state_snapshot_fails_resume_206_only():
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-RESUME-206"}, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def _resume_statuses(fixture: str, **kwargs: str) -> tuple[dict[str, str], str]:
+    """Run only `test_session_capabilities.py` against `fixture`: every row's status, and stdout."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, fixture, protocol_version=2, k="session_capabilities", **kwargs
+    )
+    return _table_statuses(result.stdout), result.stdout
+
+
+def test_resume_replays_state_updates_fails_resume_212_only():
+    """`resume_replays_state_updates.py` records and replays every `state_update`, so a replayed
+    `running` precedes the snapshot."""
+    statuses, stdout = _resume_statuses("resume_replays_state_updates.py")
+    assert _fails(statuses) == {"ACP-RESUME-212"}, stdout
+
+
+def test_resume_no_session_info_fails_resume_214_only():
+    statuses, stdout = _resume_statuses("resume_no_session_info.py")
+    assert _fails(statuses) == {"ACP-RESUME-214"}, stdout
+
+
+def test_resume_omits_config_options_fails_resume_210_only():
+    """The omitted list leaves `ACP-CONFIG-203` nothing to validate, so it SKIPs."""
+    statuses, stdout = _resume_statuses("resume_omits_config_options.py")
+    assert _fails(statuses) == {"ACP-RESUME-210"}, stdout
+
+
+def test_resume_omits_available_commands_fails_resume_210_only():
+    statuses, stdout = _resume_statuses("resume_omits_available_commands.py")
+    assert _fails(statuses) == {"ACP-RESUME-210"}, stdout
+
+
+def test_resume_rejects_unprompted_active_session_fails_resume_216_only():
+    """Resume works for a prompted or closed session, so every other row runs; only the resume of
+    a just-created session errors, and `ACP-RESUME-210`'s version of it has nothing to judge."""
+    statuses, stdout = _resume_statuses("resume_rejects_unprompted_active_session.py")
+    assert _fails(statuses) == {"ACP-RESUME-216"}, stdout
+
+
+def test_resume_lists_background_work_passes_resume_213():
+    """The positive control: the snapshot lists an unfinished background tool call and a
+    `tool_call_update` announces it first, so `ACP-RESUME-213` PASSes, not SKIPs."""
+    statuses, stdout = _resume_statuses("resume_lists_background_work.py")
+    assert _fails(statuses) == set(), stdout
+    assert statuses["ACP-RESUME-213"] == "PASS", stdout
+
+
+def test_resume_background_without_updates_fails_resume_213_only():
+    statuses, stdout = _resume_statuses("resume_background_without_updates.py")
+    assert _fails(statuses) == {"ACP-RESUME-213"}, stdout
 
 
 def test_resume_ignores_unknown_cursor_fails_resume_207_only():

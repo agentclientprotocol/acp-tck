@@ -1177,8 +1177,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/resume` (no `replayFrom`) of a session obtained via the harness's "
             "three-route strategy (create, create-then-close, then a `session/list` entry created in "
             "the TCK's own `cwd`) succeeds with a schema-valid object result. `-32601` FAILs "
-            "(B3 makes `session/resume` a baseline-mandatory method); any other error from all "
-            "three routes SKIPs -- no route is spec-guaranteed to work."
+            "(`session/resume` is part of the baseline once `capabilities.session` is "
+            "advertised); any other error from all three routes SKIPs -- no route is "
+            "spec-guaranteed to work."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:144-145; "
@@ -1309,6 +1310,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-RESUME-210",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A successful `session/resume` of a session carries each list -- `configOptions`, "
+            "`availableCommands` -- that the same session's own `session/new` response carried "
+            "non-empty, and non-empty: a setup response replaces the lists the client holds, so "
+            "an agent whose session has options or commands MUST include them. The session is "
+            "resumed on the connection that created it. SKIPs when `session/new` carried "
+            "neither list, or when that resume errors (`ACP-RESUME-216` judges the error). The "
+            "premise \"the session still has them\" is inferred from `session/new`: an agent "
+            "whose session legitimately lost every option in between answers the same way."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:108,136,333-335; "
+            "docs/protocol/v2/draft/slash-commands.mdx:12; "
+            "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
+        ),
+    ),
+    Requirement(
         id="ACP-RESUME-211",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -1322,6 +1343,69 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47; "
             "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
         ),
+    ),
+    Requirement(
+        id="ACP-RESUME-212",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "With `replayFrom: {\"type\": \"start\"}` on a session whose last turn reached idle, "
+            "no earlier `state_update` with `state` `running` or `requires_action` precedes the "
+            "current-state snapshot (the last `state_update` before the response): replay "
+            "carries no historical `state_update` as current activity. The snapshot itself may "
+            "report any state, and a replayed historical `idle` cannot be told from the idle "
+            "snapshot's optional stop reason, so neither is judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:227,348; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1084-1087"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-213",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every item in the `background` list of a resume's current-state snapshot (a "
+            "`terminal`, `tool_call` or `subagent` item) is announced before that snapshot, "
+            "within the resume exchange, by a `terminal_update` with its `terminalId`, a "
+            "`tool_call_update` with its `toolCallId` or a `subagent_update` with its "
+            "`sessionId`. Checked with `replayFrom` omitted, where nothing is replayed, so every "
+            "listed item needs its own update. SKIPs when the snapshot lists no such item, "
+            "which is the norm for an agent with no live background work, rather than passing "
+            "vacuously. Items of other (custom) types are not judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:346; "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-214",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A successful `session/resume` -- with `replayFrom` omitted or `{\"type\": "
+            "\"start\"}` -- is preceded by a `session_info_update` for the resumed session, sent "
+            "after every replayed history update, so the client can synchronize current session "
+            "info. SHOULD. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:358-361; "
+            "schema/v2/schema.unstable.json#/$defs/SessionInfoUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-216",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/resume` of a session this connection created and has not closed succeeds: "
+            "the session is active, agents SHOULD NOT discard an active session, and resuming "
+            "it again just synchronizes it. SHOULD. Any error FAILs here, where `ACP-RESUME-201` "
+            "SKIPs on one. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:49,53"),
     ),
     Requirement(
         id="ACP-LIST-201",
@@ -1790,11 +1874,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/resume`'s `configOptions`, when present, validates the same way as "
             "`ACP-CONFIG-201` -- a new carrier in v2 (v1's `session/load` had no analogous "
-            "field). The session is obtained the same way as `ACP-RESUME-201`, so a resume "
-            "error other than `-32601` SKIPs."
+            "field). Shape only: whether the resume carries the list at all is "
+            "`ACP-RESUME-210`'s concern, and an absent list SKIPs. The session is obtained the "
+            "same way as `ACP-RESUME-201`, so a resume error other than `-32601` SKIPs."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:108,333-335; "
+            "docs/protocol/v2/draft/session-setup.mdx:136,333-335; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse/properties/configOptions"
         ),
     ),

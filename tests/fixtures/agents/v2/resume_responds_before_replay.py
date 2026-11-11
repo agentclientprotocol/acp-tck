@@ -34,6 +34,7 @@ class ResumeRespondsBeforeReplayAgent(ConformingAgent):
             return
         if session_id in self._closed_sessions:
             self._sessions[session_id] = self._closed_sessions.pop(session_id)
+        self._send_resume_session_info(session_id)
         self._send_resume_snapshot(session_id)
         self._reply(msg_id, self._resume_result())
         if self._should_replay(params.get("replayFrom")):

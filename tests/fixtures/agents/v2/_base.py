@@ -32,7 +32,8 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `session/resume` replay: each `session/update` is recorded per session (`_record_history`);
   `replayFrom: {"type": "start"}` replays it verbatim, omitted/`null` replays nothing, and any
   other or malformed cursor gets `-32602` (`_replay_from_rejection`). Every successful resume
-  sends a current-state `state_update` before the response (`_send_resume_snapshot`). Resume
+  sends a `session_info_update` (`_send_resume_session_info`) and a current-state `state_update`
+  (`_send_resume_snapshot`) before the response. Resume
   accepts a session that is live or closed on this connection (the routes
   `_helpers.obtain_resumable_session` tries first), and answers any other id with `-32002`
   (`_unknown_session`). The first `*_chunk` update for a `messageId`
@@ -63,7 +64,9 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   successful `session/new` are launched and sent an MCP `initialize` (`_launch_mcp_servers`), so
   the TCK's stub server can observe the connection.
 - `session/set_config_option` updates `currentValue` and replies with the complete list;
-  `session/new`/`session/resume` include `configOptions` whenever any are configured.
+  `session/new`/`session/resume`/`session/fork` include `configOptions` (and `availableCommands`,
+  from the opt-in `available_commands` argument) whenever any are configured
+  (`_initial_state_fields`, session-setup.mdx:108).
   A valid `additionalDirectories`/`mcpServers` is accepted and otherwise ignored.
 - `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
   `_send_rich_turn_updates` fires once per turn after the running update, emitting two
@@ -77,6 +80,9 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `background` list (`_with_background`), and each turn that does not end `cancelled` runs one
   background tool call (`_run_background_work`): announced, listed on a repeated `running`
   snapshot, then finalized, so the turn-ending idle removes it (prompt-lifecycle.mdx:203-206).
+- `background_on_resume` (opt-in, default `False`, needs `report_background_work`): every
+  resume leaves the session with one unfinished background tool call, listed on the snapshot and
+  announced by a `tool_call_update` before it (`_resume_background`, session-setup.mdx:346).
 - `terminal_auth_method`: appended to `authMethods` only when the `initialize` request's
   `capabilities.auth.terminal` object marker is present (the same gate the conformance test
   applies), so the default connection stays the negative control while a positive-capability
@@ -149,8 +155,12 @@ class ConformingAgent:
         terminal_auth_method: dict[str, Any] | None = None,
         report_background_work: bool = False,
         persist_sessions: bool = False,
+        available_commands: list[dict[str, Any]] | None = None,
+        background_on_resume: bool = False,
     ) -> None:
         self._persist_sessions = persist_sessions
+        self._available_commands: list[dict[str, Any]] = [dict(cmd) for cmd in (available_commands or [])]
+        self._background_on_resume = background_on_resume
         self._session_count = 0
         self._message_count = 0
         self._tool_call_count = 0
@@ -496,10 +506,17 @@ class ConformingAgent:
         sent by default (session-setup.mdx:103)."""
 
     def _new_session_result(self, session_id: str) -> dict[str, Any]:
-        result: dict[str, Any] = {"sessionId": session_id}
+        return {"sessionId": session_id, **self._initial_state_fields()}
+
+    def _initial_state_fields(self) -> dict[str, Any]:
+        """`configOptions`/`availableCommands` for a setup response, each only when the session
+        has any (session-setup.mdx:108, 134)."""
+        fields: dict[str, Any] = {}
         if self._config_options:
-            result["configOptions"] = self._current_config_options()
-        return result
+            fields["configOptions"] = self._current_config_options()
+        if self._available_commands:
+            fields["availableCommands"] = [dict(cmd) for cmd in self._available_commands]
+        return fields
 
     def _handle_new_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         if self._require_auth and not self._authenticated:
@@ -587,6 +604,8 @@ class ConformingAgent:
             self._sessions[session_id] = self._closed_sessions.pop(session_id)
         if self._should_replay(params.get("replayFrom")):
             self._replay_history(session_id)
+        self._send_resume_session_info(session_id)
+        self._resume_background(session_id)
         self._send_resume_snapshot(session_id)
         self._reply(msg_id, self._resume_result())
 
@@ -613,6 +632,33 @@ class ConformingAgent:
             # itself be re-recorded into history.
             self._notify("session/update", {"sessionId": session_id, "update": update})
 
+    def _send_resume_session_info(self, session_id: Any) -> None:
+        """Hook: the current `session_info_update` every successful resume sends after any
+        replay and before responding (session-setup.mdx:358-361). Live state, not recorded."""
+        self._notify(
+            "session/update",
+            {
+                "sessionId": session_id,
+                "update": {"sessionUpdate": "session_info_update", "title": "TCK fixture session"},
+            },
+        )
+
+    def _resume_background(self, session_id: Any) -> None:
+        """For `background_on_resume`: the session has one unfinished background tool call when
+        it is resumed. List it (so the snapshot reports it) and announce it
+        (session-setup.mdx:346). Idempotent across repeated resumes."""
+        if not self._background_on_resume:
+            return
+        item = {"type": "tool_call", "toolCallId": "tool-bg-resume"}
+        listed = self._background.setdefault(session_id, [])
+        if item not in listed:
+            listed.append(item)
+        self._announce_resume_background(session_id, item["toolCallId"])
+
+    def _announce_resume_background(self, session_id: Any, tool_call_id: str) -> None:
+        """Hook: the `tool_call_update` sent before the snapshot that lists a resumed item."""
+        self._announce_background_item(session_id, tool_call_id)
+
     def _send_resume_snapshot(self, session_id: Any) -> None:
         """The current-state `state_update` every successful resume sends before responding.
         Not recorded into history: it is live state, not conversation."""
@@ -623,10 +669,7 @@ class ConformingAgent:
         self._notify("session/update", {"sessionId": session_id, "update": update})
 
     def _resume_result(self) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        if self._config_options:
-            result["configOptions"] = self._current_config_options()
-        return result
+        return self._initial_state_fields()
 
     def _handle_fork_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         source_id = params.get("sessionId")
@@ -637,10 +680,7 @@ class ConformingAgent:
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
         self._history[session_id] = [dict(update) for update in self._history.get(source_id, [])]
-        result: dict[str, Any] = {"sessionId": session_id}
-        if self._config_options:
-            result["configOptions"] = self._current_config_options()
-        self._reply(msg_id, result)
+        self._reply(msg_id, {"sessionId": session_id, **self._initial_state_fields()})
 
     def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-CANCEL-208: closing a session with a still-hanging `__hang__` prompt MUST cancel

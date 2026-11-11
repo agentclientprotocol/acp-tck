@@ -218,8 +218,11 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     skip_if_auth_gated_msg(entry.parsed)
 
 
-async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = None) -> str:
-    """Send `session/new` for `cwd` and return the resulting `sessionId`.
+async def new_session_result(
+    agent: AgentProcess, cwd: Any, *, timeout: float | None = None
+) -> dict[str, Any]:
+    """Send `session/new` for `cwd` and return the whole result object (`sessionId` plus any
+    `configOptions`/`availableCommands`).
 
     Unlike v1's `new_session`, `mcpServers` is omitted entirely rather than sent as an empty
     list -- v2's `session/new` params require only `cwd` (`schema/v2/schema.unstable.json#/$defs/NewSessionRequest/required`,
@@ -239,7 +242,12 @@ async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = 
     assert isinstance(session_id, str) and session_id, (
         f"session/new result.sessionId must be a non-empty string, got {session_id!r}"
     )
-    return session_id
+    return msg["result"]
+
+
+async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = None) -> str:
+    """`new_session_result`'s `sessionId`."""
+    return (await new_session_result(agent, cwd, timeout=timeout))["sessionId"]
 
 
 async def resume_session(
@@ -471,10 +479,10 @@ async def _attempt_resumable_route(
     open; `None` on any failure, with the connection already closed and the failure appended to
     `errors`.
 
-    A `-32601` from `session/resume` itself is not a route failure to record and move past: `B3`
-    makes `session/resume` baseline-mandatory once `capabilities.session` is advertised at all,
-    so this is unconditionally a conformance failure and is raised via `pytest.fail(...)`
-    immediately, regardless of which route surfaced it.
+    A `-32601` from `session/resume` itself is not a route failure to record and move past:
+    `session/resume` is part of the baseline once `capabilities.session` is advertised at all
+    (session-setup.mdx:144-145), so this is unconditionally a conformance failure and is
+    raised via `pytest.fail(...)` immediately, regardless of which route surfaced it.
     """
     attempt_stack = contextlib.AsyncExitStack()
     try:
@@ -502,7 +510,7 @@ async def _attempt_resumable_route(
         if code == METHOD_NOT_FOUND:
             pytest.fail(
                 "session/resume answered -32601 Method not found -- session/resume is "
-                "baseline-mandatory once capabilities.session is advertised at all (B3), so "
+                "part of the baseline once capabilities.session is advertised at all, so "
                 "this is a hard failure of ACP-RESUME-201, not a route-specific SKIP"
             )
         errors.append(f"session/resume error: {msg['error']!r}")
