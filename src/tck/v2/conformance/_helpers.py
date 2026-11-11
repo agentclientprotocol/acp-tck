@@ -45,6 +45,7 @@ from tck.common.plugin import (
     current_initialize_auth_methods,
     record_test_property,
     register_active_process,
+    skip_if_login_times_out,
 )
 
 from .. import SPEC
@@ -70,7 +71,8 @@ async def connected_agent(
     `schema/v2/schema.unstable.json#/$defs/LoginAuthRequest`). As in v1, a failing `auth/login` here is
     not itself a conformance assertion -- it means the TCK cannot exercise anything
     session-dependent against this agent with the given `--auth-method`, so the test SKIPs with
-    a clear reason instead of raising.
+    a clear reason instead of raising. A login that never answers (it may be interactive and
+    pending) SKIPs with `AUTH-GATED:` too, see `skip_if_login_times_out`.
     """
     async with AgentProcess(launch) as agent:
         register_active_process(agent)
@@ -150,7 +152,8 @@ async def login_if_needed(agent: AgentProcess, *, timeout: float | None = None) 
         return
     validate_login_method_id(auth_methods, method_id)
     auth_id = await agent.send_request("auth/login", {"methodId": method_id})
-    auth_entry = await agent.wait_for_response(auth_id, timeout=timeout)
+    with skip_if_login_times_out("auth/login", method_id, timeout):
+        auth_entry = await agent.wait_for_response(auth_id, timeout=timeout)
     auth_msg = auth_entry.parsed
     if not (isinstance(auth_msg, dict) and isinstance(auth_msg.get("result"), dict)):
         detail = (auth_msg.get("error") if isinstance(auth_msg, dict) else None) or auth_entry.text

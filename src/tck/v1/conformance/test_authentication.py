@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from tck.common.plugin import current_allow_logout, current_auth_method_id
+from tck.common.plugin import current_allow_logout, current_auth_method_id, skip_if_login_times_out
 from tck.v1.protocol import AUTH_STATES, AUTHENTICATION_REQUIRED
 from tck.v1.validation import validate_against_def, validate_agent_response
 
@@ -70,7 +70,8 @@ async def test_authenticate_then_session_new_succeeds(agent_launch, tmp_path):
     auth flow to exist, and a client must not `authenticate` with a `terminal` method.
 
     `authenticate` succeeding is never asserted -- a real agent may legitimately reject
-    bad/expired/cancelled credentials, so an `authenticate` error SKIPs with a distinct reason.
+    bad/expired/cancelled credentials, so an `authenticate` error SKIPs with a distinct reason,
+    and one that never answers SKIPs with `AUTH-GATED:` (the login may be interactive).
     When it does return a result, the one hard assertion is that a subsequent `session/new` on
     the same connection does not fail with `-32000`."""
     method_id = current_auth_method_id()
@@ -92,7 +93,8 @@ async def test_authenticate_then_session_new_succeeds(agent_launch, tmp_path):
             pytest.skip(f"not calling authenticate: {reason}")
 
         auth_id = await agent.send_request("authenticate", {"methodId": method_id})
-        auth_entry = await agent.wait_for_response(auth_id, timeout=agent_launch.default_timeout)
+        with skip_if_login_times_out("authenticate", method_id, agent_launch.default_timeout):
+            auth_entry = await agent.wait_for_response(auth_id, timeout=agent_launch.default_timeout)
         auth_msg = auth_entry.parsed
         if not (isinstance(auth_msg, dict) and isinstance(auth_msg.get("result"), dict)):
             detail = (auth_msg.get("error") if isinstance(auth_msg, dict) else None) or auth_entry.text
@@ -176,6 +178,7 @@ async def test_terminal_auth_capability_initialize_validates(agent_launch):
 
 @pytest.mark.requirement("ACP-AUTH-004")
 @pytest.mark.capability("agentCapabilities.auth.logout")
+@pytest.mark.revokes("auth", reason="logout may drop credentials other tests rely on")
 async def test_logout_succeeds(agent_launch):
     """ACP-AUTH-004. If `--tck-auth-method` was given, `connected_agent`'s handshake has
     already authenticated, so `logout` runs on that authenticated connection; otherwise it's

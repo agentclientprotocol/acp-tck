@@ -976,6 +976,31 @@ def test_gated_by_auth_with_auth_method_succeeds():
     assert "blocked by authentication" not in result.stdout, result.stdout
 
 
+def test_login_that_never_answers_skips_auth_gated_and_blocks_the_verdict(tmp_path):
+    """`gated_by_auth_login_never_answers.py` never answers `authenticate` (an interactive
+    login that stays pending). `connected_agent`'s embedded login times out, which SKIPs with
+    the `AUTH-GATED:` marker and a hint instead of FAILing, and blocks the verdict like any
+    other auth gate."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "gated_by_auth_login_never_answers.py",
+        k="test_session_new_succeeds_with_a_unique_session_id",
+        auth_method="tck",
+        report_json=str(report_path),
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-SESSION-001") == "SKIPPED", result.stdout
+    assert "blocked by authentication" in result.stdout, result.stdout
+
+    report = json.loads(report_path.read_text())
+    assert report["verdict"]["blocked_by_auth"] is True, report["verdict"]
+    assert report["verdict"]["conformant"] is False, report["verdict"]
+    by_id = {r["id"]: r for r in report["requirements"]}
+    message = by_id["ACP-SESSION-001"]["tests"][0]["message"]
+    assert "AUTH-GATED:" in message and "interactive" in message, message
+
+
 def test_gated_by_auth_full_run_without_auth_method_is_not_conformant_and_blocked_by_auth(
     tmp_path,
 ):

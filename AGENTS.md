@@ -68,6 +68,11 @@ before session-dependent tests; without it, auth-gated agents SKIP those tests a
 forced NOT CONFORMANT via `Verdict.blocked_by_auth`), `--allow-logout` (opt-in to actually
 calling `logout`/`auth/logout`, since it may revoke the operator's own credentials).
 
+If the embedded login (`authenticate`/`auth/login`) never answers within the timeout -- an
+interactive login may stay pending -- the test SKIPs with an `AUTH-GATED:` reason and a hint
+(`tck.common.plugin.skip_if_login_times_out`) instead of FAILing, and the run is blocked by auth
+like any other auth-gated SKIP. Use a non-interactive `--auth-method` or raise the timeouts.
+
 If an agent negotiates down to a different protocol version than requested (e.g. a v1-only
 agent run under `--protocol-version 2`), every requirement that judges the *result's shape*
 against that version's rules SKIPs with a `"VERSION-MISMATCH:"`-prefixed message rather than
@@ -140,6 +145,10 @@ checked by `tests/v1/test_registry.py`.
    "capability not advertised" reason otherwise. This checks for an *object marker* by default
    (present + non-null counts, even `{}`); pass `boolean=True` for a plain boolean gate. See
    `capability_is_supported()` in `src/tck/common/plugin.py`.
+   If the test takes away something other tests rely on (today only the logout tests), add
+   `@pytest.mark.revokes("auth", reason=...)`: the common plugin moves it to the end of the run.
+   At most one `revokes` test may be collected per run (`pytest.UsageError` otherwise; a second
+   would need dependency ordering). Don't use it for archive/delete of the TCK's own sessions.
 4. If the test needs to send a custom/probe method the agent isn't expected to recognize, prefix
    it with `_` (`_tck/does_not_exist`, ...) -- the extensibility rule requires custom methods to
    be `_`-prefixed, and the TCK holds its own probe traffic to the same rule.

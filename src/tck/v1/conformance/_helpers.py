@@ -17,6 +17,7 @@ from tck.common.plugin import (
     current_initialize_auth_methods,
     record_test_property,
     register_active_process,
+    skip_if_login_times_out,
 )
 from tck.v1.protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
 
@@ -47,6 +48,9 @@ async def connected_agent(
     exercises an auth-gated fixture). A caller that must observe the agent unauthenticated
     (`auth/status`, ACP-AUTH-007) passes `authenticate=False` to keep the handshake but skip
     this step.
+
+    A login that never answers (it may be interactive and pending) SKIPs with `AUTH-GATED:`
+    rather than failing, see `skip_if_login_times_out`.
     """
     async with AgentProcess(launch) as agent:
         register_active_process(agent)
@@ -70,7 +74,8 @@ async def connected_agent(
                 if reason is not None:
                     pytest.skip(f"AUTH-GATED: {reason} -- check --tck-auth-method")
                 auth_id = await agent.send_request("authenticate", {"methodId": method_id})
-                auth_entry = await agent.wait_for_response(auth_id, timeout=launch.startup_timeout)
+                with skip_if_login_times_out("authenticate", method_id, launch.startup_timeout):
+                    auth_entry = await agent.wait_for_response(auth_id, timeout=launch.startup_timeout)
                 auth_msg = auth_entry.parsed
                 # `authenticate` succeeding is never a MANDATORY assertion -- a real agent may
                 # legitimately reject bad/expired/cancelled credentials. An error response here

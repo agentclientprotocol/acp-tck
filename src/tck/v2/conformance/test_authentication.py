@@ -18,7 +18,7 @@ import contextlib
 
 import pytest
 
-from tck.common.plugin import current_allow_logout, current_auth_method_id
+from tck.common.plugin import current_allow_logout, current_auth_method_id, skip_if_login_times_out
 
 from .. import SPEC
 from ..protocol import METHOD_NOT_FOUND, is_valid_open_enum_value
@@ -172,7 +172,8 @@ async def test_login_then_session_new_succeeds(agent_launch, tmp_path):
         validate_login_method_id(auth_methods, method_id)
 
         login_id = await agent.send_request("auth/login", {"methodId": method_id})
-        login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
+        with skip_if_login_times_out("auth/login", method_id, agent_launch.default_timeout):
+            login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
         login_msg = login_entry.parsed
         if not (isinstance(login_msg, dict) and isinstance(login_msg.get("result"), dict)):
             error = login_msg.get("error") if isinstance(login_msg, dict) else None
@@ -206,6 +207,7 @@ async def test_session_new_not_gated_when_no_auth_methods_advertised(agent_launc
 
 
 @pytest.mark.requirement("ACP-AUTH-203")
+@pytest.mark.revokes("auth", reason="auth/logout may drop credentials other tests rely on")
 async def test_logout_succeeds(agent_launch):
     """ACP-AUTH-203 (CAPABILITY, `capability="inferred:authMethods"` -- replaces v1's
     `ACP-AUTH-004` outright, since v2 has no `agentCapabilities.auth.logout` marker). SKIPs when
@@ -230,7 +232,8 @@ async def test_logout_succeeds(agent_launch):
         if method_id is not None:
             validate_login_method_id(auth_methods, method_id)
             login_id = await agent.send_request("auth/login", {"methodId": method_id})
-            login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
+            with skip_if_login_times_out("auth/login", method_id, agent_launch.default_timeout):
+                login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
             login_msg = login_entry.parsed
             if not (isinstance(login_msg, dict) and isinstance(login_msg.get("result"), dict)):
                 detail = (login_msg.get("error") if isinstance(login_msg, dict) else None) or login_entry.text

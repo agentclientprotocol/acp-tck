@@ -17,6 +17,7 @@ errors, and interrupted runs keep pytest's own exit code untouched.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import inspect
 import json
@@ -206,7 +207,39 @@ def pytest_configure(config: pytest.Config) -> None:
         "negotiation: this test judges version negotiation itself, so it still runs when the "
         "cached `initialize` was rejected with -32022 (every other test SKIPs VERSION-MISMATCH).",
     )
+    config.addinivalue_line(
+        "markers",
+        "revokes(what, reason=...): this test takes away something other tests rely on (e.g. "
+        '`revokes("auth", reason=...)` for logout), so it is moved to the end of the run. At most '
+        "one such test may be collected per run.",
+    )
     config.stash[TEST_STATES_KEY] = {}
+
+
+def _revokes_markers(item: pytest.Item) -> list[pytest.Mark]:
+    return list(item.iter_markers("revokes"))
+
+
+def _order_revokes_last(items: list[pytest.Item]) -> list[str]:
+    """Move `revokes`-marked items to the end (collection order otherwise kept) and return
+    problems. More than one is an error: a second would need dependency ordering among them."""
+    errors: list[str] = []
+    revoking = [item for item in items if _revokes_markers(item)]
+    for item in revoking:
+        for marker in _revokes_markers(item):
+            if len(marker.args) != 1 or not marker.kwargs.get("reason"):
+                errors.append(
+                    f'{item.nodeid}: use @pytest.mark.revokes("<what>", reason="<why>") '
+                    "(one positional argument and a non-empty reason)"
+                )
+    if len(revoking) > 1:
+        errors.append(
+            "at most one @pytest.mark.revokes test may be collected per run (a second would need "
+            "dependency ordering); collected: " + ", ".join(item.nodeid for item in revoking)
+        )
+    if not errors:
+        items[:] = [item for item in items if item not in revoking] + revoking
+    return errors
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -226,6 +259,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                 "it is remapped to PASS/SKIPPED by _phase_status, not reported as-is; use "
                 "pytest.skip with a reason instead"
             )
+    errors.extend(_order_revokes_last(items))
     if errors:
         raise pytest.UsageError(
             "Invalid test(s) in the conformance suite:\n" + "\n".join(errors)
@@ -291,6 +325,23 @@ def current_auth_method_id() -> str | None:
     functions with no fixture access of their own -- mirrors the `_ACTIVE_PROCESSES` contextvar
     pattern used for process registration."""
     return _AUTH_METHOD.get()
+
+
+@contextlib.contextmanager
+def skip_if_login_times_out(method: str, method_id: str, timeout: float | None) -> Any:
+    """Wrap the wait for a login response (`authenticate` in v1, `auth/login` in v2) sent for
+    `--auth-method`: an `AgentTimeout` SKIPs with an `AUTH-GATED:` reason instead of failing.
+    A login may stay pending while the user completes an interactive flow
+    (`docs/protocol/v2/draft/authentication.mdx`, "Agent-handled authentication"), which says nothing
+    about the requirement under test. The SKIP blocks the verdict like any other auth gate."""
+    try:
+        yield
+    except AgentTimeout:
+        pytest.skip(
+            f"AUTH-GATED: {method} with methodId={method_id!r} did not answer within "
+            f"{timeout}s -- the login may be interactive and still pending; use a "
+            "non-interactive --auth-method or raise --timeout/--startup-timeout"
+        )
 
 
 _INIT_AUTH_METHODS: contextvars.ContextVar[list[Any] | None] = contextvars.ContextVar(
@@ -927,9 +978,10 @@ def pytest_terminal_summary(
         if verdict.blocked_by_auth:
             terminalreporter.write_line(
                 "hint: one or more session-dependent tests were SKIPPED because the agent "
-                "requires authentication before session/new and no --auth-method was given -- "
-                "pass --auth-method <id> (an id from initialize's authMethods) to test this "
-                "agent fully; the run cannot be scored CONFORMANT without it.",
+                "requires authentication before session/new and no usable --auth-method was "
+                "given (none, or its login failed or timed out) -- pass --auth-method <id> (an "
+                "id from initialize's authMethods that logs in without user interaction) to "
+                "test this agent fully; the run cannot be scored CONFORMANT without it.",
                 bold=True,
                 yellow=True,
             )

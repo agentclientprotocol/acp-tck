@@ -244,3 +244,34 @@ def test_no_v1_source_cites_the_non_draft_docs_tree():
     for requirement in REGISTRY.values():
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.citation), requirement.id
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.text), requirement.id
+
+
+def _tests_with_marker(name: str) -> dict[str, list[Any]]:
+    import tck.v1.conformance as conformance_pkg
+
+    found: dict[str, list[Any]] = {}
+    for module_info in pkgutil.iter_modules(conformance_pkg.__path__, conformance_pkg.__name__ + "."):
+        if not module_info.name.rsplit(".", 1)[-1].startswith("test_"):
+            continue
+        module = importlib.import_module(module_info.name)
+        for test_name, obj in vars(module).items():
+            if test_name.startswith("test_") and callable(obj):
+                for mark in getattr(obj, "pytestmark", []):
+                    if mark.name == name:
+                        found.setdefault(test_name, []).append(mark)
+    return found
+
+
+def test_every_logout_test_carries_the_revokes_marker_and_nothing_else_does():
+    """Logout takes credentials away from later tests, so it must be ordered last; only tests
+    that revoke something other tests rely on carry `revokes`."""
+    logout_tests = {
+        test_name
+        for test_name, marks in _tests_with_marker("requirement").items()
+        if "ACP-AUTH-004" in {req_id for mark in marks for req_id in mark.args}
+    }
+    assert logout_tests, "no test is bound to ACP-AUTH-004"
+    revoking = _tests_with_marker("revokes")
+    assert set(revoking) == logout_tests
+    for marks in revoking.values():
+        assert [(m.args, bool(m.kwargs.get("reason"))) for m in marks] == [(("auth",), True)]
