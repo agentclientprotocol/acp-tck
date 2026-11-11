@@ -2,12 +2,12 @@
 vendored ACP v2 (Draft) schema (`tck/v2/schema/schema.unstable.json`, see `VENDORED.md`).
 
 Mirrors `tck.v1.validation`'s API (`validate_agent_message`, `validate_agent_response`,
-`find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in three
-ways this module encodes, and carries one schema-hint carve-out (4):
+`find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in four
+ways this module encodes, and carries one schema-hint carve-out (5):
 
 1. **No batching.** v2's top-level schema has only the single-message branches (`Agent`/
    `Client`/`ProtocolLevel`/`Proxy`, all `type: object`), so *any* JSON array -- empty or not --
-   is not an ACP message (`docs/protocol/v2/draft/transports.mdx:20,67`).
+   is not an ACP message (`docs/protocol/v2/draft/transports.mdx:67`; `overview.mdx:21`).
    `validate_agent_message`/`validate_agent_response` report a list as one issue and do not
    look inside it.
 2. **No `null` response special case.** v1 special-cased `result: null` for method responses
@@ -24,7 +24,12 @@ ways this module encodes, and carries one schema-hint carve-out (4):
    fallback and the check is skipped (`[]`) instead of flagging extra fields. A missing/`null`/
    non-`_`-prefixed discriminator does not count, so a malformed discriminator can't dodge the
    check.
-4. **`x-deserialize-default-on-null` hint.** `null` at a property schema carrying
+4. **`RequestId` is never `null`.** v2 request ids are a string or an integer
+   (`docs/protocol/v2/draft/overview.mdx:15-17`; `schema/v2/schema.unstable.json#/$defs/RequestId`),
+   so an agent-authored request or a result response with `id: null` is an issue. Only an error
+   response may carry `id: null` (when the request id could not be determined); v1's `RequestId`
+   allowed `null` everywhere.
+5. **`x-deserialize-default-on-null` hint.** `null` at a property schema carrying
    `x-deserialize-default-on-null: true` (e.g. `AuthMethodTerminal`'s `args`/`env`) means "use
    the default / treat as omitted", and the reference receivers accept it, so a `type` error on
    `null` is dropped where the node itself carries the hint. A non-`null` wrong type, and `null`
@@ -213,11 +218,19 @@ def _validate_error_envelope(error: Any, base_path: list[str]) -> list[Validatio
     return issues
 
 
-def _is_valid_request_id(value: Any) -> bool:
-    """`RequestId` is `null | integer | string`, same as v1."""
-    if value is None or isinstance(value, str):
+def is_valid_request_id(value: Any, *, allow_null: bool = False) -> bool:
+    """`RequestId` is `integer | string` (`overview.mdx:15-17`). `null` is valid only where the
+    schema's error-response `id` allows it (`allow_null=True`)."""
+    if value is None:
+        return allow_null
+    if isinstance(value, str):
         return True
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _request_id_issue(value: Any, *, null_ok: bool) -> ValidationIssue:
+    rule = "a string or an integer (null only on an error response)" if null_ok else "a string or an integer, never null"
+    return ValidationIssue(path="/id", message=f"id must be {rule} (RequestId), got {value!r}", schema_path="#/$defs/RequestId")
 
 
 def _validate_jsonrpc_field(msg: dict[str, Any]) -> list[ValidationIssue]:
@@ -246,8 +259,9 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
 
     Dispatches on shape, never on caller-supplied context:
 
-    - has `method` and `id` -> agent -> client (or `$/cancel_request`) *request*: validate
-      `params` against that method's params schema.
+    - has `method` and `id` -> agent -> client (or `$/cancel_request`) *request*: its `id` must
+      be a string or integer (never `null`), and `params` is validated against that method's
+      params schema.
     - has `method`, no `id` -> notification: same, against the notification's params schema.
     - no `method` -> *response*: only the JSON-RPC envelope is checked here (`result` XOR
       `error`, `id` present, error shape) -- validating `result` against a method-specific
@@ -272,6 +286,9 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
 
     if "method" not in msg:
         return issues + validate_response_envelope(msg)
+
+    if "id" in msg and not is_valid_request_id(msg["id"]):
+        issues.append(_request_id_issue(msg["id"], null_ok=False))
 
     method = msg.get("method")
     if not isinstance(method, str):
@@ -322,22 +339,16 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
 
 
 def validate_response_envelope(msg: dict[str, Any]) -> list[ValidationIssue]:
-    """Validate the JSON-RPC response envelope only: `id` present and a valid `RequestId`,
-    exactly one of `result`/`error`, and (for an error) the shared `Error` shape. Applies to any
-    single response message."""
+    """Validate the JSON-RPC response envelope only: `id` present and a valid `RequestId`
+    (`null` only on an error response), exactly one of `result`/`error`, and (for an error) the
+    shared `Error` shape. Applies to any single response message."""
     issues: list[ValidationIssue] = []
     if "id" not in msg:
         issues.append(
             ValidationIssue(path="/id", message="response is missing required field 'id'", schema_path="")
         )
-    elif not _is_valid_request_id(msg["id"]):
-        issues.append(
-            ValidationIssue(
-                path="/id",
-                message=f"id must be a string, integer, or null (RequestId), got {msg['id']!r}",
-                schema_path="#/$defs/RequestId",
-            )
-        )
+    elif not is_valid_request_id(msg["id"], allow_null="error" in msg and "result" not in msg):
+        issues.append(_request_id_issue(msg["id"], null_ok=True))
     has_result = "result" in msg
     has_error = "error" in msg
     if has_result and has_error:

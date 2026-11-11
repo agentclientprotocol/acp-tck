@@ -738,12 +738,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "A response carries exactly one of `result`/`error`; an error object has an "
-            "integer `code` and a string `message`."
+            "A response carries exactly one of `result`/`error`, and an `id` that is a string "
+            "or an integer; only an error response may carry `id: null` (when the request id "
+            "could not be determined). An error object has an integer `code` and a string "
+            "`message`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:225-226; "
-            "schema/v2/schema.unstable.json#/$defs/AgentResponse (disjoint Result/Error branches)"
+            "docs/protocol/v2/draft/overview.mdx:15-17,225-226; "
+            "docs/protocol/v2/draft/error.mdx:6-10; "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse (disjoint Result/Error branches; "
+            "only the Error branch's `id` allows null); "
+            "schema/v2/schema.unstable.json#/$defs/RequestId"
         ),
     ),
     Requirement(
@@ -758,10 +763,35 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     ),
     Requirement(
         id="ACP-JSONRPC-004",
-        tier=Tier.ADVISORY,
+        tier=Tier.MANDATORY,
         capability=None,
-        text="An unknown method yields `-32601`. Spec wording is still 'should'.",
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:202-213"),
+        text=(
+            "A request for a method the agent does not recognize -- probed with an unknown "
+            "`_`-prefixed custom method -- is answered with `-32601` (Method not found). "
+            "Replying at all is `ACP-EXT-001`'s concern; an agent that never replies SKIPs "
+            "here rather than failing both rows."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:202-213; "
+            "docs/protocol/v2/draft/error.mdx:44"
+        ),
+    ),
+    Requirement(
+        id="ACP-JSONRPC-202",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "Every request the agent sends to the client has an `id` that is a string or an "
+            "integer, never `null`, and the agent does not reuse an `id` while an earlier "
+            "request with it is still awaiting the client's response. Passive: judged on "
+            "the requests the agent sends during a prompt turn, and SKIPs when it sends none "
+            "(or, for the reuse half, never has two requests pending at once)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/overview.mdx:15-19; "
+            "schema/v2/schema.unstable.json#/$defs/RequestId; "
+            "schema/v2/schema.unstable.json#/$defs/AgentRequest"
+        ),
     ),
     Requirement(
         id="ACP-JSONRPC-005",
@@ -1567,9 +1597,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A `_`-prefixed custom method request receives *some* response -- a result, or "
-            "an error with any code. Re-cited from v1 unchanged: same requirement, only "
-            "the citation moves to v2's extensibility docs. The `-32601` code specifically "
-            "remains `ACP-JSONRPC-004`'s separate ADVISORY concern."
+            "an error with any code. The `-32601` code specifically is `ACP-JSONRPC-004`'s "
+            "separate concern."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/extensibility.mdx:165,174,187,231; "

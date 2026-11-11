@@ -81,6 +81,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-JSONRPC-003",
         "ACP-JSONRPC-004",
         "ACP-JSONRPC-005",
+        "ACP-JSONRPC-202",
         "ACP-BATCH-209",
         "ACP-CANCEL-201",
         "ACP-CANCEL-202",
@@ -173,7 +174,6 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-ERROR-001",
         "ACP-EXT-201",
         "ACP-EXT-202",
-        "ACP-JSONRPC-004",
         "ACP-JSONRPC-005",
         "ACP-META-001",
         "ACP-META-201",
@@ -371,6 +371,32 @@ def test_schema_citation_pointers_resolve_in_the_vendored_schema():
     pointers_by_source = _schema_pointers_by_source()
     assert sum(len(v) for v in pointers_by_source.values()) > 50, "pointer extraction found too few"
     assert not _unresolved_pointers(pointers_by_source, schema)
+
+
+# A root `anyOf`/`oneOf`/`allOf` index names a branch by position, so a schema refresh that
+# reorders or inserts a branch silently repoints the citation (as happened to
+# TRANSPORT-201's and INFO-BATCH-202's `#/anyOf/3/items`). Cite the `$defs` name instead.
+_POSITIONAL_ROOT_POINTER = re.compile(r"^/(?:anyOf|oneOf|allOf)/\d")
+
+
+def _positional_root_pointers(pointers_by_source: dict[str, list[str]]) -> list[str]:
+    return [
+        f"{source}: {pointer}"
+        for source, pointers in pointers_by_source.items()
+        for pointer in pointers
+        if _POSITIONAL_ROOT_POINTER.match(pointer)
+    ]
+
+
+def test_no_citation_pointer_names_a_root_branch_by_position():
+    assert not _positional_root_pointers(_schema_pointers_by_source())
+
+
+def test_positional_root_pointer_is_reported():
+    pointers = {
+        "x": ["/anyOf/3/items", "/oneOf/0", "/$defs/RequestPermissionOutcome/anyOf/2", "/anyOf", "/$defs/RequestId"]
+    }
+    assert _positional_root_pointers(pointers) == ["x: /anyOf/3/items", "x: /oneOf/0"]
 
 
 def test_unresolvable_pointer_is_reported():

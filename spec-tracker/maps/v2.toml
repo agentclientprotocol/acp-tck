@@ -25,6 +25,8 @@
 # Schema `$defs` whose changes are treated like a core doc change.
 core_defs = [
     "ErrorCode",
+    "RequestId",
+    "Error",
     "SessionUpdate",
     "ContentBlock",
     "AgentCapabilities",

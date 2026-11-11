@@ -41,6 +41,8 @@ _MANDATORY_IDS = {
     "ACP-JSONRPC-001",
     "ACP-JSONRPC-002",
     "ACP-JSONRPC-003",
+    "ACP-JSONRPC-004",
+    "ACP-JSONRPC-202",
     "ACP-AUTH-202",
     "ACP-AUTH-206",
     "ACP-AUTH-207",
@@ -118,7 +120,6 @@ _ADVISORY_IDS = {
     "ACP-PROMPT-208",
     "ACP-STATE-204",
     "ACP-CANCEL-204",
-    "ACP-JSONRPC-004",
     "ACP-JSONRPC-005",
     "ACP-BATCH-209",
     "ACP-DELETE-203",
@@ -190,6 +191,7 @@ _CANCEL_RACE_SKIP_IDS = {
 # SKIP ("no <variant> observed") rather than PASS, exactly as they do for `conforming.py` itself
 # (see `test_v2_conforming_agent_passes_everything` above).
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
+    "ACP-JSONRPC-202",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -313,6 +315,7 @@ def test_help_mentions_protocol_version_option():
 
 
 _CONFORMING_EXPECTED_SKIPS = {
+    "ACP-JSONRPC-202",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -770,8 +773,11 @@ def test_no_session_capability_agent_is_conformant(tmp_path):
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == set(), result.stdout
-    for req_id in _MANDATORY_IDS - {"ACP-AUTH-206", "ACP-AUTH-207"} - _V2_ONLY_SKIP_IDS:
+    # ACP-JSONRPC-202 SKIPs: without `capabilities.session` no prompt turn can elicit requests.
+    no_pass = {"ACP-AUTH-206", "ACP-AUTH-207", "ACP-JSONRPC-202"} | _V2_ONLY_SKIP_IDS
+    for req_id in _MANDATORY_IDS - no_pass:
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
+    assert statuses.get("ACP-JSONRPC-202") == "SKIPPED", result.stdout
     report = json.loads(report_path.read_text())
     by_id = {r["id"]: r for r in report["requirements"]}
     for req_id in ("ACP-SESSION-001", "ACP-ENUM-203", "ACP-PROMPT-201", "ACP-CONFIG-201"):
@@ -1274,6 +1280,45 @@ def test_asks_permission_ignores_cancel_fails_cancel_209_only():
     assert _fails(statuses) == {"ACP-CANCEL-209"}, result.stdout
 
 
+def test_asks_permission_twice_passes_both_jsonrpc_202_halves():
+    """`asks_permission_twice.py` has two permission requests pending at once with distinct ids,
+    so the reuse half of `ACP-JSONRPC-202` is observable (two requests held) and PASSes, as does
+    the id-type half."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "asks_permission_twice.py", protocol_version=2, k="jsonrpc or permission"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    assert statuses["ACP-JSONRPC-202"] == "PASS", result.stdout
+    assert statuses["ACP-PERM-201"] == "PASS", result.stdout
+
+
+def test_asks_permission_reused_id_fails_jsonrpc_202_only():
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "asks_permission_reused_id.py",
+        protocol_version=2,
+        k="jsonrpc or permission or cancel",
+    )
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-JSONRPC-202"}, result.stdout
+
+
+def test_asks_permission_null_id_fails_jsonrpc_202_and_perm_201_only():
+    """A `null` request id is both the `ACP-JSONRPC-202` defect and a schema violation of the
+    request itself, which `ACP-PERM-201` validates."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "asks_permission_null_id.py",
+        protocol_version=2,
+        k="jsonrpc or permission or cancel",
+    )
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-JSONRPC-202", "ACP-PERM-201"}, result.stdout
+
+
 def test_error_after_echo_fails_prompt_207_and_cancel_203_only():
     """Answering an already-echoed prompt with `-32800` after cancel violates the insertion
     boundary twice over: `ACP-PROMPT-207` (error after a user-message update) and
@@ -1738,9 +1783,11 @@ def test_v2_wrong_id_echo_fails_id_dependent_requirements():
     an agent this broken, not a TCK bug -- so this self-test scopes the run to `-k jsonrpc`
     (mirroring v1's own precedent for the identical problem) rather than paying the cost of an
     unscoped run across the whole suite. Scoped, the only requirements actually exercised are
-    the five `ACP-JSONRPC-*` ids plus `ACP-TRANSPORT-201` (`test_transport.py`'s own
-    full-exchange test matches the `-k jsonrpc` substring via its function name) -- everything
-    else is deselected (`NOT_TESTED`)."""
+    the six `ACP-JSONRPC-*` ids (001..005, 202) plus `ACP-TRANSPORT-201` (`test_transport.py`'s
+    own full-exchange test matches the `-k jsonrpc` substring via its function name) --
+    everything else is deselected (`NOT_TESTED`). `ACP-JSONRPC-202` FAILs too: its tests need a
+    working `session/new` to elicit requests, and (like `ACP-JSONRPC-003`/`005`) hit the
+    unmatched response."""
     result = _run_cli(FIXTURES_DIR_V2, "wrong_id_echo.py", protocol_version=2, k="jsonrpc")
     assert result.returncode != 0
 
@@ -1753,6 +1800,7 @@ def test_v2_wrong_id_echo_fails_id_dependent_requirements():
         "ACP-TRANSPORT-201",
         "ACP-JSONRPC-004",
         "ACP-JSONRPC-005",
+        "ACP-JSONRPC-202",
     }, result.stdout
     assert statuses.get("ACP-JSONRPC-001") == "FAIL", result.stdout
     assert statuses.get("ACP-JSONRPC-002") == "FAIL", result.stdout
@@ -1770,8 +1818,9 @@ def test_v2_wrong_id_echo_fails_id_dependent_requirements():
 
 def test_v2_answers_notifications_fails_jsonrpc_003_only():
     """`answers_notifications.py` unconditionally replies to the `session/cancel` notification
-    with a bogus response (`{"id": null, "result": null}`) -- violates `ACP-JSONRPC-003`
-    (notifications never receive a response). Nothing else about it is non-conforming."""
+    with a bogus error response (`{"id": null, "error": ...}`) -- violates `ACP-JSONRPC-003`
+    (notifications never receive a response). Nothing else about it is non-conforming; the
+    reply's `id: null` is legal on an error, so `ACP-JSONRPC-002` is unaffected."""
     result = _run_cli(FIXTURES_DIR_V2, "answers_notifications.py", protocol_version=2, k="jsonrpc")
     assert result.returncode != 0
 
@@ -1855,17 +1904,14 @@ def test_v2_result_and_error_fails_jsonrpc_002_and_schema_001_only():
 
 def test_v2_unknown_method_no_error_only_fails_the_advisory_requirement():
     """`unknown_method_no_error.py` replies to unknown methods with an empty success result
-    instead of `-32601`. Should only trip the ADVISORY `ACP-JSONRPC-004`, never a MANDATORY/
-    CAPABILITY requirement. `ACP-BATCH-209`'s probes never expect an unknown-method reply, so
-    this fixture does not fail it.
-    ADVISORY failures never flip
-    the verdict on their own -- but the exit code/overall verdict text are not asserted here:
-    this run is `-k`-scoped, which necessarily leaves every other MANDATORY id NOT_TESTED, and
-    NOT_TESTED MANDATORY ids do flip the verdict to NOT CONFORMANT by design (see
-    `tests/v1/test_cli.py`'s
-    `test_hangs_until_cancel_agent_passes_cancel_requirements` for the same precedent) -- that
-    says nothing about whether *this* fixture's behaviour for the ids actually exercised is
-    conforming, which is what the per-id statuses below check."""
+    instead of `-32601`. Should only trip the MANDATORY `ACP-JSONRPC-004` (unknown method ->
+    `-32601` is a MUST); it does reply, so `ACP-EXT-001` is not tripped. `ACP-BATCH-209`'s probes never
+    expect an unknown-method reply, so this fixture does not fail it.
+    The exit code/overall verdict text are not asserted here: this run is `-k`-scoped, which
+    necessarily leaves every other MANDATORY id NOT_TESTED, and NOT_TESTED MANDATORY ids flip
+    the verdict to NOT CONFORMANT by design -- that says nothing about whether *this* fixture's
+    behaviour for the ids actually exercised is conforming, which is what the per-id statuses
+    below check."""
     result = _run_cli(
         FIXTURES_DIR_V2, "unknown_method_no_error.py", protocol_version=2, k="jsonrpc or batch"
     )
@@ -1874,7 +1920,6 @@ def test_v2_unknown_method_no_error_only_fails_the_advisory_requirement():
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-JSONRPC-004"}, result.stdout
     assert statuses.get("ACP-BATCH-209") == "PASS", result.stdout
-    assert all(req_id in _ADVISORY_IDS for req_id in fails), result.stdout
 
 
 def test_v2_emits_batch_updates_fails_transport_201_only():
@@ -2703,7 +2748,8 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
 # the same `VERSION-MISMATCH:` marker too -- include them here alongside the MANDATORY/
 # CAPABILITY rows rather than carving out a separate, unchecked set.
 #
-# A second, disjoint category: `ACP-JSONRPC-001..005` are connection-level rows whose own tests
+# A second, disjoint category: `ACP-JSONRPC-001..005` (not 202, which judges agent-authored
+# requests and so SKIPs `VERSION-MISMATCH:` like the rows above) are connection-level rows whose own tests
 # never drive a full v2-shaped `session/prompt` turn at all (`test_jsonrpc.py`'s tests only use
 # `initialize`/`session/new`/bare notifications). A v1 agent's ordinary handshake/session/
 # notification traffic satisfies all five of these unchanged, so -- like the negotiation rows --

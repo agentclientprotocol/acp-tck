@@ -39,10 +39,10 @@ _PROMPT_TEXT = "hi"
 
 @pytest.mark.requirement("ACP-EXT-001")
 async def test_unknown_custom_method_receives_a_response(agent_launch):
-    """ACP-EXT-001 (MANDATORY, re-cited from v1 unchanged --
-    `docs/protocol/v2/draft/extensibility.mdx:156,165,178,222`). *Some* response -- a result, or an error
-    with any code -- must arrive for a `_`-prefixed custom method; the `-32601` code specifically
-    remains `ACP-JSONRPC-004`'s ADVISORY concern, not re-checked here."""
+    """ACP-EXT-001 (MANDATORY, `docs/protocol/v2/draft/extensibility.mdx:165,174,187,231`).
+    *Some* response -- a result, or an error with any code -- must arrive for a `_`-prefixed
+    custom method; the `-32601` code specifically is `ACP-JSONRPC-004`'s concern, not
+    re-checked here."""
     async with connected_agent(agent_launch) as agent:
         req_id = await agent.send_request("_tck/unknown")
         try:

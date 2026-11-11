@@ -685,11 +685,14 @@ class AsksPermissionAgent(ConformingAgent):
         self._pending_permission: dict[str, Any] | None = None
 
     def _mid_turn_action(self, session_id: Any) -> bool:
-        self._perm_counter += 1
-        perm_id = f"perm-{self._perm_counter}"
+        perm_id = self._next_permission_id()
         self._pending_permission = {"perm_id": perm_id, "session_id": session_id}
         # ACP-PATCH-209: report `requires_action` while blocked on the client's answer.
         self._send_update(session_id, {"sessionUpdate": "state_update", "state": "requires_action"})
+        self._send_permission_request(perm_id, session_id)
+        return True  # defer finishing the turn to `_handle_response`, below
+
+    def _send_permission_request(self, perm_id: Any, session_id: Any) -> None:
         self._write(
             {
                 "jsonrpc": "2.0",
@@ -702,7 +705,11 @@ class AsksPermissionAgent(ConformingAgent):
                 },
             }
         )
-        return True  # defer finishing the turn to `_handle_response`, below
+
+    def _next_permission_id(self) -> Any:
+        """Hook: the JSON-RPC `id` of the next permission request."""
+        self._perm_counter += 1
+        return f"perm-{self._perm_counter}"
 
     def _permission_options(self) -> list[dict[str, Any]]:
         return [

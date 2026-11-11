@@ -13,6 +13,7 @@ from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
     _LIST_ROUTE_MAX_PAGES,
     _route_from_list,
+    agent_requests,
     is_agent_initiated,
     is_response_line,
 )
@@ -45,6 +46,20 @@ def test_line_classification(raw: str, agent_initiated: bool, response: bool) ->
     entry = _entry(raw)
     assert is_agent_initiated(entry) is agent_initiated
     assert is_response_line(entry) is response
+
+
+def test_agent_requests_are_received_objects_with_method_and_id():
+    sent = TranscriptEntry.build(Direction.SENT, _REQUEST.encode(), 0.0)
+    null_id = '{"jsonrpc":"2.0","id":null,"method":"session/request_permission"}'
+    transcript = [
+        sent,  # a client request is never an agent request
+        _entry(_NOTE),
+        _entry(_REPLY),
+        _entry(_REQUEST),
+        _entry(null_id),  # still a request: the caller judges its id
+        _entry(f"[{_REQUEST}]"),  # an array is non-conformant but its elements are still read
+    ]
+    assert [m["id"] for m in agent_requests(transcript)] == [7, None, 7]
 
 
 class _ListAgent:

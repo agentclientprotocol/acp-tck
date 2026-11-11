@@ -580,6 +580,18 @@ def iter_messages(entry: TranscriptEntry) -> list[dict[str, Any]]:
     return []
 
 
+def agent_requests(transcript: list[TranscriptEntry]) -> list[dict[str, Any]]:
+    """Every request the agent sent (a received object with `method` and `id`), in wire order.
+    An `id: null` or non-scalar id still counts as a request, so the caller can judge it."""
+    return [
+        msg
+        for entry in transcript
+        if entry.direction is Direction.RECEIVED
+        for msg in iter_messages(entry)
+        if "method" in msg and "id" in msg
+    ]
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
     array line, even a malformed one missing `id`/`result`/`error`.

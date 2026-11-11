@@ -1,13 +1,22 @@
-"""Tests for `tck.v2.validation` -- the three v2-specific behaviors called out in its module
-docstring: no batching (any array is one issue), no `null` special case for responses, and the open-fallback
-carve-out in `find_unknown_root_keys`. Fixtures here are hand-built JSON-RPC messages, not
+"""Tests for `tck.v2.validation` -- the v2-specific behaviors called out in its module
+docstring: no batching (any array is one issue), no `null` special case for responses, `RequestId`
+never `null` (except on an error response), and the open-fallback carve-out in
+`find_unknown_root_keys`. Fixtures here are hand-built JSON-RPC messages, not
 fixture agents -- unit tests of the validator itself.
 """
 
 from __future__ import annotations
 
 from tck.v2 import protocol, validation
-from tck.v2.validation import find_unknown_root_keys, validate_agent_message, validate_agent_response
+import pytest
+
+from tck.v2.validation import (
+    find_unknown_root_keys,
+    is_valid_request_id,
+    validate_agent_message,
+    validate_agent_response,
+    validate_response_envelope,
+)
 
 
 # --- root dispatch: object / any array ---
@@ -51,6 +60,62 @@ def test_null_result_fails_for_an_object_response_schema():
     msg = {"jsonrpc": "2.0", "id": 1, "result": None}
     issues = validate_agent_response("initialize", msg)
     assert issues, "a null result must fail validation against InitializeResponse's object schema"
+
+
+# --- RequestId is never null, except on an error response (overview.mdx:15-17) ---
+
+_ERROR = {"code": -32600, "message": "Invalid Request"}
+
+
+@pytest.mark.parametrize("value", [1, 0, -7, "abc", ""])
+def test_string_and_integer_ids_are_valid(value):
+    assert is_valid_request_id(value)
+    assert is_valid_request_id(value, allow_null=True)
+
+
+@pytest.mark.parametrize("value", [True, 1.5, [], {}])
+def test_other_id_types_are_never_valid(value):
+    assert not is_valid_request_id(value)
+    assert not is_valid_request_id(value, allow_null=True)
+
+
+def test_null_id_is_valid_only_when_null_is_allowed():
+    assert not is_valid_request_id(None)
+    assert is_valid_request_id(None, allow_null=True)
+
+
+def test_result_response_with_null_id_is_an_issue():
+    issues = validate_response_envelope({"jsonrpc": "2.0", "id": None, "result": {}})
+    assert [i.path for i in issues] == ["/id"]
+    assert issues[0].schema_path == "#/$defs/RequestId"
+    assert validate_response_envelope({"jsonrpc": "2.0", "id": 3, "result": {}}) == []
+
+
+def test_error_response_with_null_id_is_valid():
+    assert validate_response_envelope({"jsonrpc": "2.0", "id": None, "error": _ERROR}) == []
+    assert validate_agent_message({"jsonrpc": "2.0", "id": None, "error": _ERROR}) == []
+
+
+def test_response_with_both_result_and_error_and_null_id_reports_the_id_too():
+    issues = validate_response_envelope({"jsonrpc": "2.0", "id": None, "result": {}, "error": _ERROR})
+    assert {i.path for i in issues} == {"/id", ""}
+
+
+def test_agent_request_with_null_id_is_an_issue_for_standard_and_custom_methods():
+    for method in ("session/request_permission", "_tck/custom"):
+        msg = {"jsonrpc": "2.0", "id": None, "method": method, "params": {}}
+        paths = [i.path for i in validate_agent_message(msg) if i.schema_path == "#/$defs/RequestId"]
+        assert paths == ["/id"], method
+
+
+def test_agent_request_with_string_or_integer_id_has_no_id_issue():
+    for req_id in (1, "perm-1"):
+        msg = {"jsonrpc": "2.0", "id": req_id, "method": "_tck/custom", "params": {}}
+        assert validate_agent_message(msg) == []
+
+
+def test_notification_has_no_id_to_check():
+    assert validate_agent_message({"jsonrpc": "2.0", "method": "_tck/note"}) == []
 
 
 # --- open-enum discriminator: is_valid_open_enum_value ---

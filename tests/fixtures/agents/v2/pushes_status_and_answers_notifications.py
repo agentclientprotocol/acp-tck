@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: like `pushes_status_notifications.py`, but after pushing its status
-notification it also replies to every notification it receives with a bogus response
-(`{"id": null, "result": null}`).
+notification it also replies to every notification it receives with a bogus error
+response (`{"id": null, "error": ...}`).
 
 Proves a leading agent notification does not hide a later reply: FAILs exactly
 `ACP-JSONRPC-003` and `ACP-EXT-201`.
@@ -20,7 +20,7 @@ class PushesStatusAndAnswersNotificationsAgent(PushesStatusNotificationsAgent):
     def _handle(self, message: dict[str, Any]) -> None:
         super()._handle(message)
         if "method" in message and "id" not in message:
-            self._write({"jsonrpc": "2.0", "id": None, "result": None})
+            self._write({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
 
 
 def main() -> None:
