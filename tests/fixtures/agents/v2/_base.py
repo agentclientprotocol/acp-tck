@@ -49,10 +49,17 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `session/fork` (only when `capabilities.session.fork` is advertised) creates a live session with
   a copy of the source's history. `systemPrompt` on `session/new` is accepted only in an
   advertised mode with text content, else `-32602`.
+- `session/new`/`session/resume` params are validated by `_setup_rejection`, each rule an
+  overridable hook so a defect fixture can drop exactly one: a relative `cwd` (`_cwd_rejection`,
+  session-setup.mdx:524), a relative `additionalDirectories` entry when the capability is
+  advertised (`_additional_directories_rejection`, :443), an MCP transport that is not
+  advertised under `session.mcp` (`_mcp_transport_rejection`, :545) and duplicate MCP server
+  names (`_mcp_duplicate_name_rejection`, :547) -- all `-32602`. Stdio MCP servers of a
+  successful `session/new` are launched and sent an MCP `initialize` (`_launch_mcp_servers`), so
+  the TCK's stub server can observe the connection.
 - `session/set_config_option` updates `currentValue` and replies with the complete list;
   `session/new`/`session/resume` include `configOptions` whenever any are configured.
-  `additionalDirectories`/`mcpServers` need no handling: unknown `params` keys are already
-  ignored, which is all the spec requires (accepted, never rejected).
+  A valid `additionalDirectories`/`mcpServers` is accepted and otherwise ignored.
 - `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
   `_send_rich_turn_updates` fires once per turn after the running update, emitting two
   `agent_message_chunk`s sharing a `messageId`, a `tool_call_update` create plus a content patch,
@@ -75,6 +82,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import subprocess
 import sys
 from typing import Any
 
@@ -153,6 +162,7 @@ class ConformingAgent:
         # `session/set_config_option` (each entry's own dict, deep-copied from the constructor
         # argument so callers can safely reuse the same literal across several agent instances).
         self._config_options: list[dict[str, Any]] = [dict(opt) for opt in (config_options or [])]
+        self._mcp_processes: list[subprocess.Popen] = []  # launched stdio MCP servers
         self._history: dict[str, list[dict[str, Any]]] = {}  # sessionId -> replayable updates
         self._primed_message_ids: dict[str, set[Any]] = {}  # sessionId -> messageIds already primed
         # `initialize`'s `authMethods` -- `auth/login`/`auth/logout` keyed by `methodId` (v1
@@ -386,21 +396,119 @@ class ConformingAgent:
             return "unsupported systemPrompt content"
         return None
 
+    def _setup_rejection(self, params: dict[str, Any]) -> str | None:
+        """Why a `session/new`/`session/resume` request must be answered `-32602`, or `None`."""
+        return (
+            self._cwd_rejection(params.get("cwd"))
+            or self._additional_directories_rejection(params.get("additionalDirectories"))
+            or self._mcp_transport_rejection(params.get("mcpServers"))
+            or self._mcp_duplicate_name_rejection(params.get("mcpServers"))
+        )
+
+    @staticmethod
+    def _cwd_rejection(cwd: Any) -> str | None:
+        if isinstance(cwd, str) and not os.path.isabs(cwd):
+            return "cwd must be an absolute path"
+        return None
+
+    def _additional_directories_rejection(self, directories: Any) -> str | None:
+        """Agents that advertise `session.additionalDirectories` reject a non-absolute entry;
+        the field is ignored otherwise (session-setup.mdx:443)."""
+        if self._session_capability("additionalDirectories") is None:
+            return None
+        if isinstance(directories, list) and any(
+            not isinstance(entry, str) or not os.path.isabs(entry) for entry in directories
+        ):
+            return "additionalDirectories entries must be absolute paths"
+        return None
+
+    def _mcp_transport_rejection(self, servers: Any) -> str | None:
+        """Only `stdio` and `http`, each only when advertised under `session.mcp`, are supported;
+        anything else (`sse`, an unadvertised or reserved type) is rejected (:545)."""
+        advertised = self._session_capability("mcp")
+        supported = {
+            transport
+            for transport in ("stdio", "http")
+            if isinstance(advertised, dict) and advertised.get(transport) is not None
+        }
+        for server in servers if isinstance(servers, list) else []:
+            transport = server.get("type") if isinstance(server, dict) else None
+            if transport not in supported:
+                return f"unsupported MCP server transport {transport!r}"
+        return None
+
+    @staticmethod
+    def _mcp_duplicate_name_rejection(servers: Any) -> str | None:
+        if not isinstance(servers, list):
+            return None
+        names = [server.get("name") for server in servers if isinstance(server, dict)]
+        if len(names) != len(set(names)):
+            return "MCP server names must be unique"
+        return None
+
+    def _launch_mcp_servers(self, servers: list[Any]) -> None:
+        """Launch every stdio MCP server entry and send it an MCP `initialize` request, so the
+        TCK's stub server can observe the connection (`ACP-MCP-205`). The reply is discarded; the
+        child exits on its own once this process's end of its stdin closes."""
+        for server in servers:
+            if not isinstance(server, dict) or server.get("type") != "stdio":
+                continue
+            if not server.get("command"):
+                continue
+            env = dict(os.environ)
+            for var in server.get("env") or []:
+                if isinstance(var, dict):
+                    env[str(var.get("name"))] = str(var.get("value"))
+            try:
+                proc = subprocess.Popen(
+                    [server["command"], *server.get("args", [])],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                )
+                initialize = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": self._agent_name, "version": "0.0.0"},
+                    },
+                }
+                proc.stdin.write((json.dumps(initialize) + "\n").encode())
+                proc.stdin.flush()
+            except OSError:
+                continue
+            self._mcp_processes.append(proc)
+
+    def _before_new_response(self, session_id: str) -> None:
+        """Hook: runs after the session exists and before the `session/new` response. Nothing is
+        sent by default (session-setup.mdx:103)."""
+
+    def _new_session_result(self, session_id: str) -> dict[str, Any]:
+        result: dict[str, Any] = {"sessionId": session_id}
+        if self._config_options:
+            result["configOptions"] = self._current_config_options()
+        return result
+
     def _handle_new_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         if self._require_auth and not self._authenticated:
             self._error(msg_id, -32000, "Authentication required")
             return
-        rejection = self._system_prompt_rejection(params.get("systemPrompt"))
+        rejection = self._setup_rejection(params) or self._system_prompt_rejection(
+            params.get("systemPrompt")
+        )
         if rejection is not None:
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
-        result: dict[str, Any] = {"sessionId": session_id}
-        if self._config_options:
-            result["configOptions"] = self._current_config_options()
-        self._reply(msg_id, result)
+        self._launch_mcp_servers(params.get("mcpServers") or [])
+        self._before_new_response(session_id)
+        self._reply(msg_id, self._new_session_result(session_id))
 
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
         # All params optional; `SessionInfo` requires only `sessionId`/`cwd`. Filter by `cwd`
@@ -420,7 +528,9 @@ class ConformingAgent:
         if session_id not in self._sessions and session_id not in self._closed_sessions:
             self._unknown_session(msg_id, session_id)
             return
-        rejection = self._replay_from_rejection(params.get("replayFrom"))
+        rejection = self._replay_from_rejection(params.get("replayFrom")) or self._setup_rejection(
+            params
+        )
         if rejection is not None:
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return

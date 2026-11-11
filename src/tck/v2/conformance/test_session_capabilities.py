@@ -1,33 +1,40 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..209, ACP-RESUME-211),
-`session/list` (ACP-LIST-201..204), `session/close`'s own contract (ACP-CLOSE-201/203/204 --
-`ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
+`session/list` (ACP-LIST-201..204), `session/close`'s own contract (ACP-CLOSE-201/203/204/206/207
+-- `ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
 `tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..203), the
-`additionalDirectories` carrier on `session/new`/`session/resume` (ACP-ADDDIRS-201/202), the
-two INFORMATIONAL MCP-server-acceptance probes (ACP-MCP-201/202), and the unstable
-`session/fork` (ACP-FORK-201/202) and `systemPrompt` (ACP-SYSPROMPT-201/202) surfaces.
+`additionalDirectories` carrier on `session/new`/`session/resume` (ACP-ADDDIRS-201..203), the
+MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201/202) and `systemPrompt`
+(ACP-SYSPROMPT-201/202) surfaces.
 
-Every id here except `ACP-CLOSE-204`/`ACP-DELETE-203`/`ACP-MCP-201`/`ACP-MCP-202` is
+Every id here except `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`, `ACP-MCP-201`/`202`/`204`/`205` is
 `Tier.CAPABILITY`; see the requirements module for the exact capability path each uses. Those
-four still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate even though
+still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate even though
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
 throughout this registry (e.g. `ACP-CANCEL-204`).
 
 `systemPrompt` is only probed on its positive paths: probing its error paths would need the TCK
 to send an unadvertised mode or a non-text content block, both of which clients MUST NOT do.
+`ACP-ADDDIRS-203` and `ACP-MCP-203`/`204` do send such input deliberately (a relative entry, an
+unsupported transport, duplicate names): the spec defines the agent's answer to exactly those
+inputs, and the probes are `_`-prefixed or otherwise unmistakably the TCK's.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import sys
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from tck.common.harness import TranscriptEntry
+from tck.common.harness import AgentTimeout, Direction, TranscriptEntry
 from tck.v2.validation import validate_agent_message, validate_agent_response
 
-from ..protocol import INVALID_PARAMS, REQUEST_CANCELLED
+from ..protocol import INVALID_PARAMS, REQUEST_CANCELLED, RESOURCE_NOT_FOUND
 from ._helpers import (
     assert_unknown_session_error,
     close_session,
@@ -545,6 +552,26 @@ def _transcript_index(agent, entry: TranscriptEntry) -> int:
     raise AssertionError(f"entry not found in the transcript: {entry.text!r}")
 
 
+async def _close_mid_turn(agent, session_id: str, cancel_prompt_text: str, *, timeout: float):
+    """Prompt `session_id` with `cancel_prompt_text` and send `session/close` mid-turn. Returns
+    `(turn, close_id)`; the close was only sent if `turn.action_sent_at_index` is not `None`."""
+    close_id = None
+
+    async def _close():
+        nonlocal close_id
+        close_id = await agent.send_request("session/close", {"sessionId": session_id})
+        return close_id
+
+    turn = await run_prompt(
+        agent,
+        session_id,
+        [{"type": "text", "text": cancel_prompt_text}],
+        on_action=_close,
+        timeout=timeout,
+    )
+    return turn, close_id
+
+
 @pytest.mark.requirement("ACP-CLOSE-203")
 @pytest.mark.capability("capabilities.session")
 async def test_close_sends_cancelled_idle_before_responding(
@@ -555,19 +582,8 @@ async def test_close_sends_cancelled_idle_before_responding(
     (`ACP-CLOSE-202`'s own finding) is never judged as an ordering defect."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
-        close_id = None
-
-        async def _close():
-            nonlocal close_id
-            close_id = await agent.send_request("session/close", {"sessionId": session_id})
-            return close_id
-
-        turn = await run_prompt(
-            agent,
-            session_id,
-            [{"type": "text", "text": cancel_prompt_text}],
-            on_action=_close,
-            timeout=agent_launch.default_timeout,
+        turn, close_id = await _close_mid_turn(
+            agent, session_id, cancel_prompt_text, timeout=agent_launch.default_timeout
         )
         if turn.action_sent_at_index is None:
             pytest.skip(
@@ -599,15 +615,138 @@ async def test_close_sends_cancelled_idle_before_responding(
         )
 
 
+def _assert_no_session_messages_after(agent, close_entry: TranscriptEntry, session_id: str) -> None:
+    """Fail if the agent sent a `session/update` or an agent -> client request carrying
+    `session_id` after the successful `session/close` response `close_entry`. Responses
+    (earlier prompts') are not messages with a `method`, so they are exempt."""
+    close_index = _transcript_index(agent, close_entry)
+    late = []
+    for entry in agent.transcript[close_index + 1 :]:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for message in iter_messages(entry):
+            params = message.get("params")
+            if (
+                "method" in message
+                and isinstance(params, dict)
+                and params.get("sessionId") == session_id
+            ):
+                late.append(message.get("method"))
+    assert not late, (
+        f"the agent sent {late!r} for session {session_id!r} after its successful "
+        "session/close response"
+    )
+
+
+@pytest.mark.requirement("ACP-CLOSE-206")
+@pytest.mark.capability("capabilities.session")
+async def test_idle_close_is_followed_by_no_session_messages(agent_launch, tmp_path):
+    """ACP-CLOSE-206 for the close of an idle session. SKIPs when the close itself did not
+    succeed (`ACP-CLOSE-201`'s finding)."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        entry = await close_session(agent, session_id, timeout=timeout)
+        msg = entry.parsed
+        if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
+            pytest.skip(f"prerequisite not met: session/close did not succeed: {entry.text!r}")
+        await drain_quiet(agent, quiet_period(timeout))
+        _assert_no_session_messages_after(agent, entry, session_id)
+
+
+@pytest.mark.requirement("ACP-CLOSE-206")
+@pytest.mark.capability("capabilities.session")
+async def test_mid_turn_close_is_followed_by_no_session_messages(
+    agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-CLOSE-206 for a close that cancels work mid-turn. Same scenario and SKIP rules as
+    `ACP-CLOSE-203`; a turn that never ends (`ACP-CLOSE-202`/`203`'s finding) also SKIPs here."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        try:
+            turn, close_id = await _close_mid_turn(
+                agent, session_id, cancel_prompt_text, timeout=timeout
+            )
+        except AgentTimeout:
+            pytest.skip("prerequisite not met: the turn never ended -- see ACP-CLOSE-202")
+        if turn.action_sent_at_index is None:
+            pytest.skip(
+                "cancellation-via-close not exercised: the turn ended before session/close "
+                "could be sent"
+            )
+        if turn.idle_update is None or turn.stop_reason != "cancelled":
+            pytest.skip(
+                "prerequisite not met: the turn did not end with stopReason 'cancelled' -- see "
+                "ACP-CLOSE-202"
+            )
+        close_entry = turn.action_response
+        if close_entry is None:
+            close_entry = await agent.wait_for_response(close_id, timeout=timeout)
+        close_msg = close_entry.parsed
+        if not (isinstance(close_msg, dict) and isinstance(close_msg.get("result"), dict)):
+            pytest.skip(f"prerequisite not met: session/close did not succeed: {close_entry.text!r}")
+        await drain_quiet(agent, quiet_period(timeout))
+        _assert_no_session_messages_after(agent, close_entry, session_id)
+
+
+def _assert_close_succeeded_idempotently(entry: TranscriptEntry, what: str) -> None:
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    assert not isinstance(error, dict), (
+        f"session/close of {what} should succeed with the empty result (closing is idempotent), "
+        f"but returned error {error.get('code')!r}: {entry.text!r}"
+    )
+    assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
+        f"session/close of {what} did not return a result object: {entry.text!r}"
+    )
+    issues = validate_agent_response("session/close", msg)
+    assert not issues, f"session/close result failed schema validation: {issues!r}"
+
+
+@pytest.mark.requirement("ACP-CLOSE-207")
+@pytest.mark.capability("capabilities.session")
+async def test_close_already_closed_session_succeeds(agent_launch, tmp_path):
+    """ACP-CLOSE-207 (ADVISORY). A second `session/close` for the same id must answer like the
+    first. The first close failing SKIPs (`ACP-CLOSE-201` judges it). `-32002` is an ADVISORY
+    FAIL: clients tolerate it as success, but the agent SHOULD return the empty result."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        first = await close_session(agent, session_id, timeout=timeout)
+        first_msg = first.parsed
+        if not (isinstance(first_msg, dict) and isinstance(first_msg.get("result"), dict)):
+            pytest.skip(
+                f"prerequisite not met: the first session/close did not succeed: {first.text!r}"
+            )
+        second = await close_session(agent, session_id, timeout=timeout)
+        _assert_close_succeeded_idempotently(second, "an already-closed session")
+
+
+@pytest.mark.requirement("ACP-CLOSE-207")
+@pytest.mark.capability("capabilities.session")
+async def test_close_unknown_session_succeeds(agent_launch):
+    """ACP-CLOSE-207 (ADVISORY). No `session/new` is sent: this id was never created on this
+    connection (`session-setup.mdx:407` covers a session that does not exist)."""
+    async with connected_agent(agent_launch) as agent:
+        entry = await close_session(
+            agent, f"tck-never-created-{uuid.uuid4().hex}", timeout=agent_launch.default_timeout
+        )
+        skip_if_auth_gated(entry)
+        _assert_close_succeeded_idempotently(entry, "a never-created session")
+
+
 @pytest.mark.requirement("ACP-CLOSE-204")
 @pytest.mark.capability("capabilities.session")
 async def test_prompt_pending_at_close_is_answered(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
     """ACP-CLOSE-204 (ADVISORY). Sends `session/prompt` and `session/close` back to back
-    without awaiting the prompt's receipt. Either legal answer passes: `-32800` (closing
-    prevented insertion) or a success with a `messageId` (already inserted). The order of the
-    two responses is not judged -- prompt responses need not precede the close response."""
+    without awaiting the prompt's receipt. Every legal answer passes: `-32800` (closing
+    prevented insertion), a success with a `messageId` (already inserted), or `-32002` (the
+    agent processed the close first, so the session was no longer active; ordered delivery does
+    not order processing). The order of the two responses is not judged -- prompt responses
+    need not precede the close response."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         prompt_id = await agent.send_request(
@@ -621,13 +760,20 @@ async def test_prompt_pending_at_close_is_answered(
         error = msg.get("error") if isinstance(msg, dict) else None
         inserted = isinstance(result, dict) and isinstance(result.get("messageId"), str)
         cancelled = isinstance(error, dict) and error.get("code") == REQUEST_CANCELLED
+        not_active = isinstance(error, dict) and error.get("code") == RESOURCE_NOT_FOUND
         record_property(
             "acp_tck_close_pending_prompt_outcome",
-            "inserted" if inserted else "cancelled" if cancelled else "other",
+            "inserted"
+            if inserted
+            else "cancelled"
+            if cancelled
+            else "not_active"
+            if not_active
+            else "other",
         )
-        assert inserted or cancelled, (
-            "a session/prompt pending when session/close arrived must be answered with -32800 "
-            f"or a success carrying its messageId, got: {entry.text!r}"
+        assert inserted or cancelled or not_active, (
+            "a session/prompt pending when session/close arrived must be answered with -32800, "
+            f"-32002 or a success carrying its messageId, got: {entry.text!r}"
         )
 
 
@@ -741,14 +887,54 @@ async def test_resume_session_with_additional_directory_accepted(agent_launch, t
         )
 
 
-# --- MCP servers (ACP-MCP-201/202, INFORMATIONAL) ---
+@pytest.mark.requirement("ACP-ADDDIRS-203")
+@pytest.mark.capability("capabilities.session.additionalDirectories")
+async def test_new_session_with_relative_additional_directory_rejected(agent_launch, tmp_path):
+    """ACP-ADDDIRS-203. Sends a relative entry on purpose, since the capability is advertised
+    and the spec defines the agent's answer to it (`session-setup.mdx:443`): `-32602`."""
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(
+            "session/new",
+            {"cwd": str(tmp_path), "additionalDirectories": ["tck-relative-dir"]},
+        )
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        assert isinstance(error, dict) and error.get("code") == INVALID_PARAMS, (
+            "session/new with a relative additionalDirectories entry must be rejected with "
+            f"-32602, got: {entry.text!r}"
+        )
+
+
+# --- MCP servers (ACP-MCP-201/202 INFORMATIONAL, ACP-MCP-203..205) ---
+
+
+def _notice_seen(agent, session_id: Any) -> bool:
+    """Whether the agent sent a `notice` `session/update` for `session_id`."""
+    for entry in agent.transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for message in iter_messages(entry):
+            params = message.get("params")
+            if message.get("method") == "session/update" and isinstance(params, dict):
+                update = params.get("update")
+                if (
+                    params.get("sessionId") == session_id
+                    and isinstance(update, dict)
+                    and update.get("sessionUpdate") == "notice"
+                ):
+                    return True
+    return False
 
 
 @pytest.mark.requirement("ACP-MCP-201")
 @pytest.mark.capability("capabilities.session.mcp.stdio")
 async def test_new_session_with_stdio_mcp_server_recorded(agent_launch, tmp_path, record_property):
     """ACP-MCP-201 (INFORMATIONAL). Never asserts on the outcome -- see the requirements module
-    docstring's judgment-call note.
+    docstring's judgment-call note. Also records whether a `notice` for the new session was seen
+    after an accepted request (`session-setup.mdx:685`: an agent that continues without a failed
+    server SHOULD tell the user, for example with a notice).
 
     Includes the `type: "stdio"` discriminator `$defs/McpServer`'s `anyOf` requires: without it,
     a conforming agent answers `-32602` for a request the TCK itself malformed, recording a
@@ -772,6 +958,12 @@ async def test_new_session_with_stdio_mcp_server_recorded(agent_launch, tmp_path
         msg = entry.parsed
         accepted = isinstance(msg, dict) and isinstance(msg.get("result"), dict)
         record_property("acp_tck_mcp_stdio_session_new_accepted", accepted)
+        if accepted:
+            session_id = msg["result"].get("sessionId")
+            await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
+            record_property(
+                "acp_tck_mcp_stdio_notice_after_accepted", _notice_seen(agent, session_id)
+            )
 
 
 @pytest.mark.requirement("ACP-MCP-202")
@@ -799,6 +991,190 @@ async def test_new_session_with_http_mcp_server_recorded(agent_launch, tmp_path,
         msg = entry.parsed
         accepted = isinstance(msg, dict) and isinstance(msg.get("result"), dict)
         record_property("acp_tck_mcp_http_session_new_accepted", accepted)
+
+
+def _stdio_server(name: str = "tck-stdio", **extra: Any) -> dict[str, Any]:
+    return {
+        "type": "stdio",
+        "name": name,
+        "command": "/bin/nonexistent-tck-mcp-server",
+        "args": [],
+        **extra,
+    }
+
+
+@pytest.mark.requirement("ACP-MCP-203")
+@pytest.mark.capability("capabilities.session")
+async def test_new_session_with_unsupported_mcp_transport_is_rejected(agent_launch, tmp_path):
+    """ACP-MCP-203. Two probes on one connection, each must get `-32602`: v1's `sse`, which
+    the spec names (`session-setup.mdx:545`), and `_tck_unsupported_transport`, which no agent
+    supports (`_`-prefixed types are implementation-specific, `:553`). Both break the client
+    rule to send only advertised transports on purpose: the spec defines the agent's answer to
+    exactly these inputs. A success or another code on either FAILs; both are reported."""
+    probes = {
+        "sse": {
+            "type": "sse",
+            "name": "tck-sse",
+            "url": "http://127.0.0.1:1/tck-sse",
+            "headers": [],
+        },
+        "_tck_unsupported_transport": {
+            "type": "_tck_unsupported_transport",
+            "name": "tck-unsupported",
+        },
+    }
+    problems = []
+    async with connected_agent(agent_launch) as agent:
+        for transport, server in probes.items():
+            req_id = await agent.send_request(
+                "session/new", {"cwd": str(tmp_path), "mcpServers": [server]}
+            )
+            entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+            skip_if_auth_gated(entry)
+            msg = entry.parsed
+            error = msg.get("error") if isinstance(msg, dict) else None
+            if not (isinstance(error, dict) and error.get("code") == INVALID_PARAMS):
+                problems.append(f"{transport!r}: expected -32602, got {entry.text!r}")
+    assert not problems, (
+        "session/new with an MCP server of an unsupported transport must be rejected with "
+        f"-32602: {'; '.join(problems)}"
+    )
+
+
+@pytest.mark.requirement("ACP-MCP-204")
+@pytest.mark.capability("capabilities.session.mcp.stdio")
+async def test_new_session_with_duplicate_mcp_server_names_is_rejected(agent_launch, tmp_path):
+    """ACP-MCP-204 (ADVISORY). Two stdio servers sharing a `name` (`session-setup.mdx:547`), which
+    breaks the client rule that names be unique on purpose. The command does not exist, so an
+    agent that does not reject the request has nothing real to launch."""
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(
+            "session/new",
+            {
+                "cwd": str(tmp_path),
+                "mcpServers": [_stdio_server("tck-duplicate"), _stdio_server("tck-duplicate")],
+            },
+        )
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        assert isinstance(error, dict) and error.get("code") == INVALID_PARAMS, (
+            f"session/new with duplicate MCP server names must be rejected with -32602, "
+            f"got: {entry.text!r}"
+        )
+
+
+_MCP_STUB = Path(__file__).with_name("_mcp_stub.py")
+_CANARY_ENV_NAME = "ACP_TCK_CANARY"
+_STUB_GRACE_SECONDS = 3.0
+
+
+async def _best_effort(awaitable) -> None:
+    """Await `awaitable` and ignore how it ends: other requirements judge these exchanges, this
+    only wants the traffic they produce."""
+    try:
+        await awaitable
+    except AgentTimeout:
+        pass
+
+
+async def _drive_and_scan_for_canary(
+    agent_launch, tmp_path, server: dict[str, Any], canary: str, marker: Path | None
+) -> list[str]:
+    """Create a session with `server`, then run one prompt turn, `session/list` and a
+    `session/resume` of the same session with the same server (replaying from the start), and
+    return where `canary` showed up: any stdout line the agent wrote, its stderr, and the stdio
+    stub's command line. The prompt text never contains the canary, so an agent that
+    legitimately repeats the user's words cannot trip this."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(
+            "session/new", {"cwd": str(tmp_path), "mcpServers": [server]}
+        )
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
+            pytest.skip(
+                f"prerequisite not met: session/new with an MCP server did not succeed "
+                f"(see ACP-MCP-201/202): {entry.text!r}"
+            )
+        session_id = msg["result"].get("sessionId")
+        await _best_effort(
+            run_prompt(agent, session_id, [{"type": "text", "text": "hello"}], timeout=timeout)
+        )
+        await _best_effort(list_sessions(agent, cwd=tmp_path, timeout=timeout))
+        await _best_effort(
+            resume_session(
+                agent,
+                session_id,
+                tmp_path,
+                replay_from={"type": "start"},
+                mcp_servers=[server],
+                timeout=timeout,
+            )
+        )
+        if marker is not None:
+            # Give a stub the agent launches in the background a moment to write its marker.
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + min(timeout, _STUB_GRACE_SECONDS)
+            while not marker.exists() and loop.time() < deadline:
+                await asyncio.sleep(0.05)
+    # Checked after the context closes, so late-written stdout/stderr is already captured.
+    needle = canary.encode()
+    leaks = []
+    for transcript_entry in agent.transcript:
+        if transcript_entry.direction is Direction.RECEIVED and needle in transcript_entry.raw:
+            leaks.append(f"stdout line: {transcript_entry.text!r}")
+    if canary in agent.stderr_text():
+        leaks.append("stderr")
+    if marker is not None and marker.exists():
+        try:
+            argv = json.loads(marker.read_text()).get("argv", [])
+        except (ValueError, AttributeError):
+            argv = []
+        if any(canary in str(arg) for arg in argv):
+            leaks.append(f"the stub MCP server's command line: {argv!r}")
+    return leaks
+
+
+@pytest.mark.requirement("ACP-MCP-205")
+@pytest.mark.capability("capabilities.session.mcp.stdio")
+async def test_mcp_env_value_is_never_echoed(agent_launch, tmp_path):
+    """ACP-MCP-205 (ADVISORY). A random canary in a stdio MCP server's `env` (the server is the
+    TCK's stub, which records its command line) must appear in none of the agent's stdout lines
+    or its stderr, nor in the stub's command line, across a prompt turn, `session/list` and a
+    `session/resume` with the same server (`session-setup.mdx:695`). The stub is only checked if
+    the agent launched it within a short grace period. Model context, logging beyond stderr and
+    persistence are not observable and not covered."""
+    canary = f"tck-canary-{uuid.uuid4().hex}"
+    marker = tmp_path / "mcp-marker"
+    server = {
+        "type": "stdio",
+        "name": "acp-tck-stub",
+        "command": sys.executable,
+        "args": [str(_MCP_STUB), str(marker)],
+        "env": [{"name": _CANARY_ENV_NAME, "value": canary}],
+    }
+    leaks = await _drive_and_scan_for_canary(agent_launch, tmp_path, server, canary, marker)
+    assert not leaks, f"the MCP env value {canary!r} leaked into: {'; '.join(leaks)}"
+
+
+@pytest.mark.requirement("ACP-MCP-205")
+@pytest.mark.capability("capabilities.session.mcp.http")
+async def test_mcp_header_value_is_never_echoed(agent_launch, tmp_path):
+    """ACP-MCP-205 (ADVISORY). Same scan as the stdio env test, for a canary in an http MCP
+    server's `headers` (an unreachable URL: there is no server to connect to)."""
+    canary = f"tck-canary-{uuid.uuid4().hex}"
+    server = {
+        "type": "http",
+        "name": "tck-http",
+        "url": "http://127.0.0.1:1/tck-nonexistent",
+        "headers": [{"name": "Authorization", "value": f"Bearer {canary}"}],
+    }
+    leaks = await _drive_and_scan_for_canary(agent_launch, tmp_path, server, canary, None)
+    assert not leaks, f"the MCP header value {canary!r} leaked into: {'; '.join(leaks)}"
 
 
 # --- session/fork (ACP-FORK-201/202, unstable) ---
@@ -859,7 +1235,7 @@ async def test_forked_session_can_be_prompted_without_resume(agent_launch, tmp_p
         assert turn.idle_update is not None, "the forked session's turn never reached idle"
 
 
-# --- systemPrompt (ACP-SYSPROMPT-201/202, unstable) ---
+# --- systemPrompt (ACP-SYSPROMPT-201/202) ---
 
 
 async def _new_session_with_system_prompt(agent, cwd: Any, mode: str, *, timeout: float):

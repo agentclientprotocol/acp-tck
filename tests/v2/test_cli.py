@@ -96,6 +96,8 @@ _CAPABILITY_IDS = {
     "ACP-CANCEL-212",
     "ACP-CANCEL-214",
     "ACP-SESSION-203",
+    "ACP-SESSION-204",
+    "ACP-SESSION-208",
     "ACP-RESUME-201",
     "ACP-RESUME-202",
     "ACP-RESUME-203",
@@ -115,10 +117,13 @@ _CAPABILITY_IDS = {
     "ACP-CLOSE-202",
     "ACP-CLOSE-203",
     "ACP-CLOSE-205",
+    "ACP-CLOSE-206",
     "ACP-DELETE-201",
     "ACP-DELETE-202",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
+    "ACP-ADDDIRS-203",
+    "ACP-MCP-203",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-SYSPROMPT-201",
@@ -146,6 +151,11 @@ _ADVISORY_IDS = {
     "ACP-BATCH-209",
     "ACP-DELETE-203",
     "ACP-CLOSE-204",
+    "ACP-CLOSE-207",
+    "ACP-SESSION-206",
+    "ACP-SESSION-207",
+    "ACP-MCP-204",
+    "ACP-MCP-205",
     "ACP-AUTH-201",
     "ACP-AUTH-205",
     "ACP-PATCH-208",
@@ -262,8 +272,11 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-DELETE-203",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
+    "ACP-ADDDIRS-203",
     "ACP-MCP-201",
     "ACP-MCP-202",
+    "ACP-MCP-204",
+    "ACP-MCP-205",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-SYSPROMPT-201",
@@ -366,8 +379,11 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-DELETE-203",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
+    "ACP-ADDDIRS-203",
     "ACP-MCP-201",
     "ACP-MCP-202",
+    "ACP-MCP-204",
+    "ACP-MCP-205",
     "ACP-CONFIG-201",
     "ACP-CONFIG-202",
     "ACP-CONFIG-203",
@@ -2518,10 +2534,11 @@ def test_close_no_cancel_idle_fails_cancel_208_and_close_202_203_only():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
-def test_close_responds_before_idle_fails_close_203_only():
+def test_close_responds_before_idle_fails_close_203_and_206_only():
     """`close_responds_before_idle.py` answers `session/close` before sending the cancelled idle
-    for the work it cancelled -- FAILs exactly `ACP-CLOSE-203`. The turn still ends
-    `cancelled`, so `ACP-CLOSE-202`/`ACP-CANCEL-208` PASS."""
+    for the work it cancelled -- FAILs `ACP-CLOSE-203`, and `ACP-CLOSE-206` too, since that idle
+    is a `session/update` after the close response. The turn still ends `cancelled`, so
+    `ACP-CLOSE-202`/`ACP-CANCEL-208` PASS."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "close_responds_before_idle.py",
@@ -2533,7 +2550,7 @@ def test_close_responds_before_idle_fails_close_203_only():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-CLOSE-203"}, result.stdout
+    assert fails == {"ACP-CLOSE-203", "ACP-CLOSE-206"}, result.stdout
     for req_id in ("ACP-CLOSE-201", "ACP-CLOSE-202", "ACP-CANCEL-208"):
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
@@ -3377,3 +3394,105 @@ def test_echoes_rejected_content_fails_prompt_211_and_promptcap_201():
     )
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {"ACP-PROMPT-211", "ACP-PROMPTCAP-201"}, result.stdout
+
+
+# --- session setup, close, MCP (`ACP-SESSION-204/206..208`, `ACP-CLOSE-204/206/207`,
+# `ACP-ADDDIRS-203`, `ACP-MCP-203..205`) -- defect fixtures ---
+
+_SETUP_K = "test_session"
+
+
+def test_accepts_relative_cwd_fails_session_204_only():
+    fails, _statuses, out = _fails_for("accepts_relative_cwd.py", _SETUP_K)
+    assert fails == {"ACP-SESSION-204"}, out
+
+
+def test_adddirs_accepts_relative_fails_adddirs_203_only():
+    fails, statuses, out = _fails_for("adddirs_accepts_relative.py", _SETUP_K)
+    assert fails == {"ACP-ADDDIRS-203"}, out
+    assert statuses.get("ACP-ADDDIRS-201") == "PASS", out
+    assert statuses.get("ACP-ADDDIRS-202") == "PASS", out
+
+
+def test_mcp_unsupported_transport_fixtures_fail_mcp_203_only():
+    """One fixture per probe: `sse` accepted, or a `_`-prefixed custom type accepted."""
+    for fixture in ("accepts_sse_mcp.py", "accepts_custom_mcp_transport.py"):
+        fails, _statuses, out = _fails_for(fixture, _SETUP_K)
+        assert fails == {"ACP-MCP-203"}, f"{fixture}:\n{out}"
+
+
+def test_accepts_duplicate_mcp_names_fails_mcp_204_advisory_only():
+    result = _run_cli(
+        FIXTURES_DIR_V2, "accepts_duplicate_mcp_names.py", protocol_version=2, k=_SETUP_K
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-MCP-204"}, result.stdout
+    assert statuses.get("ACP-MCP-203") == "PASS", result.stdout
+
+
+def test_permission_before_new_response_fails_session_206_only():
+    fails, statuses, out = _fails_for("permission_before_new_response.py", _SETUP_K)
+    assert fails == {"ACP-SESSION-206"}, out
+    assert statuses.get("ACP-SESSION-207") == "PASS", out
+
+
+def test_config_notified_before_new_response_fails_session_207_only():
+    """The response carries the same `configOptions`, so `ACP-SESSION-208` PASSes."""
+    fails, statuses, out = _fails_for("config_notified_before_new_response.py", _SETUP_K)
+    assert fails == {"ACP-SESSION-207"}, out
+    assert statuses.get("ACP-SESSION-208") == "PASS", out
+
+
+def test_commands_only_in_early_notification_fails_session_207_and_208():
+    fails, _statuses, out = _fails_for("commands_only_in_early_notification.py", _SETUP_K)
+    assert fails == {"ACP-SESSION-207", "ACP-SESSION-208"}, out
+
+
+def test_updates_after_close_fails_close_206_only():
+    fails, statuses, out = _fails_for("updates_after_close.py", "session_capabilities")
+    assert fails == {"ACP-CLOSE-206"}, out
+    assert statuses.get("ACP-CLOSE-201") == "PASS", out
+
+
+def test_close_twice_errors_fails_close_207_advisory_only():
+    result = _run_cli(
+        FIXTURES_DIR_V2, "close_twice_errors.py", protocol_version=2, k="session_capabilities"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CLOSE-207"}, result.stdout
+    assert statuses.get("ACP-CLOSE-201") == "PASS", result.stdout
+
+
+def test_closes_before_prompt_passes_close_204_with_not_active_outcome(tmp_path):
+    """`closes_before_prompt.py` answers a prompt sent just before a close `-32002`, since it
+    processed the close first. A legal outcome: `ACP-CLOSE-204` PASSes and records `not_active`."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "closes_before_prompt.py",
+        protocol_version=2,
+        k="test_prompt_pending_at_close_is_answered",
+        cancel_prompt="__close_first__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-CLOSE-204") == "PASS", result.stdout
+    assert _fails(statuses) == set(), result.stdout
+    by_id = {r["id"]: r for r in json.loads(report_path.read_text())["requirements"]}
+    assert "not_active" in json.dumps(by_id["ACP-CLOSE-204"]), by_id["ACP-CLOSE-204"]
+
+
+def test_leaks_mcp_credentials_fixtures_fail_mcp_205_advisory_only():
+    """One fixture per leak channel: env values in `_meta` (stdout), stderr, the stub's command
+    line, and header values in `_meta`. The other MCP rows still PASS."""
+    for fixture in (
+        "leaks_mcp_env_meta.py",
+        "leaks_mcp_env_stderr.py",
+        "leaks_mcp_env_argv.py",
+        "leaks_mcp_header_meta.py",
+    ):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SETUP_K)
+        statuses = _table_statuses(result.stdout)
+        assert _fails(statuses) == {"ACP-MCP-205"}, f"{fixture}:\n{result.stdout}"
+        for req_id in ("ACP-MCP-201", "ACP-MCP-202", "ACP-MCP-203", "ACP-MCP-204"):
+            assert statuses.get(req_id) == "PASS", f"{fixture} {req_id}:\n{result.stdout}"

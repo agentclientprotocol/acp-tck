@@ -1112,6 +1112,64 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SESSION-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/new` with a relative `cwd` is rejected with `-32602` (the code is named "
+            "by the spec: \"Agents reject a request with a relative `cwd` with `-32602`\"). A "
+            "success, or another error code, FAILs. The probe breaks the client rule that `cwd` "
+            "be absolute on purpose, because the spec defines the agent's answer to exactly "
+            "that input."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:524; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/cwd"
+        ),
+    ),
+    Requirement(
+        id="ACP-SESSION-206",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Before its `session/new` response, the agent sends no session-scoped request "
+            "(for example a permission request or an elicitation) naming the new session -- "
+            "the client cannot yet show it for that session. SHOULD NOT. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:103"),
+    ),
+    Requirement(
+        id="ACP-SESSION-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Before its `session/new` response, the agent sends no `config_option_update` or "
+            "`available_commands_update` for the new session: initial state belongs in the "
+            "response. SHOULD. `state_update` is explicitly allowed before the response and "
+            "is not judged. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:98-99,103"),
+    ),
+    Requirement(
+        id="ACP-SESSION-208",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When the latest `config_option_update`/`available_commands_update` for the new "
+            "session that arrives before the `session/new` response carries a non-empty list, "
+            "the response carries the corresponding list (`configOptions`/`availableCommands`), "
+            "non-empty: a setup response replaces the lists the client holds, so an agent whose "
+            "session has options or commands MUST include them. The premise \"the session has "
+            "them\" is inferred from that notification; a response arriving with no such "
+            "notification before it is recorded, not judged (vacuous)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:108,136,138; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionResponse"
+        ),
+    ),
+    Requirement(
         id="ACP-RESUME-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -1360,15 +1418,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A `session/prompt` sent immediately before `session/close` (without awaiting its "
-            "receipt) is answered either with `-32800` (closing prevented insertion) or with a "
-            "success carrying a string `messageId` (already inserted) -- never another error, "
-            "never left unanswered. ADVISORY rather than CAPABILITY: the outcome depends on how "
-            "the agent schedules two back-to-back requests, so a failure here is reported but "
-            "does not by itself fail the verdict."
+            "receipt) is answered with `-32800` (closing prevented insertion), with a success "
+            "carrying a string `messageId` (already inserted), or with `-32002` (the agent "
+            "processed the close first, so the session was no longer active when it reached the "
+            "prompt) -- never another error, never left unanswered. ADVISORY rather than "
+            "CAPABILITY: the outcome depends on how the agent schedules two back-to-back "
+            "requests, so a failure here is reported but does not by itself fail the verdict."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:395; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:374"
+            "docs/protocol/v2/draft/session-setup.mdx:51,395; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:374; "
+            "docs/protocol/v2/draft/error.mdx:54"
         ),
     ),
     Requirement(
@@ -1385,6 +1445,38 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:391; "
             "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After its successful `session/close` response, the agent sends no `session/update` "
+            "and no agent -> client request carrying that `sessionId` on the connection. "
+            "Responses to earlier `session/prompt` requests are exempt. Judged for closing an "
+            "idle session and for a close that cancels work mid-turn (that second run SKIPs "
+            "unless the turn ended `cancelled`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:395; "
+            "schema/v2/schema.unstable.json#/$defs/CloseSessionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/close` is idempotent: closing a session this connection already closed, "
+            "or one that does not exist, succeeds with the same empty result. SHOULD. A "
+            "`-32002` answer is the behavior clients are told to tolerate as success, but the "
+            "agent SHOULD still return the empty result, so it is an ADVISORY FAIL. The test is "
+            "gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:407-410; "
+            "docs/protocol/v2/draft/error.mdx:56"
         ),
     ),
     Requirement(
@@ -1447,6 +1539,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:416,439; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/additionalDirectories"
+        ),
+    ),
+    Requirement(
+        id="ACP-ADDDIRS-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.additionalDirectories",
+        text=(
+            "`session/new` with a relative `additionalDirectories` entry is rejected with "
+            "`-32602` when the agent advertises the capability (the code is named by the "
+            "spec). A success, or another error code, FAILs. The probe breaks the client rule "
+            "that each entry be absolute on purpose, because the spec defines the agent's "
+            "answer to exactly that input."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:437,443; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/additionalDirectories"
         ),
     ),
     Requirement(
@@ -1513,14 +1621,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "INFORMATIONAL, not CAPABILITY, despite the underlying `capabilities.session.mcp."
-            "stdio` marker: records whether `session/new` accepts a "
-            "well-formed stdio MCP server entry when the marker is advertised. A connect failure "
-            "against a harmless, possibly-nonexistent command is the agent's own business "
-            "(\"Agents SHOULD connect\" has no client-observable surface in stable v2) and is not "
-            "provably non-conformant, so this never asserts on the outcome."
+            "stdio` marker: records whether `session/new` accepts a well-formed stdio MCP "
+            "server entry when the marker is advertised, and whether a `notice` for the new "
+            "session followed an accepted request. A connect failure against a harmless, "
+            "possibly-nonexistent command is the agent's own business: the spec lets it either "
+            "fail the request or continue without that server, and only says that if it "
+            "continues it SHOULD tell the user (\"for example with a notice\"), which is not "
+            "tied to a wire event. So this never asserts on the outcome."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:555-607,656,681; "
+            "docs/protocol/v2/draft/session-setup.mdx:555-607,656,681-685; "
             "schema/v2/schema.unstable.json#/$defs/McpServerStdio"
         ),
     ),
@@ -1536,6 +1646,62 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:609-652; "
             "schema/v2/schema.unstable.json#/$defs/McpServerHttp"
+        ),
+    ),
+    Requirement(
+        id="ACP-MCP-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/new` with an MCP server of a transport the agent does not support is "
+            "rejected with `-32602` (the code is named by the spec). Two probes: v1's `sse`, "
+            "which the spec names explicitly, and the implementation-reserved "
+            "`_tck_unsupported_transport`, which no agent supports. A success, or another "
+            "error code, on either FAILs. The probes break the client rule to use only "
+            "advertised transports on purpose, because the spec defines the agent's answer to "
+            "exactly those inputs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:545,553; "
+            "schema/v2/schema.unstable.json#/$defs/McpServer"
+        ),
+    ),
+    Requirement(
+        id="ACP-MCP-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/new` with two MCP servers sharing a `name` is rejected with `-32602`. "
+            "ADVISORY rather than CAPABILITY: the sentence carries no keyword for the agent, "
+            "and an agent that launches servers before validating may fail with a launch error "
+            "instead, which the spec allows without naming a code. The probe breaks the "
+            "client MUST that names be unique on purpose. The test is gated on "
+            "`capabilities.session.mcp.stdio`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:547,685; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/mcpServers"
+        ),
+    ),
+    Requirement(
+        id="ACP-MCP-205",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A random canary the TCK puts in an MCP server's credentials -- a stdio server's "
+            "`env` value, or an http server's `headers` value, sent on `session/new` -- never "
+            "appears on the agent's stdout or stderr after one prompt turn, `session/list` and "
+            "a `session/resume` with the same servers: not in responses, errors, "
+            "`session/update`, `_meta`, listings or replayed history, and not in the stdio "
+            "server's own command line. SHOULD NOT. Only the client-observable part of the "
+            "rule: model context, logging beyond stderr and persistence are not covered. The "
+            "stdio test is gated on `capabilities.session.mcp.stdio`, the http test on "
+            "`capabilities.session.mcp.http`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:691,695; "
+            "schema/v2/schema.unstable.json#/$defs/EnvVariable; "
+            "schema/v2/schema.unstable.json#/$defs/HttpHeader"
         ),
     ),
     Requirement(
