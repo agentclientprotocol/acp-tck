@@ -677,6 +677,52 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PERM-202",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "In every `session/request_permission` the agent sends during a turn, the "
+            "`options[].optionId` values are pairwise distinct, and a `subject` with `type: "
+            "\"command\"` carries an absolute `cwd`. Both are schema-valid when broken "
+            "(`AbsolutePath` is a plain string). SKIPPED when no permission request is observed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:302-303,357; "
+            "schema/v2/schema.unstable.json#/$defs/PermissionOption/properties/optionId; "
+            "schema/v2/schema.unstable.json#/$defs/CommandPermissionSubject"
+        ),
+    ),
+    Requirement(
+        id="ACP-PERM-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After the client declines a `session/request_permission` whose `subject` is a "
+            "`tool_call` X by policy with the `cancelled` outcome (no `session/cancel`), the "
+            "agent never reports X `completed` later in the turn, on a `tool_call_update` or a "
+            "later subject. Which stop reason the turn ends with is not judged. SKIPPED when no "
+            "permission request with a `tool_call` subject is observed."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:340,423"),
+    ),
+    Requirement(
+        id="ACP-PERM-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After the client answers a `session/request_permission` whose `subject` is a "
+            "`tool_call` X with a `selected` outcome naming an `optionId` the agent never "
+            "offered, the agent treats the request as not approved: it never reports X "
+            "`completed` later in the turn. SKIPPED when no permission request with a "
+            "`tool_call` subject is observed. The probe answer breaks the client rule on "
+            "purpose, because the spec defines the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:346-347,423; "
+            "schema/v2/schema.unstable.json#/$defs/SelectedPermissionOutcome"
+        ),
+    ),
+    Requirement(
         id="ACP-CLIENTCAP-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -2434,14 +2480,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The first `tool_call_update` observed for a given `toolCallId` includes a "
-            "non-empty `title`; `name`, if ever set, does not change across subsequent "
-            "updates for the same id. Kept ADVISORY, not promoted to CAPABILITY under the "
+            "The first report of a given `toolCallId` includes a non-empty `title`; `name`, if "
+            "ever set, does not change across later reports of the same id. A first report is "
+            "a `tool_call_update`, a permission request's `tool_call` subject, or a "
+            "`tool_call_content_chunk`; a chunk carries no title, so a tool call a chunk "
+            "creates misses the SHOULD. Kept ADVISORY, not promoted to CAPABILITY under the "
             "session-baseline tiering rule -- the "
             "corresponding test is still `@pytest.mark.capability(\"capabilities.session\")`-"
             "gated for its own SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:41-54"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:41-54,198-200,270-273"),
     ),
     Requirement(
         id="ACP-PATCH-209",
@@ -2449,13 +2497,62 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "When the agent sends `session/request_permission` for the prompted session during "
-            "a turn, it reports `state_update.state == \"requires_action\"` for that session "
-            "at some point in the turn (SHOULD). What follows it is `ACP-STATE-205`'s MUST. "
-            "The test is gated on `capabilities.session`."
+            "a turn, other than one whose `subject` references an item in the latest reported "
+            "`background` list (background work may leave the session `idle`), it reports "
+            "`state_update.state == \"requires_action\"` for that session at some point in the "
+            "turn (SHOULD). What follows it is `ACP-STATE-205`'s MUST. The test is gated on "
+            "`capabilities.session`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:153,845,1074; "
-            "docs/protocol/v2/draft/tool-calls.mdx:209"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:153,174,845,1074; "
+            "docs/protocol/v2/draft/tool-calls.mdx:209,268"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-210",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Per `toolCallId`, the effective `status` (applying every `tool_call_update` and "
+            "`tool_call` permission subject in wire order; `null` resets it to `pending`) never "
+            "goes back to `pending` and never changes once `completed`, `failed` or "
+            "`cancelled`: a final tool call is not reopened. SKIPPED when no tool call is "
+            "reported during the turn."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:102-108,421,423; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:184"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-211",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When the turn's idle arrives, every tool call reported for the prompted session "
+            "during the turn has a final status (`completed`, `failed` or `cancelled`), unless "
+            "a `background` list reported during the turn names it. SKIPPED when no tool call "
+            "is reported, or the turn ends with an error response. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:423"),
+    ),
+    Requirement(
+        id="ACP-PATCH-212",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Once a tool call's effective status is final, or a terminal's effective "
+            "`exitStatus` is an object, its effective `capabilities.cancel` is absent or "
+            "`null`. `capabilities` is a nullable patch, so a final status sent without "
+            "clearing it keeps advertising `cancel`. Passive: the TCK sends no "
+            "`tool_call/cancel` or `terminal/cancel`. SKIPPED when no tool call or terminal "
+            "advertises `cancel` during the turn. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,600; "
+            "schema/v2/schema.unstable.json#/$defs/ToolCallCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/TerminalCapabilities"
         ),
     ),
     Requirement(

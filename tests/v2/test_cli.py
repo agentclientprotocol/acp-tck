@@ -86,6 +86,9 @@ _CAPABILITY_IDS = {
     "ACP-PROMPTCAP-003",
     "ACP-PROMPTCAP-201",
     "ACP-PERM-201",
+    "ACP-PERM-202",
+    "ACP-PERM-203",
+    "ACP-PERM-002",
     "ACP-CLIENTCAP-201",
     "ACP-CLIENTCAP-202",
     "ACP-CANCEL-201",
@@ -163,6 +166,7 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-205",
     "ACP-PATCH-206",
     "ACP-PATCH-207",
+    "ACP-PATCH-210",
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
@@ -186,6 +190,8 @@ _ADVISORY_IDS = {
     "ACP-AUTH-210",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
+    "ACP-PATCH-211",
+    "ACP-PATCH-212",
     "ACP-META-001",
     "ACP-META-201",
     "ACP-META-202",
@@ -258,8 +264,9 @@ _BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
 _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
-# `capabilities.session.prompt.*` marker, and `ACP-PERM-201` SKIPs whenever a turn never
-# actually triggers a `session/request_permission` -- both legitimate, expected SKIPs (not
+# `capabilities.session.prompt.*` marker, and `ACP-PERM-201`/`202` SKIP whenever a turn never
+# actually triggers a `session/request_permission` (`ACP-PERM-203`/`002` also need a `tool_call`
+# subject) -- both legitimate, expected SKIPs (not
 # FAILs) for a fixture that neither advertises nor exercises them.
 #
 # A fixture that never opts into `_base.py`'s `_send_rich_turn_updates` (`emit_rich_turn_updates`
@@ -274,6 +281,9 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
     "ACP-PERM-201",
+    "ACP-PERM-202",
+    "ACP-PERM-203",
+    "ACP-PERM-002",
     "ACP-ENUM-203",
     "ACP-ENUM-204",
     "ACP-META-203",
@@ -284,6 +294,9 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PATCH-207",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
+    "ACP-PATCH-210",
+    "ACP-PATCH-211",
+    "ACP-PATCH-212",
     "ACP-STATE-205",
     "ACP-CANCEL-209",
     "ACP-CANCEL-213",
@@ -426,6 +439,9 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
     "ACP-PERM-201",
+    "ACP-PERM-202",
+    "ACP-PERM-203",
+    "ACP-PERM-002",
     "ACP-DELETE-201",
     "ACP-DELETE-202",
     "ACP-DELETE-203",
@@ -478,6 +494,9 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PATCH-207",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
+    "ACP-PATCH-210",
+    "ACP-PATCH-211",
+    "ACP-PATCH-212",
     "ACP-STATE-205",
     "ACP-CANCEL-209",
     "ACP-CANCEL-213",
@@ -510,12 +529,12 @@ def test_v2_conforming_agent_passes_everything():
     `configOptions`, no
     `authMethods`, and it never asks for permission or opts into `_send_rich_turn_updates`. So
     every capability row that needs more than that SKIPs rather than PASSes:
-    `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201` ("no permission request
-    observed"), `ACP-DELETE-201..205`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
+    `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201..203`/`ACP-PERM-002` ("no
+    permission request observed"), `ACP-DELETE-201..205`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
     `ACP-FORK-201..205`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
     extras absent), `ACP-AUTH-203/204/207` (no
     `authMethods`, no `--auth-method`/`--allow-logout`), and `ACP-ENUM-203`/
-    `ACP-PATCH-204..209` (no rich turn updates, no permission request). `ACP-PATCH-201/203` and
+    `ACP-PATCH-204..212` (no rich turn updates, no permission request). `ACP-PATCH-201/203` and
     `ACP-ENUM-201` still PASS: the ordinary message-chunk/state-update traffic every turn already
     emits is enough to exercise them. `ACP-SESSION-203`/`ACP-RESUME-201..209`/
     `ACP-LIST-201..206`/`ACP-CLOSE-201`/`ACP-CLOSE-204` are gated on the baseline `capabilities.session` marker
@@ -558,12 +577,13 @@ _FULL_EXPECTED_SKIPS = {
 
 def test_v2_conforming_full_agent_passes_everything():
     """`conforming_full.py` advertises `capabilities.session.prompt.{image,audio,
-    embeddedContext}`, asks for permission on every turn (`AsksPermissionAgent`), opts into
+    embeddedContext}`, asks for permission with a `tool_call` subject on every turn
+    (`AsksPermissionAgent`, `permission_tool_call=True`), opts into
     `_send_rich_turn_updates` (two message chunks sharing one `messageId`, one tool_call
     create+patch sharing one `toolCallId`, one plan_update with one `planId`), and advertises one
     `type: "agent"` authMethods entry (`methodId: "tck"`). Run with `--cancel-prompt __hang__
     --auth-method tck --allow-logout`, this exercises essentially every capability: every
-    prompt-content/permission/client-capability id, `ACP-PATCH-201/203/204/205/208/209` and
+    prompt-content/permission/client-capability id, `ACP-PATCH-201/203..212` and
     `ACP-ENUM-201/203`, `ACP-AUTH-203/204`, and every CAPABILITY-tier `ACP-CANCEL-*` id but
     `ACP-CANCEL-209` all PASS. The INFORMATIONAL probe PASSes too (an INFORMATIONAL test PASSes as
     long as it never hits an assertion failure or setup/teardown error -- it never asserts on the
@@ -1228,6 +1248,12 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-207",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -1395,6 +1421,12 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-207",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -1415,13 +1447,13 @@ def _fails(statuses: dict[str, str]) -> set[str]:
 def test_reports_background_work_agent_passes_everything():
     """`reports_background_work.py` is `conforming.py` plus a `background` list on every
     `state_update` and one background tool call per turn, so `_BACKGROUND_SKIP_IDS` PASS. That
-    tool call's two `tool_call_update`s also give `ACP-PATCH-204`/`208` something to judge, so
-    they PASS too; every other id matches `conforming.py`."""
+    tool call's two `tool_call_update`s also give `ACP-PATCH-204`/`208`/`210`/`211` something to
+    judge, so they PASS too; every other id matches `conforming.py`."""
     result = _run_cli(FIXTURES_DIR_V2, "reports_background_work.py", protocol_version=2)
     assert result.returncode == 0, result.stdout + result.stderr
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
-    exercised = _BACKGROUND_SKIP_IDS | {"ACP-PATCH-204", "ACP-PATCH-208"}
+    exercised = _BACKGROUND_SKIP_IDS | {"ACP-PATCH-204", "ACP-PATCH-208", "ACP-PATCH-210", "ACP-PATCH-211"}
     for req_id, status in statuses.items():
         expected = "SKIPPED" if req_id in _CONFORMING_EXPECTED_SKIPS - exercised else "PASS"
         assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
@@ -1789,6 +1821,12 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-PATCH-207",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -1901,6 +1939,12 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-PATCH-207",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
     }, cascade_result.stdout
     for req_id in ("ACP-CANCEL-201", "ACP-CANCEL-202", "ACP-CANCEL-206", "ACP-CANCEL-207"):
         assert cancel_statuses.get(req_id) == "SKIPPED", f"{req_id}: {cancel_result.stdout}"
@@ -2001,6 +2045,12 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-PATCH-207",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
     }, cascade_result.stdout
     assert cancel_statuses.get("ACP-CANCEL-202") == "SKIPPED", cancel_result.stdout
     assert cancel_statuses.get("ACP-CANCEL-208") == "PASS", cancel_result.stdout
@@ -2321,14 +2371,19 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
     # `vendor_stop_reason.py`/`idle_before_running.py` above. Unlike those three, though, this
     # fixture is built on `AsksPermissionAgent` (it asks for permission mid-turn, same as
     # `conforming_full.py`), so the permission-dependent `ACP-ENUM-203`/`ACP-PATCH-209` PASS
-    # here rather than SKIP -- only `ACP-PATCH-208` (needs a *tool_call_update*, not a
-    # permission request) still SKIPs.
+    # here rather than SKIP -- only the tool-call rows (`ACP-PATCH-208`/`210..212`, and
+    # `ACP-PERM-203`/`002`, which need a `tool_call` subject) still SKIP.
     _RICH_TURN_SKIP_IDS = {
         "ACP-PATCH-204",
         "ACP-PATCH-205",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
         "ACP-META-203",
         "ACP-META-204",
     }
@@ -3434,6 +3489,68 @@ def test_message_chunk_missing_message_id_fails_patch_201_and_schema_001():
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-PATCH-201", "ACP-SCHEMA-001", "ACP-PROMPT-205"}, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+# Wide enough to catch a tool-call fixture's cascades into the prompt, cancel, background and
+# open-enum rows.
+_TOOL_CALL_K = "test_permission or patches or background or test_enums or test_prompt or cancel"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing_id"),
+    [
+        ("duplicate_permission_option_id.py", "ACP-PERM-202"),
+        ("permission_command_relative_cwd.py", "ACP-PERM-202"),
+        ("proceeds_after_cancelled_permission.py", "ACP-PERM-203"),
+        ("perm_unknown_option_is_approval.py", "ACP-PERM-002"),
+        ("tool_call_chunk_first.py", "ACP-PATCH-208"),
+        ("permission_without_requires_action.py", "ACP-PATCH-209"),
+        ("tool_call_reopens_after_final.py", "ACP-PATCH-210"),
+        ("leaves_tool_call_in_progress.py", "ACP-PATCH-211"),
+        ("advertises_cancel_after_final.py", "ACP-PATCH-212"),
+    ],
+)
+def test_tool_call_defect_fails_its_row_only(fixture: str, failing_id: str):
+    """Each tool-call defect fixture trips exactly its own row (see its docstring)."""
+    fails, statuses, stdout = _fails_for(fixture, _TOOL_CALL_K)
+    assert fails == {failing_id}, stdout
+    if fixture == "proceeds_after_cancelled_permission.py":
+        assert statuses["ACP-PERM-002"] == "PASS", stdout
+    if fixture == "perm_unknown_option_is_approval.py":
+        assert statuses["ACP-PERM-203"] == "PASS", stdout
+
+
+def test_permission_for_background_work_needs_no_requires_action(tmp_path):
+    """`asks_permission_for_background_work.py` asks permission for its listed background tool
+    call while the session stays `running`/`idle`. That request is not for foreground work, so
+    `ACP-PATCH-209` SKIPs instead of FAILing, and the permission rows judge it normally."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "asks_permission_for_background_work.py",
+        protocol_version=2,
+        k=_TOOL_CALL_K,
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    for req_id in (
+        "ACP-PERM-201",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PATCH-208",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-STATE-206",
+        "ACP-STATE-207",
+        "ACP-STATE-208",
+    ):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (patch_209,) = by_id["ACP-PATCH-209"]["tests"]
+    assert patch_209["status"] == "SKIPPED"
+    assert "background work" in patch_209["message"], patch_209
 
 
 def _enum_201_run(fixture: str):

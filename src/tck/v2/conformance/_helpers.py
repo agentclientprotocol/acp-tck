@@ -1009,6 +1009,9 @@ class PromptTurn:
     """Every agent -> client request (answered by the mock client) and every agent -> client
     notification other than `session/update` (e.g. `$/cancel_request`, or an undefined method,
     for `ACP-CLIENTCAP-202`) observed during the turn."""
+    permission_requests: list[tuple[int, TranscriptEntry]] = field(default_factory=list)
+    """`(transcript_index, entry)` for every `session/request_permission` observed during the
+    turn, whatever `sessionId` it carried, so it can be merged with `updates` in wire order."""
     cancelled_at_index: int | None = None
     """Transcript index of the `session/cancel` sent for this turn, or `None` if none was."""
     state_at_cancel: Any = None
@@ -1144,6 +1147,7 @@ async def run_prompt(
     error_end_deadline: float | None = None
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
+    permission_requests: list[tuple[int, TranscriptEntry]] = []
     permission_fallbacks: list[str] = []
     permission_cancels: list[str] = []
     cancelled_at_index: int | None = None
@@ -1323,6 +1327,7 @@ async def run_prompt(
 
         if method == "session/request_permission" and "id" in msg:
             client_requests_seen.append(entry)
+            permission_requests.append((line_index, entry))
             req_params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
             for_this_session = req_params.get("sessionId") == session_id
             for_foreground = for_this_session and not (
@@ -1477,6 +1482,7 @@ async def run_prompt(
         states=states,
         updates=updates,
         client_requests_seen=client_requests_seen,
+        permission_requests=permission_requests,
         cancelled_at_index=cancelled_at_index,
         state_at_cancel=state_at_cancel,
         held_permission=held_permission,
@@ -1487,6 +1493,141 @@ async def run_prompt(
         permission_fallbacks=permission_fallbacks,
         permission_cancels=permission_cancels,
     )
+
+
+def session_events(turn: PromptTurn) -> list[tuple[int, str, dict[str, Any]]]:
+    """The prompted session's `session/update` payloads (`"update"`) and
+    `session/request_permission` params (`"permission"`) from `turn`, in wire order, as
+    `(transcript_index, kind, payload)`. Clients apply a `tool_call` subject in the order it was
+    received relative to updates (tool-calls.mdx:270-273). A child session's traffic is left
+    out: entity ids are per session."""
+    events: list[tuple[int, str, dict[str, Any]]] = []
+    for index, entry in turn.updates:
+        params = entry.parsed.get("params") if isinstance(entry.parsed, dict) else None
+        if isinstance(params, dict) and params.get("sessionId") == turn.session_id:
+            if isinstance(params.get("update"), dict):
+                events.append((index, "update", params["update"]))
+    for index, entry in turn.permission_requests:
+        params = entry.parsed.get("params") if isinstance(entry.parsed, dict) else None
+        if isinstance(params, dict) and params.get("sessionId") == turn.session_id:
+            events.append((index, "permission", params))
+    events.sort(key=lambda event: event[0])  # stable: one array line keeps its own order
+    return events
+
+
+def tool_call_report(kind: str, payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]] | None:
+    """`(toolCallId, source, fields)` if a `session_events` event reports a tool call, else
+    `None`. Three things report one, and each creates it on a first-seen id: a
+    `tool_call_update` (`fields` is the update), a `tool_call_content_chunk` (no tool-call fields
+    of its own, so `fields` is `{}`; tool-calls.mdx:198-200), and a `tool_call` permission
+    subject (`fields` is its `toolCall`, applied like an update; :270-273). A report without a
+    non-empty string id is `ACP-PATCH-204`'s concern and yields `None`."""
+    if kind == "permission":
+        subject = payload.get("subject")
+        if not isinstance(subject, dict) or subject.get("type") != "tool_call":
+            return None
+        fields = subject.get("toolCall")
+        source = "permission subject"
+    else:
+        source = payload.get("sessionUpdate")
+        if source == "tool_call_update":
+            fields = payload
+        elif source == "tool_call_content_chunk":
+            fields = {"toolCallId": payload.get("toolCallId")}
+        else:
+            return None
+    if not isinstance(fields, dict):
+        return None
+    tool_call_id = fields.get("toolCallId")
+    if not isinstance(tool_call_id, str) or not tool_call_id:
+        return None
+    return tool_call_id, source, {} if source == "tool_call_content_chunk" else fields
+
+
+FINAL_TOOL_CALL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+"""The tool-call statuses that are final (tool-calls.mdx:423)."""
+
+
+def _advertises_cancel(capabilities: Any) -> bool:
+    """Whether a `capabilities` patch value advertises `cancel`: only an object `cancel` does
+    (tool-calls.mdx:440). A malformed value means no controls (`#/$defs/ToolCallCapabilities`)."""
+    return isinstance(capabilities, dict) and isinstance(capabilities.get("cancel"), dict)
+
+
+@dataclass
+class TrackedToolCall:
+    status: Any = "pending"
+    cancel: bool = False
+
+
+@dataclass
+class TrackedTerminal:
+    exited: bool = False
+    cancel: bool = False
+
+
+@dataclass
+class PatchTracker:
+    """The effective tool-call and terminal state of one session, built by `apply`ing its
+    `session_events` in wire order. Patch rules (tool-calls.mdx:102-108,440,587): an omitted field
+    is unchanged, `null` resets it to its default (`status` `pending`, no `capabilities`, no
+    `exitStatus`), and a concrete value replaces it. Violations are collected, not raised."""
+
+    tool_calls: dict[str, TrackedToolCall] = field(default_factory=dict)
+    terminals: dict[str, TrackedTerminal] = field(default_factory=dict)
+    status_violations: list[str] = field(default_factory=list)
+    """A status back to `pending`, or a change after a final status (tool-calls.mdx:421,423)."""
+    cancel_violations: list[str] = field(default_factory=list)
+    """`cancel` still advertised by a final tool call or an exited terminal (:440,600)."""
+    cancel_seen: bool = False
+
+    def apply(self, kind: str, payload: dict[str, Any]) -> None:
+        report = tool_call_report(kind, payload)
+        if report is not None:
+            self._apply_tool_call(*report)
+        elif kind == "update" and payload.get("sessionUpdate") in ("terminal_update", "terminal_output_chunk"):
+            terminal_id = payload.get("terminalId")
+            if isinstance(terminal_id, str) and terminal_id:
+                self._apply_terminal(terminal_id, payload)
+
+    def _apply_tool_call(self, tool_call_id: str, source: str, fields: dict[str, Any]) -> None:
+        tool_call = self.tool_calls.setdefault(tool_call_id, TrackedToolCall())
+        if "status" in fields:
+            old = tool_call.status
+            new = "pending" if fields["status"] is None else fields["status"]
+            if old in FINAL_TOOL_CALL_STATUSES and new != old:
+                self.status_violations.append(
+                    f"tool call {tool_call_id!r} changed from final status {old!r} to {new!r} "
+                    f"(via {source})"
+                )
+            elif new == "pending" and old != "pending":
+                self.status_violations.append(
+                    f"tool call {tool_call_id!r} went back from {old!r} to 'pending' (via {source})"
+                )
+            tool_call.status = new
+        if "capabilities" in fields:
+            tool_call.cancel = _advertises_cancel(fields["capabilities"])
+            self.cancel_seen = self.cancel_seen or tool_call.cancel
+        if tool_call.cancel and tool_call.status in FINAL_TOOL_CALL_STATUSES:
+            self.cancel_violations.append(
+                f"tool call {tool_call_id!r} still advertises capabilities.cancel with final "
+                f"status {tool_call.status!r} (via {source})"
+            )
+
+    def _apply_terminal(self, terminal_id: str, update: dict[str, Any]) -> None:
+        terminal = self.terminals.setdefault(terminal_id, TrackedTerminal())
+        if update.get("sessionUpdate") != "terminal_update":
+            return  # an output chunk patches no field
+        if "exitStatus" in update:
+            terminal.exited = isinstance(update["exitStatus"], dict)
+        if "capabilities" in update:
+            terminal.cancel = _advertises_cancel(update["capabilities"])
+            self.cancel_seen = self.cancel_seen or terminal.cancel
+        if terminal.cancel and terminal.exited:
+            self.cancel_violations.append(
+                f"terminal {terminal_id!r} still advertises capabilities.cancel after reporting "
+                f"exitStatus"
+            )
 
 
 SECOND_PROMPT_TEXT = "hi"

@@ -24,6 +24,8 @@ from tck.v2.conformance._helpers import (
     permission_outcome,
     prompt_during_active_work,
     run_prompt,
+    session_events,
+    tool_call_report,
 )
 
 _SCRIPT = r"""
@@ -669,3 +671,35 @@ def test_background_list_read_before_the_prompt_counts():
         on_cancel=True,
     )
     _assert_answered(agent, "bg-perm", _selected("yes"))
+
+
+def test_session_events_merge_permission_subjects_with_updates_in_wire_order():
+    """A permission request is recorded with its line index, so `session_events` can place its
+    `tool_call` subject between the updates around it (tool-calls.mdx:270-273). Another
+    session's traffic is left out."""
+    subject = {"type": "tool_call", "toolCall": {"toolCallId": "t1", "title": "Edit"}}
+    _, turn, _ = _recording(
+        steps=[
+            _RESPONSE,
+            _state("running"),
+            _update({"sessionUpdate": "tool_call_update", "toolCallId": "t0", "title": "Read"}),
+            _background_permission("perm-1", subject),
+            {"wait_id": "perm-1"},
+            _update({"sessionUpdate": "tool_call_update", "toolCallId": "t9"}, session_id="other"),
+            _update({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed"}),
+            _state("idle", stopReason="end_turn"),
+        ]
+    )
+    assert [index for index, _ in turn.permission_requests] == sorted(
+        index for index, _ in turn.permission_requests
+    )
+    reports = [
+        tool_call_report(kind, payload)
+        for _, kind, payload in session_events(turn)
+        if tool_call_report(kind, payload) is not None
+    ]
+    assert [(tool_call_id, source) for tool_call_id, source, _ in reports] == [
+        ("t0", "tool_call_update"),
+        ("t1", "permission subject"),
+        ("t1", "tool_call_update"),
+    ]

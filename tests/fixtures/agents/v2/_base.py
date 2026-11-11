@@ -860,9 +860,11 @@ class ConformingAgent:
 
     def _send_rich_turn_updates(self, session_id: Any) -> None:
         """Opt-in (`emit_rich_turn_updates=True`) emission of a two-chunk agent message, a
-        tool_call create + follow-up patch, and a plan update -- so the ACP-PATCH-2xx/
-        ACP-ENUM-2xx rows have something real to scan instead of vacuously SKIPping. No-op
-        (default) for every fixture that doesn't opt in."""
+        tool_call create + follow-up patch, a plan update and a terminal that exits -- so the
+        ACP-PATCH-2xx/ACP-ENUM-2xx rows have something real to scan instead of vacuously
+        SKIPping. The tool call and the terminal advertise `capabilities.cancel` while live and
+        clear it when they finish (`ACP-PATCH-212`). No-op (default) for every fixture that
+        doesn't opt in."""
         if not self._emit_rich_turn_updates:
             return
         self._message_count += 1
@@ -893,6 +895,7 @@ class ConformingAgent:
                 "title": "Reading a file",
                 "kind": "read",
                 "status": "in_progress",
+                "capabilities": {"cancel": {}},
             },
         )
         self._send_update(
@@ -901,6 +904,7 @@ class ConformingAgent:
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": tool_call_id,
                 "status": "completed",
+                "capabilities": None,
                 "content": [
                     {"type": "content", "content": {"type": "text", "text": "done"}},
                     {
@@ -955,6 +959,7 @@ class ConformingAgent:
                 "terminalId": terminal_id,
                 "command": "echo hi",
                 "cwd": "/tmp",
+                "capabilities": {"cancel": {}},
             },
         )
         self._send_update(
@@ -963,6 +968,15 @@ class ConformingAgent:
                 "sessionUpdate": "terminal_output_chunk",
                 "terminalId": terminal_id,
                 "data": base64.b64encode(b"hi\n").decode("ascii"),
+            },
+        )
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "terminal_update",
+                "terminalId": terminal_id,
+                "exitStatus": {"exitCode": 0},
+                "capabilities": None,
             },
         )
 
@@ -1161,34 +1175,84 @@ class AsksPermissionAgent(ConformingAgent):
     (prompt-lifecycle.mdx:1177). `session/close` withdraws it the same way before responding
     (session-setup.mdx:391). A late answer is ignored. The self-test for `ACP-PERM-201`/
     `ACP-PATCH-209`/`ACP-STATE-205`/`ACP-CANCEL-209`/`ACP-CANCEL-213`/`ACP-CLOSE-205`.
+
+    With `permission_tool_call=True` the request carries a `tool_call` subject that creates a
+    `pending` tool call. The tool call ends `completed` only when the answer selects an offered
+    `allow_*` option, else `cancelled` (tool-calls.mdx:340,346-347,423): the self-test for
+    `ACP-PERM-203`/`ACP-PERM-002`.
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, *, permission_tool_call: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._perm_counter = 0
         self._pending_permission: dict[str, Any] | None = None
+        self._permission_tool_call = permission_tool_call
+        self._permission_tool_call_id: str | None = None  # the subject's tool call, until settled
+        self._permission_approved = False
 
     def _mid_turn_action(self, session_id: Any) -> bool:
         perm_id = self._next_permission_id()
         self._pending_permission = {"perm_id": perm_id, "session_id": session_id}
+        if self._permission_tool_call:
+            self._tool_call_count += 1
+            self._permission_tool_call_id = f"tool-perm-{self._tool_call_count:04d}"
         # ACP-PATCH-209: report `requires_action` while blocked on the client's answer.
         self._send_update(session_id, {"sessionUpdate": "state_update", "state": "requires_action"})
         self._send_permission_request(perm_id, session_id)
         return True  # defer finishing the turn to `_handle_response`, below
 
     def _send_permission_request(self, perm_id: Any, session_id: Any) -> None:
+        params: dict[str, Any] = {
+            "sessionId": session_id,
+            "title": "Allow this action?",
+            "options": self._permission_options(),
+        }
+        subject = self._permission_subject()
+        if subject is not None:
+            params["subject"] = subject
         self._write(
-            {
-                "jsonrpc": "2.0",
-                "id": perm_id,
-                "method": "session/request_permission",
-                "params": {
-                    "sessionId": session_id,
-                    "title": "Allow this action?",
-                    "options": self._permission_options(),
-                },
-            }
+            {"jsonrpc": "2.0", "id": perm_id, "method": "session/request_permission", "params": params}
         )
+
+    def _permission_subject(self) -> dict[str, Any] | None:
+        """Hook: the request's `subject`. With `permission_tool_call`, a `tool_call` subject (the
+        tool call's first report, so it carries the title); else none."""
+        if self._permission_tool_call_id is None:
+            return None
+        return {
+            "type": "tool_call",
+            "toolCall": {
+                "toolCallId": self._permission_tool_call_id,
+                "title": "Editing a file",
+                "kind": "edit",
+                "status": "pending",
+            },
+        }
+
+    def _approves(self, outcome: dict[str, Any]) -> bool:
+        """Whether `outcome` selects an offered `allow_*` option; an unmatched `optionId` is not
+        approval (tool-calls.mdx:346-347)."""
+        return outcome.get("outcome") == "selected" and any(
+            option.get("optionId") == outcome.get("optionId")
+            and str(option.get("kind")).startswith("allow")
+            for option in self._permission_options()
+        )
+
+    def _permission_tool_call_status(self, outcome: Any) -> str:
+        """Hook: the final status of the permission's tool call for `outcome`."""
+        return "completed" if outcome != "cancelled" and self._permission_approved else "cancelled"
+
+    def _settle_permission_tool_call(self, session_id: Any, outcome: Any) -> None:
+        tool_call_id, self._permission_tool_call_id = self._permission_tool_call_id, None
+        if tool_call_id is not None:
+            self._send_update(
+                session_id,
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": tool_call_id,
+                    "status": self._permission_tool_call_status(outcome),
+                },
+            )
 
     def _next_permission_id(self) -> Any:
         """Hook: the JSON-RPC `id` of the next permission request."""
@@ -1207,8 +1271,9 @@ class AsksPermissionAgent(ConformingAgent):
             return  # not a reply to our own outstanding permission request
         self._pending_permission = None
         result = message.get("result") or {}
-        outcome = (result.get("outcome") or {}).get("outcome")
-        self._after_permission(pending["session_id"], outcome)
+        answer = result.get("outcome") if isinstance(result.get("outcome"), dict) else {}
+        self._permission_approved = self._approves(answer)
+        self._after_permission(pending["session_id"], answer.get("outcome"))
 
     def _send_cancel_request(self, pending: dict[str, Any]) -> None:
         self._notify("$/cancel_request", {"requestId": pending["perm_id"]})
@@ -1238,17 +1303,21 @@ class AsksPermissionAgent(ConformingAgent):
         if pending is not None and pending["session_id"] == params.get("sessionId"):
             self._pending_permission = None
             self._withdraw_on_close(pending)
+            self._settle_permission_tool_call(pending["session_id"], "cancelled")
             self._send_idle_update(pending["session_id"], "cancelled")
         super()._handle_close_session(msg_id, params)
 
     def _after_permission(self, session_id: Any, outcome: Any) -> None:
         """Hook: a `cancelled` outcome ends the blocked work without resuming (`idle` straight
         from `requires_action`); anything else reports `running` before resuming output
-        (`ACP-STATE-205`) and finishes with `end_turn`."""
+        (`ACP-STATE-205`) and finishes with `end_turn`. A `permission_tool_call` is settled
+        first, or right after `running`."""
         if outcome == "cancelled":
+            self._settle_permission_tool_call(session_id, outcome)
             self._send_idle_update(session_id, "cancelled")
             return
         self._send_update(session_id, {"sessionUpdate": "state_update", "state": "running"})
+        self._settle_permission_tool_call(session_id, outcome)
         self._finish_turn(session_id, "end_turn")
 
 
