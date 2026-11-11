@@ -42,13 +42,17 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `resume_*.py` defect fixtures can break exactly one.
 - `session/close` keeps the session in `session/list` (resumable) but refuses further prompts.
   `session/delete` (only when `capabilities.session.delete` is advertised, else `-32601`) removes
-  it entirely, with no cancellation side effect; an unknown id succeeds silently.
+  it entirely, first cancelling a hanging `__hang__` turn as close does; an unknown id succeeds
+  silently.
+- `session/list` rejects a relative `cwd` filter (`_list_cwd_rejection`) and any cursor
+  (`_list_cursor_rejection`, since it never issues one) with `-32602`; each is an overridable hook.
 - A session-scoped request (`session/prompt`, `session/set_config_option`, `session/resume`)
   naming a session that is not active is answered by `_unknown_session`: `-32002` with
   `data.sessionId` (`error.mdx:54-56`). Defect fixtures override it, or the handlers, to break it.
   `session/close` and `session/delete` of an unknown id still succeed.
 - `session/fork` (only when `capabilities.session.fork` is advertised) creates a live session with
-  a copy of the source's history. `systemPrompt` on `session/new` and `session/resume` is
+  a copy of the source's history; a source it never created is `-32002` via `_unknown_session`.
+  `systemPrompt` on `session/new` and `session/resume` is
   accepted only in an advertised mode with text content, else `-32602` and the session is
   neither created nor resumed (session-setup.mdx:481).
 - `persist_sessions` (opt-in, default `False`): each created session's `cwd` is also written to
@@ -574,6 +578,12 @@ class ConformingAgent:
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
         # All params optional; `SessionInfo` requires only `sessionId`/`cwd`. Filter by `cwd`
         # when given ("returns the first page" is trivially satisfied here -- no pagination, ever).
+        rejection = self._list_cwd_rejection(params.get("cwd")) or self._list_cursor_rejection(
+            params.get("cursor")
+        )
+        if rejection is not None:
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
         cwd_filter = params.get("cwd")
         sessions = [
             {"sessionId": session_id, "cwd": cwd}
@@ -581,6 +591,22 @@ class ConformingAgent:
             if cwd_filter is None or cwd == cwd_filter
         ]
         self._reply(msg_id, {"sessions": sessions})
+
+    @staticmethod
+    def _list_cwd_rejection(cwd: Any) -> str | None:
+        """Hook: a `cwd` filter must be an absolute path; a relative one is `-32602`
+        (`ACP-LIST-205`)."""
+        if cwd is None or (isinstance(cwd, str) and os.path.isabs(cwd)):
+            return None
+        return f"cwd filter must be an absolute path, got {cwd!r}"
+
+    @staticmethod
+    def _list_cursor_rejection(cursor: Any) -> str | None:
+        """Hook: this agent never issues a cursor, so any supplied one is invalid and `-32602`
+        (`ACP-LIST-206`)."""
+        if cursor is None:
+            return None
+        return f"invalid cursor {cursor!r}"
 
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # A session is resumable while it is live or closed on this connection; a deleted or
@@ -674,7 +700,7 @@ class ConformingAgent:
     def _handle_fork_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         source_id = params.get("sessionId")
         if source_id not in self._sessions and source_id not in self._closed_sessions:
-            self._error(msg_id, -32602, f"Invalid params: unknown sessionId {source_id!r}")
+            self._unknown_session(msg_id, source_id)  # ACP-FORK-203
             return
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
@@ -694,10 +720,13 @@ class ConformingAgent:
         self._reply(msg_id, {})
 
     def _handle_delete_session(self, msg_id: Any, params: dict[str, Any]) -> None:
-        # ACP-DELETE-201/202: removes the session from `session/list`'s visibility, same as
-        # close, but with no cancellation side effect of its own (D-series carries none).
+        # ACP-DELETE-204: deleting an active session cancels its work as if `session/close` had
+        # been called -- a still-hanging `__hang__` prompt ends `cancelled` before the response.
+        # ACP-DELETE-201/202/205: the session leaves `session/list` and can no longer be resumed.
         # ACP-DELETE-203: an unknown/already-deleted sessionId still succeeds silently.
         session_id = params.get("sessionId")
+        if self._hanging_sessions.pop(session_id, None) is not None:
+            self._finish_turn(session_id, "cancelled")
         cwd = self._sessions.pop(session_id, None) or self._closed_sessions.pop(session_id, None)
         self._history.pop(session_id, None)
         path = self._store_path(cwd)

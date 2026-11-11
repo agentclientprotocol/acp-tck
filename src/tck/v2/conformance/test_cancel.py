@@ -16,7 +16,7 @@ CAPABILITY on `capabilities.session`.
 
 **The race, and the honest-SKIP pattern**: `run_prompt(..., on_cancel=True)` fires
 `session/cancel` on the first transition to an active state (or after `cancel_wait`).
-`_skip_if_turn_end_race_not_exercised` treats these as **not exercised**, not a defect:
+`skip_if_turn_end_race_not_exercised` treats these as **not exercised**, not a defect:
 
 1. the trigger was never sent (the turn ended first);
 2. the prompt was answered with an error before the trigger was sent;
@@ -62,31 +62,17 @@ from ._helpers import (
     probe_behaviour,
     prompt_during_active_work,
     quiet_period,
+    response_error,
     run_prompt,
+    skip_if_turn_end_race_not_exercised,
 )
 
 _UNKNOWN_REQUEST_ID = "_tck_never_sent_request"
 _NEVER_CREATED_SESSION_ID = "_tck_never_created_session"
 
-# Stop reasons an agent may have reached on its own just before reading the trigger.
-_RACE_PLAUSIBLE_STOP_REASONS = frozenset({"end_turn", "max_tokens", "max_turn_requests", "refusal"})
 _AGENT_OUTPUT_KINDS = frozenset(
     {"agent_message", "agent_message_chunk", "agent_thought", "agent_thought_chunk"}
 )
-
-
-def _race_plausible(stop_reason) -> bool:
-    return (
-        stop_reason is None
-        or stop_reason in _RACE_PLAUSIBLE_STOP_REASONS
-        or (isinstance(stop_reason, str) and stop_reason.startswith("_"))
-    )
-
-
-def _response_error(turn) -> dict | None:
-    msg = turn.response_entry.parsed
-    error = msg.get("error") if isinstance(msg, dict) else None
-    return error if isinstance(error, dict) else None
 
 
 def _user_message_echoed(turn) -> bool:
@@ -103,45 +89,8 @@ def _user_message_echoed(turn) -> bool:
     return False
 
 
-def _skip_if_turn_end_race_not_exercised(
-    agent,
-    turn,
-    record_property,
-    *,
-    race_window: float,
-    trigger_at_index: int | None,
-    trigger_method: str,
-    verb: str,
-    property_prefix: str,
-) -> None:
-    """Shared race gate for the `session/cancel`- and `session/close`-triggered rows. See the
-    module docstring. Only ever SKIPs or returns; never asserts."""
-    if trigger_at_index is None:
-        pytest.skip(f"{verb} not exercised: the turn ended before {trigger_method} could be sent")
-    record_property(f"acp_tck_{property_prefix}_state_at_trigger", turn.state_at_cancel)
-    if _response_error(turn) is not None and turn.response_index < trigger_at_index:
-        pytest.skip(
-            f"{verb} not exercised: session/prompt was rejected before {trigger_method} was sent"
-        )
-    if turn.idle_update is None:
-        return  # error response with no foreground work: judged by the caller
-    stop_reason = turn.stop_reason
-    if stop_reason == "cancelled" or not _race_plausible(stop_reason):
-        return
-    trigger_timestamp = agent.transcript[trigger_at_index].timestamp
-    elapsed_ms = (turn.idle_update.timestamp - trigger_timestamp) * 1000
-    record_property(f"acp_tck_{property_prefix}_race_window_ms", f"{race_window * 1000:.0f}")
-    if elapsed_ms < race_window * 1000:
-        record_property(f"acp_tck_{property_prefix}_race_ms", f"{elapsed_ms:.0f}")
-        pytest.skip(
-            f"{verb} not exercised: idle arrived {elapsed_ms:.0f} ms after {trigger_method} "
-            f"(within the race window) with stopReason {stop_reason!r} -- the agent may simply "
-            "have finished before reading it"
-        )
-
-
 def _skip_if_cancel_not_exercised(agent, turn, record_property, *, race_window: float) -> None:
-    _skip_if_turn_end_race_not_exercised(
+    skip_if_turn_end_race_not_exercised(
         agent,
         turn,
         record_property,
@@ -157,7 +106,7 @@ def _skip_if_no_cancelled_idle_owed(turn) -> None:
     """After the race gate: an error response with no turn-ending idle owes no cancelled idle
     itself. `-32800` with no active state is a pre-insertion cancel (:1173,1191-1192); any other
     error is `ACP-CANCEL-203`'s finding."""
-    error = _response_error(turn)
+    error = response_error(turn)
     if error is None or turn.idle_update is not None:
         return
     if error.get("code") == REQUEST_CANCELLED:
@@ -213,7 +162,7 @@ async def test_cancel_does_not_surface_as_a_generic_failure(
     _skip_if_cancel_not_exercised(
         agent, turn, record_property, race_window=quiet_period(agent_launch.default_timeout)
     )
-    error = _response_error(turn)
+    error = response_error(turn)
     if error is not None:
         assert error.get("code") == REQUEST_CANCELLED, (
             f"cancellation surfaced as a JSON-RPC error other than -32800 on session/prompt: "
@@ -378,7 +327,7 @@ async def test_close_cancels_foreground_work(
             on_action=_close,
             timeout=agent_launch.default_timeout,
         )
-        _skip_if_turn_end_race_not_exercised(
+        skip_if_turn_end_race_not_exercised(
             agent,
             turn,
             record_property,
@@ -388,7 +337,7 @@ async def test_close_cancels_foreground_work(
             verb="cancellation-via-close",
             property_prefix="close_cancel",
         )
-        error = _response_error(turn)
+        error = response_error(turn)
         if error is not None:
             assert error.get("code") == REQUEST_CANCELLED, (
                 f"session/close answered the in-flight session/prompt with an error other than "

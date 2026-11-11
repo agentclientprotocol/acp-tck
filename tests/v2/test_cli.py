@@ -116,6 +116,8 @@ _CAPABILITY_IDS = {
     "ACP-LIST-202",
     "ACP-LIST-203",
     "ACP-LIST-204",
+    "ACP-LIST-205",
+    "ACP-LIST-206",
     "ACP-CLOSE-201",
     "ACP-CLOSE-202",
     "ACP-CLOSE-203",
@@ -123,12 +125,16 @@ _CAPABILITY_IDS = {
     "ACP-CLOSE-206",
     "ACP-DELETE-201",
     "ACP-DELETE-202",
+    "ACP-DELETE-204",
+    "ACP-DELETE-205",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
     "ACP-MCP-203",
     "ACP-FORK-201",
     "ACP-FORK-202",
+    "ACP-FORK-203",
+    "ACP-FORK-204",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -222,6 +228,7 @@ _CANCEL_RACE_SKIP_IDS = {
     "ACP-CANCEL-214",
     "ACP-CLOSE-202",
     "ACP-CLOSE-203",
+    "ACP-DELETE-204",
     "ACP-INFO-CONCURRENT-201",
     "ACP-PROMPT-209",
 }
@@ -283,6 +290,8 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-DELETE-201",
     "ACP-DELETE-202",
     "ACP-DELETE-203",
+    "ACP-DELETE-204",
+    "ACP-DELETE-205",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -292,6 +301,8 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-MCP-205",
     "ACP-FORK-201",
     "ACP-FORK-202",
+    "ACP-FORK-203",
+    "ACP-FORK-204",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -393,6 +404,8 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-DELETE-201",
     "ACP-DELETE-202",
     "ACP-DELETE-203",
+    "ACP-DELETE-204",
+    "ACP-DELETE-205",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -408,6 +421,8 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-RESUME-210",
     "ACP-FORK-201",
     "ACP-FORK-202",
+    "ACP-FORK-203",
+    "ACP-FORK-204",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -460,14 +475,14 @@ def test_v2_conforming_agent_passes_everything():
     `authMethods`, and it never asks for permission or opts into `_send_rich_turn_updates`. So
     every capability row that needs more than that SKIPs rather than PASSes:
     `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201` ("no permission request
-    observed"), `ACP-DELETE-201/202/203`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
-    `ACP-FORK-201/202`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
+    observed"), `ACP-DELETE-201..205`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
+    `ACP-FORK-201..204`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
     extras absent), `ACP-AUTH-203/204/207` (no
     `authMethods`, no `--auth-method`/`--allow-logout`), and `ACP-ENUM-203`/
     `ACP-PATCH-204..209` (no rich turn updates, no permission request). `ACP-PATCH-201/203` and
     `ACP-ENUM-201` still PASS: the ordinary message-chunk/state-update traffic every turn already
     emits is enough to exercise them. `ACP-SESSION-203`/`ACP-RESUME-201..209`/
-    `ACP-LIST-201..204`/`ACP-CLOSE-201`/`ACP-CLOSE-204` are gated on the baseline `capabilities.session` marker
+    `ACP-LIST-201..206`/`ACP-CLOSE-201`/`ACP-CLOSE-204` are gated on the baseline `capabilities.session` marker
     alone (present even as `{}`), so they PASS. `ACP-AUTH-202`/`205` PASS too -- each is judged
     against the absence of `authMethods`; `ACP-AUTH-201`/`206` SKIP instead of vacuously passing,
     since there is nothing to check uniqueness/type-shape of.
@@ -2652,13 +2667,14 @@ def test_close_responds_before_idle_fails_close_203_and_206_only():
 
 def test_fork_returns_source_id_fails_fork_201_only():
     """`fork_returns_source_id.py` answers `session/fork` with the source session's own id --
-    FAILs exactly `ACP-FORK-201`; `ACP-FORK-202` SKIPs (no forked session to prompt)."""
+    FAILs `ACP-FORK-201` and `ACP-FORK-204` (which also needs a new id); `ACP-FORK-202` SKIPs (no
+    forked session to prompt)."""
     result = _run_cli(FIXTURES_DIR_V2, "fork_returns_source_id.py", protocol_version=2, k="fork")
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-FORK-201"}, result.stdout
+    assert fails == {"ACP-FORK-201", "ACP-FORK-204"}, result.stdout
     assert statuses.get("ACP-FORK-202") == "SKIPPED", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
@@ -2808,7 +2824,9 @@ def test_advertises_delete_but_errors_fails_delete_201_202_and_203():
     """`advertises_delete_but_errors.py` advertises `capabilities.session.delete` but always
     errors on `session/delete` -- FAILs `ACP-DELETE-201` (delete itself must succeed) and
     `ACP-DELETE-202` (cascades: the deleted session can't be observed gone). The ADVISORY
-    `ACP-DELETE-203` also FAILs (the same underlying probe)."""
+    `ACP-DELETE-203` also FAILs (the same underlying probe). `-32603` is not the tolerated
+    `-32002`, so `ACP-DELETE-205` SKIPs (its prerequisite, a successful delete, is missing) and
+    `ACP-DELETE-204` SKIPs on the race gate or the missing delete result."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "advertises_delete_but_errors.py",
@@ -2820,6 +2838,129 @@ def test_advertises_delete_but_errors_fails_delete_201_202_and_203():
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-DELETE-201", "ACP-DELETE-202", "ACP-DELETE-203"}, result.stdout
+    for req_id in ("ACP-DELETE-204", "ACP-DELETE-205"):
+        assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_list_matches_subdirectories_fails_list_203_only():
+    """`list_matches_subdirectories.py` matches the `cwd` filter by prefix, so the subdirectory
+    session `ACP-LIST-203` creates comes back under the parent filter -- FAILs exactly
+    `ACP-LIST-203`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "list_matches_subdirectories.py",
+        protocol_version=2,
+        k="session_capabilities",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-LIST-203"}, result.stdout
+    assert statuses.get("ACP-LIST-202") == "PASS", result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_list_accepts_relative_cwd_fails_list_205_only():
+    """`list_accepts_relative_cwd.py` accepts a relative `cwd` filter instead of `-32602` --
+    FAILs exactly `ACP-LIST-205`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "list_accepts_relative_cwd.py", protocol_version=2, k="session_capabilities"
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-LIST-205"}, result.stdout
+    assert statuses.get("ACP-LIST-206") == "PASS", result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_list_ignores_invalid_cursor_fails_list_206_only():
+    """`list_ignores_invalid_cursor.py` returns the first page for a never-issued cursor
+    instead of `-32602` -- FAILs exactly `ACP-LIST-206`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "list_ignores_invalid_cursor.py", protocol_version=2, k="session_capabilities"
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-LIST-206"}, result.stdout
+    assert statuses.get("ACP-LIST-205") == "PASS", result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_delete_does_not_cancel_active_fails_delete_204_only():
+    """`delete_does_not_cancel_active.py` deletes a session but leaves its hanging `__hang__`
+    turn running, so `ACP-DELETE-204` (run with `--cancel-prompt __hang__`) times out waiting
+    for the cancelled idle -- FAILs exactly `ACP-DELETE-204`. Deleting an idle session
+    (`ACP-DELETE-201`) is unaffected."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "delete_does_not_cancel_active.py",
+        protocol_version=2,
+        cancel_prompt="__hang__",
+        k="session_capabilities",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-DELETE-204"}, result.stdout
+    for req_id in ("ACP-DELETE-201", "ACP-DELETE-202", "ACP-DELETE-205"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_resume_after_delete_succeeds_fails_delete_205_only():
+    """`resume_after_delete_succeeds.py` still resumes a deleted session instead of `-32002` --
+    FAILs exactly `ACP-DELETE-205`; the session does leave `session/list`
+    (`ACP-DELETE-202` PASSes)."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "resume_after_delete_succeeds.py",
+        protocol_version=2,
+        k="session_capabilities",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-DELETE-205"}, result.stdout
+    assert statuses.get("ACP-DELETE-202") == "PASS", result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_fork_unknown_source_invalid_params_fails_fork_203_only():
+    """`fork_unknown_source_invalid_params.py` answers a fork of an unknown source with `-32602`
+    instead of `-32002` -- FAILs exactly `ACP-FORK-203`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "fork_unknown_source_invalid_params.py", protocol_version=2, k="fork"
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-FORK-203"}, result.stdout
+    for req_id in ("ACP-FORK-201", "ACP-FORK-202", "ACP-FORK-204"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_fork_requires_active_source_fails_fork_204_only():
+    """`fork_requires_active_source.py` forks only active sessions and answers a closed (still
+    listed) source with `-32002` -- FAILs exactly `ACP-FORK-204`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "fork_requires_active_source.py", protocol_version=2, k="fork"
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-FORK-204"}, result.stdout
+    assert statuses.get("ACP-FORK-203") == "PASS", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 

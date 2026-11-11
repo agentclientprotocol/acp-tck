@@ -1436,11 +1436,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "When `session/list` is filtered by a real `cwd`, every returned `SessionInfo.cwd` "
-            "equals the requested `cwd` (a per-entry check only; the reverse direction -- that a "
-            "session at that `cwd` is returned at all -- is not asserted, since no upstream "
-            "statement guarantees a freshly created session appears in `session/list`)."
+            "names that same directory. Agents MAY normalize paths when comparing, so equality is "
+            "judged after path normalization (for example a trailing separator). A session whose "
+            "`cwd` is a subdirectory of the filter is never returned. A per-entry check only; the "
+            "reverse direction -- that a session at that `cwd` is returned at all -- is not "
+            "asserted, since no upstream statement guarantees a freshly created session appears "
+            "in `session/list`."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-list.mdx:63-68"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:63-69; "
+            "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cwd"
+        ),
     ),
     Requirement(
         id="ACP-LIST-204",
@@ -1450,6 +1456,39 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-list.mdx:118-120; "
             "docs/protocol/v2/draft/overview.mdx:218"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/list` with a relative `cwd` filter is rejected with `-32602` (the code is "
+            "named by the spec). A success, or another error code, FAILs. The probe breaks the "
+            "client rule that the filter be absolute on purpose, because the spec defines the "
+            "agent's answer to exactly that input. Declarative \"Agents reject\", no RFC keyword."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:64-65; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cwd"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/list` with a `cursor` the agent never issued is rejected with `-32602` (a "
+            "MUST that names the code). A success, or another error code, FAILs. The probe is a "
+            "fabricated `_tck`-prefixed token, never the empty string, which is a valid cursor. "
+            "Cursors are opaque, but a token the agent never issued is invalid under every "
+            "encoding."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:157; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cursor"
         ),
     ),
     Requirement(
@@ -1568,12 +1607,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
-            "`session/delete` of an existing, already-closed session succeeds with a "
-            "schema-valid empty-object result. The session is closed first because deleting an "
-            "active session is implementation-defined."
+            "`session/delete` of a session active and idle on this connection succeeds with a "
+            "schema-valid empty-object result (deleting an active session closes it first). The "
+            "session certainly exists, so a `-32002` answer is not the tolerated \"already gone\" "
+            "case here and FAILs."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-delete.mdx:35,57,74-86,95; "
+            "docs/protocol/v2/draft/session-delete.mdx:35,57,78-86,95; "
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
             "schema/v2/schema.unstable.json#/$defs/DeleteSessionResponse"
         ),
     ),
@@ -1582,13 +1623,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
-            "After a successful `session/delete` of a closed session, the session no longer "
-            "appears in `session/list` results. SKIPs when the closed session was never observed "
-            "in `session/list` in the first place (nothing to compare against). :90 is a plain "
-            "declarative, not an RFC keyword, but it is what `session/delete` means (mirrored by "
-            "the sequence diagram), so this stays CAPABILITY."
+            "After a `session/delete` of a closed session, the session no longer appears in "
+            "`session/list` results. A `-32002` answer to the delete counts as a successful "
+            "delete (clients SHOULD treat it as one), so the listing is still judged; any other "
+            "error FAILs. SKIPs when the closed session was never observed in `session/list` in "
+            "the first place (nothing to compare against). :90 is a plain declarative, not an "
+            "RFC keyword, but it is what `session/delete` means (mirrored by the sequence "
+            "diagram), so this stays CAPABILITY."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,95"),
+        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,92"),
     ),
     Requirement(
         id="ACP-DELETE-203",
@@ -1596,10 +1639,44 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Deleting an already-deleted or never-created `sessionId` SHOULD succeed silently, "
-            "rather than erroring -- verbatim re-cite of v1's `ACP-DELETE-002`, new capability "
-            "path."
+            "rather than erroring. A `-32002` answer is the deviation clients are told to "
+            "tolerate as success, but the agent SHOULD still return the empty result, so it is "
+            "an ADVISORY FAIL; any other error is worse."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:91"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:91; docs/protocol/v2/draft/error.mdx:56"
+        ),
+    ),
+    Requirement(
+        id="ACP-DELETE-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.delete",
+        text=(
+            "`session/delete` of a session with foreground work in flight cancels that work as "
+            "if `session/close` had been called: the idle `state_update` ending the turn carries "
+            "`stopReason: \"cancelled\"` and arrives before the delete response. If the delete "
+            "kept the prompt from being inserted, the prompt is answered `-32800`. SKIPs when the "
+            "turn ended on its own before the delete landed (cancellation not exercised)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:95; "
+            "docs/protocol/v2/draft/session-setup.mdx:393,395"
+        ),
+    ),
+    Requirement(
+        id="ACP-DELETE-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.delete",
+        text=(
+            "After `session/delete` of a session, `session/resume` of that `sessionId` (same "
+            "`cwd`) is answered with `-32002` and `data.sessionId` set to the requested id (a "
+            "MUST that names the code). A `-32002` answer to the delete itself counts as a "
+            "successful delete, so the resume is still judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:92,94; "
+            "docs/protocol/v2/draft/error.mdx:54,56"
+        ),
     ),
     Requirement(
         id="ACP-ADDDIRS-201",
@@ -1651,6 +1728,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:269-273; "
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse/properties/sessionId; "
             "schema/v2/schema.unstable.json#/$defs/SessionCapabilities/properties/fork"
@@ -1663,12 +1741,38 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "The forked session is active once `session/fork` responds: a `session/prompt` on "
             "the forked id, with no `session/resume` first, is accepted with a `messageId` and "
-            "the turn reaches a terminating idle. Definitional prose without an RFC keyword."
+            "the turn reaches a terminating idle. Definitional (the draft docs bold **active**, "
+            "with no RFC keyword), but an unknown or non-active session MUST get `-32002`, so an "
+            "active forked session must be accepted."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:49; "
             "docs/protocol/v2/draft/error.mdx:54; "
             "docs/rfds/session-fork.mdx:67"
+        ),
+    ),
+    Requirement(
+        id="ACP-FORK-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "`session/fork` of a `sessionId` the agent never created is answered with `-32002` "
+            "and `data.sessionId` set to the requested id (a MUST that names the code)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/error.mdx:54,64"),
+    ),
+    Requirement(
+        id="ACP-FORK-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "`session/fork` of an existing session that is no longer active on the connection "
+            "(created, then closed, and still listed by `session/list`) succeeds with a new "
+            "`sessionId`: the source session only has to exist. SKIPs when the closed session "
+            "is not listed (its existence cannot be established)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:64; docs/protocol/v2/draft/session-setup.mdx:52"
         ),
     ),
     Requirement(

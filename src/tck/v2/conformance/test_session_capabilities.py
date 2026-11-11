@@ -1,9 +1,9 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..214, ACP-RESUME-216),
-`session/list` (ACP-LIST-201..204), `session/close`'s own contract (ACP-CLOSE-201/203/204/206/207
+`session/list` (ACP-LIST-201..206), `session/close`'s own contract (ACP-CLOSE-201/203/204/206/207
 -- `ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
-`tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..203), the
+`tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..205), the
 `additionalDirectories` carrier on `session/new`/`session/resume` (ACP-ADDDIRS-201..203), the
-MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201/202) and `systemPrompt`
+MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201..204) and `systemPrompt`
 (ACP-SYSPROMPT-201/202, and the error paths ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`,
@@ -13,10 +13,11 @@ still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate eve
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
 throughout this registry (e.g. `ACP-CANCEL-204`).
 
-`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203` and `ACP-MCP-203`/`204` send input a client MUST NOT
-(an unsupported `systemPrompt` mode or non-text block, a relative entry, an unsupported transport,
-duplicate names) on purpose: the spec defines the agent's answer to exactly those inputs, and the
-probes are `_`-prefixed or otherwise unmistakably the TCK's.
+`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`, `ACP-LIST-205`/`206` and `ACP-MCP-203`/`204` send
+input a client MUST NOT (an unsupported `systemPrompt` mode or non-text block, a relative entry or
+`cwd` filter, a never-issued cursor, an unsupported transport, duplicate names) on purpose: the
+spec defines the agent's answer to exactly those inputs, and the probes are `_`-prefixed or
+otherwise unmistakably the TCK's.
 """
 
 from __future__ import annotations
@@ -50,9 +51,12 @@ from ._helpers import (
     new_session_result,
     obtain_resumable_session,
     quiet_period,
+    response_error,
     resume_session,
     run_prompt,
+    same_dir,
     skip_if_auth_gated,
+    skip_if_turn_end_race_not_exercised,
     update_of,
 )
 
@@ -666,10 +670,15 @@ async def test_list_sessions_filtered_to_no_match_returns_empty_array(agent_laun
 @pytest.mark.capability("capabilities.session")
 async def test_list_sessions_filtered_by_cwd_matches_requested_cwd(agent_launch, tmp_path, record_property):
     """ACP-LIST-203. A per-entry check only -- the reverse direction (a session at that `cwd`
-    is guaranteed to be returned) is not asserted. Records the entry count so an empty-array
-    PASS is visibly vacuous in the report."""
+    is guaranteed to be returned) is not asserted. Paths compare after normalization (the spec
+    lets agents normalize). A session is also created in a subdirectory of the filter, so an
+    agent that matches by prefix returns it. Records the entry count so an empty-array PASS is
+    visibly vacuous in the report."""
+    child = tmp_path / "child"
+    child.mkdir()
     async with connected_agent(agent_launch) as agent:
         await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        await new_session(agent, child, timeout=agent_launch.default_timeout)
         entry = await list_sessions(agent, cwd=tmp_path, timeout=agent_launch.default_timeout)
         msg = entry.parsed
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
@@ -678,10 +687,57 @@ async def test_list_sessions_filtered_by_cwd_matches_requested_cwd(agent_launch,
         sessions = msg["result"].get("sessions") or []
         record_property("acp_tck_list_filtered_by_cwd_entry_count", len(sessions))
         for session in sessions:
-            assert isinstance(session, dict) and session.get("cwd") == str(tmp_path), (
+            assert isinstance(session, dict) and same_dir(session.get("cwd"), tmp_path), (
                 f"session/list filtered by cwd={tmp_path!r} returned a session with a "
-                f"different cwd: {session!r}"
+                f"different cwd (a subdirectory does not match): {session!r}"
             )
+
+
+@pytest.mark.requirement("ACP-LIST-205")
+@pytest.mark.capability("capabilities.session")
+async def test_list_sessions_rejects_relative_cwd_filter(agent_launch):
+    """ACP-LIST-205. The `cwd` filter must be absolute and the spec names the agent's answer to
+    a relative one (`-32602`), so the probe sends a relative path on purpose; its `_tck_` prefix
+    marks it as the TCK's own."""
+    async with connected_agent(agent_launch) as agent:
+        entry = await list_sessions(
+            agent, cwd="_tck_relative/dir", timeout=agent_launch.default_timeout
+        )
+        msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        assert isinstance(error, dict), (
+            f"session/list with a relative cwd filter should fail with -32602, but did not "
+            f"return an error: {entry.text!r}"
+        )
+        assert error.get("code") == INVALID_PARAMS, (
+            f"session/list with a relative cwd filter should fail with -32602, got "
+            f"{error.get('code')!r}: {entry.text!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-LIST-206")
+@pytest.mark.capability("capabilities.session")
+async def test_list_sessions_rejects_never_issued_cursor(agent_launch, tmp_path):
+    """ACP-LIST-206. Cursors are opaque, so the probe is a fabricated `_tck`-prefixed token no
+    agent can have issued; never `""`, which is a valid cursor (session-list.mdx:154). A session
+    exists first, so an agent that ignores the cursor has a first page to return."""
+    async with connected_agent(agent_launch) as agent:
+        await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        entry = await list_sessions(
+            agent,
+            cursor=f"_tck-never-issued-cursor-{uuid.uuid4().hex}",
+            timeout=agent_launch.default_timeout,
+        )
+        msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        assert isinstance(error, dict), (
+            f"session/list with a never-issued cursor should fail with -32602, but did not "
+            f"return an error: {entry.text!r}"
+        )
+        assert error.get("code") == INVALID_PARAMS, (
+            f"session/list with a never-issued cursor should fail with -32602, got "
+            f"{error.get('code')!r}: {entry.text!r}"
+        )
 
 
 @pytest.mark.requirement("ACP-LIST-204")
@@ -961,7 +1017,7 @@ async def test_prompt_pending_at_close_is_answered(
         )
 
 
-# --- session/delete (ACP-DELETE-201..203) ---
+# --- session/delete (ACP-DELETE-201..205) ---
 
 
 def _listed_ids(entry: TranscriptEntry) -> set[Any]:
@@ -972,18 +1028,32 @@ def _listed_ids(entry: TranscriptEntry) -> set[Any]:
     return {s.get("sessionId") for s in sessions if isinstance(s, dict)}
 
 
+def _is_not_found(entry: TranscriptEntry) -> bool:
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    return isinstance(error, dict) and error.get("code") == RESOURCE_NOT_FOUND
+
+
+def _delete_succeeded_or_gone(entry: TranscriptEntry) -> bool:
+    """A delete result, or a `-32002` answer, which clients SHOULD treat as a successful delete
+    (session-delete.mdx:92; error.mdx:56). `ACP-DELETE-203` is what judges the agent for it."""
+    msg = entry.parsed
+    return (isinstance(msg, dict) and isinstance(msg.get("result"), dict)) or _is_not_found(entry)
+
+
 @pytest.mark.requirement("ACP-DELETE-201")
 @pytest.mark.capability("capabilities.session.delete")
 async def test_delete_existing_session_succeeds(agent_launch, tmp_path):
-    """ACP-DELETE-201. Closes the session first: deleting an active session is
-    implementation-defined."""
+    """ACP-DELETE-201. Deletes a session that is active and idle on this connection: it exists
+    for certain, and deleting an active session closes it first (session-delete.mdx:95). A
+    `-32002` answer is not tolerated here, unlike the rows that use `session/delete` as setup:
+    nothing has closed or discarded this session, so there is no "already gone" case to excuse."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
-        await close_session(agent, session_id, timeout=agent_launch.default_timeout)
         entry = await delete_session(agent, session_id, timeout=agent_launch.default_timeout)
         msg = entry.parsed
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
-            f"session/delete of an existing session did not succeed: {entry.text!r}"
+            f"session/delete of an existing, active session did not succeed: {entry.text!r}"
         )
         issues = validate_agent_response("session/delete", msg)
         assert not issues, f"session/delete result failed schema validation: {issues!r}"
@@ -992,8 +1062,10 @@ async def test_delete_existing_session_succeeds(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-DELETE-202")
 @pytest.mark.capability("capabilities.session.delete")
 async def test_deleted_session_no_longer_listed(agent_launch, tmp_path):
-    """ACP-DELETE-202. Closes the session first (see `ACP-DELETE-201`), then SKIPs when
-    `session/list` does not report the closed session at all -- nothing to compare against."""
+    """ACP-DELETE-202. Closes the session first, then SKIPs when `session/list` does not report
+    the closed session at all -- nothing to compare against. A `-32002` answer to the delete
+    counts as a successful delete (the agent may have discarded the closed session,
+    session-setup.mdx:52), so the listing is still judged; `ACP-DELETE-203` judges the SHOULD."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         await close_session(agent, session_id, timeout=agent_launch.default_timeout)
@@ -1002,8 +1074,7 @@ async def test_deleted_session_no_longer_listed(agent_launch, tmp_path):
             pytest.skip("session/list does not report the closed session in the first place")
 
         delete_entry = await delete_session(agent, session_id, timeout=agent_launch.default_timeout)
-        delete_msg = delete_entry.parsed
-        assert isinstance(delete_msg, dict) and isinstance(delete_msg.get("result"), dict), (
+        assert _delete_succeeded_or_gone(delete_entry), (
             f"session/delete did not succeed: {delete_entry.text!r}"
         )
 
@@ -1018,13 +1089,110 @@ async def test_deleted_session_no_longer_listed(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session.delete")
 async def test_delete_unknown_session_succeeds_silently(agent_launch, tmp_path):
     """ACP-DELETE-203 (ADVISORY). Deleting an already-deleted or never-created sessionId SHOULD
-    succeed silently, not error."""
+    succeed silently, not error. `-32002` is the deviation clients are told to tolerate
+    (session-delete.mdx:92), but the agent SHOULD still succeed."""
     async with connected_agent(agent_launch) as agent:
         entry = await delete_session(agent, "tck-never-created", timeout=agent_launch.default_timeout)
         msg = entry.parsed
+        if _is_not_found(entry):
+            pytest.fail(
+                "session/delete of an unknown sessionId answered -32002; clients treat that as a "
+                "successful delete, but the agent SHOULD succeed silently "
+                f"(session-delete.mdx:91, error.mdx:56): {entry.text!r}"
+            )
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
-            f"session/delete of an unknown sessionId should succeed silently: {entry.text!r}"
+            f"session/delete of an unknown sessionId should succeed silently, but answered with "
+            f"an error other than -32002, which is worse: {entry.text!r}"
         )
+
+
+@pytest.mark.requirement("ACP-DELETE-204")
+@pytest.mark.capability("capabilities.session.delete")
+async def test_delete_cancels_foreground_work(
+    agent_launch, tmp_path, cancel_prompt_text, record_property
+):
+    """ACP-DELETE-204. Same scenario and race rules as `ACP-CLOSE-202`/`203`, with
+    `session/delete` as the mid-turn trigger: deleting an active session cancels its work as if
+    `session/close` had been called (session-delete.mdx:95), so the turn ends with a `cancelled`
+    idle that arrives before the delete response. If the delete kept the prompt from being
+    inserted, the prompt is answered `-32800` (session-setup.mdx:395); any other error FAILs. A
+    turn that never ends FAILs through the harness timeout. The ordering is judged only against
+    a delete that succeeded (or answered `-32002`); another error SKIPs, as `ACP-DELETE-201`
+    owns the delete's own success."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        delete_id = None
+
+        async def _delete():
+            nonlocal delete_id
+            delete_id = await agent.send_request("session/delete", {"sessionId": session_id})
+            return delete_id
+
+        turn = await run_prompt(
+            agent,
+            session_id,
+            [{"type": "text", "text": cancel_prompt_text}],
+            on_action=_delete,
+            timeout=timeout,
+        )
+        skip_if_turn_end_race_not_exercised(
+            agent,
+            turn,
+            record_property,
+            race_window=quiet_period(timeout),
+            trigger_at_index=turn.action_sent_at_index,
+            trigger_method="session/delete",
+            verb="cancellation-via-delete",
+            property_prefix="delete_cancel",
+        )
+        error = response_error(turn)
+        if error is not None:
+            assert error.get("code") == REQUEST_CANCELLED, (
+                f"session/delete answered the in-flight session/prompt with an error other than "
+                f"-32800: {error!r}"
+            )
+        if turn.idle_update is None:
+            return  # prompt cancelled before insertion: no foreground work, no idle owed
+        assert turn.stop_reason == "cancelled", (
+            f"expected stopReason 'cancelled' after session/delete on a session with in-flight "
+            f"work, got {turn.stop_reason!r}"
+        )
+        delete_entry = turn.action_response
+        if delete_entry is None:
+            delete_entry = await agent.wait_for_response(delete_id, timeout=timeout)
+        if not _delete_succeeded_or_gone(delete_entry):
+            pytest.skip(
+                "prerequisite not met: session/delete did not succeed, so the ordering rule "
+                f"does not apply (see ACP-DELETE-201): {delete_entry.text!r}"
+            )
+        idle_index = _transcript_index(agent, turn.idle_update)
+        delete_index = _transcript_index(agent, delete_entry)
+        assert delete_index >= idle_index, (
+            "session/delete responded before sending the cancelled idle state_update for the "
+            f"work it cancelled: delete response {delete_entry.text!r} came before idle "
+            f"{turn.idle_update.text!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-DELETE-205")
+@pytest.mark.capability("capabilities.session.delete")
+async def test_resume_of_deleted_session_is_not_found(agent_launch, tmp_path):
+    """ACP-DELETE-205. A deleted session is gone: `session/resume` of it gets `-32002` with
+    `data.sessionId` (session-delete.mdx:94, error.mdx:54,56). A `-32002` answer to the delete
+    itself counts as a successful delete (session-delete.mdx:92), so the resume is still judged;
+    any other delete error SKIPs (that is `ACP-DELETE-201`'s finding)."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        delete_entry = await delete_session(agent, session_id, timeout=timeout)
+        if not _delete_succeeded_or_gone(delete_entry):
+            pytest.skip(
+                "prerequisite not met: session/delete did not succeed (see ACP-DELETE-201): "
+                f"{delete_entry.text!r}"
+            )
+        entry, _updates = await resume_session(agent, session_id, tmp_path, timeout=timeout)
+        assert_unknown_session_error(entry, "session/resume", session_id)
 
 
 # --- additionalDirectories (ACP-ADDDIRS-201/202) ---
@@ -1361,7 +1529,7 @@ async def test_mcp_header_value_is_never_echoed(agent_launch, tmp_path):
     assert not leaks, f"the MCP header value {canary!r} leaked into: {'; '.join(leaks)}"
 
 
-# --- session/fork (ACP-FORK-201/202, unstable) ---
+# --- session/fork (ACP-FORK-201..204, unstable) ---
 
 
 async def _fork_session(agent, session_id: str, cwd: Any, *, timeout: float) -> TranscriptEntry:
@@ -1417,6 +1585,47 @@ async def test_forked_session_can_be_prompted_without_resume(agent_launch, tmp_p
             f"{turn.response_entry.text!r}"
         )
         assert turn.idle_update is not None, "the forked session's turn never reached idle"
+
+
+@pytest.mark.requirement("ACP-FORK-203")
+@pytest.mark.capability("capabilities.session.fork")
+async def test_fork_of_unknown_session_is_not_found(agent_launch, tmp_path):
+    """ACP-FORK-203. A source the agent never created gets `-32002` with `data.sessionId`
+    (error.mdx:54,64). The id is `_tck`-prefixed so it cannot collide with a stored session."""
+    unknown_id = "_tck_never_created_session"
+    async with connected_agent(agent_launch) as agent:
+        entry = await _fork_session(
+            agent, unknown_id, tmp_path, timeout=agent_launch.default_timeout
+        )
+        assert_unknown_session_error(entry, "session/fork", unknown_id)
+
+
+@pytest.mark.requirement("ACP-FORK-204")
+@pytest.mark.capability("capabilities.session.fork")
+async def test_fork_of_closed_listed_session_succeeds(agent_launch, tmp_path):
+    """ACP-FORK-204. The fork source only has to exist, not be active (error.mdx:64). SKIPs
+    when `session/list` does not report the closed session: whether it still exists is then up to
+    the agent (session-setup.mdx:52)."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        source_id = await new_session(agent, tmp_path, timeout=timeout)
+        close_entry = await close_session(agent, source_id, timeout=timeout)
+        close_msg = close_entry.parsed
+        if not (isinstance(close_msg, dict) and isinstance(close_msg.get("result"), dict)):
+            pytest.skip(f"prerequisite not met: session/close did not succeed: {close_entry.text!r}")
+        listing = await list_sessions(agent, cwd=tmp_path, timeout=timeout)
+        if source_id not in _listed_ids(listing):
+            pytest.skip("session/list does not report the closed session in the first place")
+        entry = await _fork_session(agent, source_id, tmp_path, timeout=timeout)
+        msg = entry.parsed
+        assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
+            f"session/fork of a closed, still-listed session did not succeed: {entry.text!r}"
+        )
+        forked_id = msg["result"].get("sessionId")
+        assert isinstance(forked_id, str) and forked_id and forked_id != source_id, (
+            f"session/fork must return a new sessionId distinct from the source {source_id!r}, "
+            f"got {forked_id!r}"
+        )
 
 
 # --- systemPrompt (ACP-SYSPROMPT-201/202, 002/003) ---

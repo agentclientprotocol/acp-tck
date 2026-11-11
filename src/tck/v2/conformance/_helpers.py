@@ -422,7 +422,7 @@ async def _route_after_close(
 _LIST_ROUTE_MAX_PAGES = 5
 
 
-def _same_dir(listed: Any, cwd: Any) -> bool:
+def same_dir(listed: Any, cwd: Any) -> bool:
     """True if `listed` is an absolute path naming the same directory as `cwd` (resolved, so
     e.g. macOS `/var` vs `/private/var` compare equal)."""
     if not isinstance(listed, str) or not Path(listed).is_absolute():
@@ -455,13 +455,15 @@ async def _route_from_list(
         if not isinstance(sessions, list):
             raise RuntimeError(f"session/list returned no usable sessions array: {entry.text!r}")
         for listed in sessions:
-            if not isinstance(listed, dict) or not _same_dir(listed.get("cwd"), cwd):
+            if not isinstance(listed, dict) or not same_dir(listed.get("cwd"), cwd):
                 continue
             session_id = listed.get("sessionId")
             if isinstance(session_id, str) and session_id:
                 return session_id
+        # Only an omitted or `null` `nextCursor` ends the results; `""` is a valid cursor
+        # (session-list.mdx:154).
         cursor = result.get("nextCursor")
-        if not isinstance(cursor, str) or not cursor:
+        if not isinstance(cursor, str):
             break
     raise RuntimeError(f"session/list has no session created in the TCK's own cwd {str(cwd)!r}")
 
@@ -767,6 +769,62 @@ def quiet_period(timeout: float) -> float:
     agent reply at all") -- derived from `--tck-timeout` rather than a hard-coded sub-second
     constant, clamped to a sane range."""
     return max(0.5, min(2.0, timeout / 10))
+
+
+# Stop reasons an agent may have reached on its own just before reading the trigger.
+_RACE_PLAUSIBLE_STOP_REASONS = frozenset({"end_turn", "max_tokens", "max_turn_requests", "refusal"})
+
+
+def race_plausible(stop_reason) -> bool:
+    return (
+        stop_reason is None
+        or stop_reason in _RACE_PLAUSIBLE_STOP_REASONS
+        or (isinstance(stop_reason, str) and stop_reason.startswith("_"))
+    )
+
+
+def response_error(turn) -> dict | None:
+    msg = turn.response_entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    return error if isinstance(error, dict) else None
+
+
+def skip_if_turn_end_race_not_exercised(
+    agent,
+    turn,
+    record_property,
+    *,
+    race_window: float,
+    trigger_at_index: int | None,
+    trigger_method: str,
+    verb: str,
+    property_prefix: str,
+) -> None:
+    """Shared race gate for the rows triggered by `session/cancel`, `session/close` or
+    `session/delete` mid-turn; see `test_cancel.py`'s module docstring for the rules. Only ever
+    SKIPs or returns; never asserts."""
+    if trigger_at_index is None:
+        pytest.skip(f"{verb} not exercised: the turn ended before {trigger_method} could be sent")
+    record_property(f"acp_tck_{property_prefix}_state_at_trigger", turn.state_at_cancel)
+    if response_error(turn) is not None and turn.response_index < trigger_at_index:
+        pytest.skip(
+            f"{verb} not exercised: session/prompt was rejected before {trigger_method} was sent"
+        )
+    if turn.idle_update is None:
+        return  # error response with no foreground work: judged by the caller
+    stop_reason = turn.stop_reason
+    if stop_reason == "cancelled" or not race_plausible(stop_reason):
+        return
+    trigger_timestamp = agent.transcript[trigger_at_index].timestamp
+    elapsed_ms = (turn.idle_update.timestamp - trigger_timestamp) * 1000
+    record_property(f"acp_tck_{property_prefix}_race_window_ms", f"{race_window * 1000:.0f}")
+    if elapsed_ms < race_window * 1000:
+        record_property(f"acp_tck_{property_prefix}_race_ms", f"{elapsed_ms:.0f}")
+        pytest.skip(
+            f"{verb} not exercised: idle arrived {elapsed_ms:.0f} ms after {trigger_method} "
+            f"(within the race window) with stopReason {stop_reason!r} -- the agent may simply "
+            "have finished before reading it"
+        )
 
 
 ACTIVE_STATES = frozenset({"running", "requires_action"})

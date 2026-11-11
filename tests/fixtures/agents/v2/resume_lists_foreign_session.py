@@ -25,6 +25,12 @@ FOREIGN_CWD = "/operator/saved-project"
 
 class ResumeListsForeignSessionAgent(ConformingAgent):
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
+        rejection = self._list_cwd_rejection(params.get("cwd")) or self._list_cursor_rejection(
+            params.get("cursor")
+        )
+        if rejection is not None:  # only the cwd filter is ignored, so only LIST-202/203 trip
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
         self._reply(msg_id, {"sessions": [{"sessionId": FOREIGN_SESSION_ID, "cwd": FOREIGN_CWD}]})
 
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
