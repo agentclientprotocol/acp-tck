@@ -14,7 +14,9 @@ import json
 import sys
 from typing import Any
 
-from tck.common.harness import AgentLaunch, AgentProcess, Direction
+import pytest
+
+from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction
 from tck.common.plugin import _TEST_PROPERTIES
 from tck.v2.conformance._helpers import (
     UNKNOWN_PERMISSION_OPTION_ID,
@@ -173,21 +175,58 @@ def test_permission_answer_falls_back_to_allow_always_when_no_allow_once():
     assert answer["result"]["outcome"] == {"outcome": "selected", "optionId": "yes"}
 
 
-def test_hold_permission_cancels_before_answering_cancelled():
-    options = [{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]
-    agent, turn = _drive(
-        [_RESPONSE, _state("running"), _state("requires_action"), _permission_request(options),
-         {"wait_method": "session/cancel"}, {"wait_id": "perm-1"},
-         _state("idle", stopReason="cancelled")],
+_HELD_PREFIX = [_RESPONSE, _state("running"), _state("requires_action")]
+_CANCEL_REQUEST = {"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": "perm-1"}}
+_ALLOW_ONCE = [{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]
+
+
+def _hold(steps: list[dict[str, Any]]):
+    return _drive(
+        [*_HELD_PREFIX, _permission_request(_ALLOW_ONCE), {"wait_method": "session/cancel"}, *steps],
         on_cancel=True,
         hold_permission=True,
     )
+
+
+def test_hold_permission_leaves_the_request_unanswered_until_the_turn_ends():
+    agent, turn = _hold([_state("idle", stopReason="cancelled")])
     assert turn.held_permission is not None
     assert turn.state_at_cancel == "requires_action"
     assert turn.stop_reason == "cancelled"
+    assert turn.held_answered_on == "turn_end"
+    assert turn.held_cancel_request_index is None
     answer_index, answer = _sent_answer(agent, "perm-1")
     assert answer["result"]["outcome"] == {"outcome": "cancelled"}
-    assert turn.cancelled_at_index is not None and turn.cancelled_at_index < answer_index
+    assert turn.cancelled_at_index < turn.idle_index < answer_index
+
+
+def test_hold_permission_answers_a_withdrawn_request_cancelled():
+    agent, turn = _hold(
+        [_CANCEL_REQUEST, {"wait_id": "perm-1"}, _state("idle", stopReason="cancelled")]
+    )
+    assert turn.held_answered_on == "cancel_request"
+    answer_index, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    assert turn.cancelled_at_index < turn.held_cancel_request_index < answer_index < turn.idle_index
+
+
+def test_hold_permission_sees_a_withdrawal_that_follows_the_idle():
+    _, turn = _hold([_state("idle", stopReason="cancelled"), {"sleep": 0.1}, _CANCEL_REQUEST])
+    assert turn.held_answered_on == "cancel_request"
+    assert turn.held_cancel_request_index > turn.idle_index
+
+
+def test_hold_permission_answers_at_the_deadline_and_records_it():
+    agent, turn = _hold([{"wait_id": "perm-1"}, _state("idle", stopReason="cancelled")])
+    assert turn.held_answered_on == "timeout"
+    assert turn.stop_reason == "cancelled"
+    answer_index, _ = _sent_answer(agent, "perm-1")
+    assert answer_index < turn.idle_index
+
+
+def test_hold_permission_times_out_when_the_turn_never_ends_even_once_answered():
+    with pytest.raises(AgentTimeout, match="not even after its held session/request_permission"):
+        _hold([{"wait_id": "perm-1"}])
 
 
 def _opts(*kinds: str) -> list[dict[str, Any]]:

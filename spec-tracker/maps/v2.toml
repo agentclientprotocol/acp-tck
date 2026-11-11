@@ -117,6 +117,14 @@ code = [
 reason = "the error object, the code table, and the per-case code rules (unknown method, invalid params, unknown session, before initialize) that no feature doc links to, yet every request that can fail depends on"
 
 [[core_doc]]
+path = "docs/protocol/v2/draft/cancellation.mdx"
+code = [
+    "src/tck/v2/conformance/_helpers.py",
+    "src/tck/v2/conformance/test_cancel.py",
+]
+reason = "the `$/cancel_request` contract (still respond, ignore unknown or answered ids, the cancellation results), which prompt-lifecycle, session-setup, tool-calls and elicitation assume without restating"
+
+[[core_doc]]
 path = "docs/protocol/v2/draft/overview.mdx"
 sections = [
     "Communication Model",

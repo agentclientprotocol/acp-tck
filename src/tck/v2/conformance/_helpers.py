@@ -418,7 +418,7 @@ async def _route_from_list(
 ) -> str:
     """Route (3), tried last: a `session/list` entry whose `cwd` is the TCK's own `cwd`, resumed
     with that same `cwd` (resume is only defined when the request `cwd` matches the session's,
-    session-setup.mdx:409).
+    session-setup.mdx:439).
 
     Safety: `cwd` is a per-test temporary directory, so a session listed under it was created by
     the TCK. Entries with any other `cwd` -- possibly the operator's own saved sessions -- are
@@ -754,8 +754,8 @@ def quiet_period(timeout: float) -> float:
 
 
 ACTIVE_STATES = frozenset({"running", "requires_action"})
-"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:124,993). Work may
-start directly in `requires_action` (:1000-1002), so both count as "active"."""
+"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:152,1073). Work may
+start directly in `requires_action` (:1080-1082), so both count as "active"."""
 
 
 def session_state_update(msg: dict[str, Any], session_id: str) -> dict[str, Any] | None:
@@ -885,8 +885,15 @@ class PromptTurn:
     state_at_cancel: Any = None
     """The session's last known `state` when the trigger (cancel or `on_action`) fired."""
     held_permission: TranscriptEntry | None = None
-    """In `hold_permission` mode, the `session/request_permission` that was pending when
-    `session/cancel` was sent."""
+    """In `hold_permission` mode, the `session/request_permission` that was pending, unanswered,
+    when the trigger fired."""
+    held_cancel_request_index: int | None = None
+    """Transcript index of the first agent `$/cancel_request` naming `held_permission` that
+    `run_prompt` read, before or after the turn-ending idle."""
+    held_answered_on: str | None = None
+    """What made `run_prompt` answer `held_permission` `cancelled`: `"cancel_request"` (the agent
+    withdrew it), `"turn_end"` (the turn ended with it still pending), `"timeout"` (the turn had
+    not ended by the deadline), or `None` if it was never answered."""
     action_response: TranscriptEntry | None = None
     """The response to `on_action`'s request, if it fired and was answered within the turn."""
     action_sent_at_index: int | None = None
@@ -924,22 +931,28 @@ async def run_prompt(
     `requires_action`" and becomes true on either state during the turn. Then, once the response
     has been read:
     - the first `idle` after an active state ends the turn, whatever its `stopReason` (it is
-      SHOULD, and may be omitted; prompt-lifecycle.mdx:864) -- `terminated_by="idle"`;
+      SHOULD, and may be omitted; prompt-lifecycle.mdx:936) -- `terminated_by="idle"`;
     - an error response with no active state ends the turn after a short peek finds none
-      (a rejection with no foreground work needs no state transition, :314) --
+      (a rejection with no foreground work needs no state transition, :390) --
       `terminated_by="error"`. If work is active, the driver keeps waiting for the idle the
-      agent still owes (:314,891);
+      agent still owes (:390,969);
     - fallback for agents that never report an active state: an `idle` carrying a `stopReason`
       ends the turn once `quiet_period(timeout)` passes with no active state after it and after
       the response -- `terminated_by="idle_without_active"`. An active state inside that window
-      voids it, since repeated idle snapshots may carry the previous stopReason (:1004-1007).
+      voids it, since repeated idle snapshots may carry the previous stopReason (:1084-1087).
     `unknown` and custom states are recorded but neither start nor end a turn.
 
     The trigger (`on_cancel`/`on_action`) fires on the first transition to an active state, after
-    a short race-aware peek, or once `cancel_wait` elapses. With `hold_permission=True` (needs
-    `on_cancel`), it instead fires when the first `session/request_permission` for `session_id`
-    arrives: that request is held, `session/cancel` is sent, and only then is it answered
-    `cancelled` (prompt-lifecycle.mdx:1098-1100). `cancel_wait` remains the fallback.
+    a short race-aware peek, or once `cancel_wait` elapses. With `hold_permission=True` (needs a
+    trigger), it instead fires when the first `session/request_permission` for `session_id`
+    arrives, and that request is held: left unanswered, because after `session/cancel` the agent
+    must stop waiting for it (prompt-lifecycle.mdx:1177,1188-1189). It is answered `cancelled`
+    only when the agent withdraws it with `$/cancel_request` (the client then answers it,
+    cancellation.mdx:20; tool-calls.mdx:326), when the turn ends (after `quiet_period(timeout)`
+    for a late `$/cancel_request`), or when `timeout` expires with the turn still open: then the
+    driver answers it and waits `quiet_period(timeout)` more, so a caller can tell "ended only
+    once answered" (`held_answered_on == "timeout"`) from "never ended" (`AgentTimeout`).
+    `cancel_wait` remains the fallback trigger.
 
     While waiting, `session/request_permission` is answered per `permission` (see
     `PermissionPolicy`; options are picked by `kind`, never by position), or `cancelled` for the
@@ -984,6 +997,8 @@ async def run_prompt(
     cancelled_at_index: int | None = None
     state_at_cancel: Any = None
     held_permission: TranscriptEntry | None = None
+    held_cancel_request_index: int | None = None
+    held_answered_on: str | None = None
     action_response: TranscriptEntry | None = None
     action_sent_at_index: int | None = None
     action_id: Any = None
@@ -1008,6 +1023,30 @@ async def run_prompt(
         if on_action is not None:
             action_id = await on_action()
             action_sent_at_index = len(agent.transcript) - 1
+
+    async def _send_permission_answer(request_id: Any, outcome: dict[str, Any]) -> None:
+        await agent.send_message(
+            {"jsonrpc": "2.0", "id": request_id, "result": {"outcome": outcome}}
+        )
+
+    async def _answer_held(reason: str) -> None:
+        """Answer the held permission request `cancelled`, once."""
+        nonlocal held_answered_on
+        if held_permission is None or held_answered_on is not None:
+            return
+        held_answered_on = reason
+        await _send_permission_answer(held_permission.parsed["id"], {"outcome": "cancelled"})
+
+    def _names_held(msg: dict[str, Any]) -> bool:
+        """Whether `msg` (a `$/cancel_request`) names the held request's id, type included."""
+        if held_permission is None:
+            return False
+        params = msg.get("params")
+        if not isinstance(params, dict) or "requestId" not in params:
+            return False
+        request_id = params["requestId"]
+        held_id = held_permission.parsed["id"]
+        return type(request_id) is type(held_id) and request_id == held_id
 
     def _pending_end_deadline() -> float | None:
         """When a not-yet-final turn end (error peek or fallback idle) becomes final."""
@@ -1055,7 +1094,7 @@ async def run_prompt(
         nonlocal response_entry, response_index, response_at, response_error, message_id
         nonlocal active, active_seen, requires_action_seen, last_state, provisional
         nonlocal idle_update, idle_index, stop_reason, terminated_by, error_end_deadline
-        nonlocal action_response, held_permission, cancelled_at_index
+        nonlocal action_response, held_permission, cancelled_at_index, held_cancel_request_index
         msg = entry.parsed
         if entry.matches_id(prompt_id):
             response_entry, response_index, response_at = entry, line_index, loop.time()
@@ -1100,14 +1139,16 @@ async def run_prompt(
             if hold_permission and not trigger_sent and for_this_session:
                 held_permission = entry
                 await _fire_trigger()
+                return  # left unanswered; see `_answer_held`
             if (trigger_sent or cancelled_at_index is not None) and for_this_session:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
                 if note is not None and outcome["outcome"] == "cancelled":
                     # The policy's option kind was not offered: cancel the request's session
-                    # first, then answer `cancelled` (prompt-lifecycle.mdx:1098-1100). The turn
-                    # then drains to its `idle` like any other cancelled turn.
+                    # first, then answer `cancelled` without waiting for `$/cancel_request`
+                    # (prompt-lifecycle.mdx:1177). The turn then drains to its `idle` like any
+                    # other cancelled turn.
                     target = req_params.get("sessionId")
                     await agent.send_notification(
                         "session/cancel",
@@ -1118,9 +1159,7 @@ async def run_prompt(
                     permission_cancels.append(note)
                 elif note is not None:
                     permission_fallbacks.append(note)
-            await agent.send_message(
-                {"jsonrpc": "2.0", "id": msg["id"], "result": {"outcome": outcome}}
-            )
+            await _send_permission_answer(msg["id"], outcome)
             return
 
         if method is not None and "id" in msg:
@@ -1136,6 +1175,10 @@ async def run_prompt(
 
         if method is not None:
             client_requests_seen.append(entry)
+            if method == "$/cancel_request" and _names_held(msg):
+                if held_cancel_request_index is None:
+                    held_cancel_request_index = line_index
+                await _answer_held("cancel_request")
 
     def _clamped(seconds: float) -> float:
         # A non-positive value still resolves: `read_line` forwards it to `asyncio.wait_for`,
@@ -1147,9 +1190,21 @@ async def run_prompt(
         now = loop.time()
         remaining = overall_deadline - now
         if remaining <= 0:
+            if held_permission is not None and held_answered_on is None:
+                # Answer once, then allow a short grace only to tell "ended once answered" from
+                # "never ended".
+                await _answer_held("timeout")
+                overall_deadline = loop.time() + confirm_window
+                continue
+            detail = ""
+            if held_answered_on == "timeout":
+                detail = (
+                    ", not even after its held session/request_permission was answered "
+                    "`cancelled` at the deadline"
+                )
             raise AgentTimeout(
                 f"session/prompt {prompt_id!r} on session {session_id!r} did not reach a "
-                f"turn end within {timeout}s",
+                f"turn end within {timeout}s{detail}",
                 agent.transcript,
                 stderr=agent.stderr_text(),
             )
@@ -1188,6 +1243,18 @@ async def run_prompt(
 
     assert response_entry is not None and response_index is not None and terminated_by is not None
 
+    if held_permission is not None and held_answered_on is None:
+        # The turn ended with the request still pending. A `$/cancel_request` may still follow
+        # the idle (it has no ordering rule); give it `confirm_window`, then answer anyway.
+        grace_end = loop.time() + confirm_window
+        while held_answered_on is None and (left := grace_end - loop.time()) > 0:
+            try:
+                entry = await agent.read_line(timeout=left)
+            except AgentTimeout:
+                break
+            await _handle_one(entry)
+        await _answer_held("turn_end")
+
     if terminated_by != "error" and action_id is not None and action_response is None:
         # One short trailing peek for `on_action`'s response arriving just after the turn ended.
         try:
@@ -1214,6 +1281,8 @@ async def run_prompt(
         cancelled_at_index=cancelled_at_index,
         state_at_cancel=state_at_cancel,
         held_permission=held_permission,
+        held_cancel_request_index=held_cancel_request_index,
+        held_answered_on=held_answered_on,
         action_response=action_response,
         action_sent_at_index=action_sent_at_index,
         permission_fallbacks=permission_fallbacks,

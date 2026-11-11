@@ -669,7 +669,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "On receiving `session/cancel`, the agent SHOULD stop all language model requests "
-            "and abort all in-progress tool call invocations as soon as possible. Unobservable "
+            "and all tool call invocations of the cancelled foreground work as soon as "
+            "possible. Unobservable "
             "from a client-only TCK -- nothing on the wire distinguishes 'stopped as soon as "
             "possible' from 'stopped eventually', so the test "
             "records the observation and always SKIPs, never asserting on timing. INFORMATIONAL, "
@@ -744,14 +745,80 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Cancelling a turn blocked on the agent's own pending `session/request_permission` "
             "(the session last reported `requires_action`) ends the work with an idle "
-            "`stopReason: \"cancelled\"`; the client answers the pending request `cancelled`. "
-            "SKIPPED when no permission request was pending when cancel was sent, or the session "
-            "was not reported blocked."
+            "`stopReason: \"cancelled\"` without the client answering that request: the agent "
+            "MUST stop waiting for it. The TCK leaves it unanswered and answers it `cancelled` "
+            "only once the agent withdraws it with `$/cancel_request` (waiting for that answer "
+            "is allowed) or the turn has ended. A turn that ends only after the TCK answers it "
+            "at the deadline FAILs. SKIPPED when no permission request was pending when cancel "
+            "was sent, or the session was not reported blocked."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:1153,1177,1185-1189; "
-            "docs/protocol/v2/draft/cancellation.mdx:40; "
-            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome"
+            "docs/protocol/v2/draft/cancellation.mdx:20,31,40-43; "
+            "docs/protocol/v2/draft/tool-calls.mdx:326; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome; "
+            "schema/v2/schema.unstable.json#/$defs/CancelledPermissionOutcome"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-210",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A `$/cancel_request` naming a request id the client never sent gets no response of "
+            "any kind, and the agent keeps serving the connection: a following request is still "
+            "answered."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/cancellation.mdx:24; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-211",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A `$/cancel_request` naming a request the agent already answered (the connection's "
+            "own `initialize`) gets no response, in particular no second one for that id, and "
+            "the agent keeps serving the connection."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/cancellation.mdx:22,24; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-212",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` the client withdraws with `$/cancel_request` right after sending "
+            "it still gets exactly one response: a success (inserted) or an error, and `-32800` "
+            "only if no user-message update was emitted for it. Other error codes are recorded, "
+            "not failed: an agent may decline to cancel and send its normal response. A prompt "
+            "still unanswered after `--timeout` is also covered by a `session/cancel` the TCK "
+            "then sends; one unanswered even after that FAILs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/cancellation.mdx:20,22,24,26-29,59; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,384,388"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-213",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When `session/cancel` cancels work blocked on the agent's own pending "
+            "`session/request_permission` (held unanswered, as in `ACP-CANCEL-209`), the agent "
+            "withdraws that request with `$/cancel_request` naming its id, before or shortly "
+            "after the cancelled idle. Same SKIPs as `ACP-CANCEL-209`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1177; "
+            "docs/protocol/v2/draft/cancellation.mdx:40,63; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
         ),
     ),
     Requirement(
@@ -759,28 +826,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Record (never assert) the agent's behaviour on `session/cancel` for a session with "
-            "no foreground work: no completion update is required, and nothing beyond "
-            "`ACP-CANCEL-205`'s no-response rule is assertable. Behaviour for an unknown "
-            "`sessionId` is not specified."
+            "Record (never assert) the agent's behaviour on `session/cancel` for an active "
+            "session with no foreground work (no completion update is required) and for a "
+            "session that is not active, one closed on this connection and one never created "
+            "(the agent ignores it). Nothing beyond `ACP-CANCEL-205`'s no-response rule is "
+            "assertable."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:1157,1191-1192; "
-            "docs/protocol/v2/draft/cancellation.mdx:43-44"
-        ),
-    ),
-    Requirement(
-        id="ACP-INFO-CANCEL-202",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) whether the agent sends `$/cancel_request` for its own "
-            "pending `session/request_permission` when active work is cancelled -- the TCK holds "
-            "that request unanswered while sending `session/cancel`. Not required (MAY at best)."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/cancellation.mdx:14,18,63 (non-normative; "
-            "propagation is explicitly left to the agent)"
+            "docs/protocol/v2/draft/cancellation.mdx:43-44; "
+            "docs/protocol/v2/draft/session-setup.mdx:51"
         ),
     ),
     Requirement(
@@ -1190,6 +1245,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:395; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:374"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When `session/close` arrives while the agent's own `session/request_permission` "
+            "for that session is pending (the TCK holds it unanswered), the agent sends "
+            "`$/cancel_request` naming it before its successful `session/close` response. "
+            "SKIPPED when no permission request was pending when close was sent, or the close "
+            "did not succeed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:391; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
         ),
     ),
     Requirement(

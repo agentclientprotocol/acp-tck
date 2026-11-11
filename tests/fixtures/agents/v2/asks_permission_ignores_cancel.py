@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Non-conforming fixture: asks for permission mid-turn, but treats a `cancelled` outcome like
-any other answer -- it resumes and ends the work with `end_turn`. Cancelling a turn blocked on
-user action MUST end it with `idle(cancelled)`: FAILs exactly `ACP-CANCEL-209`.
+"""Non-conforming fixture: asks for permission mid-turn; on `session/cancel` it withdraws the
+request with `$/cancel_request` but keeps waiting, then treats the `cancelled` answer like any
+other -- it resumes and ends the work with `end_turn`. Cancelling a turn blocked on user action
+MUST end it with `idle(cancelled)`: FAILs exactly `ACP-CANCEL-209`.
 """
 
 import sys
@@ -14,6 +15,9 @@ from _base import AsksPermissionAgent  # noqa: E402
 
 
 class AsksPermissionIgnoresCancelAgent(AsksPermissionAgent):
+    def _on_cancel_while_blocked(self, pending: dict[str, Any]) -> None:
+        self._send_cancel_request(pending)  # but keep waiting for the answer
+
     def _after_permission(self, session_id: Any, outcome: Any) -> None:
         super()._after_permission(session_id, "selected")
 

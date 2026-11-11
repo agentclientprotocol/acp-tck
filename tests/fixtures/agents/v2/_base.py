@@ -341,7 +341,7 @@ class ConformingAgent:
 
     def _system_prompt_rejection(self, system_prompt: Any) -> str | None:
         """Why `systemPrompt` cannot be applied, or `None` if it can (or is absent). Only an
-        advertised mode with text-only content is accepted (session-setup.mdx:442-448)."""
+        advertised mode with text-only content is accepted (session-setup.mdx:474-481)."""
         if system_prompt is None:
             return None
         advertised = self._session_capability("systemPrompt")
@@ -408,7 +408,7 @@ class ConformingAgent:
     def _replay_from_rejection(replay_from: Any) -> str | None:
         """Omitted/`null` (no replay) and `{"type": "start"}` are the only cursors this agent
         supports; any other well-formed cursor is unsupported and anything else is malformed --
-        both `-32602` (session-setup.mdx:197-201)."""
+        both `-32602` (session-setup.mdx:211-215)."""
         if replay_from is None:
             return None
         if not isinstance(replay_from, dict) or not isinstance(replay_from.get("type"), str):
@@ -775,8 +775,13 @@ class AsksPermissionAgent(ConformingAgent):
     """Conforming, but sends `session/request_permission` mid-turn (after the running update)
     and only finishes the turn once the client answers -- the normal shape a real tool-using
     agent produces (`title`/`options` required, each option carrying `optionId`/`name`/`kind`).
-    Reports `requires_action` while blocked and honors the outcome (`_after_permission`). The
-    self-test for `ACP-PERM-201`/`ACP-PATCH-209`/`ACP-STATE-205`/`ACP-CANCEL-209`.
+    Reports `requires_action` while blocked and honors the outcome (`_after_permission`).
+
+    `session/cancel` while blocked stops waiting: it withdraws the request with
+    `$/cancel_request` and ends the work as for a `cancelled` outcome, without the answer
+    (prompt-lifecycle.mdx:1177). `session/close` withdraws it the same way before responding
+    (session-setup.mdx:391). A late answer is ignored. The self-test for `ACP-PERM-201`/
+    `ACP-PATCH-209`/`ACP-STATE-205`/`ACP-CANCEL-209`/`ACP-CANCEL-213`/`ACP-CLOSE-205`.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -826,12 +831,34 @@ class AsksPermissionAgent(ConformingAgent):
         outcome = (result.get("outcome") or {}).get("outcome")
         self._after_permission(pending["session_id"], outcome)
 
+    def _send_cancel_request(self, pending: dict[str, Any]) -> None:
+        self._notify("$/cancel_request", {"requestId": pending["perm_id"]})
+
+    def _on_cancel_while_blocked(self, pending: dict[str, Any]) -> None:
+        """Hook: `session/cancel` arrived while `pending` is unanswered. Stops waiting, withdraws
+        it, and ends the work as for a `cancelled` outcome."""
+        self._pending_permission = None
+        self._send_cancel_request(pending)
+        self._after_permission(pending["session_id"], "cancelled")
+
+    def _withdraw_on_close(self, pending: dict[str, Any]) -> None:
+        """Hook: withdraw `pending` before the `session/close` response."""
+        self._send_cancel_request(pending)
+
+    def _handle_cancel(self, params: dict[str, Any]) -> None:
+        pending = self._pending_permission
+        if pending is not None and pending["session_id"] == params.get("sessionId"):
+            self._on_cancel_while_blocked(pending)
+            return
+        super()._handle_cancel(params)
+
     def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
-        # ACP-CLOSE-203: closing a session blocked on our permission request cancels that work,
-        # so its cancelled idle goes out before the close response; a late reply is ignored.
+        # ACP-CLOSE-203/205: closing a session blocked on our permission request withdraws it,
+        # then cancels that work, so its cancelled idle goes out before the close response.
         pending = self._pending_permission
         if pending is not None and pending["session_id"] == params.get("sessionId"):
             self._pending_permission = None
+            self._withdraw_on_close(pending)
             self._send_idle_update(pending["session_id"], "cancelled")
         super()._handle_close_session(msg_id, params)
 

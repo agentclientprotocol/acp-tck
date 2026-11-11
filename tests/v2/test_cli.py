@@ -50,6 +50,8 @@ _MANDATORY_IDS = {
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-202",
     "ACP-ERROR-202",
+    "ACP-CANCEL-210",
+    "ACP-CANCEL-211",
     "ACP-AUTH-202",
     "ACP-AUTH-206",
     "ACP-AUTH-207",
@@ -85,6 +87,7 @@ _CAPABILITY_IDS = {
     "ACP-CANCEL-207",
     "ACP-CANCEL-208",
     "ACP-CANCEL-209",
+    "ACP-CANCEL-212",
     "ACP-SESSION-203",
     "ACP-RESUME-201",
     "ACP-RESUME-202",
@@ -104,6 +107,7 @@ _CAPABILITY_IDS = {
     "ACP-CLOSE-201",
     "ACP-CLOSE-202",
     "ACP-CLOSE-203",
+    "ACP-CLOSE-205",
     "ACP-DELETE-201",
     "ACP-DELETE-202",
     "ACP-ADDDIRS-201",
@@ -131,6 +135,7 @@ _ADVISORY_IDS = {
     "ACP-PROMPT-208",
     "ACP-STATE-204",
     "ACP-CANCEL-204",
+    "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
     "ACP-BATCH-209",
     "ACP-DELETE-203",
@@ -156,7 +161,6 @@ _ADVISORY_IDS = {
 _INFORMATIONAL_IDS = {
     "ACP-INFO-CONCURRENT-201",
     "ACP-INFO-CANCEL-201",
-    "ACP-INFO-CANCEL-202",
     "ACP-MCP-201",
     "ACP-MCP-202",
     "ACP-STDERR-001",
@@ -166,7 +170,7 @@ _INFORMATIONAL_IDS = {
 _ALL_IDS = _MANDATORY_IDS | _CAPABILITY_IDS | _ADVISORY_IDS | _INFORMATIONAL_IDS
 
 # `ACP-CANCEL-204` (an unconditional record-only probe for cancellation) never PASSes for *any*
-# fixture; it always SKIPs -- except that `ACP-CANCEL-204` (and, not in this set, `ACP-INFO-CANCEL-202`) FAILs instead of
+# fixture; it always SKIPs -- except that `ACP-CANCEL-204` FAILs instead of
 # SKIPping against a fixture that hangs forever on `session/cancel` (`cancel_no_idle.py` and its
 # siblings): an uncaught `AgentTimeout` in shared setup is a FAIL, not a SKIP, so "always" here
 # means "for any fixture that lets the turn reach a terminating idle", not literally always.
@@ -224,6 +228,8 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PATCH-209",
     "ACP-STATE-205",
     "ACP-CANCEL-209",
+    "ACP-CANCEL-213",
+    "ACP-CLOSE-205",
     "ACP-PROMPT-207",
 }
 
@@ -373,6 +379,8 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PATCH-209",
     "ACP-STATE-205",
     "ACP-CANCEL-209",
+    "ACP-CANCEL-213",
+    "ACP-CLOSE-205",
     "ACP-PROMPT-207",
 } | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
@@ -428,14 +436,17 @@ def test_v2_conforming_agent_passes_everything():
 
 # What `conforming_full.py` still SKIPs besides `_ALWAYS_SKIPPED_IDS`: `ACP-AUTH-205` (only
 # concerns the empty-`authMethods` case), `ACP-PROMPT-207` (it never rejects a prompt), and
-# `ACP-CANCEL-209` (`__hang__` preempts its permission request, so none is pending at cancel;
-# `asks_permission.py`'s self-test exercises it instead), and `ACP-META-203/204` (it emits no
+# `ACP-CANCEL-209`/`213` and `ACP-CLOSE-205` (`__hang__` preempts its permission request, so none
+# is pending at cancel or close; `asks_permission.py`'s self-test exercises them instead), and
+# `ACP-META-203/204` (it emits no
 # `_meta` at all; `emits_w3c_meta.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
 _FULL_EXPECTED_SKIPS = {
     "ACP-AUTH-205",
     "ACP-PROMPT-207",
     "ACP-CANCEL-209",
+    "ACP-CANCEL-213",
+    "ACP-CLOSE-205",
     "ACP-ERROR-204",
     "ACP-META-203",
     "ACP-META-204",
@@ -1027,9 +1038,10 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
     through `run_prompt` independently hits `AgentTimeout` and FAILs. This includes
     `ACP-CLIENTCAP-201/202` (both observe a turn via `run_prompt`), `ACP-PERM-201` (never gets
     the chance to legitimately SKIP "no permission observed" -- it times out instead), the
-    `ACP-PROMPT-206`, every `ACP-CANCEL-*` row (all drive `run_prompt` and never
-    see a terminating idle either) plus `ACP-CLOSE-202` (shares `ACP-CANCEL-208`'s test),
-    `ACP-INFO-CANCEL-202` (INFORMATIONAL, but an uncaught `AgentTimeout` is a FAIL, not a SKIP),
+    `ACP-PROMPT-206`, every `run_prompt`-driven `ACP-CANCEL-*` row (they never see a
+    terminating idle either) plus `ACP-CLOSE-202` (shares `ACP-CANCEL-208`'s test),
+    `ACP-CANCEL-204` (INFORMATIONAL, but an uncaught `AgentTimeout` is a FAIL, not a SKIP),
+    except `ACP-CANCEL-213`/`ACP-CLOSE-205`, which SKIP when the turn never ends,
     `ACP-CLOSE-203` (its close-mid-turn run times out the same way),
     `ACP-TRANSPORT-201/002/203` (`test_transport.py`'s own `_drive_full_exchange` drives one
     ordinary `run_prompt` turn to gather evidence, which times out here too), `ACP-RESUME-
@@ -1099,7 +1111,6 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
-        "ACP-INFO-CANCEL-202",
         "ACP-TRANSPORT-201",
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
@@ -1205,8 +1216,8 @@ def test_missing_message_id_fails_prompt_201_and_schema_001_and_skips_prompt_203
 def test_update_wrong_session_fails_every_run_prompt_dependent_id():
     """`update_wrong_session.py` misattributes every `session/update` to `sessionId: "other"`:
     the same cascade shape as `no_idle_after_running.py` (see that test's docstring for why
-    `ACP-CLIENTCAP-201/202`/`ACP-PERM-201`/`ACP-PROMPT-206`/every `ACP-CANCEL-*` row (plus
-    `ACP-CLOSE-202`, sharing `ACP-CANCEL-208`'s test)/`ACP-INFO-CANCEL-202`/
+    `ACP-CLIENTCAP-201/202`/`ACP-PERM-201`/`ACP-PROMPT-206`/every `run_prompt`-driven
+    `ACP-CANCEL-*` row but `213` (plus `ACP-CLOSE-202`, sharing `ACP-CANCEL-208`'s test)/
     `ACP-TRANSPORT-201/002/203` are included here too), since `run_prompt` never recognizes a
     matching terminating idle either. Also FAILs `ACP-RESUME-202..206`/`209` (their own tests drive a
     `run_prompt` turn via `_session_with_history` first, which never resolves either) and
@@ -1265,7 +1276,6 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
-        "ACP-INFO-CANCEL-202",
         "ACP-TRANSPORT-201",
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
@@ -1361,16 +1371,71 @@ def test_permission_flow_positive_controls_fail_nothing():
             "ACP-PATCH-209",
             "ACP-PERM-201",
             "ACP-CANCEL-209",
-            "ACP-INFO-CANCEL-202",
+            "ACP-CANCEL-213",
+            "ACP-CLOSE-205",
         ):
             assert statuses[req_id] == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
 
 
 def test_asks_permission_ignores_cancel_fails_cancel_209_only():
+    """It withdraws the held request (`ACP-CANCEL-213` PASSes) but resumes `end_turn` on the
+    `cancelled` answer."""
     result = _run_cli(FIXTURES_DIR_V2, "asks_permission_ignores_cancel.py", protocol_version=2, k="cancel")
     assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {"ACP-CANCEL-209"}, result.stdout
+    assert statuses["ACP-CANCEL-213"] == "PASS", result.stdout
+
+
+def test_cancel_waits_for_permission_answer_fails_cancel_209_and_213_only():
+    """Under the strict hold the turn ends only once the TCK answers the held request at the
+    deadline: `ACP-CANCEL-209` FAILs saying so, and no `$/cancel_request` FAILs
+    `ACP-CANCEL-213`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "cancel_waits_for_permission_answer.py", protocol_version=2, k="cancel"
+    )
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CANCEL-209", "ACP-CANCEL-213"}, result.stdout
+    assert "only after the TCK answered its held session/request_permission" in result.stdout
+
+
+def test_cancel_without_cancel_request_fails_advisory_cancel_213_only():
+    result = _run_cli(
+        FIXTURES_DIR_V2, "cancel_without_cancel_request.py", protocol_version=2, k="cancel"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CANCEL-213"}, result.stdout
+    assert statuses["ACP-CANCEL-209"] == "PASS", result.stdout
+    assert statuses["ACP-CLOSE-205"] == "PASS", result.stdout
+
+
+def test_close_keeps_permission_open_fails_close_205_only():
+    result = _run_cli(FIXTURES_DIR_V2, "close_keeps_permission_open.py", protocol_version=2, k="cancel")
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CLOSE-205"}, result.stdout
+    for req_id in ("ACP-CANCEL-208", "ACP-CANCEL-209", "ACP-CANCEL-213", "ACP-CLOSE-202"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_answers_cancel_request_fails_cancel_210_211_212_only():
+    """Answering a `$/cancel_request` for an unknown or answered id breaks 210/211; the withdrawn
+    prompt, already answered, gets that error as a second response (212)."""
+    result = _run_cli(FIXTURES_DIR_V2, "answers_cancel_request.py", protocol_version=2)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CANCEL-210", "ACP-CANCEL-211", "ACP-CANCEL-212"}, result.stdout
+
+
+def test_drops_withdrawn_prompt_fails_cancel_212_only():
+    result = _run_cli(
+        FIXTURES_DIR_V2, "drops_withdrawn_prompt.py", protocol_version=2, k="cancel",
+        cancel_prompt="__hang__",
+    )
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CANCEL-212"}, result.stdout
 
 
 def test_asks_permission_twice_passes_both_jsonrpc_202_halves():
@@ -1414,15 +1479,16 @@ def test_asks_permission_null_id_fails_jsonrpc_202_and_perm_201_only():
 
 def test_error_after_echo_fails_prompt_207_and_cancel_203_only():
     """Answering an already-echoed prompt with `-32800` after cancel violates the insertion
-    boundary twice over: `ACP-PROMPT-207` (error after a user-message update) and
-    `ACP-CANCEL-203` (`-32800` is only for a prompt cancelled before insertion). The cancelled
-    idle itself is correct, so `ACP-CANCEL-201` PASSes."""
+    boundary: `ACP-PROMPT-207` (error after a user-message update), `ACP-CANCEL-203` (`-32800`
+    is only for a prompt cancelled before insertion), and `ACP-CANCEL-212` (its withdrawn prompt
+    ignores `$/cancel_request`, and the TCK's follow-up `session/cancel` gets the same `-32800`
+    after the echo). The cancelled idle itself is correct, so `ACP-CANCEL-201` PASSes."""
     result = _run_cli(
         FIXTURES_DIR_V2, "error_after_echo.py", protocol_version=2, k="cancel", cancel_prompt="__hang__"
     )
     assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
-    assert _fails(statuses) == {"ACP-PROMPT-207", "ACP-CANCEL-203"}, result.stdout
+    assert _fails(statuses) == {"ACP-PROMPT-207", "ACP-CANCEL-203", "ACP-CANCEL-212"}, result.stdout
     assert statuses["ACP-CANCEL-201"] == "PASS", result.stdout
     assert statuses["ACP-CANCEL-208"] == "PASS", result.stdout
 
@@ -1440,7 +1506,12 @@ def test_cancel_before_insertion_is_conforming():
     )
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == set(), result.stdout
-    for req_id in ("ACP-CANCEL-203", "ACP-CANCEL-205", "ACP-CANCEL-208", "ACP-CLOSE-202", "ACP-PROMPT-207"):
+    # `ACP-CANCEL-212`: the held prompt ignores `$/cancel_request`, and the TCK's follow-up
+    # `session/cancel` gets it answered `-32800`.
+    for req_id in (
+        "ACP-CANCEL-203", "ACP-CANCEL-205", "ACP-CANCEL-208", "ACP-CANCEL-212", "ACP-CLOSE-202",
+        "ACP-PROMPT-207",
+    ):
         assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
     for req_id in ("ACP-CANCEL-201", "ACP-CANCEL-202", "ACP-CANCEL-206", "ACP-CANCEL-207"):
         assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
@@ -1512,7 +1583,6 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-209",
-        "ACP-INFO-CANCEL-202",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -2059,13 +2129,13 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         "ACP-META-204",
     }
     # Like `conforming_full.py`: it never rejects a prompt, and `__hang__` preempts the
-    # permission request `ACP-CANCEL-209` needs pending.
+    # permission request `ACP-CANCEL-209`/`213` and `ACP-CLOSE-205` need pending.
     expected_skips = (
         _ALWAYS_SKIPPED_IDS
         | _SESSION_MGMT_EXTRAS_SKIP_IDS
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
-        | {"ACP-PROMPT-207", "ACP-CANCEL-209", "ACP-ERROR-204"}
+        | {"ACP-PROMPT-207", "ACP-CANCEL-209", "ACP-CANCEL-213", "ACP-CLOSE-205", "ACP-ERROR-204"}
     )
     for req_id, status in statuses.items():
         if req_id == "ACP-TRANSPORT-201":
@@ -3051,6 +3121,10 @@ _VERSION_TOLERANT_IDS = _NEGOTIATION_IDS | {
     "ACP-EXT-001",
     "ACP-EXT-201",
     "ACP-EXT-203",
+    # ACP-CANCEL-210/211: connection-level `$/cancel_request` probes with no capability marker;
+    # a reply to a notification is non-conforming in v1 too, so a v1 agent is judged normally.
+    "ACP-CANCEL-210",
+    "ACP-CANCEL-211",
     # ACP-INFO-PARSE-001/ACP-INFO-INVALIDREQ-001 (re-cited from v1, unchanged) carry no
     # `@pytest.mark.capability(...)` marker at all (test_informational.py's module docstring),
     # and their shared `_probe_connection_usable_after` helper swallows a `session/new` failure
