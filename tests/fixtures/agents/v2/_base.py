@@ -89,6 +89,9 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `background_on_resume` (opt-in, default `False`, needs `report_background_work`): every
   resume leaves the session with one unfinished background tool call, listed on the snapshot and
   announced by a `tool_call_update` before it (`_resume_background`, session-setup.mdx:346).
+- `auth/status` (only when `capabilities.auth.status` is advertised, else `-32601`): a pure
+  query answered with or without a login (`_handle_auth_status`), the hook the `auth_status_*.py`
+  defect fixtures override.
 - `terminal_auth_method`: appended to `authMethods` only when the `initialize` request's
   `capabilities.auth.terminal` object marker is present (the same gate the conformance test
   applies), so the default connection stays the negative control while a positive-capability
@@ -327,6 +330,8 @@ class ConformingAgent:
             self._handle_login(msg_id, params)
         elif method == "auth/logout":
             self._handle_logout(msg_id, params)
+        elif method == "auth/status" and self._auth_capability("status") is not None:
+            self._handle_auth_status(msg_id, params)
         else:
             self._error(msg_id, -32601, "Method not found")
 
@@ -395,6 +400,18 @@ class ConformingAgent:
     def _handle_logout(self, msg_id: Any, params: dict[str, Any]) -> None:
         self._authenticated = False
         self._reply(msg_id, {})
+
+    def _auth_capability(self, name: str) -> Any:
+        auth = self._capabilities.get("auth")
+        return auth.get(name) if isinstance(auth, dict) else None
+
+    def _handle_auth_status(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # A pure query, answered whether or not the connection is authenticated
+        # (`schema/v2/schema.unstable.json#/$defs/AuthStatusRequest`).
+        if self._authenticated:
+            self._reply(msg_id, {"state": "authenticated", "accounts": [{"label": "TCK", "active": True}]})
+        else:
+            self._reply(msg_id, {"state": "unauthenticated" if self._require_auth else "not_required"})
 
     def _session_capability(self, name: str) -> Any:
         session = self._capabilities.get("session")

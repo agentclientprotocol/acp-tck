@@ -76,7 +76,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Opt in to actually calling logout against the agent under test (v1's ACP-AUTH-004, "
         "v2's ACP-AUTH-203), passed through as --tck-allow-logout. Off by default because it may "
         "revoke the operator's own credentials for whatever account the agent is authenticated "
-        "as -- without it, both requirements SKIP instead of exercising the method.",
+        "as -- without it, both requirements SKIP instead of exercising the method. The logout "
+        "test (marked `revokes`) runs last, after every other test.",
     )
     parser.add_argument(
         "--close-grace",

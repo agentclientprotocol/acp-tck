@@ -2167,13 +2167,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     ),
     Requirement(
         id="ACP-AUTH-201",
-        tier=Tier.ADVISORY,
+        tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "`authMethods[*].methodId` values are unique. Re-cites v1's `ACP-AUTH-001`; only "
-            "the field name changed (`id` -> `methodId`)."
+            "`authMethods[*].methodId` values are unique within the list. Schema validation "
+            "alone cannot express this. SKIPs when no `authMethods` are advertised."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/authentication.mdx:51; "
             "schema/v2/schema.unstable.json#/$defs/AuthMethod; "
             "schema/v2/schema.unstable.json#/$defs/AuthMethodId"
         ),
@@ -2184,10 +2185,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "No `authMethods[*]` entry with `type: \"terminal\"` is advertised unless the "
-            "client advertised `capabilities.auth.terminal: {}` in `initialize`'s params. New "
-            "id, not a reuse of v1's `ACP-AUTH-002` -- the client-capability path and its "
-            "encoding both changed (v1: top-level boolean `clientCapabilities.auth.terminal`; "
-            "v2: nested object marker `capabilities.auth.terminal`)."
+            "client advertised `capabilities.auth.terminal: {}` in `initialize`'s params "
+            "(\"Agents MUST NOT advertise a `terminal` method unless this capability is "
+            "present\"). The capability is a nested object marker in v2 (v1: top-level "
+            "boolean `clientCapabilities.auth.terminal`)."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal; "
@@ -2211,7 +2212,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthRequest; "
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthResponse; "
-            "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities"
+            "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities; "
+            "docs/protocol/v2/draft/authentication.mdx:51-52,247-249"
         ),
     ),
     Requirement(
@@ -2221,14 +2223,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Given `--auth-method <id>` naming a non-`terminal`, advertised `methodId`, "
             "`auth/login` does not answer `-32601` (Method not found) -- an agent advertising "
-            "`authMethods` MUST implement it -- and, when `capabilities.session` is "
-            "advertised, a subsequent `session/new` does not fail with `-32000`. Mirrors v1's "
-            "`ACP-AUTH-003`, method renamed `authenticate` -> `auth/login`. SKIPs when "
-            "`--auth-method` was not given, the agent advertises no `authMethods`, or "
-            "`auth/login` fails with any other error."
+            "`authMethods` MUST implement it -- nor `-32602` (Invalid params) when the "
+            "advertised entry is `type: \"agent\"` (the one standard type that uses "
+            "`auth/login`; `-32602` is for an id that is not an advertised login method). "
+            "When `capabilities.session` is advertised, a subsequent `session/new` does not "
+            "fail with `-32000`. Mirrors v1's `ACP-AUTH-003`, method renamed `authenticate` -> "
+            "`auth/login`. SKIPs when `--auth-method` was not given, the agent advertises no "
+            "`authMethods`, or `auth/login` fails with any other error (`-32602` for a custom "
+            "`_`-prefixed type included, since that type may not use `auth/login`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/authentication.mdx:51-53; "
+            "docs/protocol/v2/draft/authentication.mdx:51-53,87-88,191; "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthRequest/required (`methodId`); "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthResponse"
         ),
@@ -2242,20 +2247,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`authMethods` is empty or absent. Re-cites v1's `ACP-AUTH-005`/AUTH-A1; not "
             "promoted. SKIPs unless `capabilities.session` is advertised."
         ),
-        citation=_cite("docs/protocol/v2/draft/schema.mdx:954 (-32000 is a MAY, not a MUST)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:954 (-32000 is a MAY, not a MUST); "
+            "docs/protocol/v2/draft/authentication.mdx:193"
+        ),
     ),
     Requirement(
         id="ACP-AUTH-206",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Every `authMethods[*].type` is one of the schema's defined discriminator values "
-            "(`\"agent\"`, `\"terminal\"`) or begins with `_` -- the general open-enum "
+            "Every `authMethods[*]` entry carries a `type` that is one of the schema's defined "
+            "discriminator values (`\"agent\"`, `\"terminal\"`) or begins with `_` -- the general open-enum "
             "extensibility rule applied to this field. New in v2: v1's `type` could default to "
             "\"agent\" when absent and had no enum-closure rule at all."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/authentication.mdx:118-120; "
+            "docs/protocol/v2/draft/authentication.mdx:87-89,118-120; "
             "docs/protocol/v2/draft/extensibility.mdx:233-242; "
             "schema/v2/schema.unstable.json#/$defs/AuthMethod"
         ),
@@ -2277,6 +2285,63 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "unique\"); schema/v2/schema.unstable.json#/$defs/EnvVariable; "
             "docs/protocol/v2/draft/authentication.mdx:203-205"
         ),
+    ),
+    Requirement(
+        id="ACP-AUTH-208",
+        tier=Tier.CAPABILITY,
+        capability="inferred:authMethods",
+        text=(
+            "When `initialize` advertised a non-empty `authMethods`, `auth/login` with a "
+            "`methodId` that is not among them (the implementation-reserved "
+            "`_tck_unadvertised_method`) is rejected with an error rather than answered with "
+            "a result. The code is judged separately "
+            "(`ACP-AUTH-210`). The probe breaks the client rule to send only an advertised "
+            "`methodId` on purpose: the spec defines the agent's answer. Sent on a fresh "
+            "connection with no `--auth-method` login, and never for a `terminal` id. SKIPs "
+            "when no `authMethods` are advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/authentication.mdx:191; "
+            "schema/v2/schema.unstable.json#/$defs/LoginAuthRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-209",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.auth.status",
+        text=(
+            "When `capabilities.auth.status` is advertised (object marker), `auth/status` sent "
+            "with `{}` params right after `initialize`, before any `auth/login` on the "
+            "connection, returns a result that validates as `AuthStatusResponse`. It is never "
+            "an error: not `-32000` (the agent MUST NOT auth-gate it, since clients call it to "
+            "learn whether authentication is needed) and not `-32601` (the agent advertised "
+            "it). The result's `state` is one of the defined `AuthState` values or begins "
+            "with `_`; other strings are reserved for future ACP variants. The test skips the "
+            "`--auth-method` login so the agent is observed unauthenticated. Unstable method."
+        ),
+        citation=_cite(
+            "schema/v2/schema.unstable.json#/$defs/AuthStatusRequest; "
+            "schema/v2/schema.unstable.json#/$defs/AuthStatusResponse; "
+            "schema/v2/schema.unstable.json#/$defs/AuthState; "
+            "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities/properties/status; "
+            "docs/protocol/v2/draft/schema.mdx:143-144; "
+            "docs/protocol/v2/draft/initialization.mdx:215-219; "
+            "docs/protocol/v2/draft/authentication.mdx:193; "
+            "docs/rfds/get-auth-state.mdx:293,297"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-210",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `auth/login` for an unadvertised `methodId` (`ACP-AUTH-208`'s "
+            "probe) uses `-32602` (Invalid params). The sentence naming the code carries no "
+            "RFC keyword, so the code is ADVISORY while the rejection itself is not. SKIPs "
+            "when no `authMethods` are advertised or the probe was not rejected "
+            "(`ACP-AUTH-208`'s concern)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/authentication.mdx:191"),
     ),
     Requirement(
         id="ACP-PATCH-201",

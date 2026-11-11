@@ -6,7 +6,7 @@ permission on every turn: `capabilities.session.prompt.{image,audio,embeddedCont
 `boolean`-type `configOptions` entry (`_base.ConformingAgent`'s `config_options` param; the second
 lets `ACP-CONFIG-208`/`209` probe both option types), one `availableCommands`
 entry (so `ACP-RESUME-210` checks both lists), one `type: "agent"`
-auth method (`methodId: "tck"`), `emit_rich_turn_updates=True`, and `persist_sessions=True` (so
+auth method (`methodId: "tck"`), `capabilities.auth.status` (`ACP-AUTH-209`), `emit_rich_turn_updates=True`, and `persist_sessions=True` (so
 `ACP-SYSPROMPT-002`/`003`'s resume probes can restore a session on a fresh process). Built on
 `AsksPermissionAgent`, so every turn also exercises the permission-request shape. Must PASS every
 CAPABILITY/INFORMATIONAL id its advertised capabilities gate (see `tests/v2/test_cli.py` for the
@@ -48,6 +48,7 @@ def main() -> None:
                 "fork": {},
                 "systemPrompt": {"mode": {"override": {}}},
             },
+            "auth": {"status": {}},
         },
         config_options=[
             {

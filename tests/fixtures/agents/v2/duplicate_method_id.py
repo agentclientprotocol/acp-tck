@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""A defect fixture for ACP-AUTH-201 (ADVISORY): advertises two `authMethods` entries sharing
-the same `methodId`. No v1 analogue.
+"""A defect fixture for ACP-AUTH-201 (MANDATORY, authentication.mdx:51): advertises two
+`authMethods` entries sharing the same `methodId`. Fails ACP-AUTH-201 only, so the run is NOT
+CONFORMANT.
 """
 
 import sys

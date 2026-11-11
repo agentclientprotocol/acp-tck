@@ -133,11 +133,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--tck-allow-logout",
         action="store_true",
         default=False,
-        help="Opt in to actually calling v2's `auth/logout` against the agent under test. Off "
-        "by default because it may revoke the operator's own credentials for whatever account "
-        "the agent is authenticated as -- without this flag, the logout test SKIPs instead of "
-        "exercising it. v1 has no equivalent option: its logout test is gated purely by the "
-        "`agentCapabilities.auth.logout` marker and is unaffected by this flag.",
+        help="Opt in to actually calling `logout` (v1) / `auth/logout` (v2) against the agent "
+        "under test. Off by default because it may revoke the operator's own credentials for "
+        "whatever account the agent is authenticated as -- without this flag, the logout test "
+        "SKIPs instead of exercising it. The logout test (marked `revokes`) runs last, after "
+        "every other test.",
     )
     group.addoption(
         "--tck-close-grace",

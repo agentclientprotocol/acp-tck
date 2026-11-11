@@ -255,3 +255,6 @@ KNOWN_METHODS: frozenset[str] = AGENT_METHODS | CLIENT_METHODS | PROTOCOL_METHOD
 
 ERROR_CODES: frozenset[int] = _const_members("ErrorCode")
 """The named `ErrorCode` values (`error.mdx`'s codes plus `-32800`); any other code is "other"."""
+
+AUTH_STATES: frozenset[str] = _const_members("AuthState")
+"""The defined `AuthState` values; any other string must start with `_`."""

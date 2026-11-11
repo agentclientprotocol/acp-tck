@@ -183,6 +183,9 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-AUTH-205",
         "ACP-AUTH-206",
         "ACP-AUTH-207",
+        "ACP-AUTH-208",
+        "ACP-AUTH-209",
+        "ACP-AUTH-210",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -222,8 +225,8 @@ def test_advisory_tier_is_exactly_these_ids():
     invariants and never actual tier membership, so a re-tiering mistake could silently regress
     without any test catching it."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.ADVISORY} == {
-        "ACP-AUTH-201",
         "ACP-AUTH-205",
+        "ACP-AUTH-210",
         "ACP-BATCH-209",
         "ACP-INIT-215",
         "ACP-CANCEL-213",
