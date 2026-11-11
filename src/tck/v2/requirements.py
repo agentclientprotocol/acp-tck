@@ -1955,9 +1955,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`name` are present, `type` selects the right shape (`select` requires `currentValue`"
             "+`options`; `boolean` requires `currentValue`), and a `select` entry's `options` is "
             "an array -- either a flat `SessionConfigSelectOption[]` or a grouped "
-            "`SessionConfigSelectGroup[]`, never mixed (the schema sets no minimum length). Inferred support, same encoding as v1's "
-            "`ACP-MODES-001`/`ACP-CONFIG-001` -- `capability=\"inferred:configOptions\"` is "
-            "documentation-only."
+            "`SessionConfigSelectGroup[]`, never mixed. A `select` entry offers at least one value "
+            "and every group holds at least one (`minItems: 1`). An empty `configOptions` list "
+            "itself is valid and means the session has none (a SKIP, not a violation). Only the "
+            "`configOptions` items are judged, not the rest of the carrying message. Inferred "
+            "support, same encoding as v1's `ACP-MODES-001`/`ACP-CONFIG-001` -- "
+            "`capability=\"inferred:configOptions\"` is documentation-only."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/SessionConfigOption; "
@@ -1967,6 +1970,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectOptions; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectOption; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectGroup; "
+            "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectGroup/properties/options; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigGroupId; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigBoolean; "
@@ -1978,16 +1982,20 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
-            "`session/set_config_option` responds with the complete post-change `configOptions` "
-            "list: an array, schema-valid, containing the changed `configId`. Whether every "
+            "A well-formed `session/set_config_option` of an advertised option succeeds (agents "
+            "advertising config options MUST support the method) and responds with the complete "
+            "post-change `configOptions` list: an array, schema-valid, containing the changed "
+            "`configId`. Whether every "
             "previously-advertised `configId` is still present is recorded, never asserted -- a "
             "change may legitimately remove dependent options, so a partial reply and a "
             "dependent removal are wire-identical. SKIPs when `session/new` advertised no "
             "`configOptions`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:291,367-371; "
+            "docs/protocol/v2/draft/session-config-options.mdx:234,236,291,367-371; "
+            "docs/protocol/v2/draft/initialization.mdx:239-240; "
             "docs/rfds/session-config-options.mdx:45; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionResponse"
         ),
     ),
@@ -1997,7 +2005,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:configOptions",
         text=(
             "`session/resume`'s `configOptions`, when present, validates the same way as "
-            "`ACP-CONFIG-201` -- a new carrier in v2 (v1's `session/load` had no analogous "
+            "`ACP-CONFIG-201` (including its non-empty `select` options) -- a new carrier in v2 (v1's `session/load` had no analogous "
             "field). Shape only: whether the resume carries the list at all is "
             "`ACP-RESUME-210`'s concern, and an absent list SKIPs. The session is obtained the "
             "same way as `ACP-RESUME-201`, so a resume error other than `-32601` SKIPs."
@@ -2013,11 +2021,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:configOptions",
         text=(
             "A `select`-type option's `currentValue` is one of its declared `options` values "
-            "(flat or grouped) -- derived from C5's always-a-default-value MUST plus the field "
-            "descriptions, not itself schema-enforced."
+            "(flat or grouped). An explicit MUST, not schema-enforced."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:116-133,222; "
+            "docs/protocol/v2/draft/session-config-options.mdx:116-119,125-133; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
         ),
     ),
@@ -2033,9 +2040,129 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "and vacuous (recorded, never FAILed) when no such update is ever observed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:373-375,459; "
+            "docs/protocol/v2/draft/session-config-options.mdx:236,373,459; "
             "docs/rfds/session-config-options.mdx:45; "
             "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-207",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "`session/set_config_option` naming a `configId` the session did not advertise is "
+            "rejected with `-32602`. The TCK sends the probe id `_tck_unknown_config` on purpose: "
+            "clients MUST only send advertised ids, but the same sentence fixes the agent's "
+            "answer to one that doesn't. SKIPs when `session/new` advertised no `configOptions`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:234; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-208",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "`session/set_config_option` for an advertised option with an invalid value is "
+            "rejected with `-32602`: a `select` value it does not declare (probe "
+            "`_tck_unknown_value`), a value `type` that does not match the option (`boolean` "
+            "for a `select`, `id` for a `boolean`), or an unsupported value `type` (probe "
+            "`_tck_unsupported`). Probes that need an option type the session lacks are "
+            "skipped. SKIPs when `session/new` advertised no `configOptions`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:234,264-273; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-209",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "A rejected `session/set_config_option` leaves the configuration unchanged. After "
+            "the unknown-`configId` and invalid-value probes of `ACP-CONFIG-207`/`208` are "
+            "rejected, a no-op set of a different option returns a list whose `(configId, "
+            "currentValue)` pairs equal the pre-probe list. Probes the agent did not reject "
+            "are not judged here (`ACP-CONFIG-207`/`208` FAIL them), the invalid-value probe "
+            "needs a second option to observe through, and a `config_option_update` arriving "
+            "meanwhile SKIPs (the agent may change configuration itself)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:234,459-463; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-210",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "Within one `select` option every declared `value` is unique, across groups as "
+            "well. Not schema-enforced."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:125-133; "
+            "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-211",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When a `session/set_config_option` changes the configuration (the response's "
+            "`(configId, currentValue)` pairs differ from the list before the call), the agent "
+            "also sends a `config_option_update` for the session on the requesting connection, "
+            "before the response or within the quiet drain after it. Only the requesting "
+            "connection is judged. SKIPs when no `configOptions` were advertised or the call "
+            "changed nothing."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:375; "
+            "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-212",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The `config_option_update` that duplicates a `session/set_config_option` change "
+            "arrives before that request's response. Judged only when an update carrying the "
+            "response's state is observed (a later update with different state may be a "
+            "legitimate subsequent change); FAILs when every such update arrives after the "
+            "response. SKIPs otherwise."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:377-379; "
+            "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-COMMANDS-201",
+        tier=Tier.CAPABILITY,
+        capability="inferred:availableCommands",
+        text=(
+            "Every command the agent advertises (in a setup response's `availableCommands` or "
+            "an `available_commands_update`) validates as `AvailableCommand` -- it carries a "
+            "`type` discriminator (`command`, or a `_`-prefixed custom type) -- and within each "
+            "list every `name` contains no whitespace and is unique. Only the command items are "
+            "judged, not the rest of the carrying message. No `availableCommands` capability "
+            "marker exists, so support is inferred from the agent advertising any command "
+            "(`capability=\"inferred:availableCommands\"` is documentation-only); SKIPs when "
+            "none is observed. A leading `/` in `name` is not judged: the spec says \"without the "
+            "leading `/`\" with no RFC keyword."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/slash-commands.mdx:12,37-43,89-110; "
+            "schema/v2/schema.unstable.json#/$defs/AvailableCommand; "
+            "schema/v2/schema.unstable.json#/$defs/Command; "
+            "schema/v2/schema.unstable.json#/$defs/AvailableCommandsUpdate"
         ),
     ),
     Requirement(

@@ -67,7 +67,9 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   names (`_mcp_duplicate_name_rejection`, :547) -- all `-32602`. Stdio MCP servers of a
   successful `session/new` are launched and sent an MCP `initialize` (`_launch_mcp_servers`), so
   the TCK's stub server can observe the connection.
-- `session/set_config_option` updates `currentValue` and replies with the complete list;
+- `session/set_config_option` rejects an unknown `configId` or an invalid value with `-32602`
+  (state untouched), otherwise updates `currentValue`, sends the duplicate
+  `config_option_update`, and replies with the complete list (`_reply_config_set`);
   `session/new`/`session/resume`/`session/fork` include `configOptions` (and `availableCommands`,
   from the opt-in `available_commands` argument) whenever any are configured
   (`_initial_state_fields`, session-setup.mdx:108).
@@ -746,21 +748,46 @@ class ConformingAgent:
 
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-CONFIG-202: replies with the *complete*, updated `configOptions` list, not just
-        # the entry that changed.
+        # the entry that changed. ACP-CONFIG-207/208/209: an unknown `configId`, or a value that
+        # is invalid for the option (undeclared select value, mismatched or unsupported `type`),
+        # gets `-32602` with the configuration untouched (session-config-options.mdx:234).
         session_id = params.get("sessionId")
         if session_id not in self._sessions:
             self._unknown_session(msg_id, session_id)
             return
         config_id = params.get("configId")
-        value = params.get("value")
-        for option in self._config_options:
-            if option.get("configId") == config_id:
-                option["currentValue"] = value
-                break
-        else:
+        option = next((o for o in self._config_options if o.get("configId") == config_id), None)
+        if option is None:
             self._error(msg_id, -32602, "Invalid params: unknown configId")
             return
-        self._reply(msg_id, {"configOptions": self._current_config_options()})
+        value = params.get("value")
+        if not self._config_value_is_valid(option, params.get("type"), value):
+            self._error(msg_id, -32602, "Invalid params: invalid value for configId")
+            return
+        option["currentValue"] = value
+        self._reply_config_set(msg_id, session_id, config_id)
+
+    @staticmethod
+    def _config_value_is_valid(option: dict[str, Any], value_type: Any, value: Any) -> bool:
+        if option.get("type") == "boolean":
+            return value_type == "boolean" and isinstance(value, bool)
+        if option.get("type") == "select":
+            declared: list[Any] = []
+            for entry in option.get("options", []):
+                declared.extend(entry["options"] if "options" in entry else [entry])
+            return value_type == "id" and any(value == item.get("value") for item in declared)
+        return False
+
+    def _config_set_options(self, config_id: Any) -> list[dict[str, Any]]:
+        """Hook: the list a successful set answers with and notifies."""
+        return self._current_config_options()
+
+    def _reply_config_set(self, msg_id: Any, session_id: Any, config_id: Any) -> None:
+        """Hook: session-config-options.mdx:375-379 -- the duplicate `config_option_update`
+        goes out before the response."""
+        options = self._config_set_options(config_id)
+        self._send_update(session_id, {"sessionUpdate": "config_option_update", "configOptions": options})
+        self._reply(msg_id, {"configOptions": options})
 
     def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
         # Minimal conforming sequence: result{messageId} -> user_message ->

@@ -531,6 +531,13 @@ def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
     return issues
 
 
+def validate_def_value(def_name: str, value: Any) -> list[ValidationIssue]:
+    """Validate `value` against `#/$defs/{def_name}` alone (e.g. one `SessionConfigOption` or
+    `AvailableCommand` item), so a row judging one field is not blamed for unrelated schema
+    violations elsewhere in the message that carries it."""
+    return _issues_from_errors(_def_validator(def_name).iter_errors(value))
+
+
 def _resolve_object_schema(defs: dict[str, Any], node: Any) -> dict[str, Any] | None:
     """The `type: object` schema `node` resolves to through `$ref` and nullable `anyOf`/`oneOf`
     (a `null` branch is ignored), or `None` if it is not an object-or-null marker -- e.g. a

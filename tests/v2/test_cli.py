@@ -147,6 +147,11 @@ _CAPABILITY_IDS = {
     "ACP-CONFIG-203",
     "ACP-CONFIG-204",
     "ACP-CONFIG-206",
+    "ACP-CONFIG-207",
+    "ACP-CONFIG-208",
+    "ACP-CONFIG-209",
+    "ACP-CONFIG-210",
+    "ACP-COMMANDS-201",
     "ACP-AUTH-203",
     "ACP-AUTH-204",
     "ACP-PATCH-201",
@@ -166,6 +171,8 @@ _ADVISORY_IDS = {
     "ACP-DELETE-203",
     "ACP-CLOSE-204",
     "ACP-CLOSE-207",
+    "ACP-CONFIG-211",
+    "ACP-CONFIG-212",
     "ACP-SESSION-206",
     "ACP-SESSION-207",
     "ACP-RESUME-214",
@@ -316,6 +323,13 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-CONFIG-203",
     "ACP-CONFIG-204",
     "ACP-CONFIG-206",
+    "ACP-CONFIG-207",
+    "ACP-CONFIG-208",
+    "ACP-CONFIG-209",
+    "ACP-CONFIG-210",
+    "ACP-CONFIG-211",
+    "ACP-CONFIG-212",
+    "ACP-COMMANDS-201",
     "ACP-RESUME-210",  # neither `configOptions` nor `availableCommands` to carry over
 }
 
@@ -422,6 +436,13 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CONFIG-203",
     "ACP-CONFIG-204",
     "ACP-CONFIG-206",
+    "ACP-CONFIG-207",
+    "ACP-CONFIG-208",
+    "ACP-CONFIG-209",
+    "ACP-CONFIG-210",
+    "ACP-CONFIG-211",
+    "ACP-CONFIG-212",
+    "ACP-COMMANDS-201",
     "ACP-RESUME-210",
     "ACP-FORK-201",
     "ACP-FORK-202",
@@ -3001,6 +3022,96 @@ def test_config_set_omits_changed_option_fails_config_202_only():
     for req_id in ("ACP-CONFIG-201", "ACP-CONFIG-203", "ACP-CONFIG-204", "ACP-CONFIG-206"):
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+_CONFIG_K = "session_config"
+_CONFIG_RULE_IDS = {f"ACP-CONFIG-{n}" for n in (201, 202, 203, 204, 206, 207, 208, 209, 210, 211, 212)}
+
+
+def _config_fixture_run(fixture: str, k: str = _CONFIG_K) -> tuple[set[str], dict[str, str], str]:
+    fails, statuses, out = _fails_for(fixture, k)
+    return fails, statuses, out
+
+
+def test_config_set_unknown_id_accepted_fails_config_207_only():
+    """The fixture answers an unadvertised `configId` with success; it has one option, so
+    `ACP-CONFIG-209` cannot probe an invalid value and SKIPs."""
+    fails, statuses, out = _config_fixture_run("config_set_unknown_id_accepted.py")
+    assert fails == {"ACP-CONFIG-207"}, out
+    assert statuses.get("ACP-CONFIG-208") == "PASS", out
+    assert statuses.get("ACP-CONFIG-209") == "SKIPPED", out
+
+
+def test_config_set_invalid_value_wrong_code_fails_config_208_only():
+    fails, statuses, out = _config_fixture_run("config_set_invalid_value_wrong_code.py")
+    assert fails == {"ACP-CONFIG-208"}, out
+    assert statuses.get("ACP-CONFIG-207") == "PASS", out
+    assert statuses.get("ACP-CONFIG-209") == "PASS", out
+
+
+def test_config_set_invalid_value_mutates_fails_config_209_only():
+    fails, statuses, out = _config_fixture_run("config_set_invalid_value_mutates.py")
+    assert fails == {"ACP-CONFIG-209"}, out
+    assert statuses.get("ACP-CONFIG-207") == "PASS", out
+    assert statuses.get("ACP-CONFIG-208") == "PASS", out
+
+
+def test_config_duplicate_select_values_fails_config_210_only():
+    fails, statuses, out = _config_fixture_run("config_duplicate_select_values.py")
+    assert fails == {"ACP-CONFIG-210"}, out
+    assert statuses.get("ACP-CONFIG-201") == "PASS", out
+    assert statuses.get("ACP-CONFIG-204") == "PASS", out
+
+
+def test_config_set_no_update_notification_fails_config_211_only():
+    """No update at all, so there is nothing for `ACP-CONFIG-212` to order: it SKIPs."""
+    fails, statuses, out = _config_fixture_run("config_set_no_update_notification.py")
+    assert fails == {"ACP-CONFIG-211"}, out
+    assert statuses.get("ACP-CONFIG-212") == "SKIPPED", out
+
+
+def test_config_update_after_response_fails_config_212_only():
+    fails, statuses, out = _config_fixture_run("config_update_after_response.py")
+    assert fails == {"ACP-CONFIG-212"}, out
+    assert statuses.get("ACP-CONFIG-211") == "PASS", out
+
+
+def test_conforming_full_passes_every_config_rule():
+    """`conforming_full.py` advertises a select and a boolean option, so 207..212 all PASS."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=_CONFIG_K
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in _CONFIG_RULE_IDS:
+        assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
+
+
+_COMMANDS_K = "slash_commands"
+
+
+def test_commands_name_with_whitespace_fails_commands_201_only():
+    fails, _statuses, out = _fails_for("commands_name_with_whitespace.py", _COMMANDS_K)
+    assert fails == {"ACP-COMMANDS-201"}, out
+    assert "whitespace" in out, out
+
+
+def test_commands_duplicate_names_fails_commands_201_only():
+    fails, _statuses, out = _fails_for("commands_duplicate_names.py", _COMMANDS_K)
+    assert fails == {"ACP-COMMANDS-201"}, out
+    assert "not unique" in out, out
+
+
+def test_commands_untyped_in_update_fails_commands_201():
+    fails, _statuses, out = _fails_for("commands_untyped_in_update.py", _COMMANDS_K)
+    assert fails == {"ACP-COMMANDS-201"}, out
+    assert "AvailableCommand" in out, out
+
+
+def test_conforming_full_passes_commands_201():
+    result = _run_cli(
+        FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=_COMMANDS_K
+    )
+    assert _table_statuses(result.stdout).get("ACP-COMMANDS-201") == "PASS", result.stdout
 
 
 # --- authentication (`ACP-AUTH-201..207`) -- self-tests ---
