@@ -40,7 +40,7 @@ async def _agent_to_client_methods_seen(agent_launch, tmp_path) -> list[str | No
 @pytest.mark.requirement("ACP-CLIENTCAP-201")
 @pytest.mark.capability("capabilities.session")
 async def test_no_unadvertised_elicitation_call(agent_launch, tmp_path):
-    """ACP-CLIENTCAP-201 (`elicitation.mdx:54`: agents MUST NOT request an elicitation mode the
+    """ACP-CLIENTCAP-201 (`elicitation.mdx:56`: agents MUST NOT request an elicitation mode the
     client has not advertised). PASS is vacuous for an agent that never uses elicitation at
     all."""
     methods_seen = await _agent_to_client_methods_seen(agent_launch, tmp_path)
