@@ -1,5 +1,5 @@
 """Tests for `tck.v2.validation` -- the three v2-specific behaviors called out in its module
-docstring: batch root dispatch, no `null` special case for responses, and the open-fallback
+docstring: no batching (any array is one issue), no `null` special case for responses, and the open-fallback
 carve-out in `find_unknown_root_keys`. Fixtures here are hand-built JSON-RPC messages, not
 fixture agents -- unit tests of the validator itself.
 """
@@ -10,7 +10,7 @@ from tck.v2 import protocol, validation
 from tck.v2.validation import find_unknown_root_keys, validate_agent_message, validate_agent_response
 
 
-# --- root dispatch: object / non-empty batch / empty batch ---
+# --- root dispatch: object / any array ---
 
 
 def test_valid_initialize_response_passes():
@@ -26,12 +26,7 @@ def test_valid_initialize_response_passes():
     assert validate_agent_response("initialize", msg) == []
 
 
-def test_empty_batch_array_is_an_issue():
-    assert len(validate_agent_message([])) == 1
-    assert len(validate_agent_response("initialize", [])) == 1
-
-
-def test_non_empty_batch_validates_each_element_and_prefixes_the_path():
+def test_any_array_is_exactly_one_issue_and_is_not_looked_into():
     good = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -41,10 +36,12 @@ def test_non_empty_batch_validates_each_element_and_prefixes_the_path():
             "info": {"name": "fixture", "version": "0.0.0"},
         },
     }
-    bad = {"jsonrpc": "2.0", "id": 2, "result": {"capabilities": {}}}  # missing protocolVersion, info
-    issues = validate_agent_response("initialize", [good, bad])
-    assert len(issues) == 2  # missing protocolVersion, missing info
-    assert all(issue.path.startswith("/1") for issue in issues)
+    for arr in ([], [good], [good, good], [17, True, None]):
+        for issues in (validate_agent_message(arr), validate_agent_response("initialize", arr)):
+            assert len(issues) == 1, arr
+            assert issues[0].path == ""
+            assert "array" in issues[0].message
+            assert issues[0].schema_path == "#/anyOf"
 
 
 # --- no null special case (unlike v1's session/load) ---

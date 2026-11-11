@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: like `pushes_status_notifications.py`, but after pushing its status
 notification it also replies to every notification it receives with a bogus response
-(`{"id": null, "result": null}`) -- folded into the reply array when the notification arrived
-inside a batch.
+(`{"id": null, "result": null}`).
 
 Proves a leading agent notification does not hide a later reply: FAILs exactly
-`ACP-JSONRPC-003`, `ACP-BATCH-202` and `ACP-EXT-201`.
+`ACP-JSONRPC-003` and `ACP-EXT-201`.
 """
 
 import sys

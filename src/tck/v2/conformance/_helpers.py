@@ -167,8 +167,8 @@ def skip_if_auth_gated_msg(msg: Any) -> None:
     """Message-shaped core of `skip_if_auth_gated()` below -- operates on an already-parsed
     JSON-RPC response object (`{"error": {...}}` or `{"result": {...}}`) rather than a
     `TranscriptEntry`, so a caller that pulls a `session/new` reply out of something other than a
-    single top-level response -- e.g. `test_batch.py`, matching one entry out of a batch response
-    array by id -- can still route it through the same auth-gate check `new_session()` uses.
+    single top-level response can still route it through the same auth-gate check
+    `new_session()` uses.
 
     Skips the current test, with a message pointing at `--auth-method`, if `msg` is the
     `AUTHENTICATION_REQUIRED` (`-32000`) error. v2 twin of
@@ -565,17 +565,13 @@ async def v2_only_agent(
 
 def iter_messages(entry: TranscriptEntry) -> list[dict[str, Any]]:
     """Flatten one transcript entry into the list of dict-shaped JSON-RPC messages it carries:
-    `[entry.parsed]` for an ordinary object line, every dict element of a batch array line (a
-    non-dict element, e.g. a stray scalar in a malformed batch, is dropped -- nothing meaningful
-    to dispatch), or `[]` for anything else (a parse failure, a bare scalar line, ...).
+    `[entry.parsed]` for an ordinary object line, every dict element of an array line, or `[]`
+    for anything else (a parse failure, a bare scalar line, ...).
 
-    Several transcript scans matched only `isinstance(entry.parsed, dict)` and so were blind to
-    a message delivered inside a JSON-RPC batch array (`emits_batch_updates.py` proves this is a
-    real scenario an agent may choose) --
-    `run_prompt`/`test_transport.py`/`test_enums.py`/`test_initialize.py`/parts of `test_cancel.py`
-    already unwrapped a batch line by hand; this is the one shared helper every such site (and
-    `ACP-JSONRPC-003`, `ACP-CANCEL-202`, `ACP-SCHEMA-002`, `resume_session`, which did not) should
-    use instead of re-deriving the same six-line flattening."""
+    ACP v2 has no batches, so an array line is itself non-conformant -- `ACP-TRANSPORT-201`
+    judges that. It is flattened here only so every other row can still read what it carries
+    (an agent that batches fails the TRANSPORT row, not every prompt row). A non-dict element
+    is dropped: there is nothing meaningful to dispatch."""
     parsed = entry.parsed
     if isinstance(parsed, dict):
         return [parsed]
@@ -585,8 +581,8 @@ def iter_messages(entry: TranscriptEntry) -> list[dict[str, Any]]:
 
 
 def is_response_line(entry: TranscriptEntry) -> bool:
-    """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside a
-    batch array, even a malformed one missing `id`/`result`/`error`.
+    """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
+    array line, even a malformed one missing `id`/`result`/`error`.
 
     The one rule every "a notification gets no response" check uses. ACP and JSON-RPC 2.0
     §4.1/§6 forbid only *replies* to a notification. The agent's own notifications and agent ->
@@ -608,29 +604,22 @@ async def first_response_within(agent: AgentProcess, quiet: float) -> Transcript
 
 
 def is_agent_initiated(entry: TranscriptEntry) -> bool:
-    """True if `entry` is made only of messages the agent initiated on its own: a JSON-RPC
-    object carrying `method` (a notification or an agent -> client request), or a non-empty
-    batch array whose every element is one (`ACP-BATCH-207` lets an agent batch its own
-    notifications). Such a line may arrive at any time after `initialize`, so it is never the
-    reply a check is waiting for.
+    """True if `entry` is a single JSON-RPC object carrying `method` -- a notification or an
+    agent -> client request the agent initiated on its own. Such a line may arrive at any time
+    after `initialize`, so it is never the reply a check is waiting for.
 
-    An array with even one other element (a response, a scalar) is not agent-initiated: it is
-    left for the caller to judge as a reply, malformed or not. Neither is `[]`."""
+    Always False for an array: ACP v2 has no batches, so an array is never an agent-initiated
+    message, and a probe waiting for its reply must see it instead of skipping past it."""
     parsed = entry.parsed
-    if isinstance(parsed, dict):
-        return "method" in parsed
-    if isinstance(parsed, list) and parsed:
-        return all(isinstance(item, dict) and "method" in item for item in parsed)
-    return False
+    return isinstance(parsed, dict) and "method" in parsed
 
 
 async def next_reply_line(agent: AgentProcess, timeout: float) -> TranscriptEntry:
     """Return the first line within `timeout` that is not agent-initiated
     (`is_agent_initiated`), for the caller to judge as the reply it waits for. Anything else --
-    a response object or array, but also a non-JSON or otherwise malformed line -- is returned
-    as-is, so the caller still judges the reply's shape (one array or separate objects, one line
-    or several). Skipped lines stay in `agent.pending()`, and an agent -> client request among
-    them is left unanswered. `AgentTimeout`/`AgentExited` propagate."""
+    a response object, but also an array or a non-JSON or otherwise malformed line -- is
+    returned as-is, so the caller still judges the reply's shape. Skipped lines stay in
+    `agent.pending()`, and an agent -> client request among them is left unanswered. `AgentTimeout`/`AgentExited` propagate."""
     return await agent.wait_for_message(lambda entry: not is_agent_initiated(entry), timeout=timeout)
 
 
@@ -643,9 +632,9 @@ async def probe_behaviour(
     """Run one already-started read `read` and classify the outcome as "silent" / "agent exited
     (exit_code=...)" / whatever `on_reply` returns for a reply that did arrive.
 
-    Shared by the seven near-identical "did the agent stay silent, exit, or reply" INFORMATIONAL
-    probes across `test_informational.py`, `test_batch.py`, and `test_cancel.py` -- only the
-    common `AgentTimeout`/`AgentExited` ladder is identical between all seven; each site still
+    Shared by the near-identical "did the agent stay silent, exit, or reply" INFORMATIONAL
+    probes across `test_informational.py` and `test_cancel.py` -- only the
+    common `AgentTimeout`/`AgentExited` ladder is identical between them; each site still
     supplies its own read call (a specific
     `wait_for_response`/`wait_for_message`/`read_line`, each with its own predicate/timeout) and
     its own `on_reply` classifier, since what counts as "a reply" differs (a JSON-RPC
@@ -841,7 +830,7 @@ class PromptTurn:
     """The `session/update` carrying the turn-ending idle, or `None` when the turn ended with an
     error response and no foreground work (`terminated_by == "error"`)."""
     idle_index: int | None = None
-    """Transcript line index of `idle_update` (a batch line's own index)."""
+    """Transcript line index of `idle_update` (an array line's own index)."""
     stop_reason: Any = None
     """The turn-ending idle's `stopReason` exactly as sent (missing and `null` both read as
     `None`); validity is the caller's job."""
@@ -1019,9 +1008,10 @@ async def run_prompt(
         return True
 
     async def _handle_one(entry: TranscriptEntry) -> None:
-        """Dispatch one line. A batch array (`ACP-BATCH-207` lets an agent batch its own
-        notifications) is dispatched element by element through synthetic per-item entries
-        sharing the line's raw/timestamp; their recorded index is the line's own."""
+        """Dispatch one line. An array line is non-conformant (`ACP-TRANSPORT-201` judges it)
+        but is still dispatched element by element, through synthetic per-item entries sharing
+        the line's raw/timestamp, so the agent fails only that row; their recorded index is the
+        line's own."""
         line_index = agent.transcript.index(entry)
         raw_msg = entry.parsed
         if isinstance(raw_msg, list):

@@ -1,7 +1,7 @@
 """Advisory/informational diagnostics, re-cited from v1: `ACP-ERROR-001`, `ACP-SHUTDOWN-001`,
-`ACP-STDERR-001`. `Error` `$def` is byte-identical to v1; v2 still has no shutdown method; stderr
-MAY carry UTF-8 logging (transports.mdx:26). All connection-level, `capability=None` -- none
-needs a turn, and `ACP-SHUTDOWN-001`/`ACP-STDERR-001` need nothing beyond `initialize`."""
+`ACP-STDERR-001`. `Error` `$def` is byte-identical to v1; on stdin EOF the agent SHOULD exit
+once it has finished or stopped its work (transports.mdx:43); stderr MAY carry UTF-8 logging
+(transports.mdx:22). All connection-level, `capability=None` -- none needs a turn, and `ACP-SHUTDOWN-001`/`ACP-STDERR-001` need nothing beyond `initialize`."""
 
 from __future__ import annotations
 
@@ -44,24 +44,24 @@ async def test_error_messages_are_non_empty_single_line(agent_launch):
 
 @pytest.mark.requirement("ACP-SHUTDOWN-001")
 async def test_agent_exits_promptly_after_stdin_close(agent_launch):
-    """ACP-SHUTDOWN-001 (ADVISORY, re-cited from v1 unchanged -- v2 still has no dedicated
-    shutdown method, `docs/protocol/v2/draft/transports.mdx:41`). Relies on `connected_agent`'s
-    `close()` ladder and reports whether the agent exited during the first rung
-    (`AgentProcess.exited_on_stdin_close`)."""
+    """ACP-SHUTDOWN-001 (ADVISORY -- on stdin EOF the agent SHOULD exit once it has finished or
+    stopped its work, `docs/protocol/v2/draft/transports.mdx:43`; no work is in flight here, so
+    "finished" holds immediately). Relies on `connected_agent`'s `close()` ladder and reports
+    whether the agent exited during the first rung (`AgentProcess.exited_on_stdin_close`)."""
     async with connected_agent(agent_launch) as agent:
         pass
 
     assert agent.exited_on_stdin_close, (
         "agent did not exit within the grace period after stdin closed; it needed SIGTERM/"
-        "SIGKILL to terminate (advisory -- the spec does not mandate shutdown timing, but a "
-        "prompt exit on stdin EOF is expected of a well-behaved agent)"
+        "SIGKILL to terminate (advisory -- the agent SHOULD exit once it has finished or stopped "
+        "its work)"
     )
 
 
 @pytest.mark.requirement("ACP-STDERR-001")
 async def test_stderr_byte_count_is_recorded(agent_launch, record_property):
     """ACP-STDERR-001 (INFORMATIONAL -- the agent MAY write UTF-8 logging to stderr,
-    transports.mdx:26, so there is nothing to assert). Always PASSes; exists purely to surface
+    transports.mdx:22, so there is nothing to assert). Always PASSes; exists purely to surface
     stderr chattiness for a human reading the report."""
     async with connected_agent(agent_launch) as agent:
         pass

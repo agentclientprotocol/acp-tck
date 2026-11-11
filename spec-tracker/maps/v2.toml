@@ -121,6 +121,7 @@ code = [
     "src/tck/common/harness",
     "src/tck/v2/conformance/test_transport.py",
     "src/tck/v2/conformance/test_batch.py",
+    "src/tck/v2/conformance/test_diagnostics.py",
     "src/tck/v2/validation.py",
 ]
-reason = "stdio framing, message timing and JSON-RPC batch rules that every message exchange depends on"
+reason = "stdio framing, shutdown, message timing and order, and the no-batches rule that every message exchange depends on"

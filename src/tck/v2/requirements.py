@@ -4,13 +4,11 @@ Every conformance assertion the TCK makes is backed by exactly one `Requirement`
 by a stable id (`ACP-<AREA>-<NNN>`). `text`/`citation` come from the protocol specification --
 see each entry's `citation` before changing wording, not memory of the spec.
 
-A v1 id is reused bare only when the v2 requirement is truly the *same* one -- same text and
-tier, only the citation moving to v2 sources. A changed tier, a changed capability-gate
-encoding (e.g. v1's boolean `agentCapabilities.*` flags vs. v2's object-marker
-`capabilities.*` paths), or a genuinely different wire shape/rule all count as a different
-requirement and get a fresh `2xx` id instead of reusing the v1 number. v1 and v2 keep fully
-separate `REGISTRY` dicts, so the same id string can (and does, e.g. `ACP-SESSION-001`/`002`)
-carry a different tier per version without conflict.
+A shared id (e.g. `ACP-SESSION-001`) means the same protocol rule in v1 and v2. Tier and
+capability gate are per version (v2's object-marker `capabilities.*` paths differ from v1's
+boolean `agentCapabilities.*` flags), and v1 and v2 keep fully separate `REGISTRY` dicts, so the
+same id can carry a different tier or gate per version without conflict. A `2xx` id is a v2 rule
+with no v1 counterpart.
 
 Every requirement about a method in the `capabilities.session` seven-method baseline
 (`session/new`, `session/list`, `session/resume`, `session/close`, `session/prompt`,
@@ -696,14 +694,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Every line the agent writes to stdout parses as JSON and is either a single "
-            "JSON-RPC 2.0 message object, or a non-empty array whose every element is a "
-            "JSON-RPC 2.0 message object (an empty array on stdout is itself non-conformant)."
+            "Every line the agent writes to stdout parses as JSON and is a single JSON-RPC "
+            "2.0 message object; a JSON array (empty or not) is non-conformant, since ACP "
+            "does not use batches."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/transports.mdx:20,23,67; "
-            "schema/v2/schema.unstable.json#/anyOf (Agent/Client/ProtocolLevel/Proxy envelopes; "
-            "no batch branch)"
+            "schema/v2/schema.unstable.json#/anyOf (Agent/Client/ProtocolLevel/Proxy envelopes, "
+            "all `type: object`)"
         ),
     ),
     Requirement(
@@ -718,8 +716,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Messages are newline-delimited and MUST NOT contain embedded newlines -- a batch "
-            "array is therefore serialised on one line too."
+            "Messages are newline-delimited and MUST NOT contain embedded newlines."
         ),
         citation=_cite("docs/protocol/v2/draft/transports.mdx:21"),
     ),
@@ -729,9 +726,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A response's `id` echoes the request `id` exactly (integer and string ids), "
-            "including for responses to a batch's requests -- whether the agent returns them "
-            "as one array (`ACP-BATCH-204`'s SHOULD) or as separate lines, and whether they "
-            "are results or errors."
+            "whether it is a result or an error."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/overview.mdx:15-17,233 (JSON-RPC envelope fields, including `id`, follow the base JSON-RPC 2.0 spec, where id-echo is itself normative); "
@@ -756,9 +751,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Notifications never receive a response, success or error -- including a "
-            "notification inside a batch. Messages the agent itself initiates (they carry "
-            "`method`) are not responses."
+            "Notifications never receive a response, success or error. Messages the agent "
+            "itself initiates (they carry `method`) are not responses."
         ),
         citation=_cite("docs/protocol/v2/draft/overview.mdx:10,227"),
     ),
@@ -774,7 +768,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "After an erroneous request -- including an invalid or empty batch -- the "
+            "After an erroneous request -- including a rejected JSON array -- the "
             "connection remains usable."
         ),
         citation=_cite(
@@ -783,122 +777,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-BATCH-201",
-        tier=Tier.MANDATORY,
-        capability=None,
-        text=(
-            "An empty array (`[]`) receives a single Invalid Request (`-32600`) response "
-            "object with `id: null` -- never a response array. ACP's own text is MUST ('The "
-            "batch MUST be an array with at least one value. An empty array receives a single "
-            "`Invalid Request` response'), matching JSON-RPC 2.0 §6's single Response object."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-202",
-        tier=Tier.MANDATORY,
-        capability=None,
-        text=(
-            "The agent MUST NOT reply to a notification, including one inside a batch. A "
-            "notification-only batch gets no reply at all -- never an empty array. Messages "
-            "the agent itself initiates (they carry `method`) are not replies."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-203",
+        id="ACP-BATCH-209",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "A non-empty batch containing invalid entries produces a per-entry `-32600` with "
-            "`id: null`; the batch does not fail wholesale and valid siblings still run. "
-            "Phrased without an RFC-2119 keyword in ACP's own text -- ADVISORY, per the v1 "
-            "ACP-JSONRPC-005 precedent."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-204",
-        tier=Tier.ADVISORY,
-        capability=None,
-        text=(
-            "The agent SHOULD reply to a batch containing at least one request with one array "
-            "of the corresponding response objects (results or errors), emitted after all "
-            "batch requests have been processed."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-205",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Responses MAY appear in any order in the array; the sender SHOULD match them to "
-            "requests by `id`, never by position. Binds the TCK as sender, not the agent -- "
-            "record-only, always SKIPped (the TCK's own batch checks match by `id`)."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-206",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "The receiver MAY process batch entries concurrently, in any order, with any "
-            "parallelism. No ordering assertion is legitimate -- record-only, always SKIPped. "
-            "INFORMATIONAL, not ADVISORY: a row that can never be judged "
-            "belongs in the record-only tier."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-207",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "A client or agent MAY send a batch; an agent MAY therefore spontaneously emit a "
-            "batch of `session/update` notifications. Cannot be forced by a client-only TCK -- "
-            "record-only, always SKIPped. INFORMATIONAL, not ADVISORY: a "
-            "row that can never be judged belongs in the record-only tier."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-BATCH-208",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Clients and agents SHOULD NOT batch lifecycle-sensitive messages (`initialize`, "
-            "`auth/login`, `session/new`, `session/resume`, `session/prompt`). A property of "
-            "the sender, not the agent under test as a receiver -- record-only, always SKIPped. "
-            "INFORMATIONAL, not ADVISORY: a row that can never be judged "
-            "belongs in the record-only tier."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-INFO-BATCH-201",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) the agent's response to an invalid-JSON batch line -- spec "
-            "says a single Parse error (`-32700`) with `id: null`, but SDKs disagree (same "
-            "unasserted behaviour as v1's ACP-INFO-PARSE-001)."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:65-67"),
-    ),
-    Requirement(
-        id="ACP-INFO-BATCH-202",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) the agent's response to a call batch containing a "
-            "response-shaped entry (or vice versa) -- the schema forbids mixing kinds, but no "
-            "prose states this and JSON-RPC 2.0 itself does not either."
+            "Any JSON array the agent receives on stdin -- empty, request-only, "
+            "notification-only, containing non-object elements, or mixing call- and "
+            "response-shaped elements -- is rejected with exactly one Invalid Request "
+            "(`-32600`) error object whose `id` is `null`; no element is processed (no "
+            "response carries an element's `id`). ADVISORY: the receiver clause carries no "
+            "RFC-2119 keyword (only the sender's does). An agent that answers with an array "
+            "also fails `ACP-TRANSPORT-201` (MANDATORY)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/transports.mdx:65-67; "
-            "schema/v2/schema.unstable.json#/anyOf"
+            "docs/protocol/v2/draft/overview.mdx:21"
         ),
     ),
     Requirement(
@@ -1778,12 +1671,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The agent exits promptly once stdin closes, without needing SIGTERM/SIGKILL. "
-            "Re-cited from v1 unchanged: v2 still defines no dedicated shutdown method "
-            "and no stdin-EOF MUST -- only the mermaid step \"Close stdin, terminate "
-            "subprocess\"."
+            "After the client closes stdin, the agent treats end of input as the end of the "
+            "connection and SHOULD exit once it has finished or stopped its work, without "
+            "needing SIGTERM/SIGKILL."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:37"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:43"),
     ),
     Requirement(
         id="ACP-SCHEMA-002",

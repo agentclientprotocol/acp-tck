@@ -81,14 +81,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-JSONRPC-003",
         "ACP-JSONRPC-004",
         "ACP-JSONRPC-005",
-        "ACP-BATCH-201",
-        "ACP-BATCH-202",
-        "ACP-BATCH-203",
-        "ACP-BATCH-204",
-        "ACP-BATCH-205",
-        "ACP-BATCH-206",
-        "ACP-BATCH-207",
-        "ACP-BATCH-208",
+        "ACP-BATCH-209",
         "ACP-CANCEL-201",
         "ACP-CANCEL-202",
         "ACP-CANCEL-203",
@@ -98,8 +91,6 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CANCEL-207",
         "ACP-CANCEL-208",
         "ACP-CANCEL-209",
-        "ACP-INFO-BATCH-201",
-        "ACP-INFO-BATCH-202",
         "ACP-INFO-CANCEL-201",
         "ACP-INFO-CANCEL-202",
         "ACP-SESSION-203",
@@ -176,8 +167,7 @@ def test_advisory_tier_is_exactly_these_ids():
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.ADVISORY} == {
         "ACP-AUTH-201",
         "ACP-AUTH-205",
-        "ACP-BATCH-203",
-        "ACP-BATCH-204",
+        "ACP-BATCH-209",
         "ACP-CLOSE-204",
         "ACP-DELETE-203",
         "ACP-ERROR-001",
@@ -198,17 +188,11 @@ def test_advisory_tier_is_exactly_these_ids():
 
 def test_informational_tier_is_exactly_these_ids():
     """Pins the INFORMATIONAL set -- see `test_advisory_tier_is_exactly_these_ids` above.
-    `ACP-BATCH-205/206/207/208` and `ACP-CANCEL-204` are here (not ADVISORY): each is always
-    SKIPped, never PASS/FAIL, so they belong in the record-only tier."""
+    `ACP-CANCEL-204` is here (not ADVISORY): it is always SKIPped, never PASS/FAIL, so it belongs
+    in the record-only tier."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.INFORMATIONAL} == {
-        "ACP-BATCH-205",
-        "ACP-BATCH-206",
-        "ACP-BATCH-207",
-        "ACP-BATCH-208",
         "ACP-CANCEL-204",
         "ACP-EXT-203",
-        "ACP-INFO-BATCH-201",
-        "ACP-INFO-BATCH-202",
         "ACP-INFO-CANCEL-201",
         "ACP-INFO-CANCEL-202",
         "ACP-INFO-CONCURRENT-201",

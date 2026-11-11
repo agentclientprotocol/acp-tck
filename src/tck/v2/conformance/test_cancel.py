@@ -292,7 +292,7 @@ async def test_cancel_notification_receives_no_direct_response(
 ):
     """ACP-CANCEL-205. `session/cancel` is a notification; no response-shaped message (no
     `method`) other than the prompt's own (possibly delayed) response may follow it, up to the
-    turn-ending idle. Batch elements are checked individually."""
+    turn-ending idle. Elements of an array line are checked individually."""
     agent, turn = await _run_cancel_turn(agent_launch, tmp_path, cancel_prompt_text)
     if turn.cancelled_at_index is None:
         pytest.skip("cancellation not exercised: the turn ended before session/cancel could be sent")

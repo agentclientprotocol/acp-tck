@@ -469,17 +469,16 @@ async def test_initialize_exchange_validates_against_schema(agent_launch, tmp_pa
 
     received = [entry for entry in agent.transcript if entry.direction is Direction.RECEIVED]
 
-    # A received line may itself be a JSON-RPC batch array (`ACP-BATCH-207`/`ACP-TRANSPORT-201`
-    # both permit an agent to spontaneously batch its own notifications, e.g.
-    # `emits_batch_updates.py`) -- flatten to individual message dicts before validating, rather
-    # than hard-failing on the first list-shaped line.
+    # A received line may itself be an array (non-conformant, `ACP-TRANSPORT-201` judges it,
+    # e.g. `emits_batch_updates.py`) -- flatten to individual message dicts before validating,
+    # rather than hard-failing on the first list-shaped line.
     messages: list[dict[str, Any]] = []
     for entry in received:
         msg = entry.parsed
         if isinstance(msg, list):
             for item in msg:
                 assert isinstance(item, dict), (
-                    f"non-object batch element from the agent: {item!r} in {entry.raw!r}"
+                    f"non-object array element from the agent: {item!r} in {entry.raw!r}"
                 )
                 messages.append(item)
         else:

@@ -237,10 +237,9 @@ async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_laun
                     )
                 entry = await agent.read_line(timeout=remaining)
                 raw = entry.parsed
-                # A line may be a JSON-RPC batch array (`ACP-BATCH-207` permits a spontaneous
-                # batch of `session/update` notifications) -- unwrap it like
-                # `_helpers.run_prompt`'s `_handle_one` does so a batching agent isn't
-                # penalized just because its terminating idle arrived inside a batch.
+                # A line may be an array (non-conformant, `ACP-TRANSPORT-201`) -- unwrap it like
+                # `_helpers.run_prompt`'s `_handle_one` does so a batching agent fails only
+                # that row, not this one.
                 if isinstance(raw, list):
                     items = [item for item in raw if isinstance(item, dict)]
                 elif isinstance(raw, dict):

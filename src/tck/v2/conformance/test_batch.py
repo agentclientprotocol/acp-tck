@@ -1,50 +1,54 @@
-"""JSON-RPC 2.0 batching (v2 §6, `docs/protocol/v2/draft/transports.mdx`): ACP-BATCH-201..208,
-ACP-INFO-BATCH-201/202, and the batch half of ACP-JSONRPC-001.
+"""No JSON-RPC batching (`docs/protocol/v2/draft/transports.mdx:65-67`): ACP-BATCH-209, plus the
+array evidence for ACP-TRANSPORT-201 and ACP-JSONRPC-005.
 
-New to v2 -- v1 has no batching at all, so none of these ids reuse a v1 number; there is nothing
-to reuse. Each row's tier rationale lives in its `tck.v2.requirements` entry.
+ACP v2 does not use JSON-RPC batches: "Senders MUST NOT send a JSON array of messages, and
+receivers reject one with a single `-32600` (Invalid Request) response with `id: null`." The
+sender MUST NOT binds the agent as a sender too: an agent that answers with an array fails
+`ACP-TRANSPORT-201` (MANDATORY); `test_transport.py` judges the arrays it sees in an ordinary
+exchange, and `test_array_reply_is_never_an_array` here judges the replies to the probe arrays.
+That row is kept apart from `ACP-BATCH-209` (ADVISORY, the receiver clause has no RFC 2119
+keyword) so an agent that ignores or crashes on an array fails only the ADVISORY rows.
+
+The probes deliberately break the client's "valid ACP messages only" rule
+(`transports.mdx:24`) and its "no arrays" rule (`transports.mdx:67`): the spec defines the
+agent's answer for exactly that input, so the probe is legitimate.
 
 **Every test here calls `skip_if_version_mismatch` on its own manual `initialize`**, unlike
-`test_transport.py`/`test_jsonrpc.py`. Those two files' assertions hold for any agent's ordinary
-traffic regardless of negotiated version; batching does not; a v1-only agent forced under
-`--protocol-version 2` (per `tck.v1.conformance._base`'s `run()`: a top-level JSON array is
-silently dropped, `isinstance(message, dict)` gate, no reply at all) would otherwise time out and
-FAIL every MANDATORY row in this file, breaking `tests/v2/test_cli.py`'s
+`test_jsonrpc.py`. A v1-only agent forced under `--protocol-version 2` (per
+`tck.v1.conformance._base`'s `run()`: a top-level JSON array is silently dropped, `isinstance(
+message, dict)` gate, no reply at all) would otherwise time out and FAIL this file's rows,
+breaking `tests/v2/test_cli.py`'s
 `test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mismatch` invariant
-(zero FAILs, full `VERSION-MISMATCH:` coverage for every non-negotiation id). `_helpers.
-v2_only_agent` implements this "manual initialize + skip on mismatch" pattern.
+(zero FAILs, full `VERSION-MISMATCH:` coverage for every non-negotiation id).
+`_helpers.v2_only_agent` implements this "manual initialize + skip on mismatch" pattern.
 
-Batch probes each use their own fresh connection (one `v2_only_agent` per test): a batch line is
-exactly the kind of traffic that could crash a less battle-tested agent implementation, and
-isolating each probe into its own process means one crash cannot cascade into or pollute a
-sibling assertion.
+Each probe array uses its own fresh connection (one `v2_only_agent` per case) where a reply is
+judged: an array is exactly the kind of traffic that could crash a less battle-tested agent, and
+isolating each probe means one crash cannot cascade into a sibling assertion.
 
-Batched requests use `session/list` only when the agent advertises `capabilities.session`, and
-the `_`-prefixed `_tck/does_not_exist` otherwise (only `initialize` is unconditional in v2).
-
-The `[]` and `[17, true, null]` probes deliberately break the client's "valid ACP messages only"
-rule (transports.mdx:28) to exercise receiver rules the spec defines for exactly that input
-(transports.mdx:67-71,85-87).
+Probe requests use `session/list` only when the agent advertises `capabilities.session`, and the
+`_`-prefixed `_tck/does_not_exist` otherwise (only `initialize` is unconditional in v2).
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
+from typing import Any
 
 import pytest
 
-from tck.common.harness import AgentTimeout
+from tck.common.harness import AgentExited, AgentTimeout, Direction
 from tck.v2.protocol import INVALID_REQUEST
 
 from ._helpers import (
     advertises_session,
     first_response_within,
     next_reply_line,
-    probe_behaviour,
     quiet_period,
     v2_only_agent,
 )
+
+_REQUEST_IDS = ("tck-batch-a", "tck-batch-b")
 
 
 def _probe_method(init_result) -> str:
@@ -53,259 +57,92 @@ def _probe_method(init_result) -> str:
     return "session/list" if advertises_session(init_result) else "_tck/does_not_exist"
 
 
-@pytest.mark.requirement("ACP-BATCH-201")
-async def test_empty_batch_yields_a_single_invalid_request_object(agent_launch):
-    """ACP-BATCH-201 (MANDATORY). An empty array on stdin gets back a single Invalid Request
-    (`-32600`) response *object* with `id: null` -- never a response array.
+def _probe_arrays(init_result) -> dict[str, list[Any]]:
+    """The array shapes `ACP-BATCH-209` names, keyed by a test id."""
+    method = _probe_method(init_result)
+    return {
+        "empty": [],
+        "notification-only": [{"jsonrpc": "2.0", "method": "_tck/notify_only"}],
+        "requests": [{"jsonrpc": "2.0", "id": req_id, "method": method} for req_id in _REQUEST_IDS],
+        "non-objects": [17, True, None],
+        "mixed-call-and-response": [
+            {"jsonrpc": "2.0", "id": "tck-mixed-call", "method": "_tck/does_not_exist"},
+            {"jsonrpc": "2.0", "id": "tck-mixed-response", "result": {}},
+        ],
+    }
 
-    The agent's own notifications or requests arriving first, bare or batched, are skipped
-    (`_helpers.next_reply_line`); the first other line is judged."""
-    async with v2_only_agent(agent_launch) as agent:
-        await agent.send_raw("[]")
-        entry = await next_reply_line(agent, agent_launch.default_timeout)
+
+_CASES = ("empty", "notification-only", "requests", "non-objects", "mixed-call-and-response")
+
+
+@pytest.mark.requirement("ACP-BATCH-209")
+@pytest.mark.parametrize("case", _CASES)
+async def test_array_yields_a_single_invalid_request_object(agent_launch, case):
+    """ACP-BATCH-209 (ADVISORY). Any JSON array on stdin -- empty, request-only,
+    notification-only, non-object elements, or a mix of call- and response-shaped elements --
+    gets exactly one `-32600` response *object* with `id: null`, and no element is processed:
+    nothing else answers within the quiet period, in particular no response carries an
+    element's id.
+
+    The agent's own notifications or requests arriving first are skipped
+    (`_helpers.next_reply_line`); the first other line is judged. Silence, a crash, per-element
+    replies and an array reply all fail."""
+    async with v2_only_agent(agent_launch, yield_result=True) as (agent, init_result):
+        await agent.send_raw(json.dumps(_probe_arrays(init_result)[case]))
+        try:
+            entry = await next_reply_line(agent, agent_launch.default_timeout)
+        except AgentTimeout:
+            pytest.fail(f"no reply to a JSON array ({case}); expected one -32600 object")
         msg = entry.parsed
         assert isinstance(msg, dict), f"expected a single response object, got {entry.raw!r}"
-        assert msg.get("id") is None, f"expected id: null, got {msg.get('id')!r}"
+        assert msg.get("id") is None, (
+            f"expected id: null (no element may be processed), got {msg.get('id')!r}"
+        )
         error = msg.get("error")
         assert isinstance(error, dict), f"expected an error object, got {msg!r}"
         assert error.get("code") == INVALID_REQUEST, f"expected -32600, got {error.get('code')!r}"
 
-
-@pytest.mark.requirement("ACP-BATCH-202", "ACP-JSONRPC-003")
-async def test_notification_only_batch_gets_no_reply(agent_launch):
-    """ACP-BATCH-202 (MANDATORY). A batch containing only notifications (no `id` on any entry)
-    must not be replied to at all -- not even an empty array. Only a reply fails this
-    (`_helpers.is_response_line`): the agent's own notifications or requests during the quiet
-    period are not replies and are skipped.
-
-    Also the sole evidence for `ACP-JSONRPC-003`'s batch-delivered half: `test_jsonrpc.py`'s own
-    probe for that id is a bare single notification, never a batch -- this is the one place a
-    notification-inside-a-batch is actually sent and checked."""
-    async with v2_only_agent(agent_launch) as agent:
-        await agent.send_raw(json.dumps([{"jsonrpc": "2.0", "method": "_tck/notify_only"}]))
-        entry = await first_response_within(agent, quiet_period(agent_launch.default_timeout))
-        assert entry is None, f"agent replied to a notification-only batch: {entry.text!r}"
+        extra = await first_response_within(agent, quiet_period(agent_launch.default_timeout))
+        assert extra is None, f"more than one reply to a single JSON array: {extra.raw!r}"
 
 
-async def _collect_flattened_responses(agent, count: int, *, timeout: float) -> list[dict]:
-    """Read lines until `count` response objects have been observed, flattening both a
-    conforming single response array and a non-conforming agent's separate top-level object
-    lines -- this helper's own job is only to gather evidence, not to judge `ACP-BATCH-204`.
-    Lines made only of the agent's own notifications or requests are skipped
-    (`_helpers.next_reply_line`); every other line counts.
+@pytest.mark.requirement("ACP-TRANSPORT-201")
+async def test_array_reply_is_never_an_array(agent_launch):
+    """ACP-TRANSPORT-201 (MANDATORY). Whatever the agent does with the probe arrays, no line it
+    writes to stdout is itself an array: senders MUST NOT send one (`transports.mdx:67`), the
+    agent included. `test_transport.py` covers arrays in an ordinary exchange; this covers an
+    array answered with an array.
 
-    `timeout` bounds the *whole* collection, not each individual read: an agent that trickles
-    one response object per line, each safely within `timeout` of the last, would otherwise let
-    this loop run arbitrarily long -- far past
-    `--tck-timeout` -- since a fresh per-read deadline never itself expires. The deadline is
-    computed once up front and each read gets whatever of it remains."""
-    collected: list[dict] = []
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
-    while len(collected) < count:
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            raise AgentTimeout(
-                f"only collected {len(collected)}/{count} batch response object(s) within "
-                f"{timeout}s",
-                agent.transcript,
-                stderr=agent.stderr_text(),
-            )
-        entry = await next_reply_line(agent, remaining)
-        parsed = entry.parsed
-        if isinstance(parsed, list):
-            collected.extend(parsed)
-        elif isinstance(parsed, dict):
-            collected.append(parsed)
-        else:
-            pytest.fail(f"unexpected line while collecting batch responses: {entry.raw!r}")
-    return collected
-
-
-@pytest.mark.requirement("ACP-BATCH-203", "ACP-JSONRPC-005")
-async def test_invalid_batch_entries_get_per_entry_invalid_request(agent_launch):
-    """ACP-BATCH-203 (ADVISORY -- report's own text carries no RFC-2119 keyword). A non-empty
-    batch of entries that are each structurally invalid (not a JSON-RPC object at all: a number,
-    a boolean, `null`) gets back an array of exactly that many `-32600`/`id: null` error objects
-    -- one per entry, all invalid, none of them dependent on the agent recognizing/rejecting an
-    unknown method (a SHOULD, not a guarantee; a former version of this test batched
-    `_tck/does_not_exist` for its "valid" sibling, which only exercises `ACP-JSONRPC-004`'s own
-    SHOULD, not this requirement).
-
-    Also the sole evidence for `ACP-JSONRPC-005`'s batch-delivered half: after the erroneous
-    batch, a follow-up ordinary request (`_probe_method`) must still get an ordinary reply --
-    proving the connection is still usable, not just that this one malformed batch was
-    rejected."""
+    Only the *shape* of what the agent writes is judged here. Silence, a crash, or a rejection
+    all pass -- `ACP-BATCH-209` owns whether the array was handled correctly."""
     async with v2_only_agent(agent_launch, yield_result=True) as (agent, init_result):
-        await agent.send_raw(json.dumps([17, True, None]))
-        responses = await _collect_flattened_responses(
-            agent, 3, timeout=agent_launch.default_timeout
-        )
-        assert len(responses) == 3, f"expected exactly 3 error objects: {responses!r}"
-        for response in responses:
-            assert response.get("id") is None, f"expected id: null, got {response!r}"
-            error = response.get("error")
-            assert isinstance(error, dict) and error.get("code") == INVALID_REQUEST, (
-                f"expected -32600 for a structurally invalid entry, got {response!r}"
-            )
+        try:
+            for array in _probe_arrays(init_result).values():
+                await agent.send_raw(json.dumps(array))
+            quiet = quiet_period(agent_launch.default_timeout)
+            while True:
+                await agent.read_line(timeout=quiet)
+        except (AgentTimeout, AgentExited):
+            pass  # the quiet period elapsed, or the agent is gone: nothing more to read
+        arrays = [
+            entry.raw
+            for entry in agent.transcript
+            if entry.direction is Direction.RECEIVED and isinstance(entry.parsed, list)
+        ]
+        assert not arrays, f"agent wrote a JSON array to stdout (ACP has no batches): {arrays!r}"
 
+
+@pytest.mark.requirement("ACP-JSONRPC-005")
+async def test_connection_survives_a_rejected_array(agent_launch):
+    """ACP-JSONRPC-005 (ADVISORY). After a rejected JSON array the connection is still usable:
+    an ordinary follow-up request (`_probe_method`) gets an ordinary reply, matched by id so
+    whatever the agent did with the array (an error object, or nothing) does not matter."""
+    async with v2_only_agent(agent_launch, yield_result=True) as (agent, init_result):
+        await agent.send_raw(json.dumps(_probe_arrays(init_result)["non-objects"]))
         follow_up_id = await agent.send_request(_probe_method(init_result))
         follow_up = await agent.wait_for_response(
             follow_up_id, timeout=agent_launch.default_timeout
         )
         assert isinstance(follow_up.parsed, dict) and (
             "result" in follow_up.parsed or "error" in follow_up.parsed
-        ), f"connection did not survive the erroneous batch: {follow_up.raw!r}"
-
-
-_BATCH_IDS = ("tck-batch-a", "tck-batch-b")
-
-
-async def _send_request_batch(agent, init_result) -> None:
-    """Two side-effect-free requests in one batch. Never `session/new`: a client SHOULD NOT
-    batch lifecycle-sensitive methods (`ACP-BATCH-208`)."""
-    method = _probe_method(init_result)
-    await agent.send_raw(
-        json.dumps([{"jsonrpc": "2.0", "id": req_id, "method": method} for req_id in _BATCH_IDS])
-    )
-
-
-@pytest.mark.requirement("ACP-BATCH-204")
-async def test_batch_of_requests_gets_one_response_array(agent_launch):
-    """ACP-BATCH-204 (ADVISORY). The agent SHOULD reply to a batch containing at least one
-    request with one array of the corresponding response objects; an error is a Response too.
-    Matched by `id`, never by position.
-
-    The agent's own notifications or requests before the reply, bare or batched, are skipped
-    (`_helpers.next_reply_line`); the first other line must be the reply array."""
-    async with v2_only_agent(agent_launch, yield_result=True) as (agent, init_result):
-        await _send_request_batch(agent, init_result)
-        entry = await next_reply_line(agent, agent_launch.default_timeout)
-        msg = entry.parsed
-        assert isinstance(msg, list) and len(msg) == len(_BATCH_IDS), (
-            f"expected one array with both responses: {entry.raw!r}"
-        )
-        by_id = {item.get("id"): item for item in msg if isinstance(item, dict)}
-        for req_id in _BATCH_IDS:
-            response = by_id.get(req_id)
-            assert isinstance(response, dict) and ("result" in response or "error" in response), (
-                f"response array has no result/error for {req_id!r}, matched by id: {msg!r}"
-            )
-
-
-@pytest.mark.requirement("ACP-JSONRPC-001")
-async def test_batch_responses_echo_request_ids(agent_launch):
-    """ACP-JSONRPC-001's batch half (`test_jsonrpc.py` covers single messages): every response
-    to a batch's requests echoes its request's `id`. Responses are flattened across lines, so
-    splitting them (an `ACP-BATCH-204` SHOULD violation) or answering with errors does not fail
-    this MANDATORY row; a response carrying any other `id`, or a request never answered, does."""
-    async with v2_only_agent(agent_launch, yield_result=True) as (agent, init_result):
-        await _send_request_batch(agent, init_result)
-        seen: set = set()
-        unexpected: list = []
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + agent_launch.default_timeout
-        while seen != set(_BATCH_IDS) and not unexpected:
-            remaining = deadline - loop.time()
-            assert remaining > 0, (
-                f"no response echoing id(s) {sorted(set(_BATCH_IDS) - seen)!r} within "
-                f"{agent_launch.default_timeout}s"
-            )
-            entry = await next_reply_line(agent, remaining)
-            items = entry.parsed if isinstance(entry.parsed, list) else [entry.parsed]
-            for item in items:
-                if not isinstance(item, dict) or "method" in item:
-                    continue  # not a response; framing is the TRANSPORT rows' concern
-                item_id = item.get("id")
-                if item_id in _BATCH_IDS:
-                    seen.add(item_id)
-                else:
-                    unexpected.append(item)
-        assert not unexpected, (
-            f"response(s) to the batch's requests do not echo a request id {list(_BATCH_IDS)!r}: "
-            f"{unexpected!r}"
-        )
-
-
-@pytest.mark.requirement("ACP-BATCH-205")
-def test_matching_batch_responses_by_id_is_a_sender_property(record_property) -> None:
-    """ACP-BATCH-205 (INFORMATIONAL, record-only). "Response objects MAY appear in any order
-    ... The sender SHOULD match responses to requests by `id`" binds the TCK as sender; nothing
-    the agent does can violate it. The TCK's own batch checks match by `id`. Always SKIPped."""
-    record_property("acp_tck_reason", "response order is the agent's MAY; matching by id is the sender's SHOULD")
-    pytest.skip("record-only: batch response order is unconstrained (MAY); the TCK matches by id")
-
-
-@pytest.mark.requirement("ACP-BATCH-206")
-def test_concurrent_batch_processing_is_unobservable(record_property) -> None:
-    """ACP-BATCH-206 (INFORMATIONAL, record-only -- a row that can never be judged belongs in
-    the record-only tier). The receiver MAY process batch entries concurrently, in any order,
-    with any parallelism -- no ordering assertion a
-    client-side TCK makes could legitimately distinguish conforming concurrent processing from
-    conforming sequential processing. Always SKIPped."""
-    record_property("acp_tck_reason", "no client-observable signal distinguishes concurrent from sequential processing (MAY)")
-    pytest.skip("record-only: batch-entry processing order/concurrency is not asserted (MAY)")
-
-
-@pytest.mark.requirement("ACP-BATCH-207")
-def test_agent_initiated_batches_cannot_be_forced(record_property) -> None:
-    """ACP-BATCH-207 (INFORMATIONAL, record-only -- a row that can never be judged belongs in
-    the record-only tier). An agent MAY spontaneously emit a batch of `session/update`
-    notifications; a client-only TCK cannot make an agent choose to do this. Always SKIPped."""
-    record_property("acp_tck_reason", "a client-only TCK cannot force an agent to spontaneously emit a batch (MAY)")
-    pytest.skip("record-only: cannot force an agent to spontaneously emit a batch (MAY)")
-
-
-@pytest.mark.requirement("ACP-BATCH-208")
-def test_lifecycle_batching_is_a_sender_property(record_property) -> None:
-    """ACP-BATCH-208 (INFORMATIONAL, record-only -- a row that can never be judged belongs in
-    the record-only tier). "Clients and agents SHOULD NOT batch lifecycle-sensitive messages" is
-    a property of whichever side sends a batch, not of the agent under test as a receiver -- the
-    TCK itself never batches these, and cannot observe what a would-be batching agent-as-sender
-    would do without an inbound-message scenario it does not otherwise exercise. Always
-    SKIPped."""
-    record_property("acp_tck_reason", "lifecycle-batching restraint is a sender property, not a receiver one")
-    pytest.skip("record-only: lifecycle-batching restraint is a sender property, not a receiver one")
-
-
-@pytest.mark.requirement("ACP-INFO-BATCH-201")
-async def test_invalid_json_batch_line_behaviour(agent_launch, record_property):
-    """ACP-INFO-BATCH-201 (INFORMATIONAL). Records -- never asserts -- how the agent responds to
-    a line that looks like it wants to be a batch but is not valid JSON at all. The spec says a
-    single Parse error (`-32700`) with `id: null`, but SDKs disagree (same unasserted rationale
-    as v1's ACP-INFO-PARSE-001)."""
-    async with v2_only_agent(agent_launch) as agent:
-        await agent.send_raw('[{"jsonrpc": "2.0", "id": 1, "method": ')  # truncated/malformed
-
-        def _on_reply(entry) -> str:
-            msg = entry.parsed
-            if isinstance(msg, dict) and isinstance(msg.get("error"), dict):
-                return f"error response (code={msg['error'].get('code')!r})"
-            return f"other: {entry.raw!r}"
-
-        behaviour = await probe_behaviour(
-            next_reply_line(agent, quiet_period(agent_launch.default_timeout)), _on_reply
-        )
-        record_property("behaviour", behaviour)
-
-
-@pytest.mark.requirement("ACP-INFO-BATCH-202")
-async def test_mixed_call_and_response_shaped_batch_behaviour(agent_launch, record_property):
-    """ACP-INFO-BATCH-202 (INFORMATIONAL). Records -- never asserts -- how the agent responds to
-    a batch mixing a call-shaped entry (has `method`) with a response-shaped entry (has `result`,
-    no `method`) in the same array. The schema forbids mixing kinds structurally, but no prose
-    states this and JSON-RPC 2.0 itself does not either."""
-    async with v2_only_agent(agent_launch) as agent:
-        await agent.send_raw(
-            json.dumps(
-                [
-                    {"jsonrpc": "2.0", "id": "tck-mixed-call", "method": "_tck/does_not_exist"},
-                    {"jsonrpc": "2.0", "id": "tck-mixed-response", "result": {}},
-                ]
-            )
-        )
-        behaviour = await probe_behaviour(
-            next_reply_line(agent, quiet_period(agent_launch.default_timeout)),
-            lambda entry: f"responded: {entry.raw!r}",
-        )
-        record_property("behaviour", behaviour)
+        ), f"connection did not survive the rejected array: {follow_up.raw!r}"

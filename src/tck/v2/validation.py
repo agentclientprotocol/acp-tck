@@ -5,12 +5,11 @@ Mirrors `tck.v1.validation`'s API (`validate_agent_message`, `validate_agent_res
 `find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in three
 ways this module encodes, and carries one schema-hint carve-out (4):
 
-1. **Batching.** v2's top-level schema adds four batch-call/-response branches alongside the
-   three v1-style single-message branches (`Agent`/`Client`/`ProtocolLevel`) -- a bare JSON
-   array is a valid top-level line, but an *empty* array is not. `validate_agent_message`/
-   `validate_agent_response` dispatch on shape: a `dict` is one message; a non-empty `list` is a
-   batch, validated element-by-element (each issue's `path` prefixed with `/<index>`); an empty
-   `list` is itself one issue.
+1. **No batching.** v2's top-level schema has only the single-message branches (`Agent`/
+   `Client`/`ProtocolLevel`/`Proxy`, all `type: object`), so *any* JSON array -- empty or not --
+   is not an ACP message (`docs/protocol/v2/draft/transports.mdx:20,67`).
+   `validate_agent_message`/`validate_agent_response` report a list as one issue and do not
+   look inside it.
 2. **No `null` response special case.** v1 special-cased `result: null` for method responses
    whose schema is an all-optional object (a documented docs/schema mismatch, Discrepancy 3).
    No v2 `*Response` `$def` is nullable (checked directly against the vendored schema), so this
@@ -72,7 +71,7 @@ class ValidationIssue:
 
     path: str
     """JSON pointer (e.g. `/result/protocolVersion`) to the offending value, `""` for the
-    message root. For a batch element, prefixed with `/<index>`."""
+    message root."""
     message: str
     """Human-readable description of the violation."""
     schema_path: str
@@ -93,13 +92,6 @@ def _validator_class() -> type[jsonschema.protocols.Validator]:
 
 def _pointer(path_parts: Any) -> str:
     return "/" + "/".join(str(p) for p in path_parts) if path_parts else ""
-
-
-def _prefix_issues(prefix: str, issues: list[ValidationIssue]) -> list[ValidationIssue]:
-    return [
-        ValidationIssue(path=f"{prefix}{issue.path}", message=issue.message, schema_path=issue.schema_path)
-        for issue in issues
-    ]
 
 
 @lru_cache(maxsize=None)
@@ -240,19 +232,19 @@ def _validate_jsonrpc_field(msg: dict[str, Any]) -> list[ValidationIssue]:
     return []
 
 
-def _empty_batch_issue() -> ValidationIssue:
+def _array_issue() -> ValidationIssue:
     return ValidationIssue(
         path="",
-        message="a batch array must not be empty",
-        schema_path="#/anyOf (AgentBatchCall/AgentBatchResponse/ClientBatchCall/ClientBatchResponse)",
+        message="a JSON array is not an ACP message (v2 has no batches)",
+        schema_path="#/anyOf",
     )
 
 
 def validate_agent_message(msg: Any) -> list[ValidationIssue]:
-    """Validate one parsed line the agent wrote to stdout -- a single message (`dict`) or a
-    non-empty JSON-RPC batch (`list`); an empty `list` is itself an issue.
+    """Validate one parsed line the agent wrote to stdout: a single message (`dict`). Any
+    `list` is one issue (v2 has no batches).
 
-    For a single message, dispatches on shape, never on caller-supplied context:
+    Dispatches on shape, never on caller-supplied context:
 
     - has `method` and `id` -> agent -> client (or `$/cancel_request`) *request*: validate
       `params` against that method's params schema.
@@ -265,18 +257,13 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
     Never raises on malformed input; unrecognized shapes come back as issues.
     """
     if isinstance(msg, list):
-        if not msg:
-            return [_empty_batch_issue()]
-        issues: list[ValidationIssue] = []
-        for index, item in enumerate(msg):
-            issues.extend(_prefix_issues(f"/{index}", validate_agent_message(item)))
-        return issues
+        return [_array_issue()]
 
     if not isinstance(msg, dict):
         return [
             ValidationIssue(
                 path="",
-                message=f"message must be a JSON object or a non-empty batch array, got {type(msg).__name__}",
+                message=f"message must be a JSON object, got {type(msg).__name__}",
                 schema_path="",
             )
         ]
@@ -337,7 +324,7 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
 def validate_response_envelope(msg: dict[str, Any]) -> list[ValidationIssue]:
     """Validate the JSON-RPC response envelope only: `id` present and a valid `RequestId`,
     exactly one of `result`/`error`, and (for an error) the shared `Error` shape. Applies to any
-    single response message (not a batch -- see `validate_agent_response` for batch dispatch)."""
+    single response message."""
     issues: list[ValidationIssue] = []
     if "id" not in msg:
         issues.append(
@@ -487,8 +474,7 @@ def find_unknown_root_keys(def_name: str, obj: Any) -> list[str]:
 
 
 def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
-    """Validate a response (or non-empty batch of responses) the agent wrote to stdout, in
-    reply to a `method` request it implements (e.g. `"initialize"`, `"session/prompt"`).
+    """Validate a response the agent wrote to stdout, in reply to a `method` request it implements (e.g. `"initialize"`, `"session/prompt"`).
 
     Validates the JSON-RPC envelope (`validate_response_envelope`) plus, for a successful
     response, `result` against `method`'s specific response schema. For an error response,
@@ -500,18 +486,13 @@ def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
     response schema, as it structurally should (module docstring point 2).
     """
     if isinstance(msg, list):
-        if not msg:
-            return [_empty_batch_issue()]
-        issues: list[ValidationIssue] = []
-        for index, item in enumerate(msg):
-            issues.extend(_prefix_issues(f"/{index}", validate_agent_response(method, item)))
-        return issues
+        return [_array_issue()]
 
     if not isinstance(msg, dict):
         return [
             ValidationIssue(
                 path="",
-                message=f"message must be a JSON object or a non-empty batch array, got {type(msg).__name__}",
+                message=f"message must be a JSON object, got {type(msg).__name__}",
                 schema_path="",
             )
         ]

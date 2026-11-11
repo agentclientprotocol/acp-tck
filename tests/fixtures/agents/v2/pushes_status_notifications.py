@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Conforming fixture: pushes an unsolicited `_fixture/status_update` notification right after
 answering `initialize`, and from then on right before handling every inbound message (so ahead
-of every reply, and in the quiet period after every notification). Ahead of a batch's reply
-array it also pushes a batch of its own made only of such notifications (`ACP-BATCH-207` permits
-one). Otherwise identical to `ConformingAgent`.
+of every reply, and in the quiet period after every notification), including ahead of the
+rejection of a JSON array. Otherwise identical to `ConformingAgent`; every push is a single
+object, never an array (`ACP-TRANSPORT-201`).
 
 These pushes are notifications, not replies: they must neither fail a "no reply" check
-(`ACP-JSONRPC-003`, `ACP-BATCH-202`, `ACP-EXT-201`) nor be mistaken for the reply a check is
-waiting for (`ACP-BATCH-201`/`203`/`204`, the `ACP-INFO-*` probes' recorded behaviour).
+(`ACP-JSONRPC-003`, `ACP-EXT-201`) nor be mistaken for the reply a check is waiting for
+(`ACP-BATCH-209`, the `ACP-INFO-*` probes' recorded behaviour).
 """
 
 import sys
@@ -40,7 +40,6 @@ class PushesStatusNotificationsAgent(ConformingAgent):
     def _handle_batch(self, items: list[Any]) -> None:
         if self._initialized:
             self._push_status()
-            self._write_line([_STATUS, _STATUS])
         super()._handle_batch(items)
 
 

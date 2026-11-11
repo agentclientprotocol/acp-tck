@@ -19,9 +19,9 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   text block withholds its terminating idle update until `session/cancel` (`_handle_cancel`) or
   `session/close` (`_handle_close_session`) arrives. It runs before `_mid_turn_action`,
   preempting it for that prompt only.
-- JSON-RPC batch dispatch: `run()` also accepts a top-level JSON array line. While a batch is
-  active, `_write` buffers *responses* into `_batch_collector` (agent-originated requests and
-  notifications still stream out immediately), so every existing handler is reused unchanged.
+- No batches (`transports.mdx:67`): any top-level JSON array line (empty or not) is rejected with
+  one `-32600`/`id: null` object and no element is processed (`_handle_batch`, the hook that
+  array-handling defect fixtures override).
 - `session/resume` replay: each `session/update` is recorded per session (`_record_history`);
   `replayFrom: {"type": "start"}` replays it verbatim, omitted/`null` replays nothing, and any
   other or malformed cursor gets `-32602` (`_replay_from_rejection`). Every successful resume
@@ -113,7 +113,6 @@ class ConformingAgent:
         self._sessions: dict[str, str] = {}  # live sessionId -> cwd
         self._closed_sessions: dict[str, str] = {}  # closed but still listed sessionId -> cwd
         self._hanging_sessions: dict[Any, bool] = {}  # sessionId -> awaiting session/cancel
-        self._batch_collector: list[Any] | None = None  # non-None while inside `_handle_batch`
         # `session/new`/`session/resume`'s `configOptions`, mutated in place by
         # `session/set_config_option` (each entry's own dict, deep-copied from the constructor
         # argument so callers can safely reuse the same literal across several agent instances).
@@ -151,37 +150,11 @@ class ConformingAgent:
                 self._handle_batch(message)
 
     def _handle_batch(self, items: list[Any]) -> None:
-        """JSON-RPC 2.0 batch dispatch (§6): an empty array is itself an Invalid Request --
-        answered with a single error *object*, never an array. A non-empty array dispatches
-        each entry through the normal single-message path (`_handle`), collecting whatever
-        responses that produces (never a bare notification's non-reply) into one reply array --
-        or no output line at all if every entry was a notification. A malformed entry (not an
-        object, or missing/wrong-typed `jsonrpc`/`method`) gets its own `-32600` with `id: null`,
-        same as a top-level malformed request would.
-        """
-        if not items:
-            self._write_line(
-                {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
-            )
-            return
-        self._batch_collector = []
-        for item in items:
-            self._handle_batch_entry(item)
-        responses, self._batch_collector = self._batch_collector, None
-        if responses:
-            self._write_line(responses)
-
-    def _handle_batch_entry(self, item: Any) -> None:
-        if (
-            not isinstance(item, dict)
-            or item.get("jsonrpc") != "2.0"
-            or not isinstance(item.get("method"), str)
-        ):
-            self._write(
-                {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
-            )
-            return
-        self._handle(item)
+        """ACP has no batches: any array, empty or not, is one Invalid Request answered with a
+        single error object (`id: null`); no element is dispatched."""
+        self._write_line(
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
+        )
 
     def _handle(self, message: dict[str, Any]) -> None:
         method = message.get("method")
@@ -690,15 +663,6 @@ class ConformingAgent:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})
 
     def _write(self, obj: dict[str, Any]) -> None:
-        # While a batch is being dispatched (`_handle_batch`), a *response* (no `method` key --
-        # a `result`/`error` reply to one of the batch's own request entries) is buffered into
-        # the collector instead of written immediately, so the whole batch's responses can be
-        # emitted as one reply array. A notification the agent itself originates (`method`
-        # present -- e.g. `session/update`) always streams out immediately, batch or not: only
-        # *replies to the batch's own entries* belong in the response array.
-        if self._batch_collector is not None and "method" not in obj:
-            self._batch_collector.append(obj)
-            return
         self._write_line(obj)
 
     @staticmethod

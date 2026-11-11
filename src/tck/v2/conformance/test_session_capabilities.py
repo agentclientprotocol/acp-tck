@@ -53,7 +53,7 @@ def _session_update_messages(
     updates: list[tuple[int, TranscriptEntry]],
 ) -> list[tuple[tuple[int, int], dict[str, Any]]]:
     """Flatten `resume_session`'s `updates` into `((line_index, position_in_line), message)` for
-    every `session/update` message, batch-carried ones included, in wire order."""
+    every `session/update` message, array-carried ones included, in wire order."""
     flattened = []
     for line_index, entry in updates:
         for position, msg in enumerate(iter_messages(entry)):
@@ -518,8 +518,8 @@ async def test_close_idle_session_succeeds(agent_launch, tmp_path):
 
 
 def _transcript_index(agent, entry: TranscriptEntry) -> int:
-    """Transcript index of the line carrying `entry` -- which may be a per-message copy of a
-    batch line (`run_prompt` dispatches batch elements that way), so match by identity of the
+    """Transcript index of the line carrying `entry` -- which may be a per-message copy of an
+    array line (`run_prompt` dispatches array elements that way), so match by identity of the
     shared raw bytes rather than by object identity alone."""
     for index, candidate in enumerate(agent.transcript):
         if candidate is entry or (

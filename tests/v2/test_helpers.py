@@ -31,9 +31,9 @@ def _entry(raw: str) -> TranscriptEntry:
     [
         (_NOTE, True, False),
         (_REQUEST, True, False),
-        (f"[{_NOTE},{_NOTE}]", True, False),  # an agent's own notification batch
+        (f"[{_NOTE},{_NOTE}]", False, False),  # an array is never agent-initiated (no batches)
         (_REPLY, False, True),
-        (f"[{_REPLY},{_REPLY}]", False, True),  # a batch reply array
+        (f"[{_REPLY},{_REPLY}]", False, True),  # a reply array: flattened for is_response_line
         (f"[{_NOTE},{_REPLY}]", False, True),  # mixed: judged as a reply, never skipped
         ("[]", False, False),
         (f"[{_NOTE},17]", False, False),

@@ -1,16 +1,11 @@
 """JSON-RPC envelope conformance: ACP-JSONRPC-001..005.
 
 v2 counterpart of `tck.v1.conformance.test_jsonrpc` (honest duplication, not shared machinery).
-Per `tck.v2.requirements`, all five ids reuse their v1 wire assertions unchanged, widened only to
-also cover a batch-delivered response/notification/erroneous-request -- but this file's own
-probes are single-message only. That batch half of the evidence lives entirely in
-`test_batch.py` (`@pytest.mark.requirement(...)` markers in both files jointly satisfy each id);
-see its `test_batch_responses_echo_request_ids`,
-`test_notification_only_batch_gets_no_reply`, and
-`test_invalid_batch_entries_get_per_entry_invalid_request`.
+`ACP-JSONRPC-005`'s evidence lives in `test_batch.py` (the connection must survive a rejected
+JSON array); the other ids are judged here on single messages.
 
-No row here needs `skip_if_version_mismatch`: a v1-only agent never receives a batch-shaped probe
-in this file, and its single-message replies are judged by the same rule v1 already holds it to.
+No row here needs `skip_if_version_mismatch`: a v1-only agent never receives an array probe in
+this file, and its single-message replies are judged by the same rule v1 already holds it to.
 
 Only `initialize` is unconditional in v2, so a probe uses a `session/*` method only when the agent
 advertises `capabilities.session` (`_helpers.advertises_session`), and otherwise the `_`-prefixed
@@ -87,9 +82,10 @@ async def test_response_envelope_is_result_xor_error_with_valid_shape(agent_laun
 async def test_notification_receives_no_response(agent_launch, agent_initialize_result, tmp_path):
     """ACP-JSONRPC-003. `session/cancel` with no prompt in flight is a pure notification; an
     agent that does not advertise `capabilities.session` gets a `_tck/notify` notification
-    instead. Checks every message inside a batch-array line too, not just a bare object line: an
-    agent that folds a spurious response into a batch alongside something else would otherwise
-    pass this MANDATORY check by accident. Only a reply fails this (`_helpers.is_response_line`),
+    instead. Checks every message inside an array line too, not just a bare object line: an
+    agent that folds a spurious response into an array alongside something else would otherwise
+    pass this MANDATORY check by accident (the array itself is `ACP-TRANSPORT-201`'s concern).
+    Only a reply fails this (`_helpers.is_response_line`),
     not the agent's own notifications or requests."""
     async with connected_agent(agent_launch) as agent:
         if advertises_session(agent_initialize_result.result):

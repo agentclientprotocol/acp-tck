@@ -233,7 +233,7 @@ refresh procedure live in each `schema/VENDORED.md`. Do not hand-edit the JSON f
 derive their method-name tables and validation rules from these files at import time, so a schema
 refresh mostly self-updates them -- but check each version's `validation.py` docstring for
 hand-written carve-outs a refresh could invalidate (e.g. v1's `session/load` null-response quirk,
-v2's batch dispatch and open-enum discriminator carve-out).
+v2's any-array-is-one-issue rule and open-enum discriminator carve-out).
 
 `tck.v{1,2}.validation` only validates messages the *agent under test* authors (its requests/
 notifications to the client, and its responses to methods it implements) -- never a message the

@@ -246,8 +246,8 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
     initialize -> session/new -> session/prompt exchange, same trick as v1's version of this
     test: derive `method_by_id` from the SENT transcript to resolve each response's own method.
     Unwraps every transcript line via `iter_messages` rather than requiring
-    `isinstance(entry.parsed, dict)`: a message delivered inside a batch-array line must not
-    silently escape this scan."""
+    `isinstance(entry.parsed, dict)`: a message delivered inside an array line (itself an
+    `ACP-TRANSPORT-201` violation) must not silently escape this scan."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         await run_prompt(

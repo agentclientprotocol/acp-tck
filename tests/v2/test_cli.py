@@ -41,8 +41,6 @@ _MANDATORY_IDS = {
     "ACP-JSONRPC-001",
     "ACP-JSONRPC-002",
     "ACP-JSONRPC-003",
-    "ACP-BATCH-201",
-    "ACP-BATCH-202",
     "ACP-AUTH-202",
     "ACP-AUTH-206",
     "ACP-AUTH-207",
@@ -122,12 +120,7 @@ _ADVISORY_IDS = {
     "ACP-CANCEL-204",
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-005",
-    "ACP-BATCH-203",
-    "ACP-BATCH-204",
-    "ACP-BATCH-205",
-    "ACP-BATCH-206",
-    "ACP-BATCH-207",
-    "ACP-BATCH-208",
+    "ACP-BATCH-209",
     "ACP-DELETE-203",
     "ACP-CLOSE-204",
     "ACP-AUTH-201",
@@ -147,8 +140,6 @@ _INFORMATIONAL_IDS = {
     "ACP-INFO-UNKNOWNSESSION-001",
     "ACP-INFO-CANCEL-201",
     "ACP-INFO-CANCEL-202",
-    "ACP-INFO-BATCH-201",
-    "ACP-INFO-BATCH-202",
     "ACP-MCP-201",
     "ACP-MCP-202",
     "ACP-EXT-203",
@@ -158,9 +149,8 @@ _INFORMATIONAL_IDS = {
 }
 _ALL_IDS = _MANDATORY_IDS | _CAPABILITY_IDS | _ADVISORY_IDS | _INFORMATIONAL_IDS
 
-# `ACP-BATCH-205`/`206`/`207`/`208` (unconditional record-only probes -- see `test_batch.py`)
-# and `ACP-CANCEL-204` (ditto for cancellation) never PASS for *any* fixture; they always SKIP --
-# except that `ACP-CANCEL-204` (and, not in this set, `ACP-INFO-CANCEL-202`) FAILs instead of
+# `ACP-CANCEL-204` (an unconditional record-only probe for cancellation) never PASSes for *any*
+# fixture; it always SKIPs -- except that `ACP-CANCEL-204` (and, not in this set, `ACP-INFO-CANCEL-202`) FAILs instead of
 # SKIPping against a fixture that hangs forever on `session/cancel` (`cancel_no_idle.py` and its
 # siblings): an uncaught `AgentTimeout` in shared setup is a FAIL, not a SKIP, so "always" here
 # means "for any fixture that lets the turn reach a terminating idle", not literally always.
@@ -168,13 +158,7 @@ _ALL_IDS = _MANDATORY_IDS | _CAPABILITY_IDS | _ADVISORY_IDS | _INFORMATIONAL_IDS
 # `ACP-INIT-208` only judges a result that selects v1, which a v2-only fixture never returns (it
 # rejects v1 with -32022), so it SKIPs for every `_base.py` fixture except the dual-stack ones.
 _V2_ONLY_SKIP_IDS = {"ACP-INIT-208"}
-_ALWAYS_SKIPPED_IDS = {
-    "ACP-CANCEL-204",
-    "ACP-BATCH-205",
-    "ACP-BATCH-206",
-    "ACP-BATCH-207",
-    "ACP-BATCH-208",
-} | _V2_ONLY_SKIP_IDS
+_ALWAYS_SKIPPED_IDS = {"ACP-CANCEL-204"} | _V2_ONLY_SKIP_IDS
 
 # CAPABILITY-tier cancel rows that need a turn to still be in flight when `session/cancel` is
 # sent to be exercised at all -- against a fast fixture with no `--cancel-prompt` override the
@@ -1056,9 +1040,6 @@ def test_idle_before_running_passes_everything():
     fast with no `--cancel-prompt` override, so `_CANCEL_RACE_SKIP_IDS` legitimately SKIP too
     (cancellation not exercised), and `_ALWAYS_SKIPPED_IDS` SKIP unconditionally.
 
-    It does NOT cascade into the batching machinery: `ACP-BATCH-204`/`205`/`ACP-JSONRPC-001`'s
-    shared test batches two side-effect-free `session/list` calls, which this fixture's
-    `_handle_new_session` override never touches, so all three legitimately PASS.
     `_SESSION_MGMT_EXTRAS_SKIP_IDS` SKIP too, since this fixture predates them and advertises
     only the bare `session: {}}` baseline. `_NO_AUTH_SKIP_IDS` SKIP too, since this fixture
     advertises no `authMethods` and the run passes no `--auth-method`."""
@@ -1607,38 +1588,12 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
     assert "VERDICT: NOT CONFORMANT" in cascade_result.stdout, cascade_result.stdout
 
 
-def test_rejects_batch_fails_batch_202_through_204_only():
-    """`rejects_batch.py` treats every non-empty batch as if it were the empty-batch case -- a
-    single top-level `-32600`/`id: null` object. This coincidentally still satisfies
-    `ACP-BATCH-201` (the empty-array case itself). FAILs `ACP-BATCH-202` (a notification-only
-    batch gets a bogus reply instead of silence), `ACP-BATCH-203` (no per-entry handling at all),
-    and `ACP-BATCH-204` (no matching response array is ever produced) -- plus
-    `ACP-JSONRPC-003`/`005` (the `202`/`203` tests also carry those ids) and `ACP-JSONRPC-001`
-    (its batch test sees a response whose `id` is `null`, not a request's)."""
-    result = _run_cli(FIXTURES_DIR_V2, "rejects_batch.py", protocol_version=2, k="batch")
-    assert result.returncode != 0
-
-    statuses = _table_statuses(result.stdout)
-    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {
-        "ACP-BATCH-202",
-        "ACP-BATCH-203",
-        "ACP-BATCH-204",
-        "ACP-JSONRPC-001",
-        "ACP-JSONRPC-003",
-        "ACP-JSONRPC-005",
-    }, result.stdout
-    assert statuses.get("ACP-BATCH-201") == "PASS", result.stdout
-    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
-
-
-def test_crashes_on_batch_fails_only_batch_rows():
-    """`crashes_on_batch.py` exits the moment it sees any batch-shaped line -- otherwise fully
-    conforming. FAILs every row whose own test actually sends a batch line
-    (`ACP-BATCH-201`/`202`/`203`/`204`), plus `ACP-JSONRPC-003`/`005` (the `202`/`203` tests
-    carry those ids too) and `ACP-JSONRPC-001` (its own batch test). Despite the name,
-    "only batch rows" now means "only rows whose evidence is gathered by sending a batch line",
-    not literally every failing id's own name starting with `ACP-BATCH-`."""
+def test_crashes_on_batch_fails_only_the_advisory_array_rows():
+    """`crashes_on_batch.py` exits the moment it sees any JSON array on stdin -- otherwise fully
+    conforming. FAILs the ADVISORY rows whose tests send an array (`ACP-BATCH-209`,
+    `ACP-JSONRPC-005`). It never writes an array, so the MANDATORY `ACP-TRANSPORT-201` (which
+    shares the probe) PASSes, and the run stays CONFORMANT: the receiver clause of the
+    no-batches rule carries no RFC 2119 keyword, so a crash is only an advisory finding."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "crashes_on_batch.py",
@@ -1646,19 +1601,55 @@ def test_crashes_on_batch_fails_only_batch_rows():
         timeout="2",
         cancel_prompt="__hang__",
     )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-BATCH-209", "ACP-JSONRPC-005"}, result.stdout
+    assert statuses.get("ACP-TRANSPORT-201") == "PASS", result.stdout
+    assert all(req_id in _ADVISORY_IDS for req_id in fails), result.stdout
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+
+def test_ignores_batch_fails_only_batch_209():
+    """`ignores_batch.py` answers `[]` with the single `-32600` object but silently drops every
+    non-empty array (the Python SDK 1.0.0 shape). FAILs only the ADVISORY `ACP-BATCH-209`: the
+    connection survives (`ACP-JSONRPC-005`) and nothing it writes is an array
+    (`ACP-TRANSPORT-201`), so the run stays CONFORMANT."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "ignores_batch.py",
+        protocol_version=2,
+        timeout="2",
+        cancel_prompt="__hang__",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-BATCH-209"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-005") == "PASS", result.stdout
+    assert statuses.get("ACP-TRANSPORT-201") == "PASS", result.stdout
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+
+def test_answers_batch_with_array_fails_batch_209_and_transport_201():
+    """`answers_batch_with_array.py` keeps the JSON-RPC 2.0 batching ACP v2 removed: it
+    dispatches an array's elements and answers with an array. FAILs `ACP-BATCH-209` (elements
+    processed) and, because it wrote an array, the MANDATORY `ACP-TRANSPORT-201` -- so the run
+    is NOT CONFORMANT. `ACP-JSONRPC-005` PASSes: the connection survives."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "answers_batch_with_array.py",
+        protocol_version=2,
+        k="test_batch or test_transport or test_jsonrpc",
+    )
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {
-        "ACP-BATCH-201",
-        "ACP-BATCH-202",
-        "ACP-BATCH-203",
-        "ACP-BATCH-204",
-        "ACP-JSONRPC-001",
-        "ACP-JSONRPC-003",
-        "ACP-JSONRPC-005",
-    }, result.stdout
+    assert fails == {"ACP-BATCH-209", "ACP-TRANSPORT-201"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-005") == "PASS", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
@@ -1792,17 +1783,16 @@ def test_v2_answers_notifications_fails_jsonrpc_003_only():
 
 def test_v2_pushes_status_notifications_passes_everything():
     """`pushes_status_notifications.py` pushes an unsolicited `_`-prefixed notification right
-    after `initialize` and before handling every later message, plus a batch of such
-    notifications ahead of every batch reply. So they land both in the quiet period of
-    `ACP-JSONRPC-003`/`ACP-BATCH-202`/`ACP-EXT-201` and between a request (single or batch)
-    and its reply (`ACP-BATCH-201`/`203`/`204`, `ACP-JSONRPC-001`/`005`). A notification is not
-    a reply, so the outcome must match `conforming.py`'s exactly -- including the
+    after `initialize` and before handling every later message, including ahead of an array's
+    rejection. So they land both in the quiet period of `ACP-JSONRPC-003`/`ACP-EXT-201` and
+    between a request and its reply (`ACP-BATCH-209`, `ACP-JSONRPC-001`/`005`). A notification
+    is not a reply, so the outcome must match `conforming.py`'s exactly -- including the
     INFORMATIONAL probes' recorded behaviour, which must not mistake a push for the reply."""
     result = _run_cli(FIXTURES_DIR_V2, "pushes_status_notifications.py", protocol_version=2)
     _assert_conforming_baseline(result, "pushes_status_notifications.py")
 
     notes = _table_notes(result.stdout)
-    for req_id in ("ACP-INFO-PARSE-001", "ACP-INFO-INVALIDREQ-001", "ACP-INFO-BATCH-201", "ACP-EXT-203"):
+    for req_id in ("ACP-INFO-PARSE-001", "ACP-INFO-INVALIDREQ-001", "ACP-EXT-203"):
         assert notes[req_id].startswith("(silent"), f"{req_id}: {notes[req_id]}"
     for req_id, note in notes.items():
         assert "_fixture/status_update" not in note, f"{req_id}: {note}"
@@ -1816,24 +1806,24 @@ def test_v2_pushes_status_and_answers_notifications_fails_no_reply_rows_only():
         FIXTURES_DIR_V2,
         "pushes_status_and_answers_notifications.py",
         protocol_version=2,
-        k="test_batch or test_jsonrpc or test_extensibility",
+        k="test_jsonrpc or test_extensibility",
     )
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-JSONRPC-003", "ACP-BATCH-202", "ACP-EXT-201"}, result.stdout
+    assert fails == {"ACP-JSONRPC-003", "ACP-EXT-201"}, result.stdout
 
 
-def test_v2_pushes_status_and_splits_batch_replies_fails_batch_204_only():
-    """`pushes_status_and_splits_batch_replies.py` pushes the same status notifications, but
-    answers a batch with separate response lines (a push between them) instead of one array.
-    Skipping the pushes must not change how the reply's shape is judged: `ACP-BATCH-204` (the
-    SHOULD) still FAILs, while `ACP-JSONRPC-001` and `ACP-BATCH-203`, which flatten response
-    objects across lines, PASS -- the ids are echoed correctly."""
+def test_v2_pushes_status_and_processes_array_elements_fails_batch_209_only():
+    """`pushes_status_and_processes_array_elements.py` pushes the same status notifications, but
+    instead of rejecting an array it dispatches the elements and answers each on its own line
+    (a push between them). Skipping the pushes must not hide element processing: `ACP-BATCH-209`
+    FAILs. Nothing it writes is an array, so `ACP-TRANSPORT-201` PASSes, as do
+    `ACP-JSONRPC-001` and `ACP-JSONRPC-005`."""
     result = _run_cli(
         FIXTURES_DIR_V2,
-        "pushes_status_and_splits_batch_replies.py",
+        "pushes_status_and_processes_array_elements.py",
         protocol_version=2,
         k="test_batch or test_jsonrpc",
     )
@@ -1841,8 +1831,8 @@ def test_v2_pushes_status_and_splits_batch_replies_fails_batch_204_only():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-BATCH-204"}, result.stdout
-    for req_id in ("ACP-BATCH-201", "ACP-BATCH-202", "ACP-BATCH-203", "ACP-JSONRPC-001", "ACP-JSONRPC-005"):
+    assert fails == {"ACP-BATCH-209"}, result.stdout
+    for req_id in ("ACP-TRANSPORT-201", "ACP-JSONRPC-001", "ACP-JSONRPC-005"):
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
 
 
@@ -1866,8 +1856,8 @@ def test_v2_result_and_error_fails_jsonrpc_002_and_schema_001_only():
 def test_v2_unknown_method_no_error_only_fails_the_advisory_requirement():
     """`unknown_method_no_error.py` replies to unknown methods with an empty success result
     instead of `-32601`. Should only trip the ADVISORY `ACP-JSONRPC-004`, never a MANDATORY/
-    CAPABILITY requirement. `ACP-BATCH-204`'s own probe batches two `session/list` calls (the
-    fixture advertises `session`), never an unknown method, so this fixture does not fail it.
+    CAPABILITY requirement. `ACP-BATCH-209`'s probes never expect an unknown-method reply, so
+    this fixture does not fail it.
     ADVISORY failures never flip
     the verdict on their own -- but the exit code/overall verdict text are not asserted here:
     this run is `-k`-scoped, which necessarily leaves every other MANDATORY id NOT_TESTED, and
@@ -1883,16 +1873,17 @@ def test_v2_unknown_method_no_error_only_fails_the_advisory_requirement():
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-JSONRPC-004"}, result.stdout
-    assert statuses.get("ACP-BATCH-204") == "PASS", result.stdout
+    assert statuses.get("ACP-BATCH-209") == "PASS", result.stdout
     assert all(req_id in _ADVISORY_IDS for req_id in fails), result.stdout
 
 
-def test_v2_emits_batch_updates_passes_everything():
-    """Positive control: batching every pair of a turn's own spontaneous `session/update`
-    notifications into single JSON-RPC batch array lines (`ACP-BATCH-207`, ADVISORY, permits
-    this) must not, by itself, break anything the TCK checks. Same "every exercisable id PASSes"
-    shape as `conforming_full.py`'s own self-test above -- run with `--cancel-prompt __hang__`
-    so every CAPABILITY-tier `ACP-CANCEL-*` id is actually exercised, not just skipped by a race.
+def test_v2_emits_batch_updates_fails_transport_201_only():
+    """Batching every pair of a turn's own spontaneous `session/update` notifications into
+    single JSON-RPC array lines violates `ACP-TRANSPORT-201` (MANDATORY: ACP has no batches) and
+    nothing else: `run_prompt` and the other scans still unpack an array line, so every other id
+    gets the verdict it would on separate lines. Same shape as `conforming_full.py`'s own
+    self-test above -- run with `--cancel-prompt __hang__` so every CAPABILITY-tier
+    `ACP-CANCEL-*` id is actually exercised, not just skipped by a race.
     This fixture advertises only the bare `capabilities.session.prompt.*` baseline (no
     session-management extras, no `authMethods`), so `_SESSION_MGMT_EXTRAS_SKIP_IDS`/
     `_NO_AUTH_SKIP_IDS` legitimately SKIP too, exactly as they do for `conforming.py` itself.
@@ -1900,7 +1891,7 @@ def test_v2_emits_batch_updates_passes_everything():
     result = _run_cli(
         FIXTURES_DIR_V2, "emits_batch_updates.py", protocol_version=2, cancel_prompt="__hang__"
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode != 0, result.stdout + result.stderr
 
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
@@ -1928,13 +1919,15 @@ def test_v2_emits_batch_updates_passes_everything():
         | {"ACP-PROMPT-207", "ACP-CANCEL-209"}
     )
     for req_id, status in statuses.items():
-        if req_id in expected_skips:
+        if req_id == "ACP-TRANSPORT-201":
+            assert status == "FAIL", f"{req_id} is {status}, expected FAIL:\n{result.stdout}"
+        elif req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
         else:
             assert status == "PASS", (
                 f"{req_id} is {status}, expected PASS for emits_batch_updates.py:\n{result.stdout}"
             )
-    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
 # --- session management -- defect fixtures ---
@@ -2606,8 +2599,8 @@ def test_custom_method_no_response_fails_ext_001_and_error_001():
     cascades into the ADVISORY `ACP-ERROR-001` (`test_diagnostics.py`): that probe sends its own
     `_`-prefixed unknown method and, getting no reply at all instead of a `-32601` with a
     non-empty one-line `message`, FAILs the "error message is well-formed" check outright
-    (confirmed via an unscoped run; the batch tests use a different unknown-method probe now, so
-    `ACP-BATCH-203/204/205` are unaffected here). `-k` widened to `test_diagnostics` to match."""
+    (confirmed via an unscoped run; `ACP-BATCH-209`'s array probes are rejected whole, never
+    dispatched per element, so it is unaffected here). `-k` widened to `test_diagnostics` to match."""
     result = _run_cli(
         FIXTURES_DIR_V2,
         "custom_method_no_response.py",
@@ -2722,7 +2715,7 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
 # `test_transport.py`/`test_jsonrpc.py`/`test_batch.py` against
 # `tests/fixtures/agents/v1/conforming.py` under `--protocol-version 2` produces zero FAILs,
 # exactly the five JSONRPC ids PASS, and every other new id (all of
-# `ACP-TRANSPORT-*`/`ACP-BATCH-*`/`ACP-INFO-BATCH-*`) SKIPs with `VERSION-MISMATCH:`.
+# `ACP-TRANSPORT-*`/`ACP-BATCH-*`) SKIPs with `VERSION-MISMATCH:`.
 _NEGOTIATION_IDS = {"ACP-INIT-001", "ACP-INIT-003", "ACP-INIT-201", "ACP-INIT-202", "ACP-INIT-208"}
 # ACP-EXT-001/201/203 probe an ordinary `_`-/`$/`-prefixed custom method or notification
 # exchange -- they never inspect `initialize`'s negotiated version or its `capabilities` shape at
@@ -2806,8 +2799,8 @@ def test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mism
     for r in skip_results:
         assert r["status"] == "SKIPPED", r
         if r["id"] in _ALWAYS_SKIPPED_IDS:
-            # ACP-CANCEL-204/ACP-BATCH-206..208 are unconditional record-only SKIPs (MAY,
-            # never exercised regardless of version) -- they SKIP here for that reason, not
+            # ACP-CANCEL-204 is an unconditional record-only SKIP (MAY, never
+            # exercised regardless of version) -- they SKIP here for that reason, not
             # because of the version mismatch, so they carry no VERSION-MISMATCH: marker.
             continue
         if r["id"] == "ACP-EXT-202":
