@@ -469,12 +469,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A prompt of `text` + `resource_link` content blocks is accepted (a non-error "
             "`session/prompt` result), and the turn ends: agents advertising `session` MUST "
-            "support both block types. Replaces v1's ADVISORY `ACP-PROMPT-003`, whose recorded "
-            "doc conflict does not exist in v2 (`content.mdx` is silent on `resource_link`, not "
-            "contradictory)."
+            "support both block types, and `content.mdx` states the `resource_link` MUST for all "
+            "agents. Replaces v1's ADVISORY `ACP-PROMPT-003`, whose recorded doc conflict does "
+            "not exist in v2."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:308; "
+            "docs/protocol/v2/draft/content.mdx:178; "
             "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/prompt; "
             "schema/v2/schema.unstable.json#/$defs/ResourceLink"
         ),
@@ -513,6 +514,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PROMPT-211",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` whose `prompt` contains a content block of a type the agent "
+            "cannot understand (a `_tck_unknown` probe type, not baseline and not advertised) is "
+            "answered with a JSON-RPC error with code `-32602`, and the prompt is not inserted: "
+            "no `user_message`/`user_message_chunk` update and no `running`/`requires_action` "
+            "state follows for it within a short quiet period. A client never sends such a "
+            "block; the probe breaks that rule on purpose because the spec defines the agent's "
+            "answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:313,388; "
+            "docs/protocol/v2/draft/content.mdx:22; "
+            "docs/protocol/v2/draft/extensibility.mdx:62-65; "
+            "schema/v2/schema.unstable.json#/$defs/ContentBlock"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPTCAP-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.prompt.image",
@@ -523,6 +544,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "docs/protocol/v2/draft/content.mdx:62-64; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/ImageContent"
         ),
@@ -538,6 +560,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "docs/protocol/v2/draft/content.mdx:95-97; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/AudioContent"
         ),
@@ -553,8 +576,33 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "docs/protocol/v2/draft/content.mdx:131-133; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/EmbeddedResource"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPTCAP-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "For each of `image`, `audio` and `resource` (embedded context) that the agent does "
+            "NOT advertise under `capabilities.session.prompt`, a well-formed prompt containing "
+            "that block type alongside text is answered with a JSON-RPC error with code "
+            "`-32602`, and the prompt is not inserted (no user-message update and no active "
+            "state follows within a short quiet period). A runtime negative gate: the "
+            "registry capability only says the agent offers sessions; each block type is judged only "
+            "when its own prompt capability is absent, and SKIPPED when advertised (that "
+            "positive case is `ACP-PROMPTCAP-001..003`). A client never sends an unadvertised "
+            "block; the probe breaks that rule on purpose because the spec defines the agent's "
+            "answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:313,388; "
+            "docs/protocol/v2/draft/content.mdx:22,62-64,95-97,131-133; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/ContentBlock"
         ),
     ),
     Requirement(

@@ -125,6 +125,14 @@ code = [
 reason = "the `$/cancel_request` contract (still respond, ignore unknown or answered ids, the cancellation results), which prompt-lifecycle, session-setup, tool-calls and elicitation assume without restating"
 
 [[core_doc]]
+path = "docs/protocol/v2/draft/content.mdx"
+code = [
+    "src/tck/v2/conformance/test_prompt.py",
+    "src/tck/v2/conformance/test_prompt_capabilities.py",
+]
+reason = "baseline prompt content (`text`, `resource_link`), advertised-only content types and `-32602` rejection, and the display rules that prompt, tool-call and session-update areas assume"
+
+[[core_doc]]
 path = "docs/protocol/v2/draft/overview.mdx"
 sections = [
     "Communication Model",

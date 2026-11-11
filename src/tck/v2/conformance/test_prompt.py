@@ -1,4 +1,4 @@
-"""Prompt-turn conformance: ACP-PROMPT-201/203/205..207/209 and ACP-STATE-201..205.
+"""Prompt-turn conformance: ACP-PROMPT-201/203/205..207/209/211 and ACP-STATE-201..205.
 
 All are `capabilities.session`-gated. `ACP-STATE-204` is ADVISORY on the registry
 (`capability=None`); its test still carries the marker for the SKIP gate.
@@ -17,6 +17,7 @@ from tck.v2.protocol import STOP_REASONS, is_valid_open_enum_value
 from tck.v2.validation import validate_agent_message
 
 from ._helpers import (
+    assert_prompt_rejected_not_inserted,
     connected_agent,
     iter_messages,
     new_session,
@@ -25,6 +26,7 @@ from ._helpers import (
 )
 
 _PROMPT_TEXT = "hi"
+UNKNOWN_CONTENT_TYPE = "_tck_unknown"
 
 _USER_MESSAGE_KINDS = frozenset({"user_message", "user_message_chunk"})
 _AGENT_OUTPUT_KINDS = frozenset(
@@ -311,3 +313,27 @@ async def test_prompt_during_active_work_is_not_rejected(
         )
     if scenario.not_exercised is not None:
         pytest.skip(f"prompt during active work not exercised: {scenario.not_exercised}")
+
+
+@pytest.mark.requirement("ACP-PROMPT-211")
+@pytest.mark.capability("capabilities.session")
+async def test_unknown_content_block_is_rejected_without_insertion(agent_launch, tmp_path):
+    """ACP-PROMPT-211. A prompt with a content block of a type the agent cannot understand is
+    answered `-32602` and not inserted (prompt-lifecycle.mdx:313; content.mdx:22). A client never
+    sends such a block (it sends only baseline and advertised types); the probe breaks that rule
+    on purpose because the spec defines the agent's answer, and its `_tck_unknown` type is
+    `_`-prefixed, the extensibility rule's form for custom types. "Not inserted" means no
+    user-message update and no active state follows, judged through a short quiet period."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        await assert_prompt_rejected_not_inserted(
+            agent,
+            session_id,
+            [
+                {"type": "text", "text": _PROMPT_TEXT},
+                {"type": UNKNOWN_CONTENT_TYPE, "payload": "tck"},
+            ],
+            what=f"a prompt with an unknown {UNKNOWN_CONTENT_TYPE!r} content block",
+            timeout=timeout,
+        )

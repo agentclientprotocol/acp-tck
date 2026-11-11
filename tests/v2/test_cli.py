@@ -74,9 +74,11 @@ _CAPABILITY_IDS = {
     "ACP-PROMPT-206",
     "ACP-PROMPT-207",
     "ACP-PROMPT-209",
+    "ACP-PROMPT-211",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
+    "ACP-PROMPTCAP-201",
     "ACP-PERM-201",
     "ACP-CLIENTCAP-201",
     "ACP-CLIENTCAP-202",
@@ -449,6 +451,7 @@ def test_v2_conforming_agent_passes_everything():
 _FULL_EXPECTED_SKIPS = {
     "ACP-AUTH-205",
     "ACP-PROMPT-207",
+    "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
     "ACP-CANCEL-209",
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
@@ -1654,7 +1657,8 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
     every id whose own test drives an ordinary (non-cancelling) `run_prompt` turn never even gets
     that far and FAILs with a timeout: `ACP-SCHEMA-001`, `ACP-TRANSPORT-201/002/203`,
     `ACP-CLIENTCAP-201/202`, `ACP-PERM-201`, `ACP-PROMPT-201/203/205`, `ACP-STATE-201/202/203`,
-    and `ACP-PROMPT-206`. On top of that cascade, cancelling itself resolves the
+    `ACP-PROMPT-206`, and `ACP-PROMPT-211` (its rejected probe prompt is never answered either).
+    On top of that cascade, cancelling itself resolves the
     prompt with a JSON-RPC error instead of a terminating idle -- FAILs `ACP-CANCEL-203` (the
     error itself) and `ACP-CANCEL-208`/`ACP-CLOSE-202`/`ACP-CLOSE-203` (a `session/close` sent
     instead has nothing registered to rescue either, since `_handle_prompt` never adds the
@@ -1720,6 +1724,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-STATE-205",
         "ACP-PROMPT-207",
         "ACP-PROMPT-206",
+        "ACP-PROMPT-211",
         "ACP-RESUME-202",
         "ACP-RESUME-203",
         "ACP-RESUME-204",
@@ -2177,7 +2182,14 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         | _SESSION_MGMT_EXTRAS_SKIP_IDS
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
-        | {"ACP-PROMPT-207", "ACP-CANCEL-209", "ACP-CANCEL-213", "ACP-CLOSE-205", "ACP-ERROR-204"}
+        | {
+            "ACP-PROMPT-207",
+            "ACP-PROMPTCAP-201",  # every prompt capability is advertised
+            "ACP-CANCEL-209",
+            "ACP-CANCEL-213",
+            "ACP-CLOSE-205",
+            "ACP-ERROR-204",
+        }
     )
     for req_id, status in statuses.items():
         if req_id == "ACP-TRANSPORT-201":
@@ -3268,3 +3280,44 @@ def test_resume_sends_notice_passes_resume_202_and_init_204():
     assert not fails, result.stdout
     assert statuses.get("ACP-RESUME-202") == "PASS", result.stdout
     assert statuses.get("ACP-INIT-204") == "PASS", result.stdout
+
+
+def test_accepts_unknown_content_type_fails_prompt_211_only():
+    """`accepts_unknown_content_type.py` accepts a `_tck_unknown` block; unadvertised
+    `image`/`audio`/`resource` blocks are still rejected, so `ACP-PROMPTCAP-201` PASSes."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "accepts_unknown_content_type.py", protocol_version=2, k="test_prompt"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-PROMPT-211"}, result.stdout
+    assert statuses.get("ACP-PROMPTCAP-201") == "PASS", result.stdout
+
+
+def test_accepts_unadvertised_content_fails_promptcap_201_only():
+    """`accepts_unadvertised_content.py` advertises no prompt capability but accepts `image`,
+    `audio` and `resource` blocks; the unknown `_tck_unknown` block is still rejected, so
+    `ACP-PROMPT-211` PASSes."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "accepts_unadvertised_content.py", protocol_version=2, k="test_prompt"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-PROMPTCAP-201"}, result.stdout
+    assert statuses.get("ACP-PROMPT-211") == "PASS", result.stdout
+
+
+def test_rejects_content_with_wrong_code_fails_prompt_211_and_promptcap_201():
+    result = _run_cli(
+        FIXTURES_DIR_V2, "rejects_content_with_wrong_code.py", protocol_version=2, k="test_prompt"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-PROMPT-211", "ACP-PROMPTCAP-201"}, result.stdout
+
+
+def test_echoes_rejected_content_fails_prompt_211_and_promptcap_201():
+    """`echoes_rejected_content.py` answers `-32602` but inserted the prompt first (echo plus
+    `running`); the turn it started is closed, so the other prompt rows are unaffected."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "echoes_rejected_content.py", protocol_version=2, k="test_prompt"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-PROMPT-211", "ACP-PROMPTCAP-201"}, result.stdout

@@ -73,6 +73,8 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PROMPT-206",
         "ACP-PROMPT-207",
         "ACP-PROMPT-209",
+        "ACP-PROMPT-211",
+        "ACP-PROMPTCAP-201",
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-PERM-201",

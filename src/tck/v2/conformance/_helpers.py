@@ -49,7 +49,13 @@ from tck.common.plugin import (
 )
 
 from .. import SPEC
-from ..protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION, RESOURCE_NOT_FOUND
+from ..protocol import (
+    AUTHENTICATION_REQUIRED,
+    INVALID_PARAMS,
+    METHOD_NOT_FOUND,
+    PROTOCOL_VERSION,
+    RESOURCE_NOT_FOUND,
+)
 
 
 @contextlib.asynccontextmanager
@@ -1457,3 +1463,50 @@ async def prompt_during_active_work(
     if end_index < cancel_index:
         return _result(None, "the first prompt's work ended before session/cancel was sent")
     return _result("held", None)
+
+
+_USER_MESSAGE_UPDATES = frozenset({"user_message", "user_message_chunk"})
+
+
+async def assert_prompt_rejected_not_inserted(
+    agent: AgentProcess,
+    session_id: str,
+    blocks: list[dict[str, Any]],
+    *,
+    what: str,
+    timeout: float,
+) -> None:
+    """Send a prompt the agent must refuse and assert it was answered `-32602` and not inserted
+    (prompt-lifecycle.mdx:313,388). Shared by `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`.
+
+    The prompt goes through `run_prompt` on a fresh session, so any `user_message`/
+    `user_message_chunk` or `running`/`requires_action` update for that session means it was
+    inserted (an accepted prompt also fails the "error" check; both are reported). A
+    rejection owes no state transition (:390), so a short `quiet_period` after the response
+    catches late updates too. `what` names the probe in the failure message."""
+    turn = await run_prompt(agent, session_id, blocks, timeout=timeout)
+    entry = turn.response_entry
+    skip_if_auth_gated(entry)
+    late = await drain_quiet(agent, quiet_period(timeout))
+    problems = []
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    if not isinstance(error, dict):
+        problems.append("the prompt was accepted instead of answered with an error")
+    elif error.get("code") != INVALID_PARAMS:
+        problems.append(f"expected error code -32602, got {error.get('code')!r}")
+    seen = [e for _, e in turn.updates] + late
+    for observed in seen:
+        for message in iter_messages(observed):
+            params = message.get("params")
+            if message.get("method") != "session/update" or not isinstance(params, dict):
+                continue
+            update = params.get("update")
+            if params.get("sessionId") != session_id or not isinstance(update, dict):
+                continue
+            kind = update.get("sessionUpdate")
+            if kind in _USER_MESSAGE_UPDATES:
+                problems.append(f"a {kind} update was emitted for it (it was inserted)")
+            elif kind == "state_update" and update.get("state") in ACTIVE_STATES:
+                problems.append(f"state {update.get('state')!r} was reported for it (it was inserted)")
+    assert not problems, f"{what}: {'; '.join(dict.fromkeys(problems))} ({entry.text!r})"

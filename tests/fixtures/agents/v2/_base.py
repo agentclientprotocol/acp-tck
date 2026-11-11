@@ -679,9 +679,37 @@ class ConformingAgent:
 
     def _prompt_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
         """Hook: return `(code, message)` to reject this prompt outright with a JSON-RPC error
-        instead of accepting it (e.g. an unadvertised/rejected content block type). By default
-        only an embedded `resource` with neither `text` nor `blob` (a closed site,
-        `ACP-ENUM-204`) is rejected with `-32602`."""
+        instead of accepting it (e.g. `rejects_image_when_advertised.py`). By default a block
+        the agent cannot take is rejected with `-32602` and nothing is inserted: an unknown
+        type or an unadvertised `image`/`audio`/`resource`
+        (`_unsupported_content_rejection`, `ACP-PROMPT-211`/`ACP-PROMPTCAP-201`), then an embedded
+        `resource` with neither `text` nor `blob` (a closed site, `ACP-ENUM-204`)."""
+        return self._unsupported_content_rejection(prompt) or self._contentless_resource_rejection(prompt)
+
+    # Baseline content types, and the prompt capability each optional type needs
+    # (initialization.mdx:306-331).
+    _BASELINE_PROMPT_TYPES = frozenset({"text", "resource_link"})
+    _PROMPT_CAPABILITY_FOR_TYPE = {"image": "image", "audio": "audio", "resource": "embeddedContext"}
+
+    def _unsupported_content_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
+        """`-32602` for a block that is neither baseline nor advertised, or of an unknown type
+        (prompt-lifecycle.mdx:313)."""
+        advertised = self._session_capability("prompt")
+        for block in prompt:
+            block_type = block.get("type") if isinstance(block, dict) else None
+            if block_type in self._BASELINE_PROMPT_TYPES:
+                continue
+            capability = self._PROMPT_CAPABILITY_FOR_TYPE.get(block_type)
+            if (
+                capability is None
+                or not isinstance(advertised, dict)
+                or advertised.get(capability) is None
+            ):
+                return -32602, f"Invalid params: unsupported content type {block_type!r}"
+        return None
+
+    @staticmethod
+    def _contentless_resource_rejection(prompt: list[Any]) -> tuple[int, str] | None:
         for block in prompt:
             if isinstance(block, dict) and block.get("type") == "resource":
                 resource = block.get("resource")
