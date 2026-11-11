@@ -21,8 +21,6 @@ import zlib
 
 import pytest
 
-from tck.common.plugin import capability_is_supported
-
 from ._helpers import (
     assert_prompt_rejected_not_inserted,
     connected_agent,
@@ -127,6 +125,17 @@ def _resource_block(tmp_path) -> dict:
     }
 
 
+def _advertised(init_result: dict | None, path: str) -> bool:
+    """Whether `path` holds a capability object. v2's prompt capabilities are `object | null`
+    (a client reads `true` as not advertised), so only an object counts."""
+    value: object = init_result
+    for part in path.split("."):
+        if not isinstance(value, dict):
+            return False
+        value = value.get(part)
+    return isinstance(value, dict)
+
+
 _UNADVERTISED_CASES = {
     "image": (
         "capabilities.session.prompt.image",
@@ -150,13 +159,13 @@ async def test_unadvertised_content_block_is_rejected_without_insertion(
     advertise under `capabilities.session.prompt` is answered `-32602` and not inserted
     (prompt-lifecycle.mdx:313; content.mdx:22). The gate is inverted -- the case runs only for a
     capability that is *absent* -- so it is computed here from the cached `initialize` result
-    (via `capability_is_supported`, the marker's own check) instead of by a capability marker,
-    which only gates on presence; the marker above is the baseline `session` one. SKIPs for a
-    type the agent advertises (`ACP-PROMPTCAP-001..003` judge that side). A client never sends an
-    unadvertised block; the probe breaks that rule on purpose because the spec defines the
-    agent's answer."""
+    (`_advertised`) instead of by a capability marker, which only gates on presence; the marker
+    above is the baseline `session` one. Only an object value counts as advertised: `true` is
+    read as not advertised, so such an agent is probed. SKIPs for a type the agent advertises
+    (`ACP-PROMPTCAP-001..003` judge that side). A client never sends an unadvertised block; the
+    probe breaks that rule on purpose because the spec defines the agent's answer."""
     capability_path, make_block = _UNADVERTISED_CASES[block_type]
-    if capability_is_supported(agent_initialize_result.result, capability_path):
+    if _advertised(agent_initialize_result.result, capability_path):
         pytest.skip(f"{capability_path} is advertised -- ACP-PROMPTCAP-001..003 judge accepting it")
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:

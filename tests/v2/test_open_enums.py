@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from tck.v2.open_enums import OpenEnumScan
-from tck.v2.protocol import is_namespaced_meta_key, is_valid_traceparent
+from tck.v2.protocol import is_namespaced_meta_key, is_valid_traceparent, judge_w3c_meta
 
 
 def _scan_update(update: dict) -> OpenEnumScan:
@@ -162,6 +162,21 @@ def test_valid_traceparent(value):
 )
 def test_invalid_traceparent(value):
     assert not is_valid_traceparent(value)
+
+
+_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+def test_judge_w3c_meta_skips_null_patch_removals():
+    meta = {"traceparent": None, "tracestate": None, "baggage": None}
+    assert judge_w3c_meta(meta) == (0, [])
+
+
+def test_judge_w3c_meta_accepts_well_formed_values_and_flags_bad_ones():
+    assert judge_w3c_meta({"traceparent": _TRACEPARENT, "tracestate": "a=b", "baggage": "k=v"}) == (3, [])
+    judged, problems = judge_w3c_meta({"traceparent": "nope", "tracestate": 5, "baggage": None})
+    assert judged == 2
+    assert problems == ["traceparent='nope'", "tracestate=5"]
 
 
 @pytest.mark.parametrize("key", ["com.example/requestId", "zed.dev/x", "com.example/y"])

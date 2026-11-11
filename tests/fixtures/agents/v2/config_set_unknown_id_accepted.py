@@ -2,8 +2,8 @@
 """Non-conforming fixture: `session/set_config_option` for a `configId` the session never
 advertised succeeds (answering the unchanged list) instead of `-32602`
 (session-config-options.mdx:234). FAILs exactly `ACP-CONFIG-207`. Invalid values are still
-rejected, so `ACP-CONFIG-208` PASSes; `ACP-CONFIG-209` SKIPs (its only rejected probe needs a
-second option).
+rejected, so `ACP-CONFIG-208` PASSes; `ACP-CONFIG-209` SKIPs (the only option is the
+follow-up's, so there is nothing to observe through).
 """
 
 import sys
@@ -24,12 +24,6 @@ _VERBOSITY_OPTION = {
         {"value": "normal", "name": "Normal"},
         {"value": "verbose", "name": "Verbose"},
     ],
-}
-_DEBUG_OPTION = {
-    "configId": "debug_mode",
-    "name": "Debug mode",
-    "type": "boolean",
-    "currentValue": False,
 }
 
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: rejects a `session/new` without `cwd` with the implementation-defined
-code `-32050`, inside the `-32768..-32000` range reserved for JSON-RPC and ACP (the ACP-defined
-codes there are `-32000`, `-32002` and `-32022`).
+code `-32050`, inside the `-32768..-32000` range reserved for JSON-RPC and ACP (the codes
+defined there are JSON-RPC's `-32700` and `-32600..-32603` and ACP's `-32000`, `-32002` and
+`-32022`).
 
 FAILs exactly `ACP-ERROR-203` (ADVISORY). The unknown-method and unknown-session replies stay
 conforming, so no other row is affected.

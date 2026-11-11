@@ -8,13 +8,13 @@ MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201..205) a
 (ACP-SYSPROMPT-201/202, and the error paths ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`,
-`ACP-MCP-201`/`202`/`204`/`205` is
+`ACP-LIST-207`, `ACP-MCP-201`/`202`/`204`/`205` is
 `Tier.CAPABILITY`; see the requirements module for the exact capability path each uses. Those
 still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate even though
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
 throughout this registry (e.g. `ACP-CANCEL-204`).
 
-`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`, `ACP-LIST-205`/`206`, `ACP-ARCHIVE-004`/`005` and
+`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`, `ACP-LIST-205`/`206`/`207`, `ACP-ARCHIVE-004`/`005` and
 `ACP-MCP-203`/`204` send input a client MUST NOT (an unsupported `systemPrompt` mode or non-text
 block, a relative entry or `cwd` filter, a never-issued cursor, an unsupported `archived` filter
 value, a never-created session, an unsupported transport, duplicate names) on purpose: the
@@ -697,26 +697,46 @@ async def test_list_sessions_filtered_by_cwd_matches_requested_cwd(agent_launch,
             )
 
 
-@pytest.mark.requirement("ACP-LIST-205")
-@pytest.mark.capability("capabilities.session")
-async def test_list_sessions_rejects_relative_cwd_filter(agent_launch):
-    """ACP-LIST-205. The `cwd` filter must be absolute and the spec names the agent's answer to
-    a relative one (`-32602`), so the probe sends a relative path on purpose; its `_tck_` prefix
-    marks it as the TCK's own."""
+async def _relative_cwd_filter_error(agent_launch) -> tuple[Any, dict[str, Any] | None]:
+    """`session/list` with a relative `cwd` filter; returns the response entry and its `error`
+    object (`None` when the agent answered with anything else). Its `_tck_` prefix marks the
+    path as the TCK's own."""
     async with connected_agent(agent_launch) as agent:
         entry = await list_sessions(
             agent, cwd="_tck_relative/dir", timeout=agent_launch.default_timeout
         )
         msg = entry.parsed
         error = msg.get("error") if isinstance(msg, dict) else None
-        assert isinstance(error, dict), (
-            f"session/list with a relative cwd filter should fail with -32602, but did not "
-            f"return an error: {entry.text!r}"
-        )
-        assert error.get("code") == INVALID_PARAMS, (
-            f"session/list with a relative cwd filter should fail with -32602, got "
-            f"{error.get('code')!r}: {entry.text!r}"
-        )
+        return entry, error if isinstance(error, dict) else None
+
+
+@pytest.mark.requirement("ACP-LIST-205")
+@pytest.mark.capability("capabilities.session")
+async def test_list_sessions_rejects_relative_cwd_filter(agent_launch):
+    """ACP-LIST-205. The `cwd` filter must be absolute and the spec says agents reject a relative
+    one (`session-list.mdx:64-65`), so the probe sends a relative path on purpose. Only
+    error-vs-result is asserted: the sentence naming `-32602` carries no RFC keyword, so the
+    code is ACP-LIST-207's (ADVISORY) concern."""
+    entry, error = await _relative_cwd_filter_error(agent_launch)
+    assert error is not None, (
+        f"session/list with a relative cwd filter should fail with an error, but did not: "
+        f"{entry.text!r}"
+    )
+
+
+@pytest.mark.requirement("ACP-LIST-207")
+@pytest.mark.capability("capabilities.session")
+async def test_list_relative_cwd_filter_rejection_is_invalid_params(agent_launch):
+    """ACP-LIST-207 (ADVISORY). The rejection of a relative `cwd` filter is `-32602`
+    (`session-list.mdx:64-65`; no RFC keyword, hence ADVISORY). SKIPs when the probe was not
+    rejected: that is ACP-LIST-205's failure, not a second one."""
+    entry, error = await _relative_cwd_filter_error(agent_launch)
+    if error is None:
+        pytest.skip(f"session/list with a relative cwd filter was not rejected: {entry.text!r}")
+    assert error.get("code") == INVALID_PARAMS, (
+        f"session/list with a relative cwd filter was rejected with {error.get('code')!r}, "
+        f"expected -32602 (Invalid params): {entry.text!r}"
+    )
 
 
 @pytest.mark.requirement("ACP-LIST-206")
@@ -1120,9 +1140,11 @@ async def test_delete_cancels_foreground_work(
     `session/close` had been called (session-delete.mdx:95), so the turn ends with a `cancelled`
     idle that arrives before the delete response. If the delete kept the prompt from being
     inserted, the prompt is answered `-32800` (session-setup.mdx:395); any other error FAILs. A
-    turn that never ends FAILs through the harness timeout. The ordering is judged only against
-    a delete that succeeded (or answered `-32002`); another error SKIPs, as `ACP-DELETE-201`
-    owns the delete's own success."""
+    turn that never ends FAILs through the harness timeout, so a delete rejected without
+    cancelling the work FAILs here (the cancel-then-delete MUST, session-delete.mdx:95). The
+    ordering is judged only against a delete that succeeded (or answered `-32002`); the one
+    case it SKIPs is a delete error after the work was cancelled anyway (`ACP-DELETE-201` owns
+    the delete's own success)."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)
@@ -1392,11 +1414,13 @@ async def test_archive_and_unarchive_are_idempotent(agent_launch, agent_initiali
 
 @pytest.mark.requirement("ACP-ARCHIVE-005")
 @pytest.mark.capability(_ARCHIVE_PATH)
-async def test_archive_unknown_session_is_not_found(agent_launch):
+async def test_archive_unknown_session_is_not_found(agent_launch, tmp_path):
     """ACP-ARCHIVE-005. Unlike `session/delete`, these do not succeed silently for a session that
-    does not exist: `-32002` with `data.sessionId` (session-list.mdx:251, error.mdx:54,66). No
-    `session/new` is ever sent, so the id is one no agent can have created."""
+    does not exist: `-32002` with `data.sessionId` (session-list.mdx:251, error.mdx:54,66). A
+    session is created first, so an auth-gated agent SKIPs `AUTH-GATED:` instead of failing on
+    `-32000`; the probed id is still one no agent can have created."""
     async with connected_agent(agent_launch) as agent:
+        await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         for method in ("session/archive", "session/unarchive"):
             entry = await _archive_call(
                 agent, method, _ARCHIVE_UNKNOWN_SESSION_ID, timeout=agent_launch.default_timeout
@@ -1448,8 +1472,10 @@ async def test_archive_cancels_foreground_work(
     had been called (session-list.mdx:247), so the turn ends with a `cancelled` idle that arrives
     before the archive response. If the archive kept the prompt from being inserted, the prompt is
     answered `-32800` (session-setup.mdx:395); any other error FAILs. A turn that never ends
-    FAILs through the harness timeout. The ordering is judged only against an archive that
-    succeeded; an error SKIPs, as `ACP-ARCHIVE-003` owns the archive's own success."""
+    FAILs through the harness timeout, so an archive rejected without cancelling the work FAILs
+    here (an active session is archivable, session-list.mdx:247). The ordering is judged only
+    against an archive that succeeded; the one case it SKIPs is an archive error after the work
+    was cancelled anyway (`ACP-ARCHIVE-003` owns the archive's own success)."""
     init_result = agent_initialize_result.result
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
@@ -1945,32 +1971,24 @@ async def test_fork_of_closed_listed_session_succeeds(agent_launch, tmp_path):
 
 @pytest.mark.requirement("ACP-FORK-205")
 @pytest.mark.capability("capabilities.session.fork")
-async def test_fork_carries_the_lists_session_new_carried(agent_launch, tmp_path):
+async def test_fork_carries_the_config_options_session_new_carried(agent_launch, tmp_path):
     """ACP-FORK-205. Forks on the connection that created the source, so `session/new`'s own
-    response is the evidence the session has options or commands. Only presence and
-    non-emptiness are judged. A fork that errors SKIPs here; `ACP-FORK-201`/`202` judge that."""
+    response is the evidence the session has options. Only presence and non-emptiness are
+    judged. `availableCommands` is not: a fork's commands are the new session's own
+    (`session-setup.mdx:140`). A fork that errors SKIPs here; `ACP-FORK-201`/`202` judge that."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         created = await new_session_result(agent, tmp_path, timeout=timeout)
-        expected = [
-            name
-            for name in ("configOptions", "availableCommands")
-            if isinstance(created.get(name), list) and created[name]
-        ]
-        if not expected:
-            pytest.skip("session/new carried neither configOptions nor availableCommands")
+        if not (isinstance(created.get("configOptions"), list) and created["configOptions"]):
+            pytest.skip("session/new carried no configOptions")
         entry = await _fork_session(agent, created["sessionId"], tmp_path, timeout=timeout)
         msg = entry.parsed
         if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
             pytest.skip(f"session/fork of the just-created session did not succeed: {entry.text!r}")
-        missing = [
-            name
-            for name in expected
-            if not (isinstance(msg["result"].get(name), list) and msg["result"][name])
-        ]
-        assert not missing, (
-            f"session/new carried {expected} but session/fork's result omits or empties "
-            f"{missing}: {entry.text!r}"
+        options = msg["result"].get("configOptions")
+        assert isinstance(options, list) and options, (
+            f"session/new carried configOptions but session/fork's result omits or empties "
+            f"them: {entry.text!r}"
         )
 
 

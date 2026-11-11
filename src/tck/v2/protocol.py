@@ -164,6 +164,26 @@ def is_valid_traceparent(value: Any) -> bool:
     return version != "00" and value[55] == "-"
 
 
+W3C_META_KEYS = frozenset({"traceparent", "tracestate", "baggage"})
+
+
+def judge_w3c_meta(meta: dict[str, Any]) -> tuple[int, list[str]]:
+    """`(keys judged, problems)` for the root W3C keys of one `_meta` object. A `null` value is
+    skipped: on updates `_meta` is a patch where `null` removes the key
+    (`extensibility.mdx:108-115`), so it carries no value to judge."""
+    judged = 0
+    problems: list[str] = []
+    for key in sorted(W3C_META_KEYS):
+        value = meta.get(key)
+        if value is None:
+            continue
+        judged += 1
+        valid = is_valid_traceparent(value) if key == "traceparent" else isinstance(value, str)
+        if not valid:
+            problems.append(f"{key}={value!r}")
+    return judged, problems
+
+
 def is_namespaced_meta_key(key: str) -> bool:
     """`<reverse-dns>/<name>`: a prefix of two or more dot-separated labels ending in `/`, then a
     name, whose second label is not `agentclientprotocol` (that namespace is reserved for ACP;

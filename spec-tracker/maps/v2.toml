@@ -206,7 +206,7 @@ reason = "Unobservable: whether a pipelined request \"arrives before initializat
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/initialization.mdx:147 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD support all possible combinations of their peer's capabilities."
-reason = "Out of scope: the combinations are combinatorial. The TCK exercises the empty set (`{}`) and targeted single-capability connections such as `auth.terminal: true` (ACP-AUTH-202)."
+reason = "Out of scope: the combinations are combinatorial. The TCK exercises the empty set (`{}`) and targeted single-capability connections such as `auth.terminal: {}` (the object marker; ACP-AUTH-207's dedicated connection)."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/initialization.mdx:200 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -285,11 +285,6 @@ statement = "Receivers MUST treat an unrecognized error code as a generic failur
 reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes. ACP-ERROR-203 covers the error codes the agent itself sends."
 
 # --- authentication.mdx ---
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:191 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "An `auth/login` for a `methodId` that is not an advertised method using `auth/login` is answered `-32602` and starts no login flow."
-reason = "Not observable: ACP-AUTH-208 checks the rejection, but a client cannot tell whether the agent briefly started a login (opened a browser, for example) before rejecting."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/authentication.mdx:191 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -680,6 +675,6 @@ statement = "Agents receive `initialize` and are terminal; only a conductor send
 reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediary-only methods of a Draft RFD that the TCK does not exercise; an agent that sends one is still caught by ACP-CLIENTCAP-202 as an undefined client method."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/error.mdx:68; docs/protocol/v2/draft/security.mdx:81; schema/v2/schema.unstable.json#/$defs/ListProvidersRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`providers/*` methods called without the `providers` capability get `-32601`, and Agents SHOULD NOT return provider `headers` from `providers/list`."
-reason = "Deferred unstable method family: no TCK row exercises `providers/*`, and `ProviderInfo` has no `headers` field, so only an off-schema extra key could violate the second rule."
+citation = "docs/protocol/v2/draft/security.mdx:81; schema/v2/schema.unstable.json#/$defs/ProviderInfo @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents SHOULD NOT return provider `headers` from `providers/list`."
+reason = "Deferred unstable method: the TCK never obtains a populated `providers/list` result, and `ProviderInfo` has no `headers` field, so only an off-schema extra key could violate the rule. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-202's."

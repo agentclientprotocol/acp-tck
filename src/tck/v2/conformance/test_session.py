@@ -1,7 +1,7 @@
 """`session/new` conformance: ACP-SESSION-001/002 (see `tck.v2.requirements`'s module docstring
 for the id-namespacing decision -- reused from v1, but `Tier.CAPABILITY` here, gated on
 `capabilities.session`, since v2's session surface is opt-in), the relative-`cwd` rejection
-(ACP-SESSION-204) and the initial-state rules (ACP-SESSION-206..208).
+(ACP-SESSION-204/209) and the initial-state rules (ACP-SESSION-206..208).
 
 `ACP-SESSION-206`/`207` are ADVISORY (SHOULD NOT / SHOULD); their tests still carry a
 `@pytest.mark.capability(...)` marker purely for the SKIP gate, as `ACP-CLOSE-204` does.
@@ -54,26 +54,44 @@ async def test_session_new_ids_are_unique(agent_launch, tmp_path):
         )
 
 
-@pytest.mark.requirement("ACP-SESSION-204")
-@pytest.mark.capability("capabilities.session")
-async def test_session_new_with_relative_cwd_is_rejected(agent_launch):
-    """ACP-SESSION-204. Sends a relative `cwd` on purpose: the spec defines the agent's answer to
-    exactly this input (`session-setup.mdx:524`), which is `-32602`. A success also FAILs."""
+async def _relative_cwd_response(agent_launch) -> tuple[Any, dict[str, Any] | None]:
+    """`session/new` with a relative `cwd`; returns the response entry and its `error` object (or
+    `None` when the agent answered with anything else). Skips an auth-gated agent."""
     async with connected_agent(agent_launch) as agent:
         req_id = await agent.send_request("session/new", {"cwd": "tck-relative-dir"})
         entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
         skip_if_auth_gated(entry)
         msg = entry.parsed
         error = msg.get("error") if isinstance(msg, dict) else None
-        assert isinstance(error, dict), (
-            f"session/new with a relative cwd must be rejected with -32602, got: {entry.text!r}"
-        )
-        assert error.get("code") == INVALID_PARAMS, (
-            f"session/new with a relative cwd must be rejected with -32602, got code "
-            f"{error.get('code')!r}: {entry.text!r}"
-        )
+        return entry, error if isinstance(error, dict) else None
 
 
+@pytest.mark.requirement("ACP-SESSION-204")
+@pytest.mark.capability("capabilities.session")
+async def test_session_new_with_relative_cwd_is_rejected(agent_launch):
+    """ACP-SESSION-204. Sends a relative `cwd` on purpose: the spec defines the agent's answer to
+    exactly this input (`session-setup.mdx:524`). Only error-vs-result is asserted: the sentence
+    naming `-32602` carries no RFC keyword, so the code is ACP-SESSION-209's (ADVISORY)
+    concern."""
+    entry, error = await _relative_cwd_response(agent_launch)
+    assert error is not None, (
+        f"session/new with a relative cwd must be rejected with an error, got: {entry.text!r}"
+    )
+
+
+@pytest.mark.requirement("ACP-SESSION-209")
+@pytest.mark.capability("capabilities.session")
+async def test_session_new_relative_cwd_rejection_is_invalid_params(agent_launch):
+    """ACP-SESSION-209 (ADVISORY). The rejection of a relative `cwd` is `-32602`
+    (`session-setup.mdx:524`; no RFC keyword, hence ADVISORY). SKIPs when the probe was not
+    rejected: that is ACP-SESSION-204's failure, not a second one."""
+    entry, error = await _relative_cwd_response(agent_launch)
+    if error is None:
+        pytest.skip(f"session/new with a relative cwd was not rejected: {entry.text!r}")
+    assert error.get("code") == INVALID_PARAMS, (
+        f"session/new with a relative cwd was rejected with {error.get('code')!r}, expected "
+        f"-32602 (Invalid params): {entry.text!r}"
+    )
 _LIST_UPDATE_FIELDS = {
     "config_option_update": "configOptions",
     "available_commands_update": "availableCommands",

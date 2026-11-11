@@ -614,9 +614,14 @@ async def test_agent_sends_nothing_while_uninitialized(agent_launch, agent_initi
 
 
 async def _assert_initialized(agent, launch, what: str) -> None:
-    """The connection is initialized iff an unknown request gets its own error rather than
-    `-32600` ("not initialized")."""
-    entry = await _request_or_fail(agent, launch, _PROBE_METHOD, None, f"{_PROBE_METHOD} {what}")
+    """The connection is initialized unless an unknown request is answered `-32600` ("not
+    initialized"). Silence is no evidence either way: not replying to an unknown `_tck/...`
+    method is `ACP-EXT-001`'s FAIL, not these rows'."""
+    try:
+        req_id = await agent.send_request(_PROBE_METHOD, None)
+        entry = await agent.wait_for_response(req_id, timeout=launch.default_timeout)
+    except (AgentExited, AgentTimeout):
+        return
     assert _error_code(entry.parsed) != INVALID_REQUEST, (
         f"{what}: an unknown request was answered -32600, as if the connection were not "
         f"initialized: {entry.text!r}"
@@ -627,7 +632,8 @@ async def _assert_initialized(agent, launch, what: str) -> None:
 async def test_failed_initialize_can_be_retried(agent_launch, agent_initialize_result):
     """ACP-INIT-211 (initialization.mdx:92). An `initialize` without `protocolVersion` fails with
     `-32602`; a corrected `initialize(2)` on the same connection then succeeds, and the connection
-    is initialized (an unknown `_tck/...` request is not answered `-32600`). The retry is only
+    is initialized (an unknown `_tck/...` request is not answered `-32600`; no reply is no
+    evidence, `ACP-EXT-001` judges that). The retry is only
     tried after `-32602`, never after `-32022`, which asks the client to close the connection
     (initialization.mdx:129); an `initialize` that is not rejected with `-32602` leaves nothing
     to retry (`ACP-INIT-206` judges it) and SKIPs."""
@@ -676,7 +682,8 @@ async def _initialize_after_request(agent_launch):
     """`initialize(2)`, an unknown `_tck/...` request (any outcome), then `initialize(2)`
     again; returns the last reply entry. The first `initialize` and the in-between request are
     awaited, so the repeat is unambiguously "after another request". No reply to the repeat
-    is a FAIL; a missing reply to the in-between request is `ACP-JSONRPC-201`'s concern."""
+    is a FAIL; a missing reply to the in-between request is `ACP-EXT-001`'s concern, a wrong code
+    `ACP-JSONRPC-004`'s."""
     async with connected_agent(agent_launch, handshake=False) as agent:
         await _request_or_fail(agent, agent_launch, "initialize", SPEC.initialize_params(), "initialize")
         probe_id = await agent.send_request(_PROBE_METHOD)

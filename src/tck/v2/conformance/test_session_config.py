@@ -433,11 +433,13 @@ async def test_invalid_config_value_is_rejected_with_invalid_params(agent_launch
 @pytest.mark.requirement("ACP-CONFIG-209")
 async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, tmp_path):
     """ACP-CONFIG-209. Sends the probes of `ACP-CONFIG-207`/`208` (an unadvertised `configId`,
-    and when a second option exists an invalid value for the first), then a valid no-op set of a
-    *different* option and compares the returned list with the one before. Setting the probed
-    option itself would overwrite any damage the probe did. Only rejected probes are judged (an
-    accepted one is `207`/`208`'s FAIL). SKIPs if a `config_option_update` arrived before the
-    follow-up: the agent may change its own configuration (`session-config-options.mdx:459-463`)."""
+    and when a second settable option exists an invalid value for the first), each followed by a
+    valid no-op set of a *different* option whose returned list is compared with the previous
+    one. Setting the probed option itself would overwrite any damage the probe did, so a session
+    whose only option is the follow-up's has nothing to observe through and SKIPs. Only rejected
+    probes are judged: after an accepted one (`207`/`208`'s FAIL) the baseline is re-taken. SKIPs
+    if a `config_option_update` arrived before a follow-up: the agent may change its own
+    configuration (`session-config-options.mdx:459-463`)."""
     async with v2_only_agent(agent_launch, require_session=True) as agent:
         session_id, config_options = await _advertised_config(
             agent, tmp_path, timeout=agent_launch.default_timeout
@@ -445,39 +447,48 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
         settable = _settable_options(config_options)
         if not settable:
             pytest.skip("no select/boolean configOption to set")
-        before = _config_state(config_options)
-        start = len(agent.transcript)
+        follow_up = settable[-1]
+        if not any(
+            isinstance(option, dict) and option.get("configId") != follow_up["configId"]
+            for option in config_options
+        ):
+            pytest.skip("needs a second option to observe through: the only option is the follow-up's")
         timeout = agent_launch.default_timeout
 
-        rejected = 0
-        entry = await set_config_option(
-            agent, session_id, _UNKNOWN_CONFIG_ID, type="id", value=_UNKNOWN_VALUE, timeout=timeout
-        )
-        rejected += _is_error(entry)
+        probes = [(_UNKNOWN_CONFIG_ID, "id", _UNKNOWN_VALUE)]
         if len(settable) > 1:
-            probed = settable[0]
-            entry = await set_config_option(
-                agent, session_id, probed["configId"], type="id", value=_UNKNOWN_VALUE, timeout=timeout
+            probes.append((settable[0]["configId"], "id", _UNKNOWN_VALUE))
+
+        state = _config_state(config_options)
+        rejected = 0
+        changed: dict[Any, Any] = {}
+        for config_id, probe_type, probe_value in probes:
+            start = len(agent.transcript)
+            probe = await set_config_option(
+                agent, session_id, config_id, type=probe_type, value=probe_value, timeout=timeout
             )
-            rejected += _is_error(entry)
+            # Before the follow-up: the valid no-op set may legitimately notify.
+            if _config_updates(agent.transcript[start:], session_id):
+                pytest.skip("config_option_update observed after a probe; the agent changed its own state")
+            value_type, value = _no_op_value(follow_up)
+            entry = await set_config_option(
+                agent, session_id, follow_up["configId"], type=value_type, value=value, timeout=timeout
+            )
+            msg = entry.parsed
+            result = msg.get("result") if isinstance(msg, dict) else None
+            returned = result.get("configOptions") if isinstance(result, dict) else None
+            if not isinstance(returned, list):
+                pytest.skip(f"the follow-up no-op set did not return a list (ACP-CONFIG-202): {entry.text!r}")
+            # An option the reply omits is `ACP-CONFIG-202`'s concern, not a state change.
+            after = _config_state(returned)
+            if _is_error(probe):
+                rejected += 1
+                changed.update(
+                    {k: (state.get(k, "<absent>"), v) for k, v in after.items() if state.get(k, object()) != v}
+                )
+            state = {**state, **after}
         if not rejected:
             pytest.skip("the agent accepted every probe (ACP-CONFIG-207/208 judge that)")
-
-        follow_up = settable[-1] if len(settable) > 1 else settable[0]
-        updates = _config_updates(agent.transcript[start:], session_id)
-        value_type, value = _no_op_value(follow_up)
-        entry = await set_config_option(
-            agent, session_id, follow_up["configId"], type=value_type, value=value, timeout=timeout
-        )
-        if updates:
-            pytest.skip("config_option_update observed after the probes; the agent changed its own state")
-        msg = entry.parsed
-        returned = msg.get("result", {}).get("configOptions") if isinstance(msg, dict) else None
-        if not isinstance(returned, list):
-            pytest.skip(f"the follow-up no-op set did not return a list (ACP-CONFIG-202): {entry.text!r}")
-        # An option the reply omits is `ACP-CONFIG-202`'s concern, not a state change.
-        after = _config_state(returned)
-        changed = {k: (before.get(k, "<absent>"), v) for k, v in after.items() if before.get(k, object()) != v}
         assert not changed, (
             f"configuration changed after rejected probes (configId: (before, after)): {changed!r}"
         )

@@ -189,7 +189,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "After an `initialize` that failed with `-32602` (`protocolVersion` omitted), a "
             "corrected `initialize` on the same connection succeeds, and the connection is "
             "then initialized (a following unknown `_tck/...` request is not answered with "
-            "`-32600`). A retry after `-32022` is deliberately not exercised: that error asks "
+            "`-32600`; no reply to it is no evidence, `ACP-EXT-001` judges that). A retry after `-32022` is deliberately not exercised: that error asks "
             "the client to close the connection. Binds agents implementing v2: SKIPPED with "
             "`VERSION-MISMATCH` unless the main handshake selected 2."
         ),
@@ -203,8 +203,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`initialize` repeated before any other request is handled like the first: "
             "two repeats after a successful `initialize(2)` each get a result selecting 2. A "
             "repeat that fails (`protocolVersion` omitted) leaves the previous initialization "
-            "in effect: a following unknown `_tck/...` request is not answered with `-32600`. "
-            "Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
+            "in effect: a following unknown `_tck/...` request is not answered with `-32600` "
+            "(no reply to it is no evidence, `ACP-EXT-001` judges that). Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
             "handshake selected 2."
         ),
         citation=_cite("docs/protocol/v2/draft/initialization.mdx:139"),
@@ -522,8 +522,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "A prompt of `text` + `resource_link` content blocks is accepted (a non-error "
             "`session/prompt` result), and the turn ends: agents advertising `session` MUST "
             "support both block types, and `content.mdx` states the `resource_link` MUST for all "
-            "agents. Replaces v1's ADVISORY `ACP-PROMPT-003`, whose recorded doc conflict does "
-            "not exist in v2."
+            "agents. The v2 counterpart of v1's MANDATORY `ACP-PROMPT-003`: gated on `session` "
+            "because without it there is no `session/prompt`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:308; "
@@ -644,8 +644,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`-32602`, and the prompt is not inserted (no user-message update and no active "
             "state follows within a short quiet period). A runtime negative gate: the "
             "registry capability only says the agent offers sessions; each block type is judged only "
-            "when its own prompt capability is absent, and SKIPPED when advertised (that "
-            "positive case is `ACP-PROMPTCAP-001..003`). A client never sends an unadvertised "
+            "when its own prompt capability is not an object, and SKIPPED when advertised (that "
+            "positive case is `ACP-PROMPTCAP-001..003`); a `true` value deserializes as not "
+            "advertised, so it is probed. A client never sends an unadvertised "
             "block; the probe breaks that rule on purpose because the spec defines the agent's "
             "answer."
         ),
@@ -1162,15 +1163,31 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "`session/new` with a relative `cwd` is rejected with `-32602` (the code is named "
-            "by the spec: \"Agents reject a request with a relative `cwd` with `-32602`\"). A "
-            "success, or another error code, FAILs. The probe breaks the client rule that `cwd` "
-            "be absolute on purpose, because the spec defines the agent's answer to exactly "
-            "that input."
+            "`session/new` with a relative `cwd` is rejected with an error, not answered with a "
+            "result (\"Agents reject a request with a relative `cwd`\"). The code is judged "
+            "separately (`ACP-SESSION-209`). The probe breaks the client rule that `cwd` be "
+            "absolute on purpose, because the spec defines the agent's answer to exactly that "
+            "input."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:524; "
             "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/cwd"
+        ),
+    ),
+    Requirement(
+        id="ACP-SESSION-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `session/new` with a relative `cwd` (`ACP-SESSION-204`'s probe) "
+            "uses `-32602` (Invalid params). The sentence naming the code carries no RFC "
+            "keyword (the MUST binds the client's path), so the code is ADVISORY while the "
+            "rejection itself is not. SKIPs when the probe was not rejected "
+            "(`ACP-SESSION-204`'s concern). An agent that accepts the relative `cwd` FAILs "
+            "`ACP-SESSION-204` and is not judged here."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:524; docs/protocol/v2/draft/error.mdx:48"
         ),
     ),
     Requirement(
@@ -1509,10 +1526,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "`session/list` with a relative `cwd` filter is rejected with `-32602` (the code is "
-            "named by the spec). A success, or another error code, FAILs. The probe breaks the "
-            "client rule that the filter be absolute on purpose, because the spec defines the "
-            "agent's answer to exactly that input. Declarative \"Agents reject\", no RFC keyword."
+            "`session/list` with a relative `cwd` filter is rejected with an error, not answered "
+            "with a result (\"Agents reject a relative path\"; declarative, no RFC keyword). The "
+            "code is judged separately (`ACP-LIST-207`). The probe breaks the client rule that "
+            "the filter be absolute on purpose, because the spec defines the agent's answer to "
+            "exactly that input."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-list.mdx:64-65; "
@@ -1535,6 +1553,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/session-list.mdx:157; "
             "docs/protocol/v2/draft/error.mdx:48; "
             "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cursor"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `session/list` with a relative `cwd` filter (`ACP-LIST-205`'s "
+            "probe) uses `-32602` (Invalid params). The sentence naming the code carries no RFC "
+            "keyword, so the code is ADVISORY while the rejection itself is not. SKIPs when the "
+            "probe was not rejected (`ACP-LIST-205`'s concern). An agent that accepts the "
+            "relative filter FAILs `ACP-LIST-205` and is not judged here."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:64-65; docs/protocol/v2/draft/error.mdx:48"
         ),
     ),
     Requirement(
@@ -1701,8 +1734,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/delete` of a session with foreground work in flight cancels that work as "
             "if `session/close` had been called: the idle `state_update` ending the turn carries "
             "`stopReason: \"cancelled\"` and arrives before the delete response. If the delete "
-            "kept the prompt from being inserted, the prompt is answered `-32800`. SKIPs when the "
-            "turn ended on its own before the delete landed (cancellation not exercised)."
+            "kept the prompt from being inserted, the prompt is answered `-32800`. A delete "
+            "rejected without cancelling the work FAILs. SKIPs when the turn ended on its own "
+            "before the delete landed (cancellation not exercised)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-delete.mdx:95; "
@@ -1819,8 +1853,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/archive` of a session with foreground work in flight cancels that work as "
             "if `session/close` had been called: the idle `state_update` ending the turn carries "
             "`stopReason: \"cancelled\"` and arrives before the archive response. If the archive "
-            "kept the prompt from being inserted, the prompt is answered `-32800`. SKIPs when "
-            "the turn ended on its own before the archive landed (cancellation not exercised)."
+            "kept the prompt from being inserted, the prompt is answered `-32800`. An archive "
+            "rejected without cancelling the work FAILs (an active session is archivable). "
+            "SKIPs when the turn ended on its own before the archive landed (cancellation not "
+            "exercised)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-list.mdx:247; "
@@ -1930,18 +1966,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session.fork",
         text=(
-            "A successful `session/fork` response carries each list -- `configOptions`, "
-            "`availableCommands` -- that the source session's own `session/new` response carried "
-            "non-empty, and non-empty: a setup response replaces the lists the client holds, so "
-            "an agent whose session has options or commands MUST include them. The source is "
-            "forked on the connection that created it. Presence and non-emptiness only; shape is "
-            "`ACP-CONFIG-201`/`203`'s concern. SKIPs when `session/new` carried neither list, or "
-            "when the fork errors (`ACP-FORK-201`/`202` judge the error). The premise \"the new "
-            "session has them\" is inferred from the source's `session/new`: an agent whose fork "
-            "legitimately has no options or commands answers the same way."
+            "A successful `session/fork` response carries `configOptions`, non-empty, when the "
+            "source session's own `session/new` response carried it non-empty: a setup response "
+            "replaces the list the client holds, so an agent whose session has configuration "
+            "options MUST include them. The source is forked on the connection that created it. "
+            "Presence and non-emptiness only; shape is `ACP-CONFIG-201`/`203`'s concern. "
+            "`availableCommands` is not judged: a fork's commands are the new session's own, "
+            "not the source's. SKIPs when `session/new` carried no `configOptions`, or when the "
+            "fork errors (`ACP-FORK-201`/`202` judge the error). The premise \"the new session "
+            "has them\" is inferred from the source's `session/new`: an agent whose fork "
+            "legitimately has no options answers the same way."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:108,138,140; "
+            "docs/protocol/v2/draft/session-setup.mdx:108,140; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse"
         ),
     ),
@@ -2235,12 +2272,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:configOptions",
         text=(
             "A rejected `session/set_config_option` leaves the configuration unchanged. After "
-            "the unknown-`configId` and invalid-value probes of `ACP-CONFIG-207`/`208` are "
-            "rejected, a no-op set of a different option returns a list whose `(configId, "
-            "currentValue)` pairs equal the pre-probe list. Probes the agent did not reject "
-            "are not judged here (`ACP-CONFIG-207`/`208` FAIL them), the invalid-value probe "
-            "needs a second option to observe through, and a `config_option_update` arriving "
-            "meanwhile SKIPs (the agent may change configuration itself)."
+            "each of the unknown-`configId` and invalid-value probes of `ACP-CONFIG-207`/`208` "
+            "is rejected, a no-op set of a different option returns a list whose `(configId, "
+            "currentValue)` pairs equal the previous list. Probes the agent did not reject "
+            "are not judged here (`ACP-CONFIG-207`/`208` FAIL them; the baseline is re-taken "
+            "after them). The invalid-value probe needs a second settable option, and the "
+            "whole row SKIPs when the session has no option besides the one the follow-up sets "
+            "(nothing to observe through). A `config_option_update` arriving meanwhile also "
+            "SKIPs (the agent may change configuration itself)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:234,459-463; "
@@ -2780,9 +2819,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "or `baggage` key during an ordinary `session/new` + `session/prompt` exchange, "
             "the value is in the corresponding W3C format. `traceparent` is checked against "
             "the Trace Context grammar; `tracestate` and `baggage` are only checked to be "
-            "strings. SKIPs when the agent emits none of these keys."
+            "strings. A `null` value is a metadata-patch removal (`:108-115`), not a value, and "
+            "is not judged. SKIPs when the agent emits none of these keys."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:97-100"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:97-100,108-115"),
     ),
     Requirement(
         id="ACP-META-204",

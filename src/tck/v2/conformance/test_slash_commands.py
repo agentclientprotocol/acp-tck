@@ -42,6 +42,7 @@ async def test_advertised_commands_are_typed_unique_and_whitespace_free(agent_la
                 update = params.get("update") if isinstance(params, dict) else None
                 if (
                     message.get("method") == "session/update"
+                    and isinstance(params, dict)
                     and params.get("sessionId") == session_id
                     and isinstance(update, dict)
                     and update.get("sessionUpdate") == "available_commands_update"

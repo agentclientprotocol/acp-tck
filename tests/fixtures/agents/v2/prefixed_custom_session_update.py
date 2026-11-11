@@ -2,7 +2,7 @@
 """Positive control: sends a `session/update` whose `sessionUpdate` discriminator is a
 `_`-prefixed custom value (`"_tck_custom_update"`) -- legal per the open-enum extensibility rule.
 
-Must PASS `ACP-ENUM-202`: its check is `is_valid_open_enum_value`, which accepts any
+Must PASS `ACP-ENUM-201`: its check is `is_valid_open_enum_value`, which accepts any
 `_`-prefixed string regardless of whether it's a defined constant. Paired with
 `unprefixed_custom_session_update.py`'s negative control (same site, unprefixed unknown value).
 """

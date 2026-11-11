@@ -23,7 +23,7 @@ import pytest
 
 from tck.common.harness import AgentExited, AgentTimeout, Direction
 from tck.v2 import SPEC, validation
-from tck.v2.protocol import is_namespaced_meta_key, is_valid_traceparent
+from tck.v2.protocol import W3C_META_KEYS, is_namespaced_meta_key, judge_w3c_meta
 
 from ._helpers import (
     connected_agent,
@@ -36,7 +36,6 @@ from ._helpers import (
 )
 
 _PROMPT_TEXT = "hi"
-_W3C_META_KEYS = frozenset({"traceparent", "tracestate", "baggage"})
 
 
 @pytest.mark.requirement("ACP-EXT-001")
@@ -191,7 +190,8 @@ async def test_emitted_w3c_trace_meta_keys_are_well_formed(agent_launch, tmp_pat
     "their values MUST use the corresponding W3C format". `traceparent` is checked against the
     Trace Context grammar (`tck.v2.protocol.is_valid_traceparent`); `tracestate` and `baggage`
     only have to be strings, since their list-member grammars are out of proportion for this
-    check. SKIPs when the agent emits none of the keys."""
+    check. A `null` value is a metadata-patch removal, not a value, and is not judged. SKIPs when the
+    agent emits none of the keys."""
     agent = await _drive_exchange(agent_launch, tmp_path)
 
     seen = 0
@@ -201,17 +201,9 @@ async def test_emitted_w3c_trace_meta_keys_are_well_formed(agent_launch, tmp_pat
             continue
         for msg in iter_messages(entry):
             for meta in _meta_objects(msg):
-                for key in sorted(_W3C_META_KEYS):
-                    if key not in meta:
-                        continue
-                    seen += 1
-                    value = meta[key]
-                    if key == "traceparent":
-                        valid = is_valid_traceparent(value)
-                    else:
-                        valid = isinstance(value, str)
-                    if not valid:
-                        problems.append(f"{key}={value!r}")
+                meta_seen, meta_problems = judge_w3c_meta(meta)
+                seen += meta_seen
+                problems += meta_problems
 
     if seen == 0:
         pytest.skip("the agent emitted no traceparent/tracestate/baggage _meta key")
@@ -261,7 +253,7 @@ async def test_agent_authored_meta_keys_are_namespaced(agent_launch, tmp_path):
             for meta in _agent_authored_meta_objects(msg):
                 for key in meta:
                     seen += 1
-                    if key in _W3C_META_KEYS or is_namespaced_meta_key(key):
+                    if key in W3C_META_KEYS or is_namespaced_meta_key(key):
                         continue
                     offending.add(key)
 
