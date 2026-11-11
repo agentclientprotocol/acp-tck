@@ -1671,16 +1671,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "with `_`: extensions MUST NOT define custom non-underscore values wherever the "
             "schema has a fallback branch (which accepts any string, so schema validation can't "
             "catch it). Sites checked: `session/update`'s `sessionUpdate` discriminator, "
-            "`tool_call_update.kind`/`.status` (`ToolKind`/`ToolCallStatus`), plan entries' "
-            "`priority`/`status` (`PlanEntryPriority`/`PlanEntryStatus`), `state_update.state`, "
-            "tool-call content blocks' `type`, and `session/request_permission` options' `kind` "
-            "(`PermissionOptionKind`, only observable if the agent asks for permission). A "
-            "curated, non-exhaustive subset of the schema's roughly 30 open-enum sites."
+            "`state_update.state`, `tool_call_update` (and a permission request's "
+            "`subject.toolCall`) `kind`/`status`, tool-call content `type` (on "
+            "`tool_call_update`, on a chunk's single `content` object, and on a `subject.toolCall`), "
+            "`diff` content's `changes[].operation`/`changes[].fileType`/`patch.format`, "
+            "`plan_update`'s `plan.type` and plan entries' `priority`/`status`, "
+            "`available_commands_update` commands' `type`, and `session/request_permission` "
+            "options' `kind` (the permission sites are only observable if the agent asks for "
+            "permission). A curated, non-exhaustive subset of the schema's open-enum sites; "
+            "`subject.type` is not checked."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/extensibility.mdx:235-240; "
-            "docs/protocol/v2/draft/tool-calls.mdx:76,372,419; "
-            "docs/protocol/v2/draft/agent-plan.mdx:164,176; "
+            "docs/protocol/v2/draft/tool-calls.mdx:76,372,419,662,685-686,700-701; "
+            "docs/protocol/v2/draft/agent-plan.mdx:145,164,176; "
+            "docs/protocol/v2/draft/slash-commands.mdx:110; "
             "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),
@@ -1698,6 +1703,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/extensibility.mdx:51-55,237,249; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome/anyOf/2"
+        ),
+    ),
+    Requirement(
+        id="ACP-ENUM-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A prompt `resource` (embedded context) block whose `resource` carries neither "
+            "`text` nor `blob` falls outside a closed site and is rejected with `-32602`, not "
+            "accepted. ADVISORY because the rule has no RFC keyword. The test is gated on "
+            "`capabilities.session.prompt.embeddedContext`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:242-245; "
+            "docs/protocol/v2/draft/error.mdx:31; "
+            "schema/v2/schema.unstable.json#/$defs/EmbeddedResourceResource"
         ),
     ),
     Requirement(
@@ -1737,6 +1758,51 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/properties/_meta"
         ),
+    ),
+    Requirement(
+        id="ACP-META-202",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A `session/prompt` whose `_meta` is not an object (probed with a string) is "
+            "treated as if `_meta` were omitted: it is accepted and the turn reaches idle, "
+            "not rejected. ADVISORY because the rule has no RFC keyword. The test is gated "
+            "on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:74; "
+            "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/_meta"
+        ),
+    ),
+    Requirement(
+        id="ACP-META-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Wherever the agent emits a `_meta` object with a root `traceparent`, `tracestate` "
+            "or `baggage` key during an ordinary `session/new` + `session/prompt` exchange, "
+            "the value is in the corresponding W3C format. `traceparent` is checked against "
+            "the Trace Context grammar; `tracestate` and `baggage` are only checked to be "
+            "strings. SKIPs when the agent emits none of these keys."
+        ),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:97-100"),
+    ),
+    Requirement(
+        id="ACP-META-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every key of a `_meta` object the agent authors on an ACP-defined object (the "
+            "`initialize` result's `capabilities` tree, response results, request/notification "
+            "params, and a `session/update`'s `update`) is `traceparent`/`tracestate`/"
+            "`baggage` or carries a reverse-DNS prefix ending in `/` whose second label is not "
+            "`agentclientprotocol`: unprefixed keys and those prefixes are reserved for ACP "
+            "(extension keys SHOULD be namespaced). `_meta` inside content blocks and tool "
+            "output is not checked, since forwarded MCP content keeps MCP's own keys. SKIPs "
+            "when the agent emits no `_meta` at those positions. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:102,259"),
     ),
     Requirement(
         id="ACP-EXT-201",
@@ -1779,12 +1845,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     ),
     Requirement(
         id="ACP-EXT-203",
-        tier=Tier.INFORMATIONAL,
+        tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "Behaviour on receiving an unrecognized `$/`-prefixed protocol-level notification "
-            "is recorded, never asserted -- the spec explicitly says the agent \"is free to "
-            "ignore\" it, so there is no conforming/non-conforming distinction to enforce."
+            "An unrecognized `$/`-prefixed protocol-level notification (standing in for one "
+            "from a later ACP version) sent to the agent gets no response and causes no crash "
+            "(SHOULD ignore)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/extensibility.mdx:165,231; "

@@ -22,7 +22,7 @@ class RejectsImageWhenAdvertisedAgent(ConformingAgent):
         for block in prompt:
             if isinstance(block, dict) and block.get("type") == "image":
                 return -32602, "image content is not actually supported by this agent"
-        return None
+        return super()._prompt_rejection(prompt)
 
 
 def main() -> None:

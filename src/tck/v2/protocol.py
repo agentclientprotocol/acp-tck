@@ -108,6 +108,13 @@ SESSION_UPDATE_KIND = frozenset(
 STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"})
 TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal", "session"})
 PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
+# More `ACP-ENUM-201` sites: `PlanUpdateContent.type`, the diff-content enums, and
+# `AvailableCommand.type`. Cross-checked against the schema the same way as the sets above.
+PLAN_CONTENT_TYPE = frozenset({"items", "file", "markdown"})
+DIFF_OPERATION = frozenset({"add", "delete", "modify", "move", "copy"})
+DIFF_FILE_TYPE = frozenset({"text", "binary", "directory", "symlink"})
+DIFF_PATCH_FORMAT = frozenset({"git_patch"})
+AVAILABLE_COMMAND_TYPE = frozenset({"command"})
 
 
 def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
@@ -124,6 +131,48 @@ def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
     if not isinstance(value, str):
         return False
     return value in defined or value.startswith("_")
+
+
+_HEX_LOWER = frozenset("0123456789abcdef")
+
+
+def _is_lower_hex(text: str, length: int) -> bool:
+    return len(text) == length and all(ch in _HEX_LOWER for ch in text)
+
+
+def is_valid_traceparent(value: Any) -> bool:
+    """W3C Trace Context `traceparent`: `version-trace_id-parent_id-trace_flags`, lowercase hex
+    (2, 32, 16 and 2 digits), version `ff` invalid, trace id and parent id not all zeros. Version
+    `00` is exactly those four fields; a later version may append `-<more>` after them
+    (https://www.w3.org/TR/trace-context/#traceparent-header-field-values)."""
+    if not isinstance(value, str) or len(value) < 55:
+        return False
+    version, trace_id, parent_id, flags = value[0:2], value[3:35], value[36:52], value[53:55]
+    if not (value[2] == value[35] == value[52] == "-"):
+        return False
+    if not (
+        _is_lower_hex(version, 2)
+        and _is_lower_hex(trace_id, 32)
+        and _is_lower_hex(parent_id, 16)
+        and _is_lower_hex(flags, 2)
+    ):
+        return False
+    if version == "ff" or trace_id == "0" * 32 or parent_id == "0" * 16:
+        return False
+    if len(value) == 55:
+        return True
+    return version != "00" and value[55] == "-"
+
+
+def is_namespaced_meta_key(key: str) -> bool:
+    """`<reverse-dns>/<name>`: a prefix of two or more dot-separated labels ending in `/`, then a
+    name, whose second label is not `agentclientprotocol` (that namespace is reserved for ACP;
+    `extensibility.mdx:102,259`)."""
+    prefix, slash, name = key.partition("/")
+    labels = prefix.split(".")
+    return bool(
+        slash and name and len(labels) >= 2 and all(labels) and labels[1] != "agentclientprotocol"
+    )
 
 
 @lru_cache(maxsize=1)

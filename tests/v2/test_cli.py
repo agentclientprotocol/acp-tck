@@ -59,6 +59,7 @@ _MANDATORY_IDS = {
 _CAPABILITY_IDS = {
     "ACP-ENUM-201",
     "ACP-ENUM-203",
+    "ACP-META-203",
     "ACP-SESSION-001",
     "ACP-SESSION-002",
     "ACP-PROMPT-205",
@@ -140,8 +141,12 @@ _ADVISORY_IDS = {
     "ACP-PATCH-209",
     "ACP-META-001",
     "ACP-META-201",
+    "ACP-META-202",
+    "ACP-META-204",
+    "ACP-ENUM-204",
     "ACP-EXT-201",
     "ACP-EXT-202",
+    "ACP-EXT-203",
     "ACP-ERROR-001",
     "ACP-ERROR-203",
     "ACP-ERROR-204",
@@ -154,7 +159,6 @@ _INFORMATIONAL_IDS = {
     "ACP-INFO-CANCEL-202",
     "ACP-MCP-201",
     "ACP-MCP-202",
-    "ACP-EXT-203",
     "ACP-STDERR-001",
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
@@ -209,6 +213,9 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PROMPTCAP-003",
     "ACP-PERM-201",
     "ACP-ENUM-203",
+    "ACP-ENUM-204",
+    "ACP-META-203",
+    "ACP-META-204",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
     "ACP-PATCH-206",
@@ -355,6 +362,9 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-AUTH-206",
     "ACP-AUTH-207",
     "ACP-ENUM-203",
+    "ACP-ENUM-204",
+    "ACP-META-203",
+    "ACP-META-204",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
     "ACP-PATCH-206",
@@ -419,9 +429,17 @@ def test_v2_conforming_agent_passes_everything():
 # What `conforming_full.py` still SKIPs besides `_ALWAYS_SKIPPED_IDS`: `ACP-AUTH-205` (only
 # concerns the empty-`authMethods` case), `ACP-PROMPT-207` (it never rejects a prompt), and
 # `ACP-CANCEL-209` (`__hang__` preempts its permission request, so none is pending at cancel;
-# `asks_permission.py`'s self-test exercises it instead).
+# `asks_permission.py`'s self-test exercises it instead), and `ACP-META-203/204` (it emits no
+# `_meta` at all; `emits_w3c_meta.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
-_FULL_EXPECTED_SKIPS = {"ACP-AUTH-205", "ACP-PROMPT-207", "ACP-CANCEL-209", "ACP-ERROR-204"}
+_FULL_EXPECTED_SKIPS = {
+    "ACP-AUTH-205",
+    "ACP-PROMPT-207",
+    "ACP-CANCEL-209",
+    "ACP-ERROR-204",
+    "ACP-META-203",
+    "ACP-META-204",
+}
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -1096,6 +1114,9 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-203",
+        "ACP-META-204",
     }, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
@@ -1170,7 +1191,13 @@ def test_missing_message_id_fails_prompt_201_and_schema_001_and_skips_prompt_203
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-PROMPT-201", "ACP-SCHEMA-001", "ACP-META-001", "ACP-PATCH-203"}, result.stdout
+    assert fails == {
+        "ACP-PROMPT-201",
+        "ACP-SCHEMA-001",
+        "ACP-META-001",
+        "ACP-META-202",
+        "ACP-PATCH-203",
+    }, result.stdout
     assert statuses.get("ACP-PROMPT-203") == "SKIPPED", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
@@ -1253,6 +1280,9 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-203",
+        "ACP-META-204",
     }, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
@@ -1494,6 +1524,9 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-203",
+        "ACP-META-204",
     }, result.stdout
     assert statuses.get("ACP-CANCEL-208") == "PASS", result.stdout
     assert statuses.get("ACP-CLOSE-202") == "PASS", result.stdout
@@ -1585,6 +1618,9 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-203",
+        "ACP-META-204",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -1680,6 +1716,9 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-203",
+        "ACP-META-204",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -1904,7 +1943,7 @@ def test_v2_pushes_status_notifications_passes_everything():
     _assert_conforming_baseline(result, "pushes_status_notifications.py")
 
     notes = _table_notes(result.stdout)
-    for req_id in ("ACP-INFO-PARSE-001", "ACP-INFO-INVALIDREQ-001", "ACP-EXT-203"):
+    for req_id in ("ACP-INFO-PARSE-001", "ACP-INFO-INVALIDREQ-001"):
         assert notes[req_id].startswith("(silent"), f"{req_id}: {notes[req_id]}"
     for req_id, note in notes.items():
         assert "_fixture/status_update" not in note, f"{req_id}: {note}"
@@ -1924,7 +1963,7 @@ def test_v2_pushes_status_and_answers_notifications_fails_no_reply_rows_only():
 
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
-    assert fails == {"ACP-JSONRPC-003", "ACP-EXT-201"}, result.stdout
+    assert fails == {"ACP-JSONRPC-003", "ACP-EXT-201", "ACP-EXT-203"}, result.stdout
 
 
 def test_v2_pushes_status_and_processes_array_elements_fails_batch_209_only():
@@ -2016,6 +2055,8 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
+        "ACP-META-203",
+        "ACP-META-204",
     }
     # Like `conforming_full.py`: it never rejects a prompt, and `__hang__` preempts the
     # permission request `ACP-CANCEL-209` needs pending.
@@ -2699,6 +2740,90 @@ def test_prefixed_custom_permission_kind_passes_enum_201():
     result = _enum_201_run("prefixed_custom_permission_kind.py")
     assert _fails(_table_statuses(result.stdout)) == set(), result.stdout
     assert _table_statuses(result.stdout).get("ACP-ENUM-201") == "PASS", result.stdout
+
+
+def test_unprefixed_chunk_content_type_fails_enum_201_only():
+    """`unprefixed_chunk_content_type.py` sends a `tool_call_content_chunk` whose single `content`
+    object has `type: "sorcery"`. The chunk's `content` is one object, so this guards the sweep
+    reading it as such; the schema's `other` branch accepts it, so only `ACP-ENUM-201` FAILs."""
+    result = _enum_201_run("unprefixed_chunk_content_type.py")
+    assert result.returncode != 0
+    assert _fails(_table_statuses(result.stdout)) == {"ACP-ENUM-201"}, result.stdout
+
+
+def test_unprefixed_diff_operation_fails_enum_201_only():
+    """`unprefixed_diff_operation.py` sends `diff` content with a change `operation` of
+    `"teleport"` -- schema-valid via `DiffChange`'s `other` branch, so only `ACP-ENUM-201` FAILs."""
+    result = _enum_201_run("unprefixed_diff_operation.py")
+    assert result.returncode != 0
+    assert _fails(_table_statuses(result.stdout)) == {"ACP-ENUM-201"}, result.stdout
+
+
+def _extensibility_run(fixture: str):
+    return _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_extensibility")
+
+
+def test_answers_unknown_protocol_notification_fails_ext_203_only():
+    """`answers_unknown_protocol_notification.py` replies to an unrecognized `$/` notification
+    (SHOULD be ignored): `ACP-EXT-203` FAILs; the `_`-prefixed notification of `ACP-EXT-201` is
+    left alone."""
+    result = _extensibility_run("answers_unknown_protocol_notification.py")
+    assert _fails(_table_statuses(result.stdout)) == {"ACP-EXT-203"}, result.stdout
+    assert _table_statuses(result.stdout).get("ACP-EXT-201") == "PASS", result.stdout
+
+
+def test_rejects_malformed_meta_fails_meta_202_only():
+    """`rejects_malformed_meta.py` answers a prompt with a non-object `_meta` with `-32602`
+    instead of treating it as omitted: `ACP-META-202` FAILs, `ACP-META-001` (object `_meta`)
+    still PASSes."""
+    result = _extensibility_run("rejects_malformed_meta.py")
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-META-202"}, result.stdout
+    assert statuses.get("ACP-META-001") == "PASS", result.stdout
+
+
+def test_malformed_traceparent_fails_meta_203_only():
+    """`malformed_traceparent.py` emits `_meta: {"traceparent": "not-a-trace-id"}`:
+    `ACP-META-203` FAILs. The key itself is a reserved W3C one, so `ACP-META-204` PASSes."""
+    result = _extensibility_run("malformed_traceparent.py")
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-META-203"}, result.stdout
+    assert statuses.get("ACP-META-204") == "PASS", result.stdout
+
+
+def test_unprefixed_meta_key_fails_meta_204_only():
+    """`unprefixed_meta_key.py` advertises `capabilities._meta: {"vendorThing": true}`:
+    only the ADVISORY `ACP-META-204` FAILs, so the verdict stays CONFORMANT."""
+    result = _extensibility_run("unprefixed_meta_key.py")
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-META-204"}, result.stdout
+    assert statuses.get("ACP-META-203") == "SKIPPED", result.stdout
+
+
+def test_emits_w3c_meta_passes_meta_203_and_204():
+    """Positive control: valid W3C trace keys and reverse-DNS namespaced keys really are
+    observed, so both rows PASS rather than SKIP."""
+    result = _extensibility_run("emits_w3c_meta.py")
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    assert statuses.get("ACP-META-203") == "PASS", result.stdout
+    assert statuses.get("ACP-META-204") == "PASS", result.stdout
+
+
+def test_accepts_contentless_embedded_resource_fails_enum_204_only():
+    """`accepts_contentless_embedded_resource.py` advertises `embeddedContext` but accepts a
+    `resource` block with neither `text` nor `blob`: only the ADVISORY `ACP-ENUM-204` FAILs;
+    an ordinary resource block is still accepted (`ACP-PROMPTCAP-003`)."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "accepts_contentless_embedded_resource.py",
+        protocol_version=2,
+        k="test_enums or prompt_capabilities",
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-ENUM-204"}, result.stdout
+    assert statuses.get("ACP-PROMPTCAP-003") == "PASS", result.stdout
 
 
 def test_custom_method_no_response_fails_ext_001_and_error_001():

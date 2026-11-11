@@ -69,6 +69,7 @@ path = "docs/protocol/v2/draft/extensibility.mdx"
 code = [
     "src/tck/v2/conformance/test_extensibility.py",
     "src/tck/v2/conformance/test_enums.py",
+    "src/tck/v2/open_enums.py",
     "src/tck/v2/validation.py",
 ]
 reason = "open-enum and unknown-field rules, _meta and metadata patches, extension methods and when a capability is required; satellite docs restate the open-enum rule"

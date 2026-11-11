@@ -4,7 +4,7 @@ notification it also replies to every notification it receives with a bogus erro
 response (`{"id": null, "error": ...}`).
 
 Proves a leading agent notification does not hide a later reply: FAILs exactly
-`ACP-JSONRPC-003` and `ACP-EXT-201`.
+`ACP-JSONRPC-003`, `ACP-EXT-201` and `ACP-EXT-203`.
 """
 
 import sys

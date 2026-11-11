@@ -53,8 +53,9 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
   `_send_rich_turn_updates` fires once per turn after the running update, emitting two
   `agent_message_chunk`s sharing a `messageId`, a `tool_call_update` create plus a content patch,
-  a one-entry `plan_update`, and a `terminal_update` + `terminal_output_chunk` sharing a
-  `terminalId` -- so the patch/enum requirements observe something instead of SKIPping.
+  a one-entry `plan_update`, a `terminal_update` + `terminal_output_chunk` sharing a
+  `terminalId`, and an `available_commands_update` -- the content patch also carries a `diff`
+  item -- so the patch/enum requirements observe something instead of SKIPping.
   `AsksPermissionAgent` also reports `requires_action`/`running` around its permission request.
 - `terminal_auth_method`: appended to `authMethods` only when the `initialize` request's
   `capabilities.auth.terminal` object marker is present (the same gate the conformance test
@@ -589,7 +590,27 @@ class ConformingAgent:
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": tool_call_id,
                 "status": "completed",
-                "content": [{"type": "content", "content": {"type": "text", "text": "done"}}],
+                "content": [
+                    {"type": "content", "content": {"type": "text", "text": "done"}},
+                    {
+                        "type": "diff",
+                        "changes": [{"operation": "modify", "path": "/tmp/a.txt", "fileType": "text"}],
+                        "patch": {
+                            "format": "git_patch",
+                            "text": "diff --git /tmp/a.txt /tmp/a.txt\n--- /tmp/a.txt\n+++ /tmp/a.txt\n"
+                            "@@ -1 +1 @@\n-old\n+new\n",
+                        },
+                    },
+                ],
+            },
+        )
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "available_commands_update",
+                "availableCommands": [
+                    {"type": "command", "name": "tck", "description": "A fixture command"}
+                ],
             },
         )
         self._plan_count += 1
@@ -636,8 +657,14 @@ class ConformingAgent:
 
     def _prompt_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
         """Hook: return `(code, message)` to reject this prompt outright with a JSON-RPC error
-        instead of accepting it (e.g. an unadvertised/rejected content block type). `None` (the
-        default) always accepts."""
+        instead of accepting it (e.g. an unadvertised/rejected content block type). By default
+        only an embedded `resource` with neither `text` nor `blob` (a closed site,
+        `ACP-ENUM-204`) is rejected with `-32602`."""
+        for block in prompt:
+            if isinstance(block, dict) and block.get("type") == "resource":
+                resource = block.get("resource")
+                if not (isinstance(resource, dict) and ("text" in resource or "blob" in resource)):
+                    return -32602, "Invalid params: embedded resource has neither text nor blob"
         return None
 
     def _mid_turn_action(self, session_id: Any) -> bool:
