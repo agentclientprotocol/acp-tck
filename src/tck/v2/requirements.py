@@ -496,16 +496,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-208",
-        tier=Tier.ADVISORY,
-        capability=None,
+        id="ACP-PROMPT-209",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
         text=(
-            "A successful `session/prompt` response arrives no later than the idle that ends "
-            "the turn: the agent responds once the message is inserted, without waiting for "
-            "foreground work to finish. ADVISORY because wire order is only a proxy for "
-            "insertion timing. The test is gated on `capabilities.session`."
+            "A `session/prompt` sent while the session's foreground work is active (on the "
+            "first `running`/`requires_action` of a cancel-prompt turn) is not rejected: until "
+            "the TCK's `session/cancel` it is either answered with a success (inserted right "
+            "away) or left pending (held). An error before the cancel FAILs, `-32800` included, "
+            "since nothing asked for cancellation. SKIPPED when the first prompt's work may "
+            "have ended before the agent read the second prompt."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:325,372"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:382,384; "
+            "docs/rfds/v2/prompt.mdx:88"
+        ),
     ),
     Requirement(
         id="ACP-PROMPTCAP-001",
@@ -605,10 +610,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Record (never assert) what the agent does when a second `session/prompt` for the "
-            "same session is sent before the first has reached its terminating idle: accepted, "
-            "a JSON-RPC error, or silence. Concurrency is explicitly out of scope of the v2 "
-            "design."
+            "Record (never assert) whether a `session/prompt` sent during active foreground "
+            "work (the `ACP-PROMPT-209` scenario) is inserted right away or held until "
+            "`session/cancel`, and how a held one is then answered. Which of the two an agent "
+            "does, and whether inserting steers the current turn or starts the next, is up to "
+            "the agent. SKIPPED when not exercised."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:382-384,1118-1119; "
@@ -819,6 +825,24 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:1177; "
             "docs/protocol/v2/draft/cancellation.mdx:40,63; "
             "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-214",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` held (still unanswered) when `session/cancel` is sent is covered "
+            "by the cancel: it is answered `-32800`, and no user-message update for a new "
+            "message follows within `quiet_period(...)`. A held prompt left unanswered, or "
+            "answered with another error, FAILs; so does a success arriving after the race "
+            "window (inserted after the cancel). A success within it SKIPs (the agent may have "
+            "inserted it just before reading the cancel), as does a prompt answered before the "
+            "cancel. Uses the `ACP-PROMPT-209` scenario."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:384,1173; "
+            "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification"
         ),
     ),
     Requirement(

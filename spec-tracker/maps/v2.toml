@@ -16,7 +16,7 @@
 #   code      optional: repo-relative TCK paths that implement the doc's cross-cutting rules
 #   reason    why the doc is core
 #
-# Ledger of deliberate non-requirements, one `[[not_requirement]]` table each (none yet):
+# Ledger of deliberate non-requirements, one `[[not_requirement]]` table each, grouped by doc below:
 #   citation   where the rule is stated, same form as a requirement citation in requirements.py
 #              (doc path with lines, or `schema.unstable.json#/$defs/...`, ending `@ <spec commit>`)
 #   statement  the spec rule, in one sentence
@@ -150,3 +150,15 @@ code = [
     "src/tck/v2/validation.py",
 ]
 reason = "stdio framing, shutdown, message timing and order, and the no-batches rule that every message exchange depends on"
+
+# --- prompt-lifecycle.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,372 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "The Agent responds to `session/prompt` once the message is inserted, without waiting for foreground work to finish."
+reason = "Unobservable: the response has no fixed order relative to session updates, the `idle` that ends the work may arrive before or after it, and clients must not infer ordering between them, so wire order is no evidence of when the agent responded."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:382 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Held prompts are inserted in the order they were received."
+reason = "Out of scope: no MUST/SHOULD, and the TCK can only bound a hold by sending `session/cancel`, which answers held prompts `-32800` instead of inserting them; waiting for a real agent's work to end on its own is unbounded."

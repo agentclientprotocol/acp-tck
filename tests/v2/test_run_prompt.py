@@ -2,9 +2,10 @@
 handling, driven against a tiny scripted stdio agent.
 
 The script replays a JSON plan once it reads `session/prompt`: each step is a message to write
-(`"$ID"` stands for the prompt's request id), `{"sleep": s}`, `{"wait_method": m}` (read until
-a message with that method arrives) or `{"wait_id": i}` (read until the response to `i`).
-`"pre"` steps are written at startup, before any prompt.
+(`"$ID"` stands for the prompt's request id, `"$ID2"` for the id of a later `session/prompt`
+read by `wait_method`), `{"sleep": s}`, `{"wait_method": m}` (read until a message with that
+method arrives) or `{"wait_id": i}` (read until the response to `i`). `"pre"` steps are written
+at startup, before any prompt.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from tck.common.plugin import _TEST_PROPERTIES
 from tck.v2.conformance._helpers import (
     UNKNOWN_PERMISSION_OPTION_ID,
     permission_outcome,
+    prompt_during_active_work,
     run_prompt,
 )
 
@@ -38,15 +40,21 @@ def read_until(pred):
 for step in plan.get("pre", []):
     out(step)
 prompt = read_until(lambda m: m.get("method") == "session/prompt")
+second = None
 for step in plan["steps"]:
     if "sleep" in step:
         time.sleep(step["sleep"])
     elif "wait_method" in step:
-        read_until(lambda m, w=step["wait_method"]: m.get("method") == w)
+        m = read_until(lambda m, w=step["wait_method"]: m.get("method") == w)
+        if m.get("method") == "session/prompt":
+            second = m
     elif "wait_id" in step:
         read_until(lambda m, w=step["wait_id"]: "method" not in m and m.get("id") == w)
     else:
-        out(json.loads(json.dumps(step).replace('"$ID"', json.dumps(prompt["id"]))))
+        text = json.dumps(step).replace('"$ID"', json.dumps(prompt["id"]))
+        if second is not None:
+            text = text.replace('"$ID2"', json.dumps(second["id"]))
+        out(json.loads(text))
 for line in sys.stdin:
     pass
 """
@@ -143,6 +151,199 @@ def test_last_known_active_state_seeds_the_turn():
     _, turn = _drive([_RESPONSE, _state("idle")], pre=[_state("running")])
     assert turn.terminated_by == "idle"
     assert turn.active_seen
+
+
+def test_idle_before_the_response_still_ends_the_turn():
+    _, turn = _drive([_state("running"), _state("idle", stopReason="end_turn"), _RESPONSE])
+    assert turn.terminated_by == "idle"
+    assert turn.stop_reason == "end_turn"
+    assert turn.idle_index < turn.response_index
+
+
+def test_active_state_after_the_response_voids_an_idle_read_before_it():
+    """The first idle may end earlier work (a held prompt waits for it), so it is only a
+    candidate until `quiet_period` passes after the response."""
+    _, turn = _drive(
+        [_state("running"), _state("idle", stopReason="end_turn"), _RESPONSE, {"sleep": 0.1},
+         _state("running"), _state("idle", stopReason="max_tokens")]
+    )
+    assert turn.terminated_by == "idle"
+    assert turn.stop_reason == "max_tokens"
+    assert turn.idle_index > turn.response_index
+
+
+def test_repeated_idle_snapshot_keeps_the_early_idle_candidate():
+    _, turn = _drive(
+        [_state("running"), _state("idle", stopReason="end_turn"), _RESPONSE,
+         _state("idle", stopReason="max_tokens")]
+    )
+    assert turn.stop_reason == "end_turn"
+    assert turn.idle_index < turn.response_index
+
+
+def test_error_response_after_an_early_idle_ends_the_turn_with_that_idle():
+    _, turn = _drive([_state("running"), _state("idle", stopReason="error"), _ERROR])
+    assert turn.terminated_by == "idle"
+    assert turn.stop_reason == "error"
+
+
+def _drive_with_action(steps: list[dict[str, Any]], **kwargs: Any):
+    """`_drive`, with `on_action` sending a `_tck/second` request with id `"b1"`."""
+
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+
+            async def _action():
+                return await agent.send_request("_tck/second", id="b1")
+
+            turn = await run_prompt(
+                agent, _SESSION, [{"type": "text", "text": "hi"}], timeout=3.0,
+                on_action=_action, **kwargs,
+            )
+            return agent, turn
+
+    return asyncio.run(go())
+
+
+_ACTION_RESPONSE = {"jsonrpc": "2.0", "id": "b1", "result": {}}
+
+
+def _sent_at(agent, index: int | None) -> float:
+    assert index is not None
+    return agent.transcript[index].timestamp
+
+
+def test_delayed_cancel_follows_the_action_response_without_waiting_out_the_delay():
+    agent, turn = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"}, _ACTION_RESPONSE,
+         {"wait_method": "session/cancel"}, _state("idle", stopReason="cancelled")],
+        on_cancel=True,
+        cancel_after_action=2.0,
+    )
+    action_index = agent.transcript.index(turn.action_response)
+    assert turn.action_sent_at_index < action_index < turn.cancelled_at_index < turn.idle_index
+    assert _sent_at(agent, turn.cancelled_at_index) - _sent_at(agent, turn.action_sent_at_index) < 1.0
+    assert turn.state_at_cancel == "running"
+    assert turn.stop_reason == "cancelled"
+
+
+def test_delayed_cancel_is_sent_once_the_delay_passes_without_an_action_response():
+    agent, turn = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"},
+         {"wait_method": "session/cancel"}, _state("idle", stopReason="cancelled")],
+        on_cancel=True,
+        cancel_after_action=0.3,
+    )
+    assert turn.action_response is None
+    elapsed = _sent_at(agent, turn.cancelled_at_index) - _sent_at(agent, turn.action_sent_at_index)
+    assert elapsed >= 0.3
+    assert turn.stop_reason == "cancelled"
+
+
+def test_delayed_cancel_is_not_sent_when_the_turn_ends_first():
+    agent, turn = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"},
+         _state("idle", stopReason="end_turn")],
+        on_cancel=True,
+        cancel_after_action=1.0,
+    )
+    assert turn.cancelled_at_index is None
+    assert turn.stop_reason == "end_turn"
+    assert not any(
+        entry.direction is Direction.SENT and entry.parsed.get("method") == "session/cancel"
+        for entry in agent.transcript
+    )
+
+
+def test_permission_before_the_delayed_cancel_is_answered_per_policy():
+    agent, _ = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"},
+         _permission_request([{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]),
+         {"wait_id": "perm-1"}, _state("idle", stopReason="end_turn")],
+        on_cancel=True,
+        cancel_after_action=2.0,
+    )
+    _, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "selected", "optionId": "yes"}
+
+
+def _scenario(steps: list[dict[str, Any]]):
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            return await prompt_during_active_work(agent, _SESSION, "work", timeout=3.0)
+
+    return asyncio.run(go())
+
+
+_SECOND_OK = {"jsonrpc": "2.0", "id": "$ID2", "result": {"messageId": "m2"}}
+_SECOND_CANCELLED = {"jsonrpc": "2.0", "id": "$ID2", "error": {"code": -32800, "message": "x"}}
+_SECOND_BUSY = {"jsonrpc": "2.0", "id": "$ID2", "error": {"code": -32603, "message": "busy"}}
+_UNTIL_SECOND = [_RESPONSE, _state("running"), {"wait_method": "session/prompt"}]
+_CANCELLED_IDLE = _state("idle", stopReason="cancelled")
+
+
+def test_second_prompt_answered_during_active_work_is_inserted():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, _SECOND_OK, {"wait_method": "session/cancel"}, _CANCELLED_IDLE]
+    )
+    assert (scenario.outcome, scenario.not_exercised) == ("inserted", None)
+
+
+def test_second_prompt_errored_during_active_work_is_rejected():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, _SECOND_BUSY, {"wait_method": "session/cancel"}, _CANCELLED_IDLE]
+    )
+    assert (scenario.outcome, scenario.not_exercised) == ("rejected", None)
+    assert scenario.second_error["code"] == -32603
+
+
+def test_second_prompt_unanswered_at_the_cancel_is_held():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, {"wait_method": "session/cancel"}, _SECOND_CANCELLED, _CANCELLED_IDLE]
+    )
+    assert (scenario.outcome, scenario.not_exercised) == ("held", None)
+    assert scenario.second_response_index > scenario.turn.cancelled_at_index
+
+
+def test_held_prompt_answered_after_the_cancelled_idle_is_still_captured():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, {"wait_method": "session/cancel"}, _CANCELLED_IDLE, {"sleep": 0.3},
+         _SECOND_CANCELLED]
+    )
+    assert scenario.outcome == "held"
+    assert scenario.second_error["code"] == -32800
+
+
+def test_first_turn_ending_on_its_own_before_the_second_answer_is_not_exercised():
+    """The idle may already have been in the pipe when the second prompt was sent."""
+    chunk = _update(
+        {"sessionUpdate": "agent_message_chunk", "messageId": "a1",
+         "content": {"type": "text", "text": "ok"}}
+    )
+    scenario = _scenario(
+        [_RESPONSE, _state("running"), chunk, _state("idle", stopReason="end_turn"),
+         {"wait_method": "session/prompt"}, _SECOND_OK]
+    )
+    assert scenario.outcome is None
+    assert scenario.turn.cancelled_at_index is None
+    assert "ended on its own" in scenario.not_exercised
+
+
+def test_second_prompt_sent_without_an_active_state_is_not_exercised():
+    scenario = _scenario(
+        [_RESPONSE, {"wait_method": "session/prompt"}, _SECOND_OK,
+         {"wait_method": "session/cancel"}, _state("idle", stopReason="end_turn")]
+    )
+    assert scenario.outcome is None
+    assert "not running/requires_action" in scenario.not_exercised
 
 
 def _sent_answer(agent, request_id: str) -> tuple[int, dict[str, Any]]:

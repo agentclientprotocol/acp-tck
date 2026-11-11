@@ -24,27 +24,18 @@ import pytest
 from tck.common.harness import AgentExited, AgentTimeout
 from tck.v2 import SPEC
 
-from ._helpers import connected_agent, new_session, next_reply_line, probe_behaviour, quiet_period
-
-_PROMPT_TEXT = "hi"
-
-
-def _classify_reply_or_result(entry) -> str:
-    """`on_reply` for the concurrent-prompt probe, whose reply may legitimately be a normal
-    `result` (the second prompt's acceptance receipt) as well as an error."""
-    msg = entry.parsed
-    error = msg.get("error") if isinstance(msg, dict) else None
-    if isinstance(error, dict):
-        return f"replied with error code {error.get('code')!r}"
-    elif isinstance(msg, dict) and "result" in msg:
-        return "replied with a result (no error)"
-    else:
-        return f"replied: {entry.text!r}"
-
+from ._helpers import (
+    connected_agent,
+    new_session,
+    next_reply_line,
+    probe_behaviour,
+    prompt_during_active_work,
+    quiet_period,
+)
 
 def _classify_reply(entry) -> str:
     """`on_reply` for the two raw-transport probes (malformed JSON line / structurally invalid
-    request), where a `result` response is not itself a distinct, meaningful category."""
+    request)."""
     msg = entry.parsed
     error = msg.get("error") if isinstance(msg, dict) else None
     if isinstance(error, dict):
@@ -70,33 +61,35 @@ async def _probe_connection_usable_after(agent, tmp_path, timeout: float) -> str
 
 @pytest.mark.requirement("ACP-INFO-CONCURRENT-201")
 @pytest.mark.capability("capabilities.session")
-async def test_concurrent_prompt_behaviour(agent_launch, tmp_path, record_property):
-    """ACP-INFO-CONCURRENT-201 (INFORMATIONAL). Sends a second `session/prompt` for the same
-    session before the first has reached its terminating idle, and records how the agent
-    reacts: a JSON-RPC error, a normal acceptance receipt, or silence. Never asserts."""
+async def test_concurrent_prompt_behaviour(
+    agent_launch, tmp_path, cancel_prompt_text, record_property
+):
+    """ACP-INFO-CONCURRENT-201 (INFORMATIONAL). Runs `ACP-PROMPT-209`'s scenario (a second
+    prompt on the first `running`/`requires_action` of a cancel-prompt turn, then
+    `session/cancel`) and records whether the second prompt was inserted right away, rejected,
+    or held, and how a held one was answered after the cancel. Which of these the agent does is
+    up to it (prompt-lifecycle.mdx:382). Never asserts; SKIPs when not exercised."""
+    timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
-        session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
-        first_id = await agent.send_request(
-            "session/prompt",
-            {"sessionId": session_id, "prompt": [{"type": "text", "text": _PROMPT_TEXT}]},
-        )
-        second_id = await agent.send_request(
-            "session/prompt",
-            {"sessionId": session_id, "prompt": [{"type": "text", "text": _PROMPT_TEXT}]},
-        )
-        behaviour = await probe_behaviour(
-            agent.wait_for_response(second_id, timeout=quiet_period(agent_launch.default_timeout)),
-            _classify_reply_or_result,
-        )
-
-        # Best-effort drain of the first prompt's own response, so this connection's teardown
-        # doesn't race a still-in-flight turn; never asserts, never raises.
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
         try:
-            await agent.wait_for_response(first_id, timeout=agent_launch.default_timeout)
-        except (AgentTimeout, AgentExited):
-            pass
-
-    record_property("behaviour", behaviour)
+            scenario = await prompt_during_active_work(
+                agent, session_id, cancel_prompt_text, timeout=timeout
+            )
+        except AgentTimeout:
+            pytest.skip("the first prompt's turn never ended -- see ACP-STATE-202/ACP-CANCEL-201")
+    if scenario.not_exercised is not None:
+        pytest.skip(f"prompt during active work not exercised: {scenario.not_exercised}")
+    record_property("behaviour", scenario.outcome)
+    if scenario.outcome == "held":
+        error = scenario.second_error
+        if scenario.second_response is None:
+            answer = "unanswered"
+        elif error is not None:
+            answer = f"error code {error.get('code')!r}"
+        else:
+            answer = "success"
+        record_property("held_prompt_answer_after_cancel", answer)
 
 
 @pytest.mark.requirement("ACP-INFO-PARSE-001")

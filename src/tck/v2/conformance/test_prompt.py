@@ -1,7 +1,7 @@
-"""Prompt-turn conformance: ACP-PROMPT-201/203/205..208 and ACP-STATE-201..205.
+"""Prompt-turn conformance: ACP-PROMPT-201/203/205..207/209 and ACP-STATE-201..205.
 
-All are `capabilities.session`-gated. `ACP-PROMPT-208` and `ACP-STATE-204` are ADVISORY on the
-registry (`capability=None`); their tests still carry the marker for the SKIP gate.
+All are `capabilities.session`-gated. `ACP-STATE-204` is ADVISORY on the registry
+(`capability=None`); its test still carries the marker for the SKIP gate.
 
 The STATE rows judge `run_prompt`'s turn terminator (see its docstring): `terminated_by` says
 whether the turn ended with an idle after an active state, with the confirmed no-active-state
@@ -12,11 +12,17 @@ from __future__ import annotations
 
 import pytest
 
-from tck.common.harness import Direction
+from tck.common.harness import AgentTimeout, Direction
 from tck.v2.protocol import STOP_REASONS, is_valid_open_enum_value
 from tck.v2.validation import validate_agent_message
 
-from ._helpers import connected_agent, iter_messages, new_session, run_prompt
+from ._helpers import (
+    connected_agent,
+    iter_messages,
+    new_session,
+    prompt_during_active_work,
+    run_prompt,
+)
 
 _PROMPT_TEXT = "hi"
 
@@ -275,18 +281,33 @@ async def test_cancelled_prompt_error_emits_no_user_message(agent_launch, tmp_pa
     _assert_no_user_message_on_error(turn)
 
 
-@pytest.mark.requirement("ACP-PROMPT-208")
+@pytest.mark.requirement("ACP-PROMPT-209")
 @pytest.mark.capability("capabilities.session")
-async def test_prompt_response_precedes_the_turn_ending_idle(agent_launch, tmp_path):
-    """ACP-PROMPT-208 (ADVISORY). The successful response arrives no later than the turn-ending
-    idle: the agent responds once the message is inserted, not when work finishes. Wire order is
-    only a proxy for insertion timing, hence ADVISORY. SKIPs on an error response."""
-    turn = await _drive_one_turn(agent_launch, tmp_path)
-    msg = turn.response_entry.parsed
-    if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
-        pytest.skip("session/prompt did not succeed -- see ACP-PROMPT-201")
-    assert turn.idle_index is not None
-    assert turn.response_index <= turn.idle_index, (
-        "the session/prompt response arrived after the turn-ending idle -- a successful prompt "
-        "response is an insertion receipt, not a completion signal"
-    )
+async def test_prompt_during_active_work_is_not_rejected(
+    agent_launch, tmp_path, cancel_prompt_text, record_property
+):
+    """ACP-PROMPT-209. A second prompt sent on the first `running`/`requires_action` of a
+    cancel-prompt turn is not rejected before the TCK's `session/cancel`: it is inserted right
+    away (a success) or held (no response yet). Agents MUST NOT reject a prompt only because
+    foreground work is active (prompt-lifecycle.mdx:382); a plain text prompt has no other
+    plausible cause for rejection. An error before the cancel FAILs, `-32800` included. How a held
+    prompt is answered after the cancel is `ACP-CANCEL-214`'s. SKIPs when the first work may have
+    ended before the agent read the second prompt (see `prompt_during_active_work`)."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        try:
+            scenario = await prompt_during_active_work(
+                agent, session_id, cancel_prompt_text, timeout=timeout
+            )
+        except AgentTimeout:
+            pytest.skip("the first prompt's turn never ended -- see ACP-STATE-202/ACP-CANCEL-201")
+    record_property("acp_tck_second_prompt_outcome", scenario.outcome)
+    if scenario.outcome == "rejected":
+        assert scenario.second_response is not None
+        pytest.fail(
+            "a session/prompt sent while the session's foreground work was active was rejected: "
+            f"{scenario.second_response.text!r}"
+        )
+    if scenario.not_exercised is not None:
+        pytest.skip(f"prompt during active work not exercised: {scenario.not_exercised}")

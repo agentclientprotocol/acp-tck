@@ -73,6 +73,7 @@ _CAPABILITY_IDS = {
     "ACP-STATE-205",
     "ACP-PROMPT-206",
     "ACP-PROMPT-207",
+    "ACP-PROMPT-209",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -88,6 +89,7 @@ _CAPABILITY_IDS = {
     "ACP-CANCEL-208",
     "ACP-CANCEL-209",
     "ACP-CANCEL-212",
+    "ACP-CANCEL-214",
     "ACP-SESSION-203",
     "ACP-RESUME-201",
     "ACP-RESUME-202",
@@ -132,7 +134,6 @@ _CAPABILITY_IDS = {
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
-    "ACP-PROMPT-208",
     "ACP-STATE-204",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
@@ -187,7 +188,8 @@ _ALWAYS_SKIPPED_IDS = {"ACP-CANCEL-204"} | _V2_ONLY_SKIP_IDS
 # itself) holds regardless of the race outcome, so it is not in this set. `ACP-CLOSE-202` shares
 # `ACP-CANCEL-208`'s exact test (`test_close_cancels_foreground_work`), so it races the same way;
 # `ACP-CLOSE-203` drives the same close-mid-turn scenario and SKIPs unless the turn ended
-# `cancelled`.
+# `cancelled`. `ACP-PROMPT-209`/`ACP-CANCEL-214`/`ACP-INFO-CONCURRENT-201` need the first turn
+# still active when the second prompt is read, so they SKIP for the same reason.
 _CANCEL_RACE_SKIP_IDS = {
     "ACP-CANCEL-201",
     "ACP-CANCEL-202",
@@ -195,8 +197,11 @@ _CANCEL_RACE_SKIP_IDS = {
     "ACP-CANCEL-206",
     "ACP-CANCEL-207",
     "ACP-CANCEL-208",
+    "ACP-CANCEL-214",
     "ACP-CLOSE-202",
     "ACP-CLOSE-203",
+    "ACP-INFO-CONCURRENT-201",
+    "ACP-PROMPT-209",
 }
 
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
@@ -1090,7 +1095,6 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-PROMPT-207",
-        "ACP-PROMPT-208",
         "ACP-CANCEL-209",
         "ACP-CLIENTCAP-201",
         "ACP-CLIENTCAP-202",
@@ -1255,7 +1259,6 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-PROMPT-207",
-        "ACP-PROMPT-208",
         "ACP-CANCEL-209",
         "ACP-CLIENTCAP-201",
         "ACP-CLIENTCAP-202",
@@ -1323,12 +1326,54 @@ def test_idle_without_stop_reason_fails_only_advisory_state_204():
     assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
 
 
-def test_responds_after_idle_fails_only_advisory_prompt_208():
-    result = _run_cli(FIXTURES_DIR_V2, "responds_after_idle.py", protocol_version=2)
-    assert result.returncode == 0, result.stdout + result.stderr
+def test_rejects_prompt_while_busy_fails_only_prompt_209():
+    """A second prompt sent during a `__hang__` turn gets `-32603`: `ACP-PROMPT-209` FAILs,
+    `ACP-CANCEL-214` SKIPs (nothing was held) and `ACP-INFO-CONCURRENT-201` records it. Scoped
+    with `-k` to the three tests sharing the scenario."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "rejects_prompt_while_busy.py",
+        protocol_version=2,
+        cancel_prompt="__hang__",
+        k="during_active_work or held_prompt or concurrent_prompt",
+    )
     statuses = _table_statuses(result.stdout)
-    assert _fails(statuses) == {"ACP-PROMPT-208"}, result.stdout
-    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+    assert _fails(statuses) == {"ACP-PROMPT-209"}, result.stdout
+    assert statuses["ACP-CANCEL-214"] == "SKIPPED", result.stdout
+    assert statuses["ACP-INFO-CONCURRENT-201"] == "PASS", result.stdout
+
+
+def test_held_prompt_survives_cancel_fails_only_cancel_214():
+    """The held prompt is inserted after `session/cancel` instead of being answered `-32800`:
+    `ACP-CANCEL-214` FAILs, `ACP-PROMPT-209` PASSes (it was held, not rejected). `--timeout 2`
+    keeps the fixture's 1 s pause past the race window and within the wait for the response."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "held_prompt_survives_cancel.py",
+        protocol_version=2,
+        cancel_prompt="__hang__",
+        timeout="2",
+        k="during_active_work or held_prompt or concurrent_prompt",
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CANCEL-214"}, result.stdout
+    assert statuses["ACP-PROMPT-209"] == "PASS", result.stdout
+    assert statuses["ACP-INFO-CONCURRENT-201"] == "PASS", result.stdout
+
+
+def test_inserts_cancelled_held_prompt_fails_only_cancel_214():
+    """The held prompt is answered `-32800` by `session/cancel` but then inserted anyway (a user
+    message under a new `messageId` follows): `ACP-CANCEL-214` FAILs, `ACP-PROMPT-209` PASSes."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "inserts_cancelled_held_prompt.py",
+        protocol_version=2,
+        cancel_prompt="__hang__",
+        k="during_active_work or held_prompt or concurrent_prompt",
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-CANCEL-214"}, result.stdout
+    assert statuses["ACP-PROMPT-209"] == "PASS", result.stdout
 
 
 def test_exposes_subagent_passes_everything():
@@ -1573,7 +1618,6 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-PROMPT-207",
-        "ACP-PROMPT-208",
         "ACP-CANCEL-209",
         "ACP-CANCEL-204",
         "ACP-PROMPT-206",
@@ -1675,7 +1719,6 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-PROMPT-207",
-        "ACP-PROMPT-208",
         "ACP-PROMPT-206",
         "ACP-RESUME-202",
         "ACP-RESUME-203",
@@ -1775,7 +1818,6 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-PROMPT-207",
-        "ACP-PROMPT-208",
         "ACP-PROMPT-206",
         "ACP-RESUME-202",
         "ACP-RESUME-203",
@@ -3083,7 +3125,7 @@ def test_no_session_capability_agent_passes_unadvertised_probes():
 # a result the agent never claimed was v2-shaped, so they SKIP with the `VERSION-MISMATCH:`
 # marker instead of FAILing (see `tck.v2.requirements`'s "Version-mismatch-aware v2-shape rows"
 # section).
-# `ACP-PROMPT-208`/`ACP-STATE-204` (ADVISORY) and the INFORMATIONAL probes carry the same
+# `ACP-STATE-204` (ADVISORY) and the INFORMATIONAL probes carry the same
 # `@pytest.mark.capability("capabilities.session")` marker as every other row below, so the
 # autouse version-mismatch gate (`tck.common.plugin`'s `_tck_capability_gate`) skips them with
 # the same `VERSION-MISMATCH:` marker too -- include them here alongside the MANDATORY/

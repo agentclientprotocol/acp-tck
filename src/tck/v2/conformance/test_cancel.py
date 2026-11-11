@@ -1,4 +1,4 @@
-"""Cancellation conformance: ACP-CANCEL-201..213, ACP-INFO-CANCEL-201, ACP-CLOSE-205.
+"""Cancellation conformance: ACP-CANCEL-201..214, ACP-INFO-CANCEL-201, ACP-CLOSE-205.
 
 `ACP-CLOSE-202` is also bound to `test_close_cancels_foreground_work` below, alongside its own
 `ACP-CANCEL-208` id -- see `tck.v2.requirements` for why this is a deliberate reuse rather than
@@ -35,6 +35,10 @@ unanswered while sending `session/cancel` (or `session/close`), so the agent is 
 when the trigger lands: no race window applies. The request stays unanswered (`run_prompt`'s
 strict hold mode): after `session/cancel` the agent must stop waiting for it.
 
+`ACP-CANCEL-214` judges how `session/cancel` answers a prompt held during active work, using
+`ACP-PROMPT-209`'s scenario (`_helpers.prompt_during_active_work`). A success within the race
+window after the cancel SKIPs: the agent may have inserted the prompt just before reading it.
+
 Probe ids for `$/cancel_request` and the never-created session are `_tck`-prefixed, so they
 cannot collide with anything the agent knows.
 """
@@ -50,11 +54,13 @@ from ._helpers import (
     advertises_session,
     close_session,
     connected_agent,
+    drain_quiet,
     first_response_within,
     is_response_line,
     iter_messages,
     new_session,
     probe_behaviour,
+    prompt_during_active_work,
     quiet_period,
     run_prompt,
 )
@@ -666,6 +672,89 @@ async def test_withdrawn_prompt_is_still_answered_exactly_once(
                 "the withdrawn session/prompt was answered -32800 after its user message was "
                 "inserted (a user-message update was emitted); once inserted it must succeed"
             )
+
+
+@pytest.mark.requirement("ACP-CANCEL-214")
+@pytest.mark.capability("capabilities.session")
+async def test_cancel_answers_a_held_prompt_request_cancelled(
+    agent_launch, tmp_path, cancel_prompt_text, record_property
+):
+    """ACP-CANCEL-214. `ACP-PROMPT-209`'s scenario: a second prompt still unanswered when
+    `session/cancel` is sent was received before the cancel and not inserted, so the cancel
+    covers it and the agent MUST answer it `-32800` (prompt-lifecycle.mdx:384,1173). A held
+    prompt must also never be inserted later: after the `-32800`, no user-message update for a
+    new message (one other than the first prompt's) may follow within `quiet_period`. A success
+    after the race window FAILs; one within it, or a user-message update with its `messageId`
+    before the cancel, SKIPs. SKIPs too when the second prompt was answered before the cancel
+    (inserted right away, or rejected: `ACP-PROMPT-209`'s finding)."""
+    timeout = agent_launch.default_timeout
+    race_window = quiet_period(timeout)
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        try:
+            scenario = await prompt_during_active_work(
+                agent, session_id, cancel_prompt_text, timeout=timeout
+            )
+        except AgentTimeout:
+            pytest.skip("the first prompt's turn never ended -- see ACP-CANCEL-201")
+        record_property("acp_tck_second_prompt_outcome", scenario.outcome)
+        if scenario.not_exercised is not None:
+            pytest.skip(f"held prompt not exercised: {scenario.not_exercised}")
+        if scenario.outcome != "held":
+            pytest.skip(
+                f"the second prompt was {scenario.outcome} before session/cancel, not held"
+            )
+        response = scenario.second_response
+        assert response is not None, (
+            "a session/prompt held when session/cancel was sent was never answered; the cancel "
+            "covers it and it must be answered -32800"
+        )
+        cancel_entry = agent.transcript[scenario.turn.cancelled_at_index]
+        msg = response.parsed if isinstance(response.parsed, dict) else {}
+        if "result" in msg:
+            result = msg["result"]
+            message_id = result.get("messageId") if isinstance(result, dict) else None
+            echoed_before_cancel = isinstance(message_id, str) and any(
+                isinstance(update := _session_update(entry, session_id), dict)
+                and update.get("sessionUpdate") in ("user_message", "user_message_chunk")
+                and update.get("messageId") == message_id
+                for entry in agent.transcript[: scenario.turn.cancelled_at_index]
+                if entry.direction is Direction.RECEIVED
+            )
+            if echoed_before_cancel:
+                pytest.skip("the second prompt was inserted before session/cancel, not held")
+            elapsed_ms = (response.timestamp - cancel_entry.timestamp) * 1000
+            record_property("acp_tck_held_prompt_success_ms", f"{elapsed_ms:.0f}")
+            if elapsed_ms < race_window * 1000:
+                pytest.skip(
+                    f"the held prompt succeeded {elapsed_ms:.0f} ms after session/cancel (within "
+                    "the race window) -- the agent may have inserted it just before reading the "
+                    "cancel"
+                )
+            pytest.fail(
+                f"a session/prompt held when session/cancel was sent succeeded {elapsed_ms:.0f} "
+                f"ms after it (inserted after the cancel); it must be answered -32800: "
+                f"{response.text!r}"
+            )
+        error = scenario.second_error
+        assert error is not None and error.get("code") == REQUEST_CANCELLED, (
+            f"session/cancel answered a held session/prompt with other than a -32800 error: "
+            f"{response.text!r}"
+        )
+        await drain_quiet(agent, race_window)
+        first_message_id = scenario.turn.message_id
+        inserted_later = [
+            entry.text
+            for entry in agent.transcript[scenario.second_response_index + 1 :]
+            if entry.direction is Direction.RECEIVED
+            and isinstance(update := _session_update(entry, session_id), dict)
+            and update.get("sessionUpdate") in ("user_message", "user_message_chunk")
+            and update.get("messageId") != first_message_id
+        ]
+    assert not inserted_later, (
+        f"after answering the held session/prompt -32800 the agent inserted a new user message: "
+        f"{inserted_later[0]!r}"
+    )
 
 
 def _session_update(entry, session_id):

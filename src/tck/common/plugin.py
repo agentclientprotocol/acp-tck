@@ -309,8 +309,9 @@ def agent_launch(request: pytest.FixtureRequest) -> AgentLaunch:
 
 @pytest.fixture
 def cancel_prompt_text(request: pytest.FixtureRequest) -> str:
-    """The `--tck-cancel-prompt` text, used only by the cancellation tests (`test_cancel.py`) --
-    every other prompt test keeps its own short, deterministic text."""
+    """The `--tck-cancel-prompt` text, used by the tests that need a turn still running when
+    they act (cancellation, close mid-turn, a prompt during active work) -- every other prompt
+    test keeps its own short, deterministic text."""
     return request.config.getoption("tck_cancel_prompt")
 
 

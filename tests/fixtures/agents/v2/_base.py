@@ -22,7 +22,10 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `__hang__` cancel sentinel (as in v1's `conforming.py`): a prompt that is a single `__hang__`
   text block withholds its terminating idle update until `session/cancel` (`_handle_cancel`) or
   `session/close` (`_handle_close_session`) arrives. It runs before `_mid_turn_action`,
-  preempting it for that prompt only.
+  preempting it for that prompt only. A prompt arriving while a session hangs is held, not
+  inserted (`_prompt_while_busy`), and `session/cancel`/`session/close` answer every held prompt
+  `-32800` (`_cancel_held_prompts`) before the handler runs, so a fixture overriding
+  `_handle_cancel`/`_handle_close_session` keeps that behaviour.
 - No batches (`transports.mdx:67`): any top-level JSON array line (empty or not) is rejected with
   one `-32600`/`id: null` object and no element is processed (`_handle_batch`, the hook that
   array-handling defect fixtures override).
@@ -136,6 +139,8 @@ class ConformingAgent:
         self._sessions: dict[str, str] = {}  # live sessionId -> cwd
         self._closed_sessions: dict[str, str] = {}  # closed but still listed sessionId -> cwd
         self._hanging_sessions: dict[Any, bool] = {}  # sessionId -> awaiting session/cancel
+        # sessionId -> (id, params) of each prompt held while that session hangs, in order
+        self._held_prompts: dict[Any, list[tuple[Any, dict[str, Any]]]] = {}
         # `session/new`/`session/resume`'s `configOptions`, mutated in place by
         # `session/set_config_option` (each entry's own dict, deep-copied from the constructor
         # argument so callers can safely reuse the same literal across several agent instances).
@@ -211,7 +216,20 @@ class ConformingAgent:
             self._request_seen = True
             self._handle_request(method, message["id"], params)
         elif method == "session/cancel":
+            self._cancel_held_prompts(params.get("sessionId"))
             self._handle_cancel(params)
+
+    def _prompt_while_busy(self, msg_id: Any, params: dict[str, Any]) -> None:
+        """A prompt for a session whose `__hang__` prompt is still running: held until the hang
+        ends (prompt-lifecycle.mdx:382-384). The hang only ends by cancel or close, which answer
+        it `-32800`, so a held prompt is never inserted."""
+        self._held_prompts.setdefault(params.get("sessionId"), []).append((msg_id, params))
+
+    def _cancel_held_prompts(self, session_id: Any) -> None:
+        """Answer every prompt held for `session_id` `-32800`: `session/cancel` and
+        `session/close` cover prompts not yet inserted (prompt-lifecycle.mdx:384,1173)."""
+        for msg_id, _ in self._held_prompts.pop(session_id, []):
+            self._error(msg_id, -32800, "Request cancelled")
 
     def _initialize_refused(self, msg_id: Any) -> bool:
         """Answer an `initialize` this connection must not take, and return `True`: one repeated
@@ -253,6 +271,7 @@ class ConformingAgent:
         elif method == "session/resume":
             self._handle_resume_session(msg_id, params)
         elif method == "session/close":
+            self._cancel_held_prompts(params.get("sessionId"))
             self._handle_close_session(msg_id, params)
         elif method == "session/delete" and self._session_capability("delete") is not None:
             self._handle_delete_session(msg_id, params)
@@ -521,6 +540,9 @@ class ConformingAgent:
         if rejection is not None:
             code, error_message = rejection
             self._error(msg_id, code, error_message)
+            return
+        if session_id in self._hanging_sessions:
+            self._prompt_while_busy(msg_id, params)
             return
         self._message_count += 1
         message_id = f"msg-{self._message_count:04d}"

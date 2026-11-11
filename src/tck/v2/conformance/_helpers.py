@@ -746,9 +746,8 @@ def cancel_race_peek(timeout: float) -> float:
 def quiet_period(timeout: float) -> float:
     """v2 twin of v1's `quiet_period` (identical formula, deliberately re-implemented rather than
     imported -- honest duplication, not shared machinery): the heuristic "nothing more is
-    coming" wait used by INFORMATIONAL probes that conclude absence
-    (e.g. `ACP-INFO-CONCURRENT-201`'s "did a second, concurrent `session/prompt` get a
-    response at all") -- derived from `--tck-timeout` rather than a hard-coded sub-second
+    coming" wait used by probes that conclude absence (e.g. `ACP-INFO-PARSE-001`'s "did the
+    agent reply at all") -- derived from `--tck-timeout` rather than a hard-coded sub-second
     constant, clamped to a sane range."""
     return max(0.5, min(2.0, timeout / 10))
 
@@ -883,7 +882,8 @@ class PromptTurn:
     cancelled_at_index: int | None = None
     """Transcript index of the `session/cancel` sent for this turn, or `None` if none was."""
     state_at_cancel: Any = None
-    """The session's last known `state` when the trigger (cancel or `on_action`) fired."""
+    """The session's last known `state` when the trigger (cancel or `on_action`) fired. With
+    `cancel_after_action`, the state when `on_action` fired, before the delayed cancel."""
     held_permission: TranscriptEntry | None = None
     """In `hold_permission` mode, the `session/request_permission` that was pending, unanswered,
     when the trigger fired."""
@@ -917,6 +917,7 @@ async def run_prompt(
     cancel_wait: float = 0.5,
     cancel_meta: dict[str, Any] | None = None,
     hold_permission: bool = False,
+    cancel_after_action: float | None = None,
     permission: PermissionPolicy = "allow",
     extra_params: dict[str, Any] | None = None,
     timeout: float,
@@ -931,7 +932,12 @@ async def run_prompt(
     `requires_action`" and becomes true on either state during the turn. Then, once the response
     has been read:
     - the first `idle` after an active state ends the turn, whatever its `stopReason` (it is
-      SHOULD, and may be omitted; prompt-lifecycle.mdx:936) -- `terminated_by="idle"`;
+      SHOULD, and may be omitted; prompt-lifecycle.mdx:936) -- `terminated_by="idle"`. The idle
+      may arrive before or after the response (:372). One read before the response is only a
+      candidate: it ends the turn once `quiet_period(timeout)` passes after the response with no
+      active state, and an active state voids it, because it may end earlier work rather than
+      this prompt's (a prompt sent during active work may be held until that work ends,
+      :382-384);
     - an error response with no active state ends the turn after a short peek finds none
       (a rejection with no foreground work needs no state transition, :390) --
       `terminated_by="error"`. If work is active, the driver keeps waiting for the idle the
@@ -954,12 +960,20 @@ async def run_prompt(
     once answered" (`held_answered_on == "timeout"`) from "never ended" (`AgentTimeout`).
     `cancel_wait` remains the fallback trigger.
 
+    With `on_cancel`, `on_action` and `cancel_after_action` all set, the trigger fires only
+    `on_action`. `session/cancel` follows once the action's response arrives or
+    `cancel_after_action` seconds pass, unless the turn has ended by then (`cancelled_at_index`
+    then stays `None`). Until it is sent, permission requests are answered per `permission`.
+
     While waiting, `session/request_permission` is answered per `permission` (see
     `PermissionPolicy`; options are picked by `kind`, never by position), or `cancelled` for the
     prompted session once the trigger has fired; any other
     agent -> client request gets `-32601` (the mock client advertises no capabilities).
 
-    Callers must serialize prompts per session; v2 leaves concurrent prompts unspecified.
+    v2 lets a client prompt in any state (prompt-lifecycle.mdx:382), but `run_prompt` cannot
+    attribute an idle to one of several outstanding prompts, so callers serialize prompts per
+    session. A second prompt during the turn is sent raw, as `on_action` (see
+    `prompt_during_active_work`).
     """
     seed_state = last_known_state(agent, session_id)
     params = {"sessionId": session_id, "prompt": blocks}
@@ -989,6 +1003,9 @@ async def run_prompt(
     # (entry, line_index, stopReason, arrival time) of a stopReason-bearing idle with no active
     # state before it -- see the fallback in the docstring.
     provisional: tuple[TranscriptEntry, int, Any, float] | None = None
+    # (entry, line_index, stopReason) of an idle after an active state read before the response:
+    # the candidate turn end (see the docstring).
+    early_idle: tuple[TranscriptEntry, int, Any] | None = None
     error_end_deadline: float | None = None
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
@@ -1007,22 +1024,42 @@ async def run_prompt(
     trigger_on_active = trigger_armed and not hold_permission
     trigger_sent = False
     trigger_deadline = loop.time() + cancel_wait
+    delay_cancel = on_cancel and on_action is not None and cancel_after_action is not None
+    # When the delayed `session/cancel` is due (set once `on_action` fired).
+    cancel_due: float | None = None
+
+    async def _send_cancel() -> None:
+        nonlocal cancelled_at_index
+        cancel_params: dict[str, Any] = {"sessionId": session_id}
+        if cancel_meta is not None:
+            cancel_params["_meta"] = cancel_meta
+        await agent.send_notification("session/cancel", cancel_params)
+        cancelled_at_index = len(agent.transcript) - 1
 
     async def _fire_trigger() -> None:
-        nonlocal trigger_sent, cancelled_at_index, state_at_cancel, action_id, action_sent_at_index
+        nonlocal trigger_sent, state_at_cancel, action_id, action_sent_at_index, cancel_due
         if trigger_sent:
             return
         trigger_sent = True
         state_at_cancel = last_state
-        if on_cancel and cancelled_at_index is None:
-            cancel_params: dict[str, Any] = {"sessionId": session_id}
-            if cancel_meta is not None:
-                cancel_params["_meta"] = cancel_meta
-            await agent.send_notification("session/cancel", cancel_params)
-            cancelled_at_index = len(agent.transcript) - 1
+        if on_cancel and cancelled_at_index is None and not delay_cancel:
+            await _send_cancel()
         if on_action is not None:
             action_id = await on_action()
             action_sent_at_index = len(agent.transcript) - 1
+            if delay_cancel:
+                assert cancel_after_action is not None
+                cancel_due = loop.time() + cancel_after_action
+
+    async def _send_delayed_cancel_if_due() -> None:
+        if cancel_due is None or cancelled_at_index is not None:
+            return
+        if action_response is not None or loop.time() >= cancel_due:
+            await _send_cancel()
+
+    def _cancel_pending() -> bool:
+        """Whether a delayed `session/cancel` has yet to be sent."""
+        return delay_cancel and cancelled_at_index is None
 
     async def _send_permission_answer(request_id: Any, outcome: dict[str, Any]) -> None:
         await agent.send_message(
@@ -1049,8 +1086,14 @@ async def run_prompt(
         return type(request_id) is type(held_id) and request_id == held_id
 
     def _pending_end_deadline() -> float | None:
-        """When a not-yet-final turn end (error peek or fallback idle) becomes final."""
-        if response_entry is None or idle_update is not None or active:
+        """When a not-yet-final turn end (early idle, error peek or fallback idle) becomes
+        final."""
+        if response_entry is None or idle_update is not None:
+            return None
+        if early_idle is not None:
+            assert response_at is not None
+            return response_at + confirm_window
+        if active:
             return None
         if response_error:
             return error_end_deadline
@@ -1068,7 +1111,10 @@ async def run_prompt(
         deadline = _pending_end_deadline()
         if deadline is None or loop.time() < deadline:
             return False
-        if response_error:
+        if early_idle is not None:
+            idle_update, idle_index, stop_reason = early_idle
+            terminated_by = "idle"
+        elif response_error:
             terminated_by = "error"
         else:
             assert provisional is not None
@@ -1092,7 +1138,7 @@ async def run_prompt(
 
     async def _handle_message(entry: TranscriptEntry, line_index: int) -> None:
         nonlocal response_entry, response_index, response_at, response_error, message_id
-        nonlocal active, active_seen, requires_action_seen, last_state, provisional
+        nonlocal active, active_seen, requires_action_seen, last_state, provisional, early_idle
         nonlocal idle_update, idle_index, stop_reason, terminated_by, error_end_deadline
         nonlocal action_response, held_permission, cancelled_at_index, held_cancel_request_index
         msg = entry.parsed
@@ -1123,11 +1169,17 @@ async def run_prompt(
                 active = active_seen = True
                 requires_action_seen = requires_action_seen or state == "requires_action"
                 provisional = None
+                early_idle = None
             elif state == "idle" and idle_update is None:
                 sr = update.get("stopReason")
                 if active:
-                    idle_update, idle_index, stop_reason = entry, line_index, sr
-                    terminated_by = "idle"
+                    if early_idle is not None:
+                        pass  # a repeated snapshot; the candidate stands
+                    elif response_entry is None:
+                        early_idle = (entry, line_index, sr)
+                    else:
+                        idle_update, idle_index, stop_reason = entry, line_index, sr
+                        terminated_by = "idle"
                 elif sr is not None and provisional is None:
                     provisional = (entry, line_index, sr, loop.time())
             return
@@ -1140,7 +1192,8 @@ async def run_prompt(
                 held_permission = entry
                 await _fire_trigger()
                 return  # left unanswered; see `_answer_held`
-            if (trigger_sent or cancelled_at_index is not None) and for_this_session:
+            cancelled = (trigger_sent and not _cancel_pending()) or cancelled_at_index is not None
+            if cancelled and for_this_session:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
@@ -1215,6 +1268,8 @@ async def run_prompt(
         end_deadline = _pending_end_deadline()
         if end_deadline is not None:
             read_timeout = min(read_timeout, max(0.0, end_deadline - now))
+        if cancel_due is not None and _cancel_pending():
+            read_timeout = min(read_timeout, max(0.0, cancel_due - now))
 
         try:
             entry = await agent.read_line(timeout=read_timeout)
@@ -1222,11 +1277,15 @@ async def run_prompt(
             if trigger_armed and not trigger_sent and loop.time() >= trigger_deadline:
                 await _fire_trigger()
             ended = _try_end()
+            if not ended:
+                await _send_delayed_cancel_if_due()
             continue
 
         was_active = active
         await _handle_one(entry)
         ended = _try_end()
+        if not ended:
+            await _send_delayed_cancel_if_due()
 
         if not ended and trigger_on_active and not trigger_sent and active and not was_active:
             # Race-aware peek: a turn end already sitting in the pipe is read before acting, so
@@ -1288,3 +1347,113 @@ async def run_prompt(
         permission_fallbacks=permission_fallbacks,
         permission_cancels=permission_cancels,
     )
+
+
+SECOND_PROMPT_TEXT = "hi"
+"""The text of `prompt_during_active_work`'s second prompt."""
+
+
+@dataclass(frozen=True)
+class ActiveWorkPrompt:
+    """The outcome of `prompt_during_active_work`."""
+
+    turn: PromptTurn
+    """The first prompt's turn; its `on_action` sent the second prompt."""
+    second_id: Any
+    second_response: TranscriptEntry | None
+    """The second prompt's response, or `None` if none arrived in time."""
+    second_response_index: int | None
+    outcome: str | None
+    """What the agent did with the second prompt while the first prompt's work was active:
+    `"inserted"` (a success before `session/cancel`), `"rejected"` (an error before it), or
+    `"held"` (still unanswered when `session/cancel` was sent). `None` when not exercised."""
+    not_exercised: str | None
+    """Why the scenario does not show a prompt sent during active work, else `None`."""
+
+    @property
+    def second_error(self) -> dict[str, Any] | None:
+        msg = self.second_response.parsed if self.second_response is not None else None
+        error = msg.get("error") if isinstance(msg, dict) else None
+        return error if isinstance(error, dict) else None
+
+
+async def prompt_during_active_work(
+    agent: AgentProcess, session_id: str, first_text: str, *, timeout: float
+) -> ActiveWorkPrompt:
+    """Send a second `session/prompt` while the first prompt's foreground work is active, then
+    `session/cancel` (prompt-lifecycle.mdx:382-384,1173).
+
+    The first prompt (`first_text`, normally the cancel prompt) runs through `run_prompt`. The
+    second (`SECOND_PROMPT_TEXT`) is its `on_action`, sent raw on the first `running`/
+    `requires_action`. `session/cancel` follows once the second prompt is answered or
+    `quiet_period(timeout)` passes. A second prompt still unanswered when the first turn ends is
+    then awaited for up to `timeout` more.
+
+    The agent reads in order, so a second prompt answered before the first turn ended (and
+    before the cancel) was answered while that work was active. One still unanswered at the
+    cancel is held, provided the first turn ended only after the cancel. Anything else is
+    `not_exercised`: the first work may have ended before the agent read the second prompt.
+    Raises `AgentTimeout` if the first turn never ends."""
+    second_id: Any = None
+
+    async def _send_second() -> Any:
+        nonlocal second_id
+        second_id = await agent.send_request(
+            "session/prompt",
+            {"sessionId": session_id, "prompt": [{"type": "text", "text": SECOND_PROMPT_TEXT}]},
+        )
+        return second_id
+
+    turn = await run_prompt(
+        agent,
+        session_id,
+        [{"type": "text", "text": first_text}],
+        on_cancel=True,
+        on_action=_send_second,
+        cancel_after_action=quiet_period(timeout),
+        cancel_wait=timeout / 4,
+        timeout=timeout,
+    )
+    response = turn.action_response
+    if response is None and second_id is not None:
+        try:
+            response = await agent.wait_for_response(second_id, timeout=timeout)
+        except AgentTimeout:
+            response = None
+    response_index = agent.transcript.index(response) if response is not None else None
+
+    def _result(outcome: str | None, not_exercised: str | None) -> ActiveWorkPrompt:
+        return ActiveWorkPrompt(
+            turn=turn,
+            second_id=second_id,
+            second_response=response,
+            second_response_index=response_index,
+            outcome=outcome,
+            not_exercised=not_exercised,
+        )
+
+    if turn.action_sent_at_index is None:
+        return _result(None, "the first prompt's turn ended before a second prompt could be sent")
+    if turn.state_at_cancel not in ACTIVE_STATES:
+        return _result(
+            None,
+            f"the session was {turn.state_at_cancel!r}, not running/requires_action, when the "
+            "second prompt was sent",
+        )
+    end_index = turn.idle_index if turn.idle_index is not None else turn.response_index
+    cancel_index = turn.cancelled_at_index
+    if response_index is not None and response_index < end_index and (
+        cancel_index is None or response_index < cancel_index
+    ):
+        rejected = isinstance(response.parsed, dict) and "error" in response.parsed
+        return _result("rejected" if rejected else "inserted", None)
+    if cancel_index is None:
+        return _result(
+            None,
+            "the first prompt's work ended on its own before the second prompt was answered",
+        )
+    if response_index is not None and response_index < cancel_index:
+        return _result(None, "the first prompt's work ended before the second prompt was answered")
+    if end_index < cancel_index:
+        return _result(None, "the first prompt's work ended before session/cancel was sent")
+    return _result("held", None)
