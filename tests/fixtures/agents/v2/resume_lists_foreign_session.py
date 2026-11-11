@@ -2,7 +2,7 @@
 """Hazard fixture for `obtain_resumable_session`'s `session/list` route: stands in for an agent
 that persists the operator's own sessions. `session/list` ignores the `cwd` filter and always
 reports one saved session under a foreign `cwd` (`/operator/saved-project`); `session/resume`
-accepts only that session and rejects every id the TCK itself creates.
+accepts only that session and rejects every id the TCK itself creates with `-32002`.
 
 A TCK that resumed the first listed entry would "succeed" on the operator's session and go on to
 prompt into it. The correct TCK skips any entry not under its own `cwd`, so no route succeeds and
@@ -29,7 +29,7 @@ class ResumeListsForeignSessionAgent(ConformingAgent):
 
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         if params.get("sessionId") != FOREIGN_SESSION_ID:
-            self._error(msg_id, -32602, "Invalid params: unknown session")
+            self._unknown_session(msg_id, params.get("sessionId"))
             return
         super()._handle_resume_session(msg_id, params)
 

@@ -49,7 +49,7 @@ from tck.common.plugin import (
 )
 
 from .. import SPEC
-from ..protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
+from ..protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION, RESOURCE_NOT_FOUND
 
 
 @contextlib.asynccontextmanager
@@ -363,6 +363,29 @@ async def set_config_option(
     return await agent.wait_for_response(req_id, timeout=timeout)
 
 
+def assert_unknown_session_error(entry: TranscriptEntry, method: str, session_id: str) -> None:
+    """Assert `entry` is the `error.mdx:54-56` answer to a session-scoped request naming a
+    session that is not active: error `-32002` with `data.sessionId` equal to `session_id`. A
+    success, a wrong code and a missing or wrong `data.sessionId` are reported together. Shared
+    by `ACP-ERROR-201` and `ACP-RESUME-211`; the schema's `Other` error-data branch accepts any
+    `data`, so the shape is checked here."""
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    assert isinstance(error, dict), (
+        f"{method} for session {session_id!r}, which is not active, should fail with -32002 and "
+        f"data.sessionId={session_id!r}, but did not return an error: {entry.text!r}"
+    )
+    problems = []
+    if error.get("code") != RESOURCE_NOT_FOUND:
+        problems.append(f"expected code -32002, got {error.get('code')!r}")
+    data = error.get("data")
+    if not isinstance(data, dict):
+        problems.append(f"expected error.data to be an object with sessionId, got {data!r}")
+    elif data.get("sessionId") != session_id:
+        problems.append(f"expected data.sessionId={session_id!r}, got {data.get('sessionId')!r}")
+    assert not problems, f"{method} for an inactive session: {'; '.join(problems)} ({entry.text!r})"
+
+
 async def _route_just_created(
     agent: AgentProcess, cwd: Any, timeout: float | None
 ) -> str:
@@ -638,8 +661,6 @@ async def next_reply_line(agent: AgentProcess, timeout: float) -> TranscriptEntr
 async def probe_behaviour(
     read: Awaitable[TranscriptEntry],
     on_reply: Callable[[TranscriptEntry], str],
-    *,
-    on_silent: Callable[[], str] | None = None,
 ) -> str:
     """Run one already-started read `read` and classify the outcome as "silent" / "agent exited
     (exit_code=...)" / whatever `on_reply` returns for a reply that did arrive.
@@ -650,14 +671,11 @@ async def probe_behaviour(
     supplies its own read call (a specific
     `wait_for_response`/`wait_for_message`/`read_line`, each with its own predicate/timeout) and
     its own `on_reply` classifier, since what counts as "a reply" differs (a JSON-RPC
-    error/result split vs. a raw-text dump). `on_silent`, if given, overrides the default
-    `"silent"` string for the `AgentTimeout` branch -- used by
-    `test_informational.test_unknown_session_id_behaviour`, whose silent case additionally
-    reports any outstanding agent->client requests."""
+    error/result split vs. a raw-text dump)."""
     try:
         entry = await read
     except AgentTimeout:
-        return on_silent() if on_silent is not None else "silent"
+        return "silent"
     except AgentExited as exc:
         return f"agent exited (exit_code={exc.exit_code!r})"
     else:

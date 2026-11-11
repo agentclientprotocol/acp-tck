@@ -102,6 +102,20 @@ code = [
 reason = "session existence, initial state, replay and state synchronization, close, session ID and the cwd root set; additional roots, system prompt and MCP servers are individual features"
 
 [[core_doc]]
+path = "docs/protocol/v2/draft/error.mdx"
+code = [
+    "src/tck/v2/protocol.py",
+    "src/tck/v2/conformance/test_jsonrpc.py",
+    "src/tck/v2/conformance/test_diagnostics.py",
+    "src/tck/v2/conformance/test_informational.py",
+    "src/tck/v2/conformance/test_errors.py",
+    "src/tck/v2/conformance/test_session_capabilities.py",
+    "src/tck/v2/conformance/_helpers.py",
+    "src/tck/v2/validation.py",
+]
+reason = "the error object, the code table, and the per-case code rules (unknown method, invalid params, unknown session, before initialize) that no feature doc links to, yet every request that can fail depends on"
+
+[[core_doc]]
 path = "docs/protocol/v2/draft/overview.mdx"
 sections = [
     "Communication Model",

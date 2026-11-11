@@ -258,6 +258,14 @@ def test_enum_sets_match_the_schema():
     assert protocol.STOP_REASONS == _consts_from_schema("IdleStateUpdate", discriminator="stopReason")
 
 
+def test_error_codes_are_the_ones_error_mdx_lists():
+    """`ERROR_CODES` is derived from the schema's `ErrorCode` members; pin it to the codes
+    `error.mdx:26-36` lists so a schema refresh that adds or drops one is noticed."""
+    assert protocol.ERROR_CODES == {
+        -32700, -32600, -32601, -32602, -32603, -32800, -32000, -32002, -32022
+    }
+
+
 def test_wrong_kind_known_method_is_a_schema_violation_not_unknown():
     note = {"jsonrpc": "2.0", "id": 1, "method": "session/update", "params": {}}
     issues = validate_agent_message(note)

@@ -27,8 +27,8 @@ requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VEND
 Draft (schema version `2.0.0-alpha.14` at this commit); expect this to change more often than
 v1's pin."""
 
-# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1,
-# plus `UNSUPPORTED_PROTOCOL_VERSION`.
+# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode; `error.mdx:26-36`).
+# Unchanged from v1, plus `UNSUPPORTED_PROTOCOL_VERSION`.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -142,6 +142,12 @@ def load_schema() -> dict[str, Any]:
     return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
 
 
+def _const_members(def_name: str) -> frozenset[Any]:
+    """The `const` values of a schema `anyOf` enum `$def`, ignoring its open "other" variant."""
+    variants = load_schema()["$defs"][def_name]["anyOf"]
+    return frozenset(v["const"] for v in variants if "const" in v)
+
+
 def _collect_ref_names(node: Any) -> list[str]:
     """Recursively collect every local `$ref` target name (`#/$defs/X` -> `X`) under `node`."""
     names: list[str] = []
@@ -196,3 +202,7 @@ CLIENT_NOTIFICATIONS: frozenset[str] = _notification_methods("AgentNotification"
 KNOWN_METHODS: frozenset[str] = AGENT_METHODS | CLIENT_METHODS | PROTOCOL_METHODS
 """The full "known method" union across the agent, client, and protocol inventories (not
 `proxyMethods`)."""
+
+
+ERROR_CODES: frozenset[int] = _const_members("ErrorCode")
+"""The named `ErrorCode` values (`error.mdx`'s codes plus `-32800`); any other code is "other"."""

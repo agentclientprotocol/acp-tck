@@ -1,21 +1,20 @@
-"""INFORMATIONAL-tier probes: ACP-INFO-CONCURRENT-201 (new), plus ACP-INFO-UNKNOWNSESSION-001/
-ACP-INFO-PARSE-001/ACP-INFO-INVALIDREQ-001 (reused from v1 -- version-agnostic transport-level
-probes with nothing v2-specific to revisit).
+"""INFORMATIONAL-tier probes: ACP-INFO-CONCURRENT-201, ACP-INFO-PARSE-001 and
+ACP-INFO-INVALIDREQ-001.
 
-All four are explicitly out of scope of the spec, so none asserts on the probed behaviour itself
--- each just records what the agent does via `record_property`. They can still FAIL if the
-prerequisite handshake (`initialize`/`session/new`) itself fails; that's a real conformance
-problem, not a probe bug. CONCURRENT-201/UNKNOWNSESSION-001 are gated on `capabilities.session`
-even though their `Requirement` is INFORMATIONAL (`capability=None` on the registry entry -- see
-`tck.v2.requirements`'s module docstring for why the marker and registry fields are independent).
-PARSE-001/INVALIDREQ-001 carry no such marker; their `_probe_connection_usable_after` helper
-swallows a `session/new` failure into an "unusable" string instead.
+None asserts on the probed behaviour itself -- each just records what the agent does via
+`record_property`. The spec defines no reply to the malformed and invalid lines (`error.mdx`
+only assigns `-32700`/`-32600`, and `transports.mdx:24` forbids the client to send them);
+`ACP-ERROR-204` judges the shape of a `-32700` reply. They can still FAIL if the prerequisite
+handshake (`initialize`/`session/new`) itself fails; that's a real conformance problem, not a
+probe bug. CONCURRENT-201 is gated on `capabilities.session` even though its `Requirement` is
+INFORMATIONAL (`capability=None` on the registry entry -- see `tck.v2.requirements`'s module
+docstring for why the marker and registry fields are independent). PARSE-001/INVALIDREQ-001 carry
+no such marker; their `_probe_connection_usable_after` helper swallows a `session/new` failure
+into an "unusable" string instead.
 
-Concluding "the agent stayed silent" uses `quiet_period()`, not the full timeout, for the
-concurrency/parse/invalid-request probes -- except UNKNOWNSESSION-001, which uses the full
-timeout since an agent may legitimately take a normal amount of time to reject a bogus
-`sessionId`. In the parse/invalid-request probes, the agent's own notifications or requests in
-that window are not a reply and are skipped (`_helpers.next_reply_line`).
+Concluding "the agent stayed silent" uses `quiet_period()`, not the full timeout. In the
+parse/invalid-request probes, the agent's own notifications or requests in that window are not a
+reply and are skipped (`_helpers.next_reply_line`).
 """
 
 from __future__ import annotations
@@ -31,9 +30,8 @@ _PROMPT_TEXT = "hi"
 
 
 def _classify_reply_or_result(entry) -> str:
-    """`on_reply` for the two probes whose reply may legitimately be a normal `result` (a second
-    concurrent prompt's acceptance receipt; an unknown-`sessionId` prompt's own acceptance,
-    should an agent choose to accept it) as well as an error."""
+    """`on_reply` for the concurrent-prompt probe, whose reply may legitimately be a normal
+    `result` (the second prompt's acceptance receipt) as well as an error."""
     msg = entry.parsed
     error = msg.get("error") if isinstance(msg, dict) else None
     if isinstance(error, dict):
@@ -101,46 +99,9 @@ async def test_concurrent_prompt_behaviour(agent_launch, tmp_path, record_proper
     record_property("behaviour", behaviour)
 
 
-@pytest.mark.requirement("ACP-INFO-UNKNOWNSESSION-001")
-@pytest.mark.capability("capabilities.session")
-async def test_unknown_session_id_behaviour(agent_launch, tmp_path, record_property):
-    """ACP-INFO-UNKNOWNSESSION-001 (INFORMATIONAL, reused from v1). `session/prompt` for a
-    `sessionId` the agent never created. Records the error code, if any (v2's `error.mdx` is
-    still a stub). Never asserts."""
-    async with connected_agent(agent_launch) as agent:
-        await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
-
-        prompt_id = await agent.send_request(
-            "session/prompt",
-            {"sessionId": "tck-does-not-exist", "prompt": [{"type": "text", "text": _PROMPT_TEXT}]},
-        )
-        def _on_silent() -> str:
-            outstanding = [
-                pending.parsed.get("method")
-                for pending in agent.pending()
-                if isinstance(pending.parsed, dict)
-                and pending.parsed.get("method")
-                and "id" in pending.parsed
-            ]
-            if outstanding:
-                return (
-                    f"silent (agent had {len(outstanding)} outstanding client "
-                    f"request(s): {outstanding})"
-                )
-            return "silent"
-
-        behaviour = await probe_behaviour(
-            agent.wait_for_response(prompt_id, timeout=agent_launch.default_timeout),
-            _classify_reply_or_result,
-            on_silent=_on_silent,
-        )
-
-    record_property("behaviour", behaviour)
-
-
 @pytest.mark.requirement("ACP-INFO-PARSE-001")
 async def test_malformed_json_line_behaviour(agent_launch, tmp_path, record_property):
-    """ACP-INFO-PARSE-001 (INFORMATIONAL, re-cited from v1 unchanged). Sends a line that is not
+    """ACP-INFO-PARSE-001 (INFORMATIONAL). Sends a line that is not
     valid JSON at all after a normal `initialize`, and records how the agent reacts: a JSON-RPC
     error, silence, or an exit. Never asserts on the behaviour itself; still records whether the
     connection is usable afterwards for a human reading the report."""
@@ -164,7 +125,7 @@ async def test_malformed_json_line_behaviour(agent_launch, tmp_path, record_prop
 
 @pytest.mark.requirement("ACP-INFO-INVALIDREQ-001")
 async def test_structurally_invalid_request_behaviour(agent_launch, tmp_path, record_property):
-    """ACP-INFO-INVALIDREQ-001 (INFORMATIONAL, re-cited from v1 unchanged). Sends a
+    """ACP-INFO-INVALIDREQ-001 (INFORMATIONAL). Sends a
     well-formed-JSON line that is not a valid JSON-RPC envelope at all (no `jsonrpc`/`method`)
     after a normal `initialize`, and records how the agent reacts. Never asserts on the
     behaviour itself; still records whether the connection is usable afterwards."""

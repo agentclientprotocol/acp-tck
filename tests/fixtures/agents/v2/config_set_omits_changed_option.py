@@ -41,6 +41,10 @@ _DEBUG_MODE_OPTION = {
 
 class ConfigSetOmitsChangedOptionAgent(ConformingAgent):
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         config_id = params.get("configId")
         for option in self._config_options:
             if option.get("configId") == config_id:

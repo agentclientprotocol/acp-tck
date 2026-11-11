@@ -1,4 +1,4 @@
-"""Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..209),
+"""Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..209, ACP-RESUME-211),
 `session/list` (ACP-LIST-201..204), `session/close`'s own contract (ACP-CLOSE-201/203/204 --
 `ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
 `tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..203), the
@@ -29,6 +29,7 @@ from tck.v2.validation import validate_agent_message, validate_agent_response
 
 from ..protocol import INVALID_PARAMS, REQUEST_CANCELLED
 from ._helpers import (
+    assert_unknown_session_error,
     close_session,
     connected_agent,
     delete_session,
@@ -417,6 +418,21 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
         assert not problems, (
             f"session/update(s) sent during session/resume are invalid: {problems!r}"
         )
+
+
+@pytest.mark.requirement("ACP-RESUME-211")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_unknown_session_gets_resource_not_found(agent_launch, tmp_path):
+    """ACP-RESUME-211. `session/resume` of a session the agent never created must not create
+    it. The id carries a nonce, so an agent that persists sessions cannot know it. A session is
+    created first so an auth-gated agent SKIPs instead of answering `-32000`."""
+    unknown_id = f"tck-nonexistent-{uuid.uuid4().hex}"
+    async with connected_agent(agent_launch) as agent:
+        await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        entry, _updates = await resume_session(
+            agent, unknown_id, tmp_path, timeout=agent_launch.default_timeout
+        )
+        assert_unknown_session_error(entry, "session/resume", unknown_id)
 
 
 # --- session/list (ACP-LIST-201..204) ---

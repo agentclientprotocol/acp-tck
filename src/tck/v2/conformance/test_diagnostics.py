@@ -1,7 +1,8 @@
-"""Advisory/informational diagnostics, re-cited from v1: `ACP-ERROR-001`, `ACP-SHUTDOWN-001`,
-`ACP-STDERR-001`. `Error` `$def` is byte-identical to v1; on stdin EOF the agent SHOULD exit
-once it has finished or stopped its work (transports.mdx:43); stderr MAY carry UTF-8 logging
-(transports.mdx:22). All connection-level, `capability=None` -- none needs a turn, and `ACP-SHUTDOWN-001`/`ACP-STDERR-001` need nothing beyond `initialize`."""
+"""Advisory/informational diagnostics: `ACP-ERROR-001`, `ACP-SHUTDOWN-001`, `ACP-STDERR-001`.
+An error object has an integer `code`, a short `message` and optional `data` (`error.mdx:6-10`);
+on stdin EOF the agent SHOULD exit once it has finished or stopped its work (transports.mdx:43);
+stderr MAY carry UTF-8 logging (transports.mdx:22). All connection-level, `capability=None` --
+none needs a turn, and `ACP-SHUTDOWN-001`/`ACP-STDERR-001` need nothing beyond `initialize`."""
 
 from __future__ import annotations
 
@@ -14,10 +15,9 @@ from ._helpers import connected_agent
 
 @pytest.mark.requirement("ACP-ERROR-001")
 async def test_error_messages_are_non_empty_single_line(agent_launch):
-    """ACP-ERROR-001 (ADVISORY, re-cited from v1 unchanged -- `error.mdx` is still a stub in v2
-    too; `Error` `$def` is byte-identical, `schema/v2/schema.unstable.json#/$defs/Error`). Evidence: the
-    reply to an unrecognised method, and the reply to a `session/new` missing its required
-    `cwd`."""
+    """ACP-ERROR-001 (ADVISORY; `error.mdx:9`, `schema/v2/schema.unstable.json#/$defs/Error`).
+    Evidence: the reply to an unrecognised method, and the reply to a `session/new` missing its
+    required `cwd`."""
     async with connected_agent(agent_launch, handshake=False) as agent:
         init_id = await agent.send_request("initialize", SPEC.initialize_params())
         await agent.wait_for_response(init_id, timeout=agent_launch.default_timeout)
@@ -38,8 +38,8 @@ async def test_error_messages_are_non_empty_single_line(agent_launch):
             continue
         assert message != "", f"{what}: error.message must not be empty"
         assert "\n" not in message, f"{what}: error.message must not contain a newline: {message!r}"
-        # error.data's structure is genuinely unspecified (JSON-RPC 2.0 leaves it to the
-        # implementation) -- nothing to assert on it.
+        # error.data's shape depends on the code (`error.mdx:10`); ACP-ERROR-201 checks the
+        # `-32002` shape, nothing is asserted on it here.
 
 
 @pytest.mark.requirement("ACP-SHUTDOWN-001")

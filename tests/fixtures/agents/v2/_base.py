@@ -26,14 +26,19 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `replayFrom: {"type": "start"}` replays it verbatim, omitted/`null` replays nothing, and any
   other or malformed cursor gets `-32602` (`_replay_from_rejection`). Every successful resume
   sends a current-state `state_update` before the response (`_send_resume_snapshot`). Resume
-  accepts *any* `sessionId`, even an unknown one, so every route
-  `_helpers.obtain_resumable_session` tries succeeds. The first `*_chunk` update for a `messageId`
+  accepts a session that is live or closed on this connection (the routes
+  `_helpers.obtain_resumable_session` tries first), and answers any other id with `-32002`
+  (`_unknown_session`). The first `*_chunk` update for a `messageId`
   is preceded by a synthesized whole-message primer (`content: []`), which keeps history
   schema-correct for chunk-emitting subclasses. Each step is an overridable hook so the
   `resume_*.py` defect fixtures can break exactly one.
 - `session/close` keeps the session in `session/list` (resumable) but refuses further prompts.
-  `session/delete` removes it entirely, with no cancellation side effect; an unknown id succeeds
-  silently.
+  `session/delete` (only when `capabilities.session.delete` is advertised, else `-32601`) removes
+  it entirely, with no cancellation side effect; an unknown id succeeds silently.
+- A session-scoped request (`session/prompt`, `session/set_config_option`, `session/resume`)
+  naming a session that is not active is answered by `_unknown_session`: `-32002` with
+  `data.sessionId` (`error.mdx:54-56`). Defect fixtures override it, or the handlers, to break it.
+  `session/close` and `session/delete` of an unknown id still succeed.
 - `session/fork` (only when `capabilities.session.fork` is advertised) creates a live session with
   a copy of the source's history. `systemPrompt` on `session/new` is accepted only in an
   advertised mode with text content, else `-32602`.
@@ -143,11 +148,16 @@ class ConformingAgent:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
-                continue  # malformed input is a harness test concern, not ours to crash on
+                self._handle_malformed_line()
+                continue
             if isinstance(message, dict):
                 self._handle(message)
             elif isinstance(message, list):
                 self._handle_batch(message)
+
+    def _handle_malformed_line(self) -> None:
+        """A non-JSON stdin line: ignored by default (no rule requires a reply, and the client
+        must not send one). Hook for fixtures that answer it."""
 
     def _handle_batch(self, items: list[Any]) -> None:
         """ACP has no batches: any array, empty or not, is one Invalid Request answered with a
@@ -197,7 +207,7 @@ class ConformingAgent:
             self._handle_resume_session(msg_id, params)
         elif method == "session/close":
             self._handle_close_session(msg_id, params)
-        elif method == "session/delete":
+        elif method == "session/delete" and self._session_capability("delete") is not None:
             self._handle_delete_session(msg_id, params)
         elif method == "session/fork" and self._session_capability("fork") is not None:
             self._handle_fork_session(msg_id, params)
@@ -331,17 +341,18 @@ class ConformingAgent:
         self._reply(msg_id, {"sessions": sessions})
 
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
-        # Accepts *any* `sessionId`, even one this process never created -- see the module
-        # docstring's `_helpers.obtain_resumable_session` note -- registering it as live, so a
-        # later `session/close`/`session/list`/`session/prompt` on it behaves normally too.
+        # A session is resumable while it is live or closed on this connection; a deleted or
+        # never-created one is `-32002` (`error.mdx:56`).
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions and session_id not in self._closed_sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         rejection = self._replay_from_rejection(params.get("replayFrom"))
         if rejection is not None:
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
-        session_id = params.get("sessionId")
-        self._closed_sessions.pop(session_id, None)
-        if session_id not in self._sessions:
-            self._sessions[session_id] = params.get("cwd", "")
+        if session_id in self._closed_sessions:
+            self._sessions[session_id] = self._closed_sessions.pop(session_id)
         if self._should_replay(params.get("replayFrom")):
             self._replay_history(session_id)
         self._send_resume_snapshot(session_id)
@@ -426,6 +437,10 @@ class ConformingAgent:
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-CONFIG-202: replies with the *complete*, updated `configOptions` list, not just
         # the entry that changed.
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         config_id = params.get("configId")
         value = params.get("value")
         for option in self._config_options:
@@ -451,11 +466,9 @@ class ConformingAgent:
         # later `_handle_response` call instead of finishing it immediately, for
         # `AsksPermissionAgent`) both no-op/pass-through by default.
         session_id = params.get("sessionId")
-        # Reject a `sessionId` this agent never created, mirroring v1's own `_base.py` fixture
-        # strictness -- scoped to `session/prompt` only (`session/resume` deliberately accepts
-        # any `sessionId`, see `_handle_resume_session`).
+        # A session that was never created, or was closed, is not active.
         if session_id not in self._sessions:
-            self._error(msg_id, -32602, f"Invalid params: unknown sessionId {session_id!r}")
+            self._unknown_session(msg_id, session_id)
             return
         prompt = params.get("prompt") or []
         rejection = self._prompt_rejection(prompt)
@@ -656,8 +669,14 @@ class ConformingAgent:
     def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "id": msg_id, "result": result})
 
-    def _error(self, msg_id: Any, code: int, message: str) -> None:
-        self._write({"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}})
+    def _error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
+        error: dict[str, Any] = {"code": code, "message": message}
+        if data is not None:
+            error["data"] = data
+        self._write({"jsonrpc": "2.0", "id": msg_id, "error": error})
+
+    def _unknown_session(self, msg_id: Any, session_id: Any) -> None:
+        self._error(msg_id, -32002, "Resource not found", {"sessionId": session_id})
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})

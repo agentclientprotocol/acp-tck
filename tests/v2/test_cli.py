@@ -43,6 +43,7 @@ _MANDATORY_IDS = {
     "ACP-JSONRPC-003",
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-202",
+    "ACP-ERROR-202",
     "ACP-AUTH-202",
     "ACP-AUTH-206",
     "ACP-AUTH-207",
@@ -87,6 +88,8 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-207",
     "ACP-RESUME-208",
     "ACP-RESUME-209",
+    "ACP-RESUME-211",
+    "ACP-ERROR-201",
     "ACP-LIST-201",
     "ACP-LIST-202",
     "ACP-LIST-203",
@@ -133,12 +136,13 @@ _ADVISORY_IDS = {
     "ACP-EXT-201",
     "ACP-EXT-202",
     "ACP-ERROR-001",
+    "ACP-ERROR-203",
+    "ACP-ERROR-204",
     "ACP-SHUTDOWN-001",
     "ACP-SCHEMA-002",
 }
 _INFORMATIONAL_IDS = {
     "ACP-INFO-CONCURRENT-201",
-    "ACP-INFO-UNKNOWNSESSION-001",
     "ACP-INFO-CANCEL-201",
     "ACP-INFO-CANCEL-202",
     "ACP-MCP-201",
@@ -192,6 +196,7 @@ _CANCEL_RACE_SKIP_IDS = {
 # (see `test_v2_conforming_agent_passes_everything` above).
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-JSONRPC-202",
+    "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -316,6 +321,7 @@ def test_help_mentions_protocol_version_option():
 
 _CONFORMING_EXPECTED_SKIPS = {
     "ACP-JSONRPC-202",
+    "ACP-ERROR-204",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -407,7 +413,8 @@ def test_v2_conforming_agent_passes_everything():
 # concerns the empty-`authMethods` case), `ACP-PROMPT-207` (it never rejects a prompt), and
 # `ACP-CANCEL-209` (`__hang__` preempts its permission request, so none is pending at cancel;
 # `asks_permission.py`'s self-test exercises it instead).
-_FULL_EXPECTED_SKIPS = {"ACP-AUTH-205", "ACP-PROMPT-207", "ACP-CANCEL-209"}
+# `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
+_FULL_EXPECTED_SKIPS = {"ACP-AUTH-205", "ACP-PROMPT-207", "ACP-CANCEL-209", "ACP-ERROR-204"}
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -419,9 +426,9 @@ def test_v2_conforming_full_agent_passes_everything():
     --auth-method tck --allow-logout`, this exercises essentially every capability: every
     prompt-content/permission/client-capability id, `ACP-PATCH-201/203/204/205/208/209` and
     `ACP-ENUM-201/203`, `ACP-AUTH-203/204`, and every CAPABILITY-tier `ACP-CANCEL-*` id but
-    `ACP-CANCEL-209` all PASS. Both INFORMATIONAL probes PASS too (an INFORMATIONAL test PASSes as long as it never
-    hits an assertion failure or setup/teardown error -- it never asserts on the behaviour it
-    probes, only records it).
+    `ACP-CANCEL-209` all PASS. The INFORMATIONAL probe PASSes too (an INFORMATIONAL test PASSes as
+    long as it never hits an assertion failure or setup/teardown error -- it never asserts on the
+    behaviour it probes, only records it).
 
     `conforming_full.py` also advertises a `type: "terminal"` auth method on any connection that
     advertises `capabilities.auth.terminal` (`ACP-AUTH-202` still PASSes since that descriptor
@@ -451,7 +458,6 @@ def test_v2_conforming_full_agent_passes_everything():
         else:
             assert status == "PASS", f"{req_id} is {status}, expected PASS for conforming_full.py:\n{result.stdout}"
     assert statuses["ACP-INFO-CONCURRENT-201"] == "PASS", result.stdout
-    assert statuses["ACP-INFO-UNKNOWNSESSION-001"] == "PASS", result.stdout
     assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
 
 
@@ -1961,7 +1967,7 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         | _SESSION_MGMT_EXTRAS_SKIP_IDS
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
-        | {"ACP-PROMPT-207", "ACP-CANCEL-209"}
+        | {"ACP-PROMPT-207", "ACP-CANCEL-209", "ACP-ERROR-204"}
     )
     for req_id, status in statuses.items():
         if req_id == "ACP-TRANSPORT-201":
@@ -2722,7 +2728,8 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
     """`noisy_stderr_and_parse_error_reply.py` logs every raw line to stderr and replies with an
     explicit `-32700` to malformed JSON instead of staying silent -- self-test only, exercising
     the non-default branches of `ACP-STDERR-001`/`ACP-INFO-PARSE-001` (both INFORMATIONAL,
-    never asserted on the probed behaviour itself, so this fixture FAILs nothing)."""
+    never asserted on the probed behaviour itself) and `ACP-ERROR-204`'s PASS path (a `-32700`
+    reply with `id: null`), so this fixture FAILs nothing."""
     result = _run_cli(FIXTURES_DIR_V2, "noisy_stderr_and_parse_error_reply.py", protocol_version=2)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -2731,6 +2738,88 @@ def test_noisy_stderr_and_parse_error_reply_fails_nothing():
     assert fails == set(), result.stdout
     assert statuses.get("ACP-STDERR-001") == "PASS", result.stdout
     assert statuses.get("ACP-INFO-PARSE-001") == "PASS", result.stdout
+    assert statuses.get("ACP-ERROR-204") == "PASS", result.stdout
+
+
+# --- error codes (`ACP-ERROR-201..204`, `ACP-RESUME-211`) -- defect fixtures ---
+
+_ERROR_K = "test_errors or resume_unknown_session"
+
+
+def _fails_for(fixture: str, k: str) -> tuple[set[str], dict[str, str], str]:
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=k)
+    statuses = _table_statuses(result.stdout)
+    return {r for r, status in statuses.items() if status == "FAIL"}, statuses, result.stdout
+
+
+def test_unknown_session_wrong_code_fails_error_201_only():
+    """`unknown_session_wrong_code.py` answers a prompt for a never-created or closed session with
+    `-32602`; resume still answers `-32002`, so `ACP-RESUME-211` PASSes."""
+    fails, statuses, out = _fails_for("unknown_session_wrong_code.py", _ERROR_K)
+    assert fails == {"ACP-ERROR-201"}, out
+    assert statuses.get("ACP-RESUME-211") == "PASS", out
+    assert statuses.get("ACP-ERROR-202") == "PASS", out
+
+
+def test_unknown_session_no_data_fails_error_201_and_resume_211():
+    """`unknown_session_no_data.py` answers `-32002` without `data.sessionId`; the two rows share
+    one assertion, so both FAIL."""
+    fails, _statuses, out = _fails_for("unknown_session_no_data.py", _ERROR_K)
+    assert fails == {"ACP-ERROR-201", "ACP-RESUME-211"}, out
+
+
+def test_resume_accepts_unknown_session_fails_resume_211_only():
+    fails, statuses, out = _fails_for("resume_accepts_unknown_session.py", _ERROR_K)
+    assert fails == {"ACP-RESUME-211"}, out
+    assert statuses.get("ACP-ERROR-201") == "PASS", out
+
+
+def test_set_config_option_accepts_unknown_session_fails_error_201_only():
+    """With `configOptions` advertised, the `set_config_option` probe runs and FAILs while the two
+    `session/prompt` probes' own checks hold (the fixture's prompt handler is conforming)."""
+    fails, statuses, out = _fails_for("set_config_option_accepts_unknown_session.py", _ERROR_K)
+    assert fails == {"ACP-ERROR-201"}, out
+    assert "session/set_config_option" in out, out
+
+
+def test_answers_unadvertised_delete_fails_error_202_only():
+    """`answers_unadvertised_delete.py` serves `session/delete` without advertising
+    `session.delete` -- MANDATORY, so the verdict is NOT CONFORMANT."""
+    result = _run_cli(FIXTURES_DIR_V2, "answers_unadvertised_delete.py", protocol_version=2, k=_ERROR_K)
+    statuses = _table_statuses(result.stdout)
+    fails = {r for r, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-ERROR-202"}, result.stdout
+    assert "session/delete" in result.stdout, result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_reserved_range_custom_code_fails_error_203_only():
+    fails, statuses, out = _fails_for("reserved_range_custom_code.py", _ERROR_K)
+    assert fails == {"ACP-ERROR-203"}, out
+    assert "-32050" in out, out
+
+
+def test_parse_error_wrong_code_fails_error_204_only():
+    fails, _statuses, out = _fails_for("parse_error_wrong_code.py", "test_errors or test_informational")
+    assert fails == {"ACP-ERROR-204"}, out
+    assert "expected code -32700" in out, out
+
+
+def test_parse_error_non_null_id_fails_error_204_only():
+    fails, _statuses, out = _fails_for("parse_error_non_null_id.py", "test_errors or test_informational")
+    assert fails == {"ACP-ERROR-204"}, out
+    assert "expected id null" in out, out
+
+
+def test_no_session_capability_agent_passes_unadvertised_probes():
+    """`no_session_capability.py` answers every `session/*` method with `-32601`, so
+    `ACP-ERROR-202` PASSes with the whole `session/*` baseline unadvertised; the session-scoped
+    rows SKIP."""
+    fails, statuses, out = _fails_for("no_session_capability.py", _ERROR_K)
+    assert fails == set(), out
+    assert statuses.get("ACP-ERROR-202") == "PASS", out
+    assert statuses.get("ACP-ERROR-201") == "SKIPPED", out
+    assert statuses.get("ACP-RESUME-211") == "SKIPPED", out
 
 
 # --- version mismatch: a v1 agent run under --protocol-version 2 ---

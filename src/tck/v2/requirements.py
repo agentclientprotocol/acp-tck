@@ -511,17 +511,6 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-INFO-UNKNOWNSESSION-001",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) the agent's response to `session/prompt` with a "
-            "`sessionId` it never created -- v2's `error.mdx` is still 'Documentation coming "
-            "soon', so the error code (if any) is unspecified."
-        ),
-        citation=_cite("docs/protocol/v2/draft/error.mdx"),
-    ),
-    Requirement(
         id="ACP-CANCEL-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -975,6 +964,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-211",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/resume` of a `sessionId` the agent never created (a `_tck`-prefixed id "
+            "with the TCK's own `cwd`) is rejected with `-32002` and `data.sessionId` set to "
+            "the requested id, never silently accepted. Judged with the same assertion as "
+            "`ACP-ERROR-201`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47; "
+            "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
         ),
     ),
     Requirement(
@@ -1688,11 +1692,72 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A JSON-RPC error's `message` is a non-empty, single-line string, and its "
-            "optional `data` is well-formed JSON. Re-cited from v1 unchanged: `Error` "
-            "`$def` is byte-identical between v1 and v2."
+            "optional `data` is well-formed JSON."
         ),
         citation=_cite(
-            "schema/v2/schema.unstable.json#/$defs/Error; docs/protocol/v2/draft/overview.mdx:223-227"
+            "docs/protocol/v2/draft/error.mdx:6-10; docs/protocol/v2/draft/overview.mdx:223-227; "
+            "schema/v2/schema.unstable.json#/$defs/Error"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A session-scoped request naming a session that does not exist or is not active on "
+            "the connection gets error `-32002` with `data.sessionId` set to the requested id. "
+            "Probes: `session/prompt` for a never-created id and for a session this connection "
+            "already closed; `session/set_config_option` for a never-created id, when "
+            "`session/new` returned `configOptions`. The schema's `Other` error-data branch "
+            "accepts anything, so `data.sessionId` is checked by hand."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47-51; "
+            "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-202",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A standard method gated on a capability the agent did not advertise gets error "
+            "`-32601`. Sent only for what is not advertised: the `session/*` baseline "
+            "(`capabilities.session`), `session/delete`, `session/fork` and `providers/list`. "
+            "A `-32000` reply FAILs, since an unadvertised method has no authentication surface. "
+            "SKIPs when every probed capability is advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:44,68; docs/protocol/v2/draft/overview.mdx:60,141-142"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-203",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every error `code` the agent returns in `-32768..-32000` or `-32899..-32800` is one "
+            "ACP defines (`ErrorCode`'s named members); implementation-specific errors use codes "
+            "outside those ranges. Sampled from the error replies to an unrecognised method, "
+            "and, when `capabilities.session` is advertised, a `session/new` missing `cwd` and a "
+            "`session/prompt` for an unknown session; passes vacuously if no probe yields an error."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:38; schema/v2/schema.unstable.json#/$defs/ErrorCode"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "If the agent answers a non-JSON stdin line, the answer is an error response with "
+            "`code: -32700` and `id: null`. Conditional: SKIPs when the agent stays silent or "
+            "exits, since no rule obliges a reply and the probe itself breaks a client MUST NOT."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:28; docs/protocol/v2/draft/transports.mdx:24; "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse"
         ),
     ),
     Requirement(
@@ -1735,11 +1800,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Behaviour on a malformed (non-JSON) stdin line is recorded, never asserted. Re-cited "
-            "from v1 unchanged: v2's error.mdx is still \"Documentation coming soon\" on "
-            "this exact scenario."
+            "Behaviour on a malformed (non-JSON) stdin line is recorded, never asserted. "
+            "`error.mdx` assigns `-32700` to non-JSON input but requires no reply, and the "
+            "client MUST NOT send such a line; the shape of a reply the agent chooses to send "
+            "is `ACP-ERROR-204`."
         ),
-        citation=_cite("docs/protocol/v2/draft/error.mdx"),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:28; docs/protocol/v2/draft/transports.mdx:24 "
+            "(the client MUST NOT send this, so agent behaviour is undefined)"
+        ),
     ),
     Requirement(
         id="ACP-INFO-INVALIDREQ-001",
@@ -1747,11 +1816,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Behaviour on a structurally-invalid (well-formed JSON, not a valid JSON-RPC "
-            "envelope) request line is recorded, never asserted. Re-cited from v1 unchanged: "
-            "v2's error.mdx is still \"Documentation coming soon\" on this exact "
-            "scenario."
+            "envelope) request line is recorded, never asserted. `error.mdx` assigns `-32600` "
+            "to a message that is not a valid request object but requires no reply, and the "
+            "client MUST NOT send one; reference SDKs disagree (rust-sdk replies `-32600`, "
+            "python-sdk stays silent)."
         ),
-        citation=_cite("docs/protocol/v2/draft/error.mdx"),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:29; docs/protocol/v2/draft/transports.mdx:24 "
+            "(the client MUST NOT send this, so agent behaviour is undefined)"
+        ),
     ),
 )
 

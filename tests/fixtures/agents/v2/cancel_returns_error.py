@@ -29,6 +29,9 @@ class CancelReturnsErrorAgent(ConformingAgent):
         self._pending_prompt: dict[str, Any] | None = None
 
     def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if params.get("sessionId") not in self._sessions:
+            self._unknown_session(msg_id, params.get("sessionId"))
+            return
         self._pending_prompt = {"msg_id": msg_id, "session_id": params.get("sessionId")}
 
     def _handle_cancel(self, params: dict[str, Any]) -> None:

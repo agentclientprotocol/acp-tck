@@ -14,6 +14,7 @@ from tck.v2.conformance._helpers import (
     _LIST_ROUTE_MAX_PAGES,
     _route_from_list,
     agent_requests,
+    assert_unknown_session_error,
     is_agent_initiated,
     is_response_line,
 )
@@ -131,3 +132,36 @@ def test_list_route_gives_up_after_page_bound(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError):
         _from_list(agent, tmp_path)
     assert len(agent.list_params) == _LIST_ROUTE_MAX_PAGES
+
+
+def _error_entry(code: int | None, data: object = None, *, session_id: str = "s1") -> TranscriptEntry:
+    error: dict = {"code": code, "message": "Resource not found"}
+    if data is not None:
+        error["data"] = data
+    return _entry(json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}))
+
+
+def test_unknown_session_error_accepts_the_conforming_shape() -> None:
+    assert_unknown_session_error(_error_entry(-32002, {"sessionId": "s1"}), "session/prompt", "s1")
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        (_error_entry(-32602, {"sessionId": "s1"}), "expected code -32002, got -32602"),
+        (_error_entry(-32002), "expected error.data to be an object"),
+        (_error_entry(-32002, {"sessionId": "other"}), "expected data.sessionId='s1', got 'other'"),
+        (_error_entry(-32002, {}), "expected data.sessionId='s1', got None"),
+        (_entry(_REPLY), "did not return an error"),
+    ],
+)
+def test_unknown_session_error_rejects_every_deviation(entry: TranscriptEntry, expected: str) -> None:
+    with pytest.raises(AssertionError, match=expected):
+        assert_unknown_session_error(entry, "session/prompt", "s1")
+
+
+def test_unknown_session_error_reports_code_and_data_problems_together() -> None:
+    with pytest.raises(AssertionError) as excinfo:
+        assert_unknown_session_error(_error_entry(-32602), "session/resume", "s1")
+    message = str(excinfo.value)
+    assert "expected code -32002" in message and "expected error.data" in message
