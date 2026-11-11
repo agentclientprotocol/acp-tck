@@ -590,3 +590,82 @@ def test_cancelled_policy_answers_cancelled_without_sending_session_cancel():
 def _permission_steps(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_RESPONSE, _state("running"), _permission_request(options), {"wait_id": "perm-1"},
             _state("idle", stopReason="end_turn")]
+
+
+def _background_permission(request_id: str, subject: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "session/request_permission",
+        "params": {"sessionId": _SESSION, "title": "ok?", "options": _ALLOW_ONCE, "subject": subject},
+    }
+
+
+_BG_TOOL_SUBJECT = {"type": "tool_call", "toolCall": {"toolCallId": "bg-1"}}
+_BG_RUNNING = _state("running", background=[{"type": "tool_call", "toolCallId": "bg-1"}])
+
+
+def test_permission_for_listed_background_work_is_answered_normally_after_the_cancel():
+    """`session/cancel` does not cover listed background work, so its permission request is
+    answered per policy, while the foreground one is still answered `cancelled`."""
+    agent, turn = _drive(
+        [_RESPONSE, _BG_RUNNING, {"wait_method": "session/cancel"},
+         _background_permission("bg-perm", _BG_TOOL_SUBJECT), {"wait_id": "bg-perm"},
+         _permission_request(_ALLOW_ONCE), {"wait_id": "perm-1"},
+         _state("idle", stopReason="cancelled", background=[])],
+        on_cancel=True,
+    )
+    assert turn.cancelled_at_index is not None
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+    _assert_answered(agent, "perm-1", {"outcome": "cancelled"})
+
+
+def test_command_subject_naming_a_listed_terminal_counts_as_background_work():
+    subject = {"type": "command", "command": "ls", "cwd": "/tmp", "terminalId": "term-1"}
+    agent, _ = _drive(
+        [_RESPONSE, _state("running", background=[{"type": "terminal", "terminalId": "term-1"}]),
+         {"wait_method": "session/cancel"}, _background_permission("bg-perm", subject),
+         {"wait_id": "bg-perm"}, _state("idle", stopReason="cancelled", background=[])],
+        on_cancel=True,
+    )
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+
+
+def test_subject_naming_an_unlisted_item_is_still_foreground_after_the_cancel():
+    """Only the latest list counts: once a snapshot drops the item (or omits the list), a
+    request naming it is answered `cancelled` like any other after the cancel."""
+    for later in (_state("running", background=[]), _state("running")):
+        agent, _ = _drive(
+            [_RESPONSE, _BG_RUNNING, later, {"wait_method": "session/cancel"},
+             _background_permission("bg-perm", _BG_TOOL_SUBJECT), {"wait_id": "bg-perm"},
+             _state("idle", stopReason="cancelled")],
+            on_cancel=True,
+        )
+        _assert_answered(agent, "bg-perm", {"outcome": "cancelled"})
+
+
+def test_background_permission_is_not_held_and_the_foreground_one_is():
+    agent, turn = _drive(
+        [_RESPONSE, _BG_RUNNING, _background_permission("bg-perm", _BG_TOOL_SUBJECT),
+         {"wait_id": "bg-perm"}, _state("requires_action", background=[
+             {"type": "tool_call", "toolCallId": "bg-1"}]),
+         _permission_request(_ALLOW_ONCE), {"wait_method": "session/cancel"},
+         _state("idle", stopReason="cancelled", background=[])],
+        on_cancel=True,
+        hold_permission=True,
+    )
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+    assert turn.held_permission is not None and turn.held_permission.parsed["id"] == "perm-1"
+    _assert_answered(agent, "perm-1", {"outcome": "cancelled"})
+
+
+def test_background_list_read_before_the_prompt_counts():
+    """The latest list may come from a snapshot read before the prompt was sent."""
+    agent, _ = _drive(
+        [_RESPONSE, {"wait_method": "session/cancel"},
+         _background_permission("bg-perm", _BG_TOOL_SUBJECT), {"wait_id": "bg-perm"},
+         _state("idle", stopReason="cancelled", background=[])],
+        pre=[_BG_RUNNING],
+        on_cancel=True,
+    )
+    _assert_answered(agent, "bg-perm", _selected("yes"))

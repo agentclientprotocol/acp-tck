@@ -71,6 +71,9 @@ _CAPABILITY_IDS = {
     "ACP-STATE-202",
     "ACP-STATE-203",
     "ACP-STATE-205",
+    "ACP-STATE-206",
+    "ACP-STATE-207",
+    "ACP-STATE-208",
     "ACP-PROMPT-206",
     "ACP-PROMPT-207",
     "ACP-PROMPT-209",
@@ -206,6 +209,11 @@ _CANCEL_RACE_SKIP_IDS = {
     "ACP-PROMPT-209",
 }
 
+# The background-work rows judge only an agent that reports a `background` list, which no
+# `_base.py` fixture does unless it opts into `report_background_work`
+# (`reports_background_work.py` and the `background_*.py` defect fixtures).
+_BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
+
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
 # `capabilities.session.prompt.*` marker, and `ACP-PERM-201` SKIPs whenever a turn never
 # actually triggers a `session/request_permission` -- both legitimate, expected SKIPs (not
@@ -238,7 +246,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-}
+} | _BACKGROUND_SKIP_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
 # session-related at all) legitimately SKIPs the session-management extras below -- `delete`,
@@ -389,7 +397,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
+} | _BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
 def _assert_conforming_baseline(result: subprocess.CompletedProcess[str], fixture: str) -> None:
@@ -446,7 +454,8 @@ def test_v2_conforming_agent_passes_everything():
 # `ACP-CANCEL-209`/`213` and `ACP-CLOSE-205` (`__hang__` preempts its permission request, so none
 # is pending at cancel or close; `asks_permission.py`'s self-test exercises them instead), and
 # `ACP-META-203/204` (it emits no
-# `_meta` at all; `emits_w3c_meta.py` exercises them).
+# `_meta` at all; `emits_w3c_meta.py` exercises them), and `_BACKGROUND_SKIP_IDS` (it reports
+# no background work; `reports_background_work.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
 _FULL_EXPECTED_SKIPS = {
     "ACP-AUTH-205",
@@ -458,7 +467,7 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-ERROR-204",
     "ACP-META-203",
     "ACP-META-204",
-}
+} | _BACKGROUND_SKIP_IDS
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -1308,6 +1317,52 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
 
 def _fails(statuses: dict[str, str]) -> set[str]:
     return {req_id for req_id, status in statuses.items() if status == "FAIL"}
+
+
+def test_reports_background_work_agent_passes_everything():
+    """`reports_background_work.py` is `conforming.py` plus a `background` list on every
+    `state_update` and one background tool call per turn, so `_BACKGROUND_SKIP_IDS` PASS. That
+    tool call's two `tool_call_update`s also give `ACP-PATCH-204`/`208` something to judge, so
+    they PASS too; every other id matches `conforming.py`."""
+    result = _run_cli(FIXTURES_DIR_V2, "reports_background_work.py", protocol_version=2)
+    assert result.returncode == 0, result.stdout + result.stderr
+    statuses = _table_statuses(result.stdout)
+    assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
+    exercised = _BACKGROUND_SKIP_IDS | {"ACP-PATCH-204", "ACP-PATCH-208"}
+    for req_id, status in statuses.items():
+        expected = "SKIPPED" if req_id in _CONFORMING_EXPECTED_SKIPS - exercised else "PASS"
+        assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+
+def _background_statuses(fixture: str) -> tuple[dict[str, str], str]:
+    """Run only `test_background.py` against `fixture`; the background rows' statuses and stdout."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_background")
+    statuses = _table_statuses(result.stdout)
+    return {r: statuses.get(r) for r in sorted(_BACKGROUND_SKIP_IDS)}, result.stdout
+
+
+def test_background_list_dropped_fails_only_state_206():
+    """The idle omits `background` after earlier snapshots carried it. With no list on an idle,
+    no idle removal is judged, so `ACP-STATE-208` SKIPs."""
+    statuses, stdout = _background_statuses("background_list_dropped.py")
+    assert statuses == {
+        "ACP-STATE-206": "FAIL", "ACP-STATE-207": "PASS", "ACP-STATE-208": "SKIPPED"
+    }, stdout
+
+
+def test_background_unannounced_item_fails_only_state_207():
+    statuses, stdout = _background_statuses("background_unannounced_item.py")
+    assert statuses == {
+        "ACP-STATE-206": "PASS", "ACP-STATE-207": "FAIL", "ACP-STATE-208": "PASS"
+    }, stdout
+
+
+def test_background_removed_unfinished_fails_only_state_208():
+    statuses, stdout = _background_statuses("background_removed_unfinished.py")
+    assert statuses == {
+        "ACP-STATE-206": "PASS", "ACP-STATE-207": "PASS", "ACP-STATE-208": "FAIL"
+    }, stdout
 
 
 _PROMPT_K = "test_prompt and not capabilities"
@@ -2182,6 +2237,7 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         | _SESSION_MGMT_EXTRAS_SKIP_IDS
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
+        | _BACKGROUND_SKIP_IDS
         | {
             "ACP-PROMPT-207",
             "ACP-PROMPTCAP-201",  # every prompt capability is advertised

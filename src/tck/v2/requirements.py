@@ -463,6 +463,58 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-STATE-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Once a `state_update` for the session carries a `background` array (`[]` counts), "
+            "every later `running`/`requires_action`/`idle`/`unknown` `state_update` for that "
+            "session on the connection carries an array too, not an omitted or `null` one. "
+            "Judged over one prompt turn plus a quiet drain after it; custom states are not "
+            "judged. SKIPPED when no background list is reported."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:188,203-204; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background; "
+            "schema/v2/schema.unstable.json#/$defs/RunningStateUpdate/properties/background"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-207",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every `terminal`/`tool_call`/`subagent` item in a session's `background` list was "
+            "announced earlier on the connection, for the same session, by a `terminal_update` "
+            "with its `terminalId`, a `tool_call_update` with its `toolCallId`, or a "
+            "`subagent_update` with its `sessionId`. Items of other types are not judged. "
+            "SKIPPED when no such item is listed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:206,209; "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-208",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When an `idle` `state_update` drops a `terminal`/`tool_call` item from the "
+            "session's previous `background` list, a `terminal_update` with a non-null "
+            "`exitStatus` or a `tool_call_update` with status `completed`/`failed`/`cancelled` "
+            "for it arrived earlier. Removals in a `running`/`requires_action`/`unknown` "
+            "snapshot are not judged (foreground work that waits on an item takes it off the "
+            "list unfinished), nor are subagent removals. SKIPPED when no idle snapshot "
+            "removes such an item."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:206,208; "
+            "schema/v2/schema.unstable.json#/$defs/ToolCallStatus; "
+            "schema/v2/schema.unstable.json#/$defs/TerminalUpdate/properties/exitStatus"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-206",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",

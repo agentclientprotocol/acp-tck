@@ -60,6 +60,11 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `terminalId`, and an `available_commands_update` -- the content patch also carries a `diff`
   item -- so the patch/enum requirements observe something instead of SKIPping.
   `AsksPermissionAgent` also reports `requires_action`/`running` around its permission request.
+- `report_background_work` (opt-in, default `False`; only `reports_background_work.py` and the
+  `background_*.py` defect fixtures set it): every `state_update` carries the session's
+  `background` list (`_with_background`), and each turn that does not end `cancelled` runs one
+  background tool call (`_run_background_work`): announced, listed on a repeated `running`
+  snapshot, then finalized, so the turn-ending idle removes it (prompt-lifecycle.mdx:203-206).
 - `terminal_auth_method`: appended to `authMethods` only when the `initialize` request's
   `capabilities.auth.terminal` object marker is present (the same gate the conformance test
   applies), so the default connection stays the negative control while a positive-capability
@@ -127,6 +132,7 @@ class ConformingAgent:
         require_auth: bool = False,
         emit_rich_turn_updates: bool = False,
         terminal_auth_method: dict[str, Any] | None = None,
+        report_background_work: bool = False,
     ) -> None:
         self._session_count = 0
         self._message_count = 0
@@ -134,6 +140,8 @@ class ConformingAgent:
         self._plan_count = 0
         self._terminal_count = 0
         self._emit_rich_turn_updates = emit_rich_turn_updates
+        self._report_background_work = report_background_work
+        self._background: dict[Any, list[dict[str, Any]]] = {}  # sessionId -> listed items
         self._capabilities = capabilities if capabilities is not None else {}
         self._agent_name = agent_name
         self._sessions: dict[str, str] = {}  # live sessionId -> cwd
@@ -450,10 +458,10 @@ class ConformingAgent:
         """The current-state `state_update` every successful resume sends before responding.
         Not recorded into history: it is live state, not conversation."""
         state = "running" if session_id in self._hanging_sessions else "idle"
-        self._notify(
-            "session/update",
-            {"sessionId": session_id, "update": {"sessionUpdate": "state_update", "state": state}},
-        )
+        update: dict[str, Any] = {"sessionUpdate": "state_update", "state": state}
+        if self._report_background_work:
+            update = self._with_background(session_id, update)
+        self._notify("session/update", {"sessionId": session_id, "update": update})
 
     def _resume_result(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
@@ -729,6 +737,9 @@ class ConformingAgent:
         """Send the closing `agent_message_chunk` and the terminating idle. `stop_reason`
         defaults to `self._stop_reason()` when omitted -- callers that already know the outcome
         (e.g. `AsksPermissionAgent`, once the permission answer is in) can pass it explicitly."""
+        stop_reason = stop_reason if stop_reason is not None else self._stop_reason()
+        if self._report_background_work and stop_reason != "cancelled":
+            self._run_background_work(session_id)
         self._message_count += 1
         reply_message_id = f"msg-{self._message_count:04d}"
         self._send_update(
@@ -739,9 +750,44 @@ class ConformingAgent:
                 "content": {"type": "text", "text": "ok"},
             },
         )
-        self._send_idle_update(
-            session_id, stop_reason if stop_reason is not None else self._stop_reason()
+        self._send_idle_update(session_id, stop_reason)
+
+    def _run_background_work(self, session_id: Any) -> None:
+        """One background tool call: announced, listed on a repeated `running` snapshot, then
+        finalized and taken off the list, so the next snapshot (the turn-ending idle) removes
+        it."""
+        self._tool_call_count += 1
+        tool_call_id = f"tool-bg-{self._tool_call_count:04d}"
+        self._announce_background_item(session_id, tool_call_id)
+        listed = self._background.setdefault(session_id, [])
+        listed.append({"type": "tool_call", "toolCallId": tool_call_id})
+        self._send_running_update(session_id)
+        self._finalize_background_item(session_id, tool_call_id)
+        listed.remove({"type": "tool_call", "toolCallId": tool_call_id})
+
+    def _announce_background_item(self, session_id: Any, tool_call_id: str) -> None:
+        """Hook: the `tool_call_update` sent before the first snapshot that lists the item."""
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": tool_call_id,
+                "title": "Watching for changes",
+                "kind": "other",
+                "status": "in_progress",
+            },
         )
+
+    def _finalize_background_item(self, session_id: Any, tool_call_id: str) -> None:
+        """Hook: the final status sent before the snapshot that removes the item."""
+        self._send_update(
+            session_id,
+            {"sessionUpdate": "tool_call_update", "toolCallId": tool_call_id, "status": "completed"},
+        )
+
+    def _with_background(self, session_id: Any, update: dict[str, Any]) -> dict[str, Any]:
+        """Hook: `update` (a `state_update`) carrying the session's current `background` list."""
+        return {**update, "background": [dict(item) for item in self._background.get(session_id, [])]}
 
     def _reply_to_prompt(self, msg_id: Any, message_id: str) -> None:
         self._reply(msg_id, {"messageId": message_id})
@@ -785,6 +831,8 @@ class ConformingAgent:
         history.append(dict(update))
 
     def _send_update(self, session_id: Any, update: dict[str, Any]) -> None:
+        if self._report_background_work and update.get("sessionUpdate") == "state_update":
+            update = self._with_background(session_id, update)
         self._record_history(session_id, update)
         self._notify("session/update", {"sessionId": session_id, "update": update})
 

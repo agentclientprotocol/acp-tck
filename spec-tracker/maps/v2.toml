@@ -170,3 +170,23 @@ reason = "Unobservable: the response has no fixed order relative to session upda
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:382 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Held prompts are inserted in the order they were received."
 reason = "Out of scope: no MUST/SHOULD, and the TCK can only bound a hold by sending `session/cancel`, which answers held prompts `-32800` instead of inserting them; waiting for a real agent's work to end on its own is unbounded."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:180 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "While a terminal is listed as background work, the Agent keeps its output current whenever it can read the process output (SHOULD)."
+reason = "Unobservable: the client cannot tell whether the agent can read the process output, and output is not a liveness signal."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:184,186 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "When the Agent knows a tool call's work continues after the call returns control to the model, it keeps that tool call non-final and lists it (SHOULD), and it does not list housekeeping it starts on its own (SHOULD NOT)."
+reason = "Unobservable: depends on what the agent knows about its own work and on why it started it."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:205,207 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "When background work starts or ends, the Agent re-sends the current state with the updated `background` list, and when it knows finished work starts follow-up foreground work it reports `running` no later than the snapshot that removes the item (SHOULD)."
+reason = "Out of scope: the TCK cannot make an agent start background work, and when the agent learns of a change or of a follow-up is not observable."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:208 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A terminal or tool call that foreground work is waiting on is not listed as background work, and the Agent does not also list a tool call whose only live work is a listed terminal (MUST NOT)."
+reason = "Unobservable: the client cannot tell what foreground work is waiting on, or whether a tool call has live work besides its terminal."

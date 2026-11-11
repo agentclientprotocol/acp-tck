@@ -777,6 +777,61 @@ def session_state_update(msg: dict[str, Any], session_id: str) -> dict[str, Any]
     return None
 
 
+BACKGROUND_ID_FIELDS = {"terminal": "terminalId", "tool_call": "toolCallId", "subagent": "sessionId"}
+"""The id field of each defined `background` item type (`#/$defs/BackgroundWork`)."""
+
+
+def background_keys(update: dict[str, Any]) -> set[tuple[str, str]] | None:
+    """`(type, id)` of every defined-type item in a `state_update`'s `background` list, or
+    `None` when the list is omitted, `null` or not an array: not reported
+    (prompt-lifecycle.mdx:203-204). Items of other types, or without a string id, are left out."""
+    items = update.get("background")
+    if not isinstance(items, list):
+        return None
+    keys = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        field_name = BACKGROUND_ID_FIELDS.get(item.get("type"))
+        if field_name is not None and isinstance(item.get(field_name), str):
+            keys.add((item["type"], item[field_name]))
+    return keys
+
+
+def last_known_background(agent: AgentProcess, session_id: str) -> set[tuple[str, str]] | None:
+    """`background_keys` of the last `state_update` for `session_id` already read on this
+    connection, or `None` if there is none or it did not report a list."""
+    keys = None
+    for entry in agent.transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            update = session_state_update(msg, session_id)
+            if update is not None:
+                keys = background_keys(update)
+    return keys
+
+
+def permission_subject_keys(params: dict[str, Any]) -> set[tuple[str, str]]:
+    """The `background` keys a `session/request_permission`'s `subject` references: a
+    `tool_call` subject's `toolCall.toolCallId`, or a `command` subject's `toolCallId`/
+    `terminalId` (tool-calls.mdx:268)."""
+    subject = params.get("subject")
+    if not isinstance(subject, dict):
+        return set()
+    keys = set()
+    if subject.get("type") == "tool_call":
+        tool_call = subject.get("toolCall")
+        if isinstance(tool_call, dict) and isinstance(tool_call.get("toolCallId"), str):
+            keys.add(("tool_call", tool_call["toolCallId"]))
+    elif subject.get("type") == "command":
+        if isinstance(subject.get("toolCallId"), str):
+            keys.add(("tool_call", subject["toolCallId"]))
+        if isinstance(subject.get("terminalId"), str):
+            keys.add(("terminal", subject["terminalId"]))
+    return keys
+
+
 def last_known_state(agent: AgentProcess, session_id: str) -> Any:
     """The `state` of the last `state_update` for `session_id` already read on this connection,
     or `None` if none was. Seeds `run_prompt`'s notion of "active" so a prompt sent while earlier
@@ -975,6 +1030,10 @@ async def run_prompt(
     `PermissionPolicy`; options are picked by `kind`, never by position), or `cancelled` for the
     prompted session once the trigger has fired; any other
     agent -> client request gets `-32601` (the mock client advertises no capabilities).
+    A request whose `subject` names an item in the session's latest `background` list is
+    background work, which `session/cancel` does not cover (prompt-lifecycle.mdx:1173,1177;
+    tool-calls.mdx:268): it is never held and is always answered per `permission`. A
+    `state_update` that omits the list leaves none known (:204).
 
     v2 lets a client prompt in any state (prompt-lifecycle.mdx:382), but `run_prompt` cannot
     attribute an idle to one of several outstanding prompts, so callers serialize prompts per
@@ -982,6 +1041,7 @@ async def run_prompt(
     `prompt_during_active_work`).
     """
     seed_state = last_known_state(agent, session_id)
+    latest_background = last_known_background(agent, session_id)
     params = {"sessionId": session_id, "prompt": blocks}
     if extra_params:
         params.update(extra_params)
@@ -1147,6 +1207,7 @@ async def run_prompt(
         nonlocal active, active_seen, requires_action_seen, last_state, provisional, early_idle
         nonlocal idle_update, idle_index, stop_reason, terminated_by, error_end_deadline
         nonlocal action_response, held_permission, cancelled_at_index, held_cancel_request_index
+        nonlocal latest_background
         msg = entry.parsed
         if entry.matches_id(prompt_id):
             response_entry, response_index, response_at = entry, line_index, loop.time()
@@ -1171,6 +1232,7 @@ async def run_prompt(
             state = update.get("state")
             states.append((line_index, update))
             last_state = state
+            latest_background = background_keys(update)
             if state in ACTIVE_STATES:
                 active = active_seen = True
                 requires_action_seen = requires_action_seen or state == "requires_action"
@@ -1194,12 +1256,15 @@ async def run_prompt(
             client_requests_seen.append(entry)
             req_params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
             for_this_session = req_params.get("sessionId") == session_id
-            if hold_permission and not trigger_sent and for_this_session:
+            for_foreground = for_this_session and not (
+                latest_background and permission_subject_keys(req_params) & latest_background
+            )
+            if hold_permission and not trigger_sent and for_foreground:
                 held_permission = entry
                 await _fire_trigger()
                 return  # left unanswered; see `_answer_held`
             cancelled = (trigger_sent and not _cancel_pending()) or cancelled_at_index is not None
-            if cancelled and for_this_session:
+            if cancelled and for_foreground:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
