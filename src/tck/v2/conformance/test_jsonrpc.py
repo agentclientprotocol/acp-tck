@@ -46,8 +46,8 @@ _UNKNOWN_METHOD = "_tck/does_not_exist"
 
 @pytest.mark.requirement("ACP-JSONRPC-001")
 async def test_id_is_echoed_for_integer_and_string_ids(agent_launch, tmp_path):
-    """ACP-JSONRPC-001. Only ever sends one `initialize` per connection (a second `initialize` on
-    an already-initialized connection is unspecified). The integer-id half uses `initialize`
+    """ACP-JSONRPC-001. Sends one `initialize` per connection (a repeat is only specified before
+    any other request, `ACP-INIT-212`). The integer-id half uses `initialize`
     itself (a request every agent MUST answer); the string-id half sends `session/new` when the
     agent advertises `capabilities.session`, else `_tck/does_not_exist` -- id echo holds even for
     an error reply, so there is nothing here for an auth-gated or otherwise erroring agent to

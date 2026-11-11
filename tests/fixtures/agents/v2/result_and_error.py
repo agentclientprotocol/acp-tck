@@ -23,6 +23,7 @@ class ResultAndErrorAgent(ConformingAgent):
         # Only the successful `initialize` result (the one carrying `info`) is defective;
         # negotiation errors and every other reply go out normally.
         if "info" in result and "protocolVersion" in result:
+            self._note_success_reply(msg_id)
             self._write(
                 {
                     "jsonrpc": "2.0",

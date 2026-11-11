@@ -9,8 +9,12 @@ not memory, before changing a field name. v2 renames vs. v1: the agent's identit
 `agentInfo`) and its capabilities are `capabilities` (not `agentCapabilities`).
 
 Negotiates as a v2-only endpoint (`_handle_initialize`): a malformed `protocolVersion` gets
-`-32602`, one below 2 gets `-32022` with `data: {requested, supported: [2]}` and leaves the
-connection uninitialized (later requests are refused), and 2 or above selects 2.
+`-32602`, one below 2 gets `-32022` with `data: {requested, supported: [2]}`, and 2 or above
+selects 2. A failed `initialize` leaves the connection uninitialized: every other request gets
+`-32600` and notifications are ignored (`_require_initialize`), until a retried `initialize`
+succeeds. A second `initialize` is handled like the first until another request arrives; after
+that it gets `-32600` (initialization.mdx:135-141, error.mdx:60). The agent sends nothing while
+uninitialized.
 
 Implements the full `capabilities.session` baseline (advertising `session`, even as `{}`, commits
 the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `update`), plus:
@@ -87,6 +91,19 @@ class ConformingAgent:
     to the baseline session methods).
     """
 
+    # A request other than `initialize` before initialization completes gets `-32600`
+    # (error.mdx:60). `serves_before_initialize.py` switches it off.
+    _require_initialize = True
+    # A repeated `initialize` after another request gets `-32600` (error.mdx:60).
+    # `accepts_initialize_after_request.py` switches it off.
+    _reject_late_initialize = True
+    # A repeated `initialize` before any other request is handled like the first
+    # (initialization.mdx:137-139). `rejects_repeated_initialize.py` switches it off.
+    _allow_repeated_initialize = True
+    # A failed `initialize` can be retried (initialization.mdx:92).
+    # `no_retry_after_failed_initialize.py` switches it off.
+    _allow_initialize_retry = True
+
     # Versions reported in a `-32022`'s `data.supported`. A subclass that answers other versions
     # itself (e.g. `conforming_dual.py`) widens this.
     SUPPORTED_VERSIONS: tuple[int, ...] = (PROTOCOL_VERSION,)
@@ -136,9 +153,14 @@ class ConformingAgent:
         # `capabilities.auth.terminal` (see `_initialize_result`/`_client_wants_terminal_auth`
         # below) -- `ACP-AUTH-202`'s own gate, so this never leaks onto the default connection.
         self._terminal_auth_method = terminal_auth_method
-        # Set by a `-32022` rejection: the connection is not initialized, so every later
-        # non-`initialize` request is refused and notifications are ignored.
-        self._init_rejected = False
+        # Initialization completes with the first successful `initialize` response (`_reply`);
+        # it stays in effect when a later `initialize` fails. `_request_seen` closes the repeat
+        # window: set by the first request other than `initialize` on an initialized connection.
+        # `_init_failed` is set by a failed `initialize`.
+        self._initialized = False
+        self._init_failed = False
+        self._request_seen = False
+        self._pending_initialize: tuple[Any] | None = None  # (id,) of the `initialize` in flight
 
     def run(self) -> None:
         for raw_line in sys.stdin:
@@ -172,14 +194,38 @@ class ConformingAgent:
             self._handle_response(message)
             return
         params = message.get("params") or {}
-        if self._init_rejected and method != "initialize":
+        if method == "initialize":
+            if "id" in message and not self._initialize_refused(message["id"]):
+                self._pending_initialize = (message["id"],)
+                self._handle_request(method, message["id"], params)
+                if self._pending_initialize is not None:  # no success reply was written
+                    self._init_failed = True
+                    self._pending_initialize = None
+            return
+        if self._require_initialize and not self._initialized:
             if "id" in message:
                 self._error(message["id"], -32600, "Invalid Request: connection not initialized")
             return
         if "id" in message:
+            self._request_seen = True
             self._handle_request(method, message["id"], params)
         elif method == "session/cancel":
             self._handle_cancel(params)
+
+    def _initialize_refused(self, msg_id: Any) -> bool:
+        """Answer an `initialize` this connection must not take, and return `True`: one repeated
+        after another request, a repeat before any other request, or a retry after a failure,
+        each unless its fixture switch is off."""
+        if self._initialized and self._request_seen and self._reject_late_initialize:
+            self._error(msg_id, -32600, "Invalid Request: initialize repeated after another request")
+            return True
+        if self._initialized and not self._request_seen and not self._allow_repeated_initialize:
+            self._error(msg_id, -32600, "Invalid Request: initialize repeated")
+            return True
+        if self._init_failed and not self._initialized and not self._allow_initialize_retry:
+            self._error(msg_id, -32600, "Invalid Request: connection not initialized")
+            return True
+        return False
 
     def _handle_response(self, message: dict[str, Any]) -> None:
         """Hook for a subclass that itself sent an agent -> client request mid-turn (a
@@ -223,9 +269,9 @@ class ConformingAgent:
             self._error(msg_id, -32601, "Method not found")
 
     def _handle_initialize(self, msg_id: Any, params: dict[str, Any]) -> None:
-        """v2-only negotiation (initialization.mdx:98-117): a malformed `protocolVersion` gets
-        `-32602`; one below 2 gets `-32022` and leaves the connection uninitialized; 2 or above
-        selects 2."""
+        """v2-only negotiation (initialization.mdx:108-112): a malformed `protocolVersion` gets
+        `-32602`; one below 2 gets `-32022`; 2 or above selects 2. Only the success reply
+        initializes the connection (`_reply`)."""
         requested = params.get("protocolVersion")
         if not _is_well_formed_protocol_version(requested):
             self._error(msg_id, -32602, "Invalid params: protocolVersion must be an integer in 0..65535")
@@ -236,7 +282,6 @@ class ConformingAgent:
         self._reply(msg_id, self._initialize_result(params))
 
     def _reject_unsupported_version(self, msg_id: Any, requested: int) -> None:
-        self._init_rejected = True
         self._write(
             {
                 "jsonrpc": "2.0",
@@ -667,7 +712,16 @@ class ConformingAgent:
         self._notify("session/update", {"sessionId": session_id, "update": update})
 
     def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
+        self._note_success_reply(msg_id)
         self._write({"jsonrpc": "2.0", "id": msg_id, "result": result})
+
+    def _note_success_reply(self, msg_id: Any) -> None:
+        """A success reply to the `initialize` in flight completes initialization. A fixture that
+        writes its own `initialize` result instead of calling `_reply` calls this."""
+        if self._pending_initialize == (msg_id,):
+            self._initialized = True
+            self._init_failed = False
+            self._pending_initialize = None
 
     def _error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
         error: dict[str, Any] = {"code": code, "message": message}

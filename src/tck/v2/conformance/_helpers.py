@@ -713,9 +713,9 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
     Unlike `tck.common.plugin`'s `_tck_capability_gate`, which only runs for
     `@pytest.mark.capability(...)`-marked tests sharing the session-scoped
     `agent_initialize_result` fixture, every test in `test_initialize.py` spawns its own fresh
-    process and sends its own `initialize` (mirroring v1's "never send a second `initialize` on
-    one connection" rule) -- so this has to be called explicitly rather than picked up by an
-    autouse fixture.
+    process and sends its own `initialize` (so a probe's connection state is never inherited
+    from the cached handshake) -- so this has to be called explicitly rather than picked up by
+    an autouse fixture.
     """
     negotiated = init_result.get("protocolVersion")
     if negotiated != PROTOCOL_VERSION:

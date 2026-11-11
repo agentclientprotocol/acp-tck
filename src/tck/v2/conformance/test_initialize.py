@@ -1,16 +1,20 @@
-"""`initialize` handshake conformance: ACP-INIT-001, ACP-INIT-003, ACP-INIT-201..208,
+"""`initialize` handshake conformance: ACP-INIT-001, ACP-INIT-003, ACP-INIT-201..215,
 ACP-SCHEMA-001 (see `tck.v2.requirements`'s module docstring for the id-namespacing decisions).
 
-Version negotiation (initialization.mdx:98-117): the agent selects the highest version it
+Version negotiation (initialization.mdx:108-112): the agent selects the highest version it
 supports that is <= the requested one, rejects with `-32022` when there is none, and answers a
-malformed `protocolVersion` with `-32602`. Every probe runs in its own process: whether a
-rejected `initialize` can be retried is implementation-specific, and a second `initialize` on an
-initialized connection is forbidden.
+malformed `protocolVersion` with `-32602`. A failed `initialize` leaves the connection
+uninitialized and can be retried, and `initialize` may be repeated before any other request
+(initialization.mdx:90-92,135-141); the probes that do not depend on such state still run in
+their own process, and the ones that do (`ACP-INIT-209`..`215`) deliberately reuse a connection
+after a failed or repeated `initialize`.
 
 `ACP-INIT-201`/`003`/`202`/`208` judge the negotiation outcome only, so they hold for a legacy
 v1-only agent too and carry the `negotiation` marker (they still run if the main handshake is
-rejected with `-32022`). `ACP-INIT-205`/`206`/`207` are obligations of agents that implement v2,
-so they SKIP with `VERSION-MISMATCH:` unless the main handshake selected 2.
+rejected with `-32022`). `ACP-INIT-205`/`206`/`207` and `209`..`215` are obligations of agents
+that implement v2 (a v1-only agent "may not accept a repeated `initialize`",
+initialization.mdx:141), so they SKIP with `VERSION-MISMATCH:` unless the main handshake
+selected 2 and carry no `negotiation` marker.
 """
 
 from __future__ import annotations
@@ -20,7 +24,12 @@ from typing import Any
 
 from tck.common.harness import AgentExited, AgentTimeout, Direction
 from tck.v2 import SPEC
-from tck.v2.protocol import INVALID_PARAMS, PROTOCOL_VERSION, UNSUPPORTED_PROTOCOL_VERSION
+from tck.v2.protocol import (
+    INVALID_PARAMS,
+    INVALID_REQUEST,
+    PROTOCOL_VERSION,
+    UNSUPPORTED_PROTOCOL_VERSION,
+)
 from tck.v2.validation import find_non_object_markers, validate_agent_message, validate_agent_response
 
 import pytest
@@ -76,7 +85,7 @@ def _skip_unless_v2_endpoint(agent_initialize_result) -> None:
 
 
 def _unsupported_version_data_issues(error: dict[str, Any], requested: int) -> list[str]:
-    """Problems with a `-32022` error's `data` (initialization.mdx:100): an object with
+    """Problems with a `-32022` error's `data` (initialization.mdx:112): an object with
     non-null `requested` (the requested version) and `supported` (an array of versions). Since
     nothing in `supported` may be <= `requested` (the agent would have selected it), and the
     caller has seen this agent select 2, `supported` must also contain 2."""
@@ -121,7 +130,7 @@ async def test_initialize_succeeds(agent_launch):
 @pytest.mark.requirement("ACP-INIT-201")
 @pytest.mark.negotiation
 async def test_selects_highest_supported_version_at_or_below_request(agent_launch):
-    """ACP-INIT-201 (initialization.mdx:98). Two probes: request 2 (selects A) and request
+    """ACP-INIT-201 (initialization.mdx:110). Two probes: request 2 (selects A) and request
     65535 (selects H, the agent's highest supported version). A MUST NOT exceed 2, and when
     H <= 2 the agent's highest version at or below 2 is H, so A MUST equal H. An error to the
     65535 probe is `ACP-INIT-003`'s concern; only the first half is judged then.
@@ -203,7 +212,7 @@ async def test_version_above_every_supported_one_selects_the_highest(agent_launc
 @pytest.mark.requirement("ACP-INIT-202")
 @pytest.mark.negotiation
 async def test_v1_request_selects_v1_or_is_rejected_with_unsupported_version(agent_launch):
-    """ACP-INIT-202 (initialization.mdx:98,100,117). A v1-shaped `initialize(1)` is answered
+    """ACP-INIT-202 (initialization.mdx:108,110,112). A v1-shaped `initialize(1)` is answered
     either with a result selecting a version <= 1 (a dual-stack or v1 agent), or with `-32022`
     (a v2-only agent). Selecting 2 or higher, or any other error, FAILs. The `-32022` `data`
     shape is `ACP-INIT-205`'s concern."""
@@ -235,7 +244,7 @@ async def test_v1_request_selects_v1_or_is_rejected_with_unsupported_version(age
 async def test_unsupported_version_error_carries_requested_and_supported(
     agent_launch, agent_initialize_result
 ):
-    """ACP-INIT-205 (initialization.mdx:100-115). `initialize(0)` has no supported version at or
+    """ACP-INIT-205 (initialization.mdx:112-127). `initialize(0)` has no supported version at or
     below it unless the agent supports 0, so it MUST either select 0 or be rejected with
     `-32022` whose `data` carries `requested: 0` and the `supported` versions. Any `-32022` to a
     v1-shaped `initialize(1)` is held to the same `data` shape with `requested: 1`."""
@@ -286,7 +295,7 @@ _MALFORMED_PROTOCOL_VERSIONS: tuple[tuple[str, Any], ...] = (
 
 @pytest.mark.requirement("ACP-INIT-206")
 async def test_malformed_protocol_version_gets_invalid_params(agent_launch, agent_initialize_result):
-    """ACP-INIT-206 (initialization.mdx:117). A missing, non-integer, or out-of-range
+    """ACP-INIT-206 (initialization.mdx:108). A missing, non-integer, or out-of-range
     `protocolVersion` MUST receive `-32602` -- never a result, and not `-32022`, which is for
     well-formed versions the agent does not support."""
     _skip_unless_v2_endpoint(agent_initialize_result)
@@ -309,7 +318,7 @@ async def test_malformed_protocol_version_gets_invalid_params(agent_launch, agen
 
 @pytest.mark.requirement("ACP-INIT-207")
 async def test_no_session_work_after_unsupported_version(agent_launch, agent_initialize_result, tmp_path):
-    """ACP-INIT-207 (initialization.mdx:117). "A version-mismatch error does not initialize the
+    """ACP-INIT-207 (initialization.mdx:129). "A version-mismatch error does not initialize the
     connection": after `initialize(0)` is rejected with `-32022`, a `session/new` on the same
     connection must not succeed, and the agent must not start session work on its own. The TCK
     deliberately keeps the connection open (the client's SHOULD-close) to observe this. An error,
@@ -347,7 +356,7 @@ async def test_no_session_work_after_unsupported_version(agent_launch, agent_ini
 @pytest.mark.requirement("ACP-INIT-208")
 @pytest.mark.negotiation
 async def test_v1_selection_uses_the_v1_response_shape(agent_launch):
-    """ACP-INIT-208 (initialization.mdx:98: "MUST use the selected version's initialization
+    """ACP-INIT-208 (initialization.mdx:110: "MUST use the selected version's initialization
     response shape"). When a v1-shaped `initialize(1)` selects 1, the result must not carry
     v2's root `info`/`capabilities` (v1 names them `agentInfo`/`agentCapabilities`). SKIPs when
     the agent does not select 1."""
@@ -497,3 +506,233 @@ async def test_initialize_exchange_validates_against_schema(agent_launch, tmp_pa
             issues.extend(validate_agent_message(msg))
 
     assert not issues, f"schema violations in agent output: {issues!r}"
+
+
+# --- Initialization state: before, retry, repeat (initialization.mdx:86-92,135-141) ---
+
+# `initialize` params that fail without initializing the connection. `-32022` comes from
+# `protocolVersion: 0`, which no agent that ever selects 2 supports (see `ACP-INIT-205`).
+_NO_PROTOCOL_VERSION = {k: v for k, v in SPEC.initialize_params().items() if k != "protocolVersion"}
+_UNSUPPORTED_PROTOCOL_VERSION_PARAMS = {**SPEC.initialize_params(), "protocolVersion": 0}
+
+# An unknown, `_`-prefixed request. The TCK's own probes keep to the extensibility rule even when
+# they break a client rule (here: sending a request in a state the spec gives the agent an answer
+# for), so the answer is `-32601` on an initialized connection and `-32600` on an uninitialized one.
+_PROBE_METHOD = "_tck/after_initialize"
+
+
+async def _request_or_fail(agent, launch, method: str, params: dict[str, Any] | None, what: str):
+    """Send one request and return its reply entry; no reply (silence or exit) is a FAIL."""
+    try:
+        req_id = await agent.send_request(method, params)
+        return await agent.wait_for_response(req_id, timeout=launch.default_timeout)
+    except (AgentExited, AgentTimeout) as exc:
+        pytest.fail(f"{what}: no reply ({type(exc).__name__})", pytrace=False)
+
+
+def _is_error(entry) -> bool:
+    return isinstance(entry.parsed, dict) and "error" in entry.parsed
+
+
+@pytest.mark.requirement("ACP-INIT-209")
+async def test_request_before_initialize_gets_invalid_request(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-INIT-209 (error.mdx:29,60; initialization.mdx:90). `session/new` -- a standard
+    method, so the only thing wrong with it is the connection state -- is sent on three
+    connections: a fresh one, one after an `initialize` without `protocolVersion`, and one after
+    `initialize(0)`. Each MUST answer `-32600`. A leg whose `initialize` is not rejected has no
+    uninitialized connection to judge and is skipped. The "ignore notifications" half is
+    silence, covered by `ACP-JSONRPC-003`."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    legs: tuple[tuple[str, dict[str, Any] | None], ...] = (
+        ("on a fresh connection", None),
+        ("after initialize without protocolVersion", _NO_PROTOCOL_VERSION),
+        ("after initialize(protocolVersion=0)", _UNSUPPORTED_PROTOCOL_VERSION_PARAMS),
+    )
+    failures: list[str] = []
+    for label, init_params in legs:
+        async with connected_agent(agent_launch, handshake=False) as agent:
+            if init_params is not None:
+                init_entry = await _request_or_fail(agent, agent_launch, "initialize", init_params, label)
+                if not _is_error(init_entry):
+                    continue  # initialized after all: `ACP-INIT-205`/`206` judge that
+            entry = await _request_or_fail(
+                agent, agent_launch, "session/new", {"cwd": str(tmp_path)}, f"session/new {label}"
+            )
+        if _error_code(entry.parsed) != INVALID_REQUEST:
+            failures.append(f"session/new {label}: {entry.text!r}")
+    assert not failures, f"a request before initialization completes must get -32600: {failures!r}"
+
+
+def _method_messages(agent, start: int = 0, stop: int | None = None) -> list[str]:
+    """Raw text of every agent line in transcript positions `start`..`stop` that carries a
+    `method` (a request or notification the agent initiated)."""
+    return [
+        line.text
+        for line in agent.transcript[start:stop]
+        if line.direction is Direction.RECEIVED
+        and any("method" in msg for msg in iter_messages(line))
+    ]
+
+
+@pytest.mark.requirement("ACP-INIT-210")
+async def test_agent_sends_nothing_while_uninitialized(agent_launch, agent_initialize_result):
+    """ACP-INIT-210 (initialization.mdx:88,91). The agent MUST NOT send a request or notification
+    before initialization completes. Three observations: nothing during a quiet period at
+    startup and nothing before the first successful `initialize` response; nothing in a quiet
+    period after an `initialize` without `protocolVersion`; and the same after `initialize(0)`.
+    An agent that exits after a failed `initialize` PASSes that leg."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    quiet = quiet_period(agent_launch.default_timeout)
+    violations: list[str] = []
+
+    async with connected_agent(agent_launch, handshake=False) as agent:
+        with contextlib.suppress(AgentExited):
+            await drain_quiet(agent, quiet)
+        init_id = await agent.send_request("initialize", SPEC.initialize_params())
+        reply = await agent.wait_for_response(init_id, timeout=agent_launch.default_timeout)
+    reply_index = next(i for i, line in enumerate(agent.transcript) if line is reply)
+    violations += [
+        f"before the initialize response: {text!r}" for text in _method_messages(agent, stop=reply_index)
+    ]
+
+    for label, params in (
+        ("after initialize without protocolVersion", _NO_PROTOCOL_VERSION),
+        ("after initialize(protocolVersion=0)", _UNSUPPORTED_PROTOCOL_VERSION_PARAMS),
+    ):
+        async with connected_agent(agent_launch, handshake=False) as agent:
+            entry = await _request_or_fail(agent, agent_launch, "initialize", params, label)
+            if not _is_error(entry):
+                continue
+            mark = len(agent.transcript)
+            with contextlib.suppress(AgentExited):
+                await drain_quiet(agent, quiet)
+        violations += [f"{label}: {t!r}" for t in _method_messages(agent, mark)]
+
+    assert not violations, f"the agent sent messages on an uninitialized connection: {violations!r}"
+
+
+async def _assert_initialized(agent, launch, what: str) -> None:
+    """The connection is initialized iff an unknown request gets its own error rather than
+    `-32600` ("not initialized")."""
+    entry = await _request_or_fail(agent, launch, _PROBE_METHOD, None, f"{_PROBE_METHOD} {what}")
+    assert _error_code(entry.parsed) != INVALID_REQUEST, (
+        f"{what}: an unknown request was answered -32600, as if the connection were not "
+        f"initialized: {entry.text!r}"
+    )
+
+
+@pytest.mark.requirement("ACP-INIT-211")
+async def test_failed_initialize_can_be_retried(agent_launch, agent_initialize_result):
+    """ACP-INIT-211 (initialization.mdx:92). An `initialize` without `protocolVersion` fails with
+    `-32602`; a corrected `initialize(2)` on the same connection then succeeds, and the connection
+    is initialized (an unknown `_tck/...` request is not answered `-32600`). The retry is only
+    tried after `-32602`, never after `-32022`, which asks the client to close the connection
+    (initialization.mdx:129); an `initialize` that is not rejected with `-32602` leaves nothing
+    to retry (`ACP-INIT-206` judges it) and SKIPs."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    async with connected_agent(agent_launch, handshake=False) as agent:
+        first = await _request_or_fail(agent, agent_launch, "initialize", _NO_PROTOCOL_VERSION, "first initialize")
+        if _error_code(first.parsed) != INVALID_PARAMS:
+            pytest.skip("initialize without protocolVersion was not rejected with -32602; nothing to retry")
+        retry = await _request_or_fail(agent, agent_launch, "initialize", SPEC.initialize_params(), "retried initialize")
+        assert _selected_version(retry.parsed) == PROTOCOL_VERSION, (
+            f"a corrected initialize after a failed one must succeed selecting {PROTOCOL_VERSION}, "
+            f"got {retry.text!r}"
+        )
+        await _assert_initialized(agent, agent_launch, "after the retried initialize")
+
+
+@pytest.mark.requirement("ACP-INIT-212")
+async def test_initialize_repeated_before_other_requests_is_handled_like_the_first(
+    agent_launch, agent_initialize_result
+):
+    """ACP-INIT-212 (initialization.mdx:139). After a successful `initialize(2)`, two repeated
+    `initialize(2)` (each awaited before the next) get a result selecting 2. A following repeat
+    without `protocolVersion` fails, and "A repeat that fails leaves the previous successful
+    initialization in effect": an unknown `_tck/...` request is not answered `-32600`. A repeat
+    that is not rejected leaves that last check nothing to judge (`ACP-INIT-206`) and ends the
+    test there."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    async with connected_agent(agent_launch, handshake=False) as agent:
+        for n in (1, 2, 3):
+            entry = await _request_or_fail(
+                agent, agent_launch, "initialize", SPEC.initialize_params(), f"initialize #{n}"
+            )
+            assert _selected_version(entry.parsed) == PROTOCOL_VERSION, (
+                f"initialize #{n} (a repeat before any other request) must succeed selecting "
+                f"{PROTOCOL_VERSION}, got {entry.text!r}"
+            )
+        failed = await _request_or_fail(
+            agent, agent_launch, "initialize", _NO_PROTOCOL_VERSION, "failing repeat of initialize"
+        )
+        if not _is_error(failed):
+            return
+        await _assert_initialized(agent, agent_launch, "after a repeated initialize failed")
+
+
+async def _initialize_after_request(agent_launch):
+    """`initialize(2)`, an unknown `_tck/...` request (any outcome), then `initialize(2)`
+    again; returns the last reply entry. The first `initialize` and the in-between request are
+    awaited, so the repeat is unambiguously "after another request". No reply to the repeat
+    is a FAIL; a missing reply to the in-between request is `ACP-JSONRPC-201`'s concern."""
+    async with connected_agent(agent_launch, handshake=False) as agent:
+        await _request_or_fail(agent, agent_launch, "initialize", SPEC.initialize_params(), "initialize")
+        probe_id = await agent.send_request(_PROBE_METHOD)
+        with contextlib.suppress(AgentExited, AgentTimeout):
+            await agent.wait_for_response(probe_id, timeout=agent_launch.default_timeout)
+        return await _request_or_fail(
+            agent, agent_launch, "initialize", SPEC.initialize_params(), "initialize repeated after another request"
+        )
+
+
+@pytest.mark.requirement("ACP-INIT-213")
+async def test_initialize_repeated_after_another_request_is_rejected(agent_launch, agent_initialize_result):
+    """ACP-INIT-213 (error.mdx:29,60; initialization.mdx:139). An `initialize` sent after another
+    request ("any request": here an unknown `_`-prefixed method, answered `-32601` by a
+    conforming agent) MUST be rejected: a result FAILs. The TCK deliberately breaks the client's
+    MUST NOT here, as `ACP-INIT-206` does with malformed versions. The exact code is
+    `ACP-INIT-215`'s."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    entry = await _initialize_after_request(agent_launch)
+    assert _is_error(entry), (
+        f"an initialize repeated after another request must be rejected, got {entry.text!r}"
+    )
+
+
+@pytest.mark.requirement("ACP-INIT-215")
+async def test_initialize_repeated_after_another_request_gets_invalid_request(
+    agent_launch, agent_initialize_result
+):
+    """ACP-INIT-215 (ADVISORY; error.mdx:29,60). The rejection of an `initialize` repeated after
+    another request carries `-32600`. A reply that is not an error is `ACP-INIT-213`'s FAIL and
+    SKIPs here."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    try:
+        entry = await _initialize_after_request(agent_launch)
+    except pytest.fail.Exception:
+        pytest.skip("no reply to the repeated initialize (ACP-INIT-213 judges it)")
+    if not _is_error(entry):
+        pytest.skip("the repeated initialize was not rejected (ACP-INIT-213 judges it)")
+    assert _error_code(entry.parsed) == INVALID_REQUEST, (
+        f"an initialize repeated after another request should be rejected with -32600, got {entry.text!r}"
+    )
+
+
+@pytest.mark.requirement("ACP-INIT-214")
+async def test_unparseable_params_of_a_newer_version_request_are_ignored(
+    agent_launch, agent_initialize_result
+):
+    """ACP-INIT-214 (initialization.mdx:131). `initialize(65535)` with `capabilities: 42` (not an
+    object, so unparseable under the version the agent selects) MUST NOT be rejected: the agent
+    ignores what it cannot parse and answers with a result. The selected version is
+    `ACP-INIT-003`'s concern. Only `capabilities` is made unparseable: whether a missing or
+    malformed required field such as `info` also counts is arguable."""
+    _skip_unless_v2_endpoint(agent_initialize_result)
+    params = {**SPEC.initialize_params(), "protocolVersion": 65535, "capabilities": 42}
+    entry = await _initialize_once(agent_launch, params)
+    assert isinstance(entry.parsed, dict) and "result" in entry.parsed, (
+        "initialize requesting a newer version with unparseable `capabilities` must be answered "
+        f"with a result, not rejected: {entry.text!r}"
+    )

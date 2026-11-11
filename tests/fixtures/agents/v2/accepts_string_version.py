@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: coerces a string `protocolVersion` such as `"2"` to an integer and
-selects it, instead of rejecting the non-integer value with `-32602` (initialization.mdx:117) --
+selects it, instead of rejecting the non-integer value with `-32602` (initialization.mdx:108) --
 the same coercion the Python SDK applies. FAILs exactly `ACP-INIT-206`.
 """
 

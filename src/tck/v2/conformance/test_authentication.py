@@ -57,8 +57,8 @@ async def test_auth_methods_have_unique_method_ids(agent_initialize_result):
     """ACP-AUTH-201 (ADVISORY; re-cites v1's ACP-AUTH-001, field renamed `id` -> `methodId`).
     Schema-shape validation of `authMethods` is already covered by ACP-SCHEMA-001; this adds the
     id-uniqueness check schema validation alone can't express. Uses the cached
-    `agent_initialize_result` rather than a second connection -- v2 never requires a testable
-    second `initialize`."""
+    `agent_initialize_result` rather than a second connection -- the handshake result is already on
+    hand."""
     outcome = agent_initialize_result
     assert outcome.result is not None, f"initialize did not succeed: {outcome.error_message}"
     skip_if_version_mismatch(outcome.result)

@@ -34,6 +34,12 @@ _MANDATORY_IDS = {
     "ACP-INIT-206",
     "ACP-INIT-207",
     "ACP-INIT-208",
+    "ACP-INIT-209",
+    "ACP-INIT-210",
+    "ACP-INIT-211",
+    "ACP-INIT-212",
+    "ACP-INIT-213",
+    "ACP-INIT-214",
     "ACP-SCHEMA-001",
     "ACP-TRANSPORT-201",
     "ACP-TRANSPORT-002",
@@ -120,6 +126,7 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-207",
 }
 _ADVISORY_IDS = {
+    "ACP-INIT-215",
     "ACP-PROMPT-208",
     "ACP-STATE-204",
     "ACP-CANCEL-204",
@@ -728,10 +735,60 @@ def test_accepts_string_version_fails_init_206_only():
     assert fails == {"ACP-INIT-206"}, statuses
 
 
-def test_starts_session_after_mismatch_fails_init_207_only():
+def test_starts_session_after_mismatch_fails_init_207_and_209():
+    """The `session/new` after `-32022` succeeds: `ACP-INIT-207` (session work began) and
+    `ACP-INIT-209` (the request was not answered `-32600`)."""
     fails, statuses = _negotiation_fails("starts_session_after_mismatch.py")
-    assert fails == {"ACP-INIT-207"}, statuses
+    assert fails == {"ACP-INIT-207", "ACP-INIT-209"}, statuses
     assert statuses.get("ACP-INIT-205") == "PASS", statuses
+
+
+def test_serves_before_initialize_fails_init_209_and_207():
+    """Never refusing a request also lets the `session/new` after `-32022` succeed
+    (`ACP-INIT-207`)."""
+    fails, statuses = _negotiation_fails("serves_before_initialize.py")
+    assert fails == {"ACP-INIT-207", "ACP-INIT-209"}, statuses
+
+
+def test_notifies_before_initialize_fails_init_210_only():
+    fails, statuses = _negotiation_fails("notifies_before_initialize.py")
+    assert fails == {"ACP-INIT-210"}, statuses
+
+
+def test_no_retry_after_failed_initialize_fails_init_211_only():
+    """It also answers `-32600` to a pre-initialize request, so `ACP-INIT-209` PASSes."""
+    fails, statuses = _negotiation_fails("no_retry_after_failed_initialize.py")
+    assert fails == {"ACP-INIT-211"}, statuses
+    assert statuses.get("ACP-INIT-209") == "PASS", statuses
+
+
+def test_rejects_repeated_initialize_fails_init_212_only():
+    """A second `initialize` is rejected (`-32600`) before any other request: `ACP-INIT-212`
+    FAILs, but a repeat after another request must be rejected too, so `ACP-INIT-213` PASSes."""
+    fails, statuses = _negotiation_fails("rejects_repeated_initialize.py")
+    assert fails == {"ACP-INIT-212"}, statuses
+    assert statuses.get("ACP-INIT-213") == "PASS", statuses
+
+
+def test_accepts_initialize_after_request_fails_init_213_only():
+    """`ACP-INIT-215` SKIPs: there is no error whose code it could check."""
+    fails, statuses = _negotiation_fails("accepts_initialize_after_request.py")
+    assert fails == {"ACP-INIT-213"}, statuses
+    assert statuses.get("ACP-INIT-215") == "SKIPPED", statuses
+    assert statuses.get("ACP-INIT-212") == "PASS", statuses
+
+
+def test_late_initialize_wrong_code_fails_init_215_only():
+    """`-32602` instead of `-32600`: a rejection, so the MANDATORY `ACP-INIT-213` PASSes and
+    only the ADVISORY code row fails."""
+    fails, statuses = _negotiation_fails("late_initialize_wrong_code.py")
+    assert fails == {"ACP-INIT-215"}, statuses
+    assert statuses.get("ACP-INIT-213") == "PASS", statuses
+
+
+def test_rejects_unparseable_newer_params_fails_init_214_only():
+    fails, statuses = _negotiation_fails("rejects_unparseable_newer_params.py")
+    assert fails == {"ACP-INIT-214"}, statuses
 
 
 def test_dual_v2_shape_on_v1_fails_init_208_only():

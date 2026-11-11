@@ -150,6 +150,111 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/initialization.mdx:110"),
     ),
     Requirement(
+        id="ACP-INIT-209",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A request other than `initialize` that arrives before initialization completes is "
+            "rejected with `-32600`: on a fresh connection, and after an `initialize` that "
+            "failed (`protocolVersion` omitted, or `protocolVersion: 0` rejected with "
+            "`-32022`). The probe is `session/new`; no reply FAILs. The \"ignore "
+            "notifications\" half is not checked (the expected behaviour is silence, which "
+            "`ACP-JSONRPC-003` already covers). Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:29,60; "
+            "docs/protocol/v2/draft/initialization.mdx:90"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-210",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "While the connection is uninitialized the agent sends no JSON-RPC request or "
+            "notification: not at startup before `initialize`, not before the first successful "
+            "`initialize` response, and not after an `initialize` that failed (`protocolVersion` "
+            "omitted, or `protocolVersion: 0` rejected with `-32022`). Binds agents "
+            "implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main handshake "
+            "selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:88,91"),
+    ),
+    Requirement(
+        id="ACP-INIT-211",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "After an `initialize` that failed with `-32602` (`protocolVersion` omitted), a "
+            "corrected `initialize` on the same connection succeeds, and the connection is "
+            "then initialized (a following unknown `_tck/...` request is not answered with "
+            "`-32600`). A retry after `-32022` is deliberately not exercised: that error asks "
+            "the client to close the connection. Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:92"),
+    ),
+    Requirement(
+        id="ACP-INIT-212",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "`initialize` repeated before any other request is handled like the first: "
+            "two repeats after a successful `initialize(2)` each get a result selecting 2. A "
+            "repeat that fails (`protocolVersion` omitted) leaves the previous initialization "
+            "in effect: a following unknown `_tck/...` request is not answered with `-32600`. "
+            "Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
+            "handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:139"),
+    ),
+    Requirement(
+        id="ACP-INIT-213",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "An `initialize` repeated after another request is rejected with an error, not "
+            "answered with a result. The request in between is an unknown `_tck/...` method: "
+            "any request closes the repeat window. The exact code is `ACP-INIT-215`'s concern. "
+            "Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
+            "handshake selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:29,60; "
+            "docs/protocol/v2/draft/initialization.mdx:139"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-215",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The error that rejects an `initialize` repeated after another request is "
+            "`-32600`. SKIPPED when the repeat is not answered with an error (that is "
+            "`ACP-INIT-213`'s FAIL). Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/error.mdx:29,60"),
+    ),
+    Requirement(
+        id="ACP-INIT-214",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "An `initialize` requesting a version above the agent's highest "
+            "(`protocolVersion: 65535`) whose `capabilities` cannot be parsed (a non-object, "
+            "`42`) is not rejected: the agent ignores the unparseable parameter and answers "
+            "with a result. Which version it selects is `ACP-INIT-003`'s concern. Binds agents "
+            "implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main handshake "
+            "selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:131; "
+            "schema/v2/schema.unstable.json#/$defs/InitializeRequest/properties/capabilities"
+        ),
+    ),
+    Requirement(
         id="ACP-INIT-203",
         tier=Tier.MANDATORY,
         capability=None,
