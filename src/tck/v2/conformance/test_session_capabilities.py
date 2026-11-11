@@ -4,7 +4,7 @@
 `tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..203), the
 `additionalDirectories` carrier on `session/new`/`session/resume` (ACP-ADDDIRS-201..203), the
 MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201/202) and `systemPrompt`
-(ACP-SYSPROMPT-201/202) surfaces.
+(ACP-SYSPROMPT-201/202, and the error paths ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`, `ACP-MCP-201`/`202`/`204`/`205` is
 `Tier.CAPABILITY`; see the requirements module for the exact capability path each uses. Those
@@ -12,11 +12,10 @@ still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate eve
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
 throughout this registry (e.g. `ACP-CANCEL-204`).
 
-`systemPrompt` is only probed on its positive paths: probing its error paths would need the TCK
-to send an unadvertised mode or a non-text content block, both of which clients MUST NOT do.
-`ACP-ADDDIRS-203` and `ACP-MCP-203`/`204` do send such input deliberately (a relative entry, an
-unsupported transport, duplicate names): the spec defines the agent's answer to exactly those
-inputs, and the probes are `_`-prefixed or otherwise unmistakably the TCK's.
+`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203` and `ACP-MCP-203`/`204` send input a client MUST NOT
+(an unsupported `systemPrompt` mode or non-text block, a relative entry, an unsupported transport,
+duplicate names) on purpose: the spec defines the agent's answer to exactly those inputs, and the
+probes are `_`-prefixed or otherwise unmistakably the TCK's.
 """
 
 from __future__ import annotations
@@ -1235,7 +1234,7 @@ async def test_forked_session_can_be_prompted_without_resume(agent_launch, tmp_p
         assert turn.idle_update is not None, "the forked session's turn never reached idle"
 
 
-# --- systemPrompt (ACP-SYSPROMPT-201/202) ---
+# --- systemPrompt (ACP-SYSPROMPT-201/202, 002/003) ---
 
 
 async def _new_session_with_system_prompt(agent, cwd: Any, mode: str, *, timeout: float):
@@ -1276,3 +1275,166 @@ async def test_new_session_with_override_system_prompt_accepted(agent_launch, tm
         await _new_session_with_system_prompt(
             agent, tmp_path, "override", timeout=agent_launch.default_timeout
         )
+
+
+# ACP-SYSPROMPT-002/003 deliberately send what a client MUST NOT (an unadvertised mode, a
+# non-text block): the spec defines the agent's answer to exactly those inputs, so they are
+# legitimate probes (session-setup.mdx:474,477,481). For `session/new`, "MUST NOT create the
+# session" is only observable as the error itself; for `session/resume` the session already
+# exists, so the tests also check that it was not resumed: a `session/prompt` on that id must
+# not succeed.
+
+_UNSUPPORTED_MODE_PROMPT = {
+    "mode": "_tck_unsupported",
+    "content": [{"type": "text", "text": "You are being exercised by the ACP TCK."}],
+}
+
+
+def _non_text_content_prompt(cwd: Path) -> dict[str, Any]:
+    return {
+        "mode": "append",
+        "content": [{"type": "resource_link", "uri": (cwd / "rules.md").as_uri(), "name": "rules.md"}],
+    }
+
+
+async def _assert_prompt_not_accepted(agent, session_id: str, what: str, *, timeout: float) -> None:
+    """A refused session must not accept turns: an error to `session/prompt` is fine."""
+    turn = await run_prompt(agent, session_id, [{"type": "text", "text": "hello"}], timeout=timeout)
+    reply = turn.response_entry.parsed
+    assert not (isinstance(reply, dict) and "result" in reply), (
+        f"{what} returned an error, but the session was set up anyway: session/prompt on "
+        f"{session_id!r} succeeded: {turn.response_entry.text!r}"
+    )
+
+
+async def _assert_new_session_refused(
+    agent_launch, tmp_path, record_property, *, system_prompt, what: str, kind: str
+) -> None:
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(
+            "session/new", {"cwd": str(tmp_path), "systemPrompt": system_prompt}
+        )
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        assert isinstance(msg, dict) and isinstance(msg.get("error"), dict), (
+            f"session/new with {what} must return an error, got: {entry.text!r}"
+        )
+        record_property(f"acp_tck_sysprompt_{kind}_new_error_code", msg["error"].get("code"))
+        # An error carries no session; if the agent returned an id anyway, it must not be live.
+        result = msg.get("result")
+        session_id = result.get("sessionId") if isinstance(result, dict) else None
+        if isinstance(session_id, str) and session_id:
+            await _assert_prompt_not_accepted(
+                agent, session_id, f"session/new with {what}", timeout=timeout
+            )
+
+
+async def _assert_resume_refused(
+    agent_launch, tmp_path, record_property, *, system_prompt, what: str, kind: str
+) -> None:
+    """Create a session on one connection, then resume it on a fresh one with a `systemPrompt`
+    the agent cannot apply (session-setup.mdx:481). The reply must be an error (its code is
+    recorded, not asserted: `-32602` is only RECOMMENDED), and a `session/prompt` on that id must
+    then not succeed.
+
+    A control step comes first, on its own connection that is closed before the probe's: the
+    same resume without a `systemPrompt` must succeed. An agent that cannot restore a session
+    across connections would otherwise refuse the probe for the wrong reason (`-32002`) and pass
+    vacuously, so a failed control SKIPs."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+    async with connected_agent(agent_launch) as agent:
+        control, _updates = await resume_session(agent, session_id, tmp_path, timeout=timeout)
+        skip_if_auth_gated(control)
+        control_msg = control.parsed
+        if not (isinstance(control_msg, dict) and "result" in control_msg):
+            pytest.skip(
+                "cannot judge: the agent did not resume the session without a systemPrompt "
+                f"either: {control.text!r}"
+            )
+    async with connected_agent(agent_launch) as agent:
+        entry, _updates = await resume_session(
+            agent, session_id, tmp_path, system_prompt=system_prompt, timeout=timeout
+        )
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        assert isinstance(msg, dict) and isinstance(msg.get("error"), dict), (
+            f"session/resume with {what} must return an error, got: {entry.text!r}"
+        )
+        record_property(f"acp_tck_sysprompt_{kind}_resume_error_code", msg["error"].get("code"))
+        await _assert_prompt_not_accepted(
+            agent, session_id, f"session/resume with {what}", timeout=timeout
+        )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-002")
+@pytest.mark.capability("capabilities.session.systemPrompt")
+async def test_new_session_with_unsupported_system_prompt_mode_errors(
+    agent_launch, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-002. Uses a `_`-prefixed mode, which is reserved for implementation-specific
+    use, so no agent can legitimately claim to support the TCK's. Breaks the client rule to use
+    only an advertised mode on purpose: the spec defines the agent's answer."""
+    await _assert_new_session_refused(
+        agent_launch,
+        tmp_path,
+        record_property,
+        system_prompt=_UNSUPPORTED_MODE_PROMPT,
+        what="an unsupported systemPrompt mode",
+        kind="mode",
+    )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-002")
+@pytest.mark.capability("capabilities.session.systemPrompt")
+async def test_resume_with_unsupported_system_prompt_mode_errors(
+    agent_launch, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-002 for `session/resume`. `session/resume` is baseline once
+    `capabilities.session` is advertised, which `systemPrompt` implies. Breaks the client rule
+    to use only an advertised mode on purpose, as for `session/new`."""
+    await _assert_resume_refused(
+        agent_launch,
+        tmp_path,
+        record_property,
+        system_prompt=_UNSUPPORTED_MODE_PROMPT,
+        what="an unsupported systemPrompt mode",
+        kind="mode",
+    )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-003")
+@pytest.mark.capability("capabilities.session.systemPrompt")
+async def test_new_session_with_non_text_system_prompt_content_errors(
+    agent_launch, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-003. Breaks the client rule to send only text blocks on purpose: the spec
+    defines the agent's answer."""
+    await _assert_new_session_refused(
+        agent_launch,
+        tmp_path,
+        record_property,
+        system_prompt=_non_text_content_prompt(tmp_path),
+        what="a non-text systemPrompt content block",
+        kind="content",
+    )
+
+
+@pytest.mark.requirement("ACP-SYSPROMPT-003")
+@pytest.mark.capability("capabilities.session.systemPrompt")
+async def test_resume_with_non_text_system_prompt_content_errors(
+    agent_launch, tmp_path, record_property
+):
+    """ACP-SYSPROMPT-003 for `session/resume`. Breaks the client rule to send only text blocks on
+    purpose, as for `session/new`."""
+    await _assert_resume_refused(
+        agent_launch,
+        tmp_path,
+        record_property,
+        system_prompt=_non_text_content_prompt(tmp_path),
+        what="a non-text systemPrompt content block",
+        kind="content",
+    )

@@ -47,8 +47,13 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `data.sessionId` (`error.mdx:54-56`). Defect fixtures override it, or the handlers, to break it.
   `session/close` and `session/delete` of an unknown id still succeed.
 - `session/fork` (only when `capabilities.session.fork` is advertised) creates a live session with
-  a copy of the source's history. `systemPrompt` on `session/new` is accepted only in an
-  advertised mode with text content, else `-32602`.
+  a copy of the source's history. `systemPrompt` on `session/new` and `session/resume` is
+  accepted only in an advertised mode with text content, else `-32602` and the session is
+  neither created nor resumed (session-setup.mdx:481).
+- `persist_sessions` (opt-in, default `False`): each created session's `cwd` is also written to
+  `<cwd>/.tck-fixture-sessions.json`, so `session/resume` on a fresh process can restore it
+  (`_restore`; history and closed state are not persisted). Off by default because it writes a
+  file into the session's `cwd`.
 - `session/new`/`session/resume` params are validated by `_setup_rejection`, each rule an
   overridable hook so a defect fixture can drop exactly one: a relative `cwd` (`_cwd_rejection`,
   session-setup.mdx:524), a relative `additionalDirectories` entry when the capability is
@@ -85,6 +90,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 PROTOCOL_VERSION = 2
@@ -142,7 +148,9 @@ class ConformingAgent:
         emit_rich_turn_updates: bool = False,
         terminal_auth_method: dict[str, Any] | None = None,
         report_background_work: bool = False,
+        persist_sessions: bool = False,
     ) -> None:
+        self._persist_sessions = persist_sessions
         self._session_count = 0
         self._message_count = 0
         self._tool_call_count = 0
@@ -506,9 +514,45 @@ class ConformingAgent:
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
+        self._persist(session_id)
         self._launch_mcp_servers(params.get("mcpServers") or [])
         self._before_new_response(session_id)
         self._reply(msg_id, self._new_session_result(session_id))
+
+    @staticmethod
+    def _store_path(cwd: Any) -> Path | None:
+        return Path(cwd) / ".tck-fixture-sessions.json" if isinstance(cwd, str) and cwd else None
+
+    @staticmethod
+    def _read_store(path: Path) -> dict[str, str]:
+        try:
+            stored = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return stored if isinstance(stored, dict) else {}
+
+    def _persist(self, session_id: str) -> None:
+        cwd = self._sessions.get(session_id)
+        path = self._store_path(cwd)
+        if not self._persist_sessions or path is None:
+            return
+        stored = self._read_store(path)
+        stored[session_id] = cwd
+        path.write_text(json.dumps(stored))
+
+    def _restore(self, session_id: Any, cwd: Any) -> bool:
+        """Bring a session persisted by an earlier process into `_sessions`, if there is one.
+        Returns whether it was restored by this call."""
+        path = self._store_path(cwd)
+        if not self._persist_sessions or path is None or not isinstance(session_id, str):
+            return False
+        if session_id in self._sessions or session_id in self._closed_sessions:
+            return False
+        stored_cwd = self._read_store(path).get(session_id)
+        if not isinstance(stored_cwd, str):
+            return False
+        self._sessions[session_id] = stored_cwd
+        return True
 
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
         # All params optional; `SessionInfo` requires only `sessionId`/`cwd`. Filter by `cwd`
@@ -525,13 +569,18 @@ class ConformingAgent:
         # A session is resumable while it is live or closed on this connection; a deleted or
         # never-created one is `-32002` (`error.mdx:56`).
         session_id = params.get("sessionId")
+        restored = self._restore(session_id, params.get("cwd"))
         if session_id not in self._sessions and session_id not in self._closed_sessions:
             self._unknown_session(msg_id, session_id)
             return
-        rejection = self._replay_from_rejection(params.get("replayFrom")) or self._setup_rejection(
-            params
+        rejection = (
+            self._replay_from_rejection(params.get("replayFrom"))
+            or self._setup_rejection(params)
+            or self._system_prompt_rejection(params.get("systemPrompt"))
         )
         if rejection is not None:
+            if restored:  # a refused resume must not leave the session live
+                self._sessions.pop(session_id, None)
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
         if session_id in self._closed_sessions:
@@ -609,9 +658,13 @@ class ConformingAgent:
         # close, but with no cancellation side effect of its own (D-series carries none).
         # ACP-DELETE-203: an unknown/already-deleted sessionId still succeeds silently.
         session_id = params.get("sessionId")
-        self._sessions.pop(session_id, None)
-        self._closed_sessions.pop(session_id, None)
+        cwd = self._sessions.pop(session_id, None) or self._closed_sessions.pop(session_id, None)
         self._history.pop(session_id, None)
+        path = self._store_path(cwd)
+        if self._persist_sessions and path is not None:
+            stored = self._read_store(path)
+            if stored.pop(session_id, None) is not None:
+                path.write_text(json.dumps(stored))
         self._reply(msg_id, {})
 
     def _current_config_options(self) -> list[dict[str, Any]]:

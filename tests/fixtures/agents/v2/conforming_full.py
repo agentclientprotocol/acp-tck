@@ -4,7 +4,8 @@ permission on every turn: `capabilities.session.prompt.{image,audio,embeddedCont
 `session.delete`/`additionalDirectories`/`mcp: {stdio, http}`/`fork`/`systemPrompt` (with
 `mode.override`), plus one `select`-type
 `configOptions` entry (`_base.ConformingAgent`'s `config_options` param), one `type: "agent"`
-auth method (`methodId: "tck"`), and `emit_rich_turn_updates=True`. Built on
+auth method (`methodId: "tck"`), `emit_rich_turn_updates=True`, and `persist_sessions=True` (so
+`ACP-SYSPROMPT-002`/`003`'s resume probes can restore a session on a fresh process). Built on
 `AsksPermissionAgent`, so every turn also exercises the permission-request shape. Must PASS every
 CAPABILITY/INFORMATIONAL id its advertised capabilities gate (see `tests/v2/test_cli.py` for the
 exact set).
@@ -70,6 +71,7 @@ def main() -> None:
             "env": [{"name": "TCK_TERMINAL_AUTH", "value": "1"}],
         },
         emit_rich_turn_updates=True,
+        persist_sessions=True,
     ).run()
 
 

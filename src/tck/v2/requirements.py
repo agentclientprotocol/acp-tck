@@ -1593,8 +1593,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session.systemPrompt",
         text=(
             "`session/new` with `systemPrompt: {mode: \"append\", content: [<text block>]}` "
-            "succeeds. Only this positive path is probed: the error paths (unadvertised mode, "
-            "non-text content) would require the TCK to break a client MUST."
+            "succeeds. The error paths are `ACP-SYSPROMPT-002`/`003`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:473-477,483; "
@@ -1613,6 +1612,41 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/session-setup.mdx:476-477,483; "
             "docs/protocol/v2/draft/initialization.mdx:298-304; "
             "schema/v2/schema.unstable.json#/$defs/SessionSystemPromptModeCapabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.systemPrompt",
+        text=(
+            "`session/new`, and `session/resume` of an existing session, with a "
+            "`systemPrompt.mode` the agent cannot support (the implementation-reserved "
+            "`_tck_unsupported`) returns an error rather than creating or resuming the "
+            "session; after a refused resume, `session/prompt` on that id does not succeed. "
+            "The error code is recorded, not asserted (`-32602` is only RECOMMENDED). The probes "
+            "break the client rule to use only an advertised mode on purpose: the spec defines "
+            "the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:474,481; "
+            "schema/v2/schema.unstable.json#/$defs/SystemPromptMode"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.systemPrompt",
+        text=(
+            "`session/new`, and `session/resume` of an existing session, with a non-text "
+            "`systemPrompt.content` block (`resource_link`) returns an error rather than "
+            "creating or resuming the session -- only text blocks are supported for now; "
+            "after a refused resume, `session/prompt` on that id does not succeed. The probes "
+            "break the client rule to send only text blocks on purpose: the spec defines the "
+            "agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:477,481; "
+            "schema/v2/schema.unstable.json#/$defs/SystemPrompt/properties/content"
         ),
     ),
     Requirement(

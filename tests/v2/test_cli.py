@@ -128,6 +128,8 @@ _CAPABILITY_IDS = {
     "ACP-FORK-202",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
+    "ACP-SYSPROMPT-002",
+    "ACP-SYSPROMPT-003",
     "ACP-CONFIG-201",
     "ACP-CONFIG-202",
     "ACP-CONFIG-203",
@@ -281,6 +283,8 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-FORK-202",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
+    "ACP-SYSPROMPT-002",
+    "ACP-SYSPROMPT-003",
     "ACP-CONFIG-201",
     "ACP-CONFIG-202",
     "ACP-CONFIG-203",
@@ -393,6 +397,8 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-FORK-202",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
+    "ACP-SYSPROMPT-002",
+    "ACP-SYSPROMPT-003",
     "ACP-AUTH-201",
     "ACP-AUTH-203",
     "ACP-AUTH-204",
@@ -2611,6 +2617,103 @@ def test_system_prompt_rejects_override_fails_sysprompt_202_only():
     assert fails == {"ACP-SYSPROMPT-202"}, result.stdout
     assert statuses.get("ACP-SYSPROMPT-201") == "PASS", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def _sysprompt_test_statuses(report_path) -> dict[str, str]:
+    """`{test function name: status}` for every test bound to an `ACP-SYSPROMPT-002/003` row."""
+    report = json.loads(report_path.read_text())
+    return {
+        test["nodeid"].rsplit("::", 1)[-1]: test["status"]
+        for req in report["requirements"]
+        if req["id"] in ("ACP-SYSPROMPT-002", "ACP-SYSPROMPT-003")
+        for test in req["tests"]
+    }
+
+
+def test_system_prompt_accepts_unsupported_mode_fails_sysprompt_002_only(tmp_path):
+    """`system_prompt_accepts_unsupported_mode.py` applies an unsupported `systemPrompt.mode`
+    instead of returning an error -- FAILs exactly `ACP-SYSPROMPT-002`, on both `session/new` and
+    `session/resume`; `ACP-SYSPROMPT-003` PASSes."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "system_prompt_accepts_unsupported_mode.py",
+        protocol_version=2,
+        k="system_prompt",
+        report_json=str(report_path),
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-SYSPROMPT-002"}, result.stdout
+    assert statuses.get("ACP-SYSPROMPT-003") == "PASS", result.stdout
+    assert _sysprompt_test_statuses(report_path) == {
+        "test_new_session_with_unsupported_system_prompt_mode_errors": "FAIL",
+        "test_resume_with_unsupported_system_prompt_mode_errors": "FAIL",
+        "test_new_session_with_non_text_system_prompt_content_errors": "PASS",
+        "test_resume_with_non_text_system_prompt_content_errors": "PASS",
+    }
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_system_prompt_resume_accepts_non_text_fails_sysprompt_003_only(tmp_path):
+    """`system_prompt_resume_accepts_non_text.py` refuses a non-text `systemPrompt` block on
+    `session/new` but resumes the session anyway -- FAILs exactly `ACP-SYSPROMPT-003`, through its
+    `session/resume` probe only; `ACP-SYSPROMPT-002` PASSes."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "system_prompt_resume_accepts_non_text.py",
+        protocol_version=2,
+        k="system_prompt",
+        report_json=str(report_path),
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-SYSPROMPT-003"}, result.stdout
+    assert statuses.get("ACP-SYSPROMPT-002") == "PASS", result.stdout
+    assert _sysprompt_test_statuses(report_path) == {
+        "test_new_session_with_unsupported_system_prompt_mode_errors": "PASS",
+        "test_resume_with_unsupported_system_prompt_mode_errors": "PASS",
+        "test_new_session_with_non_text_system_prompt_content_errors": "PASS",
+        "test_resume_with_non_text_system_prompt_content_errors": "FAIL",
+    }
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_system_prompt_without_persistence_skips_the_resume_probes(tmp_path):
+    """`system_prompt_no_persistence.py` refuses unsupported prompts but cannot resume a session
+    on a fresh process, so the resume probes SKIP ("cannot judge") instead of passing vacuously
+    on the `-32002` it would answer anyway. No FAIL."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "system_prompt_no_persistence.py",
+        protocol_version=2,
+        k="system_prompt",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == set(), result.stdout
+    assert _sysprompt_test_statuses(report_path) == {
+        "test_new_session_with_unsupported_system_prompt_mode_errors": "PASS",
+        "test_resume_with_unsupported_system_prompt_mode_errors": "SKIPPED",
+        "test_new_session_with_non_text_system_prompt_content_errors": "PASS",
+        "test_resume_with_non_text_system_prompt_content_errors": "SKIPPED",
+    }
+    report = json.loads(report_path.read_text())
+    messages = [
+        test["message"]
+        for req in report["requirements"]
+        if req["id"] in ("ACP-SYSPROMPT-002", "ACP-SYSPROMPT-003")
+        for test in req["tests"]
+        if test["status"] == "SKIPPED"
+    ]
+    assert messages and all("cannot judge" in message for message in messages), messages
 
 
 def test_advertises_delete_but_errors_fails_delete_201_202_and_203():

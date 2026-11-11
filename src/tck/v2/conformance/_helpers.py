@@ -250,6 +250,7 @@ async def resume_session(
     replay_from: Any = None,
     additional_directories: list[str] | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
+    system_prompt: dict[str, Any] | None = None,
     timeout: float | None = None,
 ) -> tuple[TranscriptEntry, list[tuple[int, TranscriptEntry]]]:
     """Send `session/resume` and collect every `session/update` notification observed on the
@@ -272,6 +273,8 @@ async def resume_session(
         params["additionalDirectories"] = additional_directories
     if mcp_servers is not None:
         params["mcpServers"] = mcp_servers
+    if system_prompt is not None:
+        params["systemPrompt"] = system_prompt
     req_id = await agent.send_request("session/resume", params)
 
     updates: list[tuple[int, TranscriptEntry]] = []

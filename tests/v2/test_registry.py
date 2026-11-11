@@ -145,6 +145,8 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-FORK-202",
         "ACP-SYSPROMPT-201",
         "ACP-SYSPROMPT-202",
+        "ACP-SYSPROMPT-002",
+        "ACP-SYSPROMPT-003",
         "ACP-MCP-201",
         "ACP-MCP-202",
         "ACP-MCP-203",
