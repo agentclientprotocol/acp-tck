@@ -44,6 +44,13 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `session/delete` (only when `capabilities.session.delete` is advertised, else `-32601`) removes
   it entirely, first cancelling a hanging `__hang__` turn as close does; an unknown id succeeds
   silently.
+- `session/archive`/`session/unarchive` (only when `capabilities.session.archive` is advertised,
+  else `-32601`): archiving closes an active session first (cancelling a hanging `__hang__` turn
+  before the response, `_close_for_archive`) and flags it archived; both are idempotent and an id
+  that is neither live nor closed is `-32002` (`_unknown_session`). With the capability,
+  `session/list` reports a boolean `archived` on every session, honours the `archived` filter
+  (`exclude`/omitted, `include`, `only`) and rejects any other value with `-32602`
+  (`_archive_filter_rejection`); `session/delete` also forgets the flag.
 - `session/list` rejects a relative `cwd` filter (`_list_cwd_rejection`) and any cursor
   (`_list_cursor_rejection`, since it never issues one) with `-32602`; each is an overridable hook.
 - A session-scoped request (`session/prompt`, `session/set_config_option`, `session/resume`)
@@ -182,6 +189,7 @@ class ConformingAgent:
         self._agent_name = agent_name
         self._sessions: dict[str, str] = {}  # live sessionId -> cwd
         self._closed_sessions: dict[str, str] = {}  # closed but still listed sessionId -> cwd
+        self._archived: set[str] = set()  # archived sessionIds (live or closed)
         self._hanging_sessions: dict[Any, bool] = {}  # sessionId -> awaiting session/cancel
         # sessionId -> (id, params) of each prompt held while that session hangs, in order
         self._held_prompts: dict[Any, list[tuple[Any, dict[str, Any]]]] = {}
@@ -320,6 +328,12 @@ class ConformingAgent:
             self._handle_close_session(msg_id, params)
         elif method == "session/delete" and self._session_capability("delete") is not None:
             self._handle_delete_session(msg_id, params)
+        elif method in ("session/archive", "session/unarchive") and (
+            self._session_capability("archive") is not None
+        ):
+            if method == "session/archive":
+                self._cancel_held_prompts(params.get("sessionId"))
+            self._handle_archive_session(msg_id, params, archived=method == "session/archive")
         elif method == "session/fork" and self._session_capability("fork") is not None:
             self._handle_fork_session(msg_id, params)
         elif method == "session/set_config_option":
@@ -597,19 +611,43 @@ class ConformingAgent:
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
         # All params optional; `SessionInfo` requires only `sessionId`/`cwd`. Filter by `cwd`
         # when given ("returns the first page" is trivially satisfied here -- no pagination, ever).
-        rejection = self._list_cwd_rejection(params.get("cwd")) or self._list_cursor_rejection(
-            params.get("cursor")
+        archive_advertised = self._session_capability("archive") is not None
+        rejection = (
+            self._list_cwd_rejection(params.get("cwd"))
+            or self._list_cursor_rejection(params.get("cursor"))
+            or (self._archive_filter_rejection(params.get("archived")) if archive_advertised else None)
         )
         if rejection is not None:
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
         cwd_filter = params.get("cwd")
-        sessions = [
-            {"sessionId": session_id, "cwd": cwd}
-            for session_id, cwd in {**self._closed_sessions, **self._sessions}.items()
-            if cwd_filter is None or cwd == cwd_filter
-        ]
+        archive_filter = params.get("archived")
+        sessions = []
+        for session_id, cwd in {**self._closed_sessions, **self._sessions}.items():
+            if cwd_filter is not None and cwd != cwd_filter:
+                continue
+            archived = session_id in self._archived
+            if archive_advertised and not self._archive_filter_matches(archive_filter, archived):
+                continue
+            info: dict[str, Any] = {"sessionId": session_id, "cwd": cwd}
+            if archive_advertised:
+                info["archived"] = archived
+            sessions.append(info)
         self._reply(msg_id, {"sessions": sessions})
+
+    @staticmethod
+    def _archive_filter_rejection(archive_filter: Any) -> str | None:
+        """Hook: `exclude`, `include`, `only` and omitted/`null` are the supported `archived`
+        filter values; any other is `-32602`, never treated as `exclude` (`ACP-ARCHIVE-004`)."""
+        if archive_filter is None or archive_filter in ("exclude", "include", "only"):
+            return None
+        return f"unsupported archived filter {archive_filter!r}"
+
+    @staticmethod
+    def _archive_filter_matches(archive_filter: Any, archived: bool) -> bool:
+        if archive_filter == "include":
+            return True
+        return archived if archive_filter == "only" else not archived
 
     @staticmethod
     def _list_cwd_rejection(cwd: Any) -> str | None:
@@ -743,6 +781,28 @@ class ConformingAgent:
             self._closed_sessions[session_id] = self._sessions.pop(session_id)
         self._reply(msg_id, {})
 
+    def _close_for_archive(self, session_id: Any) -> None:
+        """Hook: archiving an active session cancels its work and closes it as `session/close`
+        does (`ACP-ARCHIVE-201`): a hanging `__hang__` turn ends `cancelled` first."""
+        if self._hanging_sessions.pop(session_id, None) is not None:
+            self._finish_turn(session_id, "cancelled")
+        if session_id in self._sessions:
+            self._closed_sessions[session_id] = self._sessions.pop(session_id)
+
+    def _handle_archive_session(self, msg_id: Any, params: dict[str, Any], *, archived: bool) -> None:
+        # ACP-ARCHIVE-005: idempotent both ways; a session that is neither live nor closed
+        # (never created, or deleted) is `-32002`, unlike `session/delete`.
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions and session_id not in self._closed_sessions:
+            self._unknown_session(msg_id, session_id)
+            return
+        if archived:
+            self._close_for_archive(session_id)
+            self._archived.add(session_id)
+        else:
+            self._archived.discard(session_id)
+        self._reply(msg_id, {})
+
     def _handle_delete_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-DELETE-204: deleting an active session cancels its work as if `session/close` had
         # been called -- a still-hanging `__hang__` prompt ends `cancelled` before the response.
@@ -753,6 +813,7 @@ class ConformingAgent:
             self._finish_turn(session_id, "cancelled")
         cwd = self._sessions.pop(session_id, None) or self._closed_sessions.pop(session_id, None)
         self._history.pop(session_id, None)
+        self._archived.discard(session_id)
         path = self._store_path(cwd)
         if self._persist_sessions and path is not None:
             stored = self._read_store(path)
@@ -1299,13 +1360,21 @@ class AsksPermissionAgent(ConformingAgent):
     def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-CLOSE-203/205: closing a session blocked on our permission request withdraws it,
         # then cancels that work, so its cancelled idle goes out before the close response.
+        self._withdraw_pending_permission(params.get("sessionId"))
+        super()._handle_close_session(msg_id, params)
+
+    def _close_for_archive(self, session_id: Any) -> None:
+        # Archiving closes the session, so a permission request it is blocked on is withdrawn too.
+        self._withdraw_pending_permission(session_id)
+        super()._close_for_archive(session_id)
+
+    def _withdraw_pending_permission(self, session_id: Any) -> None:
         pending = self._pending_permission
-        if pending is not None and pending["session_id"] == params.get("sessionId"):
+        if pending is not None and pending["session_id"] == session_id:
             self._pending_permission = None
             self._withdraw_on_close(pending)
             self._settle_permission_tool_call(pending["session_id"], "cancelled")
             self._send_idle_update(pending["session_id"], "cancelled")
-        super()._handle_close_session(msg_id, params)
 
     def _after_permission(self, session_id: Any, outcome: Any) -> None:
         """Hook: a `cancelled` outcome ends the blocked work without resuming (`idle` straight

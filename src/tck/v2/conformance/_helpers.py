@@ -332,14 +332,18 @@ async def list_sessions(
     *,
     cwd: Any = None,
     cursor: str | None = None,
+    archived: Any = None,
     timeout: float | None = None,
 ) -> TranscriptEntry:
     """Send `session/list` and return its response entry (the caller inspects `.parsed` itself --
     unlike `new_session`, several tests need to see a raw error response too, e.g. a cursor round
-    trip is out of scope but an empty-list-vs-error check is not)."""
+    trip is out of scope but an empty-list-vs-error check is not). `archived` is the unstable
+    archive filter; omitted from the request when `None`."""
     params: dict[str, Any] = {}
     if cwd is not None:
         params["cwd"] = str(cwd)
+    if archived is not None:
+        params["archived"] = archived
     if cursor is not None:
         params["cursor"] = cursor
     req_id = await agent.send_request("session/list", params)

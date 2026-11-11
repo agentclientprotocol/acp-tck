@@ -1,7 +1,8 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-201..214, ACP-RESUME-216),
 `session/list` (ACP-LIST-201..206), `session/close`'s own contract (ACP-CLOSE-201/203/204/206/207
 -- `ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
-`tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..205), the
+`tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..205), `session/archive`/`session/unarchive` (ACP-ARCHIVE-002..006,
+201), the
 `additionalDirectories` carrier on `session/new`/`session/resume` (ACP-ADDDIRS-201..203), the
 MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201..205) and `systemPrompt`
 (ACP-SYSPROMPT-201/202, and the error paths ACP-SYSPROMPT-002/003) surfaces.
@@ -13,9 +14,10 @@ still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate eve
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
 throughout this registry (e.g. `ACP-CANCEL-204`).
 
-`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`, `ACP-LIST-205`/`206` and `ACP-MCP-203`/`204` send
-input a client MUST NOT (an unsupported `systemPrompt` mode or non-text block, a relative entry or
-`cwd` filter, a never-issued cursor, an unsupported transport, duplicate names) on purpose: the
+`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`, `ACP-LIST-205`/`206`, `ACP-ARCHIVE-004`/`005` and
+`ACP-MCP-203`/`204` send input a client MUST NOT (an unsupported `systemPrompt` mode or non-text
+block, a relative entry or `cwd` filter, a never-issued cursor, an unsupported `archived` filter
+value, a never-created session, an unsupported transport, duplicate names) on purpose: the
 spec defines the agent's answer to exactly those inputs, and the probes are `_`-prefixed or
 otherwise unmistakably the TCK's.
 """
@@ -23,6 +25,7 @@ otherwise unmistakably the TCK's.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -32,10 +35,11 @@ from typing import Any
 
 import pytest
 
-from tck.common.harness import AgentTimeout, Direction, TranscriptEntry
+from tck.common.harness import AgentExited, AgentTimeout, Direction, TranscriptEntry
+from tck.common.plugin import capability_is_supported
 from tck.v2.validation import validate_agent_message, validate_agent_response
 
-from ..protocol import INVALID_PARAMS, REQUEST_CANCELLED, RESOURCE_NOT_FOUND
+from ..protocol import AUTHENTICATION_REQUIRED, INVALID_PARAMS, REQUEST_CANCELLED, RESOURCE_NOT_FOUND
 from ._helpers import (
     ACTIVE_STATES,
     BACKGROUND_ID_FIELDS,
@@ -1193,6 +1197,317 @@ async def test_resume_of_deleted_session_is_not_found(agent_launch, tmp_path):
             )
         entry, _updates = await resume_session(agent, session_id, tmp_path, timeout=timeout)
         assert_unknown_session_error(entry, "session/resume", session_id)
+
+
+# --- session/archive and session/unarchive (unstable; ACP-ARCHIVE-002..006, 201) ---
+
+_ARCHIVE_PATH = "capabilities.session.archive"
+_ARCHIVE_UNKNOWN_SESSION_ID = "tck-never-created-session"
+# An `archived` filter value no agent supports: `_`-prefixed values are the implementation-extension
+# space (`schema/v2/schema.unstable.json#/$defs/SessionArchiveFilter`), so the probe does not squat
+# on a value ACP may define later.
+_UNSUPPORTED_ARCHIVE_FILTER = "_tck_unsupported"
+_MAX_LIST_PAGES = 10
+_ARCHIVE_FILTER_RFD = (
+    " (Draft RFD docs/rfds/session-archive.mdx:112: an agent that advertises `archive` MUST "
+    "support all three `archived` values, `exclude`, `include` and `only`)"
+)
+
+
+async def _list_view(agent, cwd, archived, *, timeout: float) -> list[dict[str, Any]]:
+    """Every `SessionInfo` from `session/list` for `cwd` (and `archived`, unless `None`), following
+    `nextCursor` for up to `_MAX_LIST_PAGES` pages. Asserts each page succeeds."""
+    sessions: list[dict[str, Any]] = []
+    cursor = None
+    for _ in range(_MAX_LIST_PAGES):
+        entry = await list_sessions(agent, cwd=cwd, cursor=cursor, archived=archived, timeout=timeout)
+        msg = entry.parsed
+        result = msg.get("result") if isinstance(msg, dict) else None
+        assert isinstance(result, dict), (
+            f"session/list (archived={archived!r}) did not succeed: {entry.text!r}"
+            + (_ARCHIVE_FILTER_RFD if archived in ("include", "only") else "")
+        )
+        page = result.get("sessions")
+        assert isinstance(page, list), f"session/list result.sessions is not an array: {result!r}"
+        sessions += [info for info in page if isinstance(info, dict)]
+        cursor = result.get("nextCursor")
+        if not isinstance(cursor, str):
+            break
+    return sessions
+
+
+def _view_ids(sessions: list[dict[str, Any]]) -> list[Any]:
+    return [info.get("sessionId") for info in sessions]
+
+
+async def _archive_call(agent, method: str, session_id: str, *, timeout: float) -> TranscriptEntry:
+    req_id = await agent.send_request(method, {"sessionId": session_id})
+    return await agent.wait_for_response(req_id, timeout=timeout)
+
+
+def _has_result(entry: TranscriptEntry) -> bool:
+    msg = entry.parsed
+    return isinstance(msg, dict) and isinstance(msg.get("result"), dict)
+
+
+def _assert_archive_succeeded(entry: TranscriptEntry, method: str, what: str) -> None:
+    assert _has_result(entry), f"{method} of {what} did not succeed: {entry.text!r}"
+    issues = validate_agent_response(method, entry.parsed)
+    assert not issues, f"{method} result failed schema validation: {issues!r}"
+
+
+async def _delete_quietly(agent, session_id: str, init_result, *, timeout: float) -> None:
+    """Best-effort cleanup so the test does not leave a session in a real agent's store. The
+    outcome is ignored: `ACP-DELETE-*` judge `session/delete`."""
+    if init_result is None or not capability_is_supported(init_result, "capabilities.session.delete"):
+        return
+    with contextlib.suppress(AgentTimeout, AgentExited):
+        await delete_session(agent, session_id, timeout=timeout)
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-002")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_listed_sessions_carry_boolean_archived(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-ARCHIVE-002. Lists with a `cwd` filter, so the pages hold only this test's session.
+    Checks the default view, then (if `session/archive` works; `ACP-ARCHIVE-003` judges it) the
+    `only` view, so an agent that sets the flag only on unarchived sessions is caught."""
+    init_result = agent_initialize_result.result
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        try:
+            listed = await _list_view(agent, tmp_path, None, timeout=timeout)
+            if not listed:
+                pytest.skip("session/list returned no session to inspect")
+            missing = _view_ids([info for info in listed if not isinstance(info.get("archived"), bool)])
+            assert not missing, f"listed sessions without a boolean `archived`: {missing!r}"
+
+            archived = await _archive_call(agent, "session/archive", session_id, timeout=timeout)
+            if _has_result(archived):
+                only = await _list_view(agent, tmp_path, "only", timeout=timeout)
+                missing = _view_ids([info for info in only if not isinstance(info.get("archived"), bool)])
+                assert not missing, (
+                    f"sessions listed under archived=only without a boolean `archived`: {missing!r}"
+                )
+        finally:
+            await _delete_quietly(agent, session_id, init_result, timeout=timeout)
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-003")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_archive_and_unarchive_round_trip(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-ARCHIVE-003. Checks membership in the default, `include` and `only` views (all pages,
+    filtered by `cwd`); the `archived` flag itself is `ACP-ARCHIVE-002`'s. An agent that does not
+    list the fresh session at all SKIPs: the views cannot be compared."""
+    init_result = agent_initialize_result.result
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        try:
+            if session_id not in _view_ids(await _list_view(agent, tmp_path, None, timeout=timeout)):
+                pytest.skip("the new session is not listed by session/list, so archive views cannot be compared")
+
+            archived = await _archive_call(agent, "session/archive", session_id, timeout=timeout)
+            _assert_archive_succeeded(archived, "session/archive", "an existing session")
+            default_ids = _view_ids(await _list_view(agent, tmp_path, None, timeout=timeout))
+            assert session_id not in default_ids, (
+                f"archived session {session_id!r} still appears in the default session/list view: "
+                f"{default_ids!r}"
+            )
+            only = await _list_view(agent, tmp_path, "only", timeout=timeout)
+            include = await _list_view(agent, tmp_path, "include", timeout=timeout)
+            for view, name in ((only, "only"), (include, "include")):
+                assert session_id in _view_ids(view), (
+                    f"archived session {session_id!r} is missing from archived={name}: {_view_ids(view)!r}"
+                )
+
+            unarchived = await _archive_call(agent, "session/unarchive", session_id, timeout=timeout)
+            _assert_archive_succeeded(unarchived, "session/unarchive", "an archived session")
+            default_ids = _view_ids(await _list_view(agent, tmp_path, None, timeout=timeout))
+            assert session_id in default_ids, (
+                f"unarchived session {session_id!r} is missing from the default session/list view: "
+                f"{default_ids!r}"
+            )
+            include_ids = _view_ids(await _list_view(agent, tmp_path, "include", timeout=timeout))
+            assert session_id in include_ids, (
+                f"unarchived session {session_id!r} is missing from archived=include: {include_ids!r}"
+            )
+            only_ids = _view_ids(await _list_view(agent, tmp_path, "only", timeout=timeout))
+            assert session_id not in only_ids, (
+                f"unarchived session {session_id!r} still appears under archived=only: {only_ids!r}"
+            )
+        finally:
+            await _delete_quietly(agent, session_id, init_result, timeout=timeout)
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-004")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_unsupported_archived_filter_gets_invalid_params(agent_launch):
+    """ACP-ARCHIVE-004. The spec names the code (`-32602`) as a MUST, so a different error is a
+    FAIL too, as is a result (the agent fell back to `exclude`). The probe value is
+    `_`-prefixed (see `_UNSUPPORTED_ARCHIVE_FILTER`). `-32000` SKIPs."""
+    async with connected_agent(agent_launch) as agent:
+        entry = await list_sessions(
+            agent, archived=_UNSUPPORTED_ARCHIVE_FILTER, timeout=agent_launch.default_timeout
+        )
+        msg = entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        if isinstance(error, dict) and error.get("code") == AUTHENTICATION_REQUIRED:
+            pytest.skip("session/list returned -32000 (authentication required)")
+        assert isinstance(error, dict), (
+            f"session/list with an unsupported archived filter must fail with -32602, but did not "
+            f"return an error: {entry.text!r}"
+        )
+        assert error.get("code") == INVALID_PARAMS, (
+            f"session/list with an unsupported archived filter must fail with -32602, got "
+            f"{error.get('code')!r}: {entry.text!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-005")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_archive_and_unarchive_are_idempotent(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-ARCHIVE-005. Archive twice, then unarchive twice: each call must succeed. The first
+    archive failing SKIPs (`ACP-ARCHIVE-003` judges it)."""
+    init_result = agent_initialize_result.result
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        try:
+            first = await _archive_call(agent, "session/archive", session_id, timeout=timeout)
+            if not _has_result(first):
+                pytest.skip(
+                    "prerequisite not met: the first session/archive did not succeed "
+                    f"(see ACP-ARCHIVE-003): {first.text!r}"
+                )
+            again = await _archive_call(agent, "session/archive", session_id, timeout=timeout)
+            _assert_archive_succeeded(again, "session/archive", "an already-archived session")
+            unarchived = await _archive_call(agent, "session/unarchive", session_id, timeout=timeout)
+            _assert_archive_succeeded(unarchived, "session/unarchive", "an archived session")
+            again = await _archive_call(agent, "session/unarchive", session_id, timeout=timeout)
+            _assert_archive_succeeded(again, "session/unarchive", "a not-archived session")
+        finally:
+            await _delete_quietly(agent, session_id, init_result, timeout=timeout)
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-005")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_archive_unknown_session_is_not_found(agent_launch):
+    """ACP-ARCHIVE-005. Unlike `session/delete`, these do not succeed silently for a session that
+    does not exist: `-32002` with `data.sessionId` (session-list.mdx:251, error.mdx:54,66). No
+    `session/new` is ever sent, so the id is one no agent can have created."""
+    async with connected_agent(agent_launch) as agent:
+        for method in ("session/archive", "session/unarchive"):
+            entry = await _archive_call(
+                agent, method, _ARCHIVE_UNKNOWN_SESSION_ID, timeout=agent_launch.default_timeout
+            )
+            assert_unknown_session_error(entry, method, _ARCHIVE_UNKNOWN_SESSION_ID)
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-006")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_deleted_session_is_absent_under_every_archived_filter(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-ARCHIVE-006. Closes the gap `ACP-DELETE-202` leaves (it checks only the default view):
+    an agent that implements delete as archive hides the session there but not under
+    `include`/`only`. Needs `capabilities.session.delete` too, which `@pytest.mark.capability`
+    cannot express as a second gate, so it SKIPs here. As for `ACP-DELETE-202`, a `-32002` answer
+    to the delete counts as success. An agent that does not list the fresh session before the
+    delete SKIPs, as `ACP-ARCHIVE-003` does: its disappearance would otherwise be vacuous."""
+    init_result = agent_initialize_result.result
+    if init_result is None or not capability_is_supported(init_result, "capabilities.session.delete"):
+        pytest.skip("capability 'capabilities.session.delete' not advertised by the agent under test")
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        listed_before = _view_ids(await _list_view(agent, tmp_path, "include", timeout=timeout))
+        if session_id not in listed_before:
+            await _delete_quietly(agent, session_id, init_result, timeout=timeout)
+            pytest.skip("the new session is not listed by session/list, so its deletion cannot be observed")
+        delete_entry = await delete_session(agent, session_id, timeout=timeout)
+        if not _delete_succeeded_or_gone(delete_entry):
+            pytest.skip(
+                "prerequisite not met: session/delete did not succeed (see ACP-DELETE-201): "
+                f"{delete_entry.text!r}"
+            )
+        for archived in ("exclude", "include", "only"):
+            listed = _view_ids(await _list_view(agent, tmp_path, archived, timeout=timeout))
+            assert session_id not in listed, (
+                f"deleted session {session_id!r} still appears under archived={archived!r}: {listed!r}"
+            )
+
+
+@pytest.mark.requirement("ACP-ARCHIVE-201")
+@pytest.mark.capability(_ARCHIVE_PATH)
+async def test_archive_cancels_foreground_work(
+    agent_launch, agent_initialize_result, tmp_path, cancel_prompt_text, record_property
+):
+    """ACP-ARCHIVE-201. Same scenario and race rules as `ACP-DELETE-204`, with `session/archive`
+    as the mid-turn trigger: archiving an active session cancels its work as if `session/close`
+    had been called (session-list.mdx:247), so the turn ends with a `cancelled` idle that arrives
+    before the archive response. If the archive kept the prompt from being inserted, the prompt is
+    answered `-32800` (session-setup.mdx:395); any other error FAILs. A turn that never ends
+    FAILs through the harness timeout. The ordering is judged only against an archive that
+    succeeded; an error SKIPs, as `ACP-ARCHIVE-003` owns the archive's own success."""
+    init_result = agent_initialize_result.result
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        archive_id = None
+
+        async def _archive():
+            nonlocal archive_id
+            archive_id = await agent.send_request("session/archive", {"sessionId": session_id})
+            return archive_id
+
+        try:
+            turn = await run_prompt(
+                agent,
+                session_id,
+                [{"type": "text", "text": cancel_prompt_text}],
+                on_action=_archive,
+                timeout=timeout,
+            )
+            skip_if_turn_end_race_not_exercised(
+                agent,
+                turn,
+                record_property,
+                race_window=quiet_period(timeout),
+                trigger_at_index=turn.action_sent_at_index,
+                trigger_method="session/archive",
+                verb="cancellation-via-archive",
+                property_prefix="archive_cancel",
+            )
+            error = response_error(turn)
+            if error is not None:
+                assert error.get("code") == REQUEST_CANCELLED, (
+                    f"session/archive answered the in-flight session/prompt with an error other "
+                    f"than -32800: {error!r}"
+                )
+            if turn.idle_update is None:
+                return  # prompt cancelled before insertion: no foreground work, no idle owed
+            assert turn.stop_reason == "cancelled", (
+                f"expected stopReason 'cancelled' after session/archive on a session with "
+                f"in-flight work, got {turn.stop_reason!r}"
+            )
+            archive_entry = turn.action_response
+            if archive_entry is None:
+                archive_entry = await agent.wait_for_response(archive_id, timeout=timeout)
+            if not _has_result(archive_entry):
+                pytest.skip(
+                    "prerequisite not met: session/archive did not succeed, so the ordering "
+                    f"rule does not apply (see ACP-ARCHIVE-003): {archive_entry.text!r}"
+                )
+            idle_index = _transcript_index(agent, turn.idle_update)
+            archive_index = _transcript_index(agent, archive_entry)
+            assert archive_index >= idle_index, (
+                "session/archive responded before sending the cancelled idle state_update for "
+                f"the work it cancelled: archive response {archive_entry.text!r} came before "
+                f"idle {turn.idle_update.text!r}"
+            )
+        finally:
+            await _delete_quietly(agent, session_id, init_result, timeout=timeout)
 
 
 # --- additionalDirectories (ACP-ADDDIRS-201/202) ---

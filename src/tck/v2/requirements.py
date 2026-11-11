@@ -1725,6 +1725,110 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-ARCHIVE-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "Every `SessionInfo` in a `session/list` result carries a boolean (non-null) "
+            "`archived`: checked on the default view, and on the `only` view once the test's own "
+            "session is archived. SKIPs when the default list is empty. Same rule as v1; "
+            "`session/list` is part of the baseline here, so there is no `list` gate."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:245; "
+            "schema/v2/schema.unstable.json#/$defs/SessionInfo/properties/archived"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "`session/archive` then `session/unarchive` on an existing session both succeed with "
+            "schema-valid empty results. After archive the session is absent from the default "
+            "`session/list` view and present under `archived: \"only\"` and `\"include\"`; after "
+            "unarchive it is present in the default and `include` views and absent from `only`. "
+            "SKIPs when the new session is not listed to begin with. An agent that rejects "
+            "`include` or `only` FAILs, on the Draft RFD's rule that an agent advertising "
+            "`archive` MUST support all three `archived` values."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:222,237-241; "
+            "docs/rfds/session-archive.mdx:112 (Draft RFD); "
+            "schema/v2/schema.unstable.json#/$defs/ArchiveSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/UnarchiveSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/SessionArchiveFilter"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-004",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "`session/list` with an `archived` filter value the agent does not support fails "
+            "with `-32602`, rather than falling back to the default (`exclude`) view. The probe "
+            "value is `_tck_unsupported`, schema-valid through the open `other` branch. A "
+            "success or any other error code is a FAIL; `-32000` (authentication required) "
+            "SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:243; docs/protocol/v2/draft/error.mdx:66; "
+            "schema/v2/schema.unstable.json#/$defs/SessionArchiveFilter"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-005",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "Archiving an already-archived session and unarchiving a not-archived one both "
+            "succeed. `session/archive` and `session/unarchive` of a never-created `sessionId` "
+            "fail with `-32002` and `data.sessionId` set to the requested id, rather than "
+            "succeeding silently the way `session/delete` does. Same rule as v1, which asserts "
+            "only error-vs-success; the v2 docs name the code."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:251; docs/protocol/v2/draft/error.mdx:54,66; "
+            "schema/v2/schema.unstable.json#/$defs/ArchiveSessionRequest; "
+            "schema/v2/schema.unstable.json#/$defs/UnarchiveSessionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-006",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "After a successful `session/delete`, the deleted session appears under no "
+            "`archived` filter value (`exclude`, `include`, `only`). Needs "
+            "`capabilities.session.delete` as well; SKIPs without it. The session must be "
+            "listed (under `include`) before the delete, else the row SKIPs. A `-32002` answer "
+            "to the delete counts as success. An agent that rejects `include` or `only` FAILs, "
+            "on the Draft RFD's rule that an agent advertising `archive` MUST support all three "
+            "`archived` values."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:252; "
+            "docs/rfds/session-archive.mdx:112 (Draft RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "`session/archive` of a session with foreground work in flight cancels that work as "
+            "if `session/close` had been called: the idle `state_update` ending the turn carries "
+            "`stopReason: \"cancelled\"` and arrives before the archive response. If the archive "
+            "kept the prompt from being inserted, the prompt is answered `-32800`. SKIPs when "
+            "the turn ended on its own before the archive landed (cancellation not exercised)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:247; "
+            "docs/protocol/v2/draft/session-setup.mdx:393,395; "
+            "schema/v2/schema.unstable.json#/$defs/ArchiveSessionRequest"
+        ),
+    ),
+    Requirement(
         id="ACP-ADDDIRS-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.additionalDirectories",
@@ -2787,7 +2891,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A standard method gated on a capability the agent did not advertise gets error "
             "`-32601`. Sent only for what is not advertised: the `session/*` baseline "
-            "(`capabilities.session`), `session/delete`, `session/fork` and `providers/list`. "
+            "(`capabilities.session`), `session/delete`, `session/archive`/`session/unarchive`, "
+            "`session/fork` and `providers/list`. "
             "A `-32000` reply FAILs, since an unadvertised method has no authentication surface. "
             "SKIPs when every probed capability is advertised."
         ),

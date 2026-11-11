@@ -151,6 +151,8 @@ async def test_set_config_option_unknown_session_gets_resource_not_found(agent_l
 _SESSION_BASELINE = ("session/new", "session/list", "session/resume", "session/close", "session/prompt")
 _OTHER_GATED = (
     ("session/delete", "capabilities.session.delete"),
+    ("session/archive", "capabilities.session.archive"),
+    ("session/unarchive", "capabilities.session.archive"),
     ("session/fork", "capabilities.session.fork"),
     ("providers/list", "capabilities.providers"),
 )
@@ -174,7 +176,8 @@ async def test_unadvertised_gated_methods_get_method_not_found(
 ):
     """ACP-ERROR-202. Every standard method gated on a capability the agent did not advertise
     gets `-32601`: the `session/*` baseline without `capabilities.session`, `session/delete`
-    without `session.delete`, `session/fork` without `session.fork`, `providers/list` without
+    without `session.delete`, `session/archive`/`session/unarchive` without `session.archive`,
+    `session/fork` without `session.fork`, `providers/list` without
     `providers`. The gate is inverted -- the test needs what is *not* advertised -- so it is
     computed here instead of by a capability marker. Params are well-formed and name a real
     session when the agent offers sessions at all, so a missing session is not an alternative

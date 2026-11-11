@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conforming fixture that advertises every capability the suite exercises and asks for
 permission on every turn: `capabilities.session.prompt.{image,audio,embeddedContext}`,
-`session.delete`/`additionalDirectories`/`mcp: {stdio, http}`/`fork`/`systemPrompt` (with
+`session.delete`/`archive`/`additionalDirectories`/`mcp: {stdio, http}`/`fork`/`systemPrompt` (with
 `mode.override`), plus a `select`-type and a
 `boolean`-type `configOptions` entry (`_base.ConformingAgent`'s `config_options` param; the second
 lets `ACP-CONFIG-208`/`209` probe both option types), one `availableCommands`
@@ -46,6 +46,7 @@ def main() -> None:
             "session": {
                 "prompt": {"image": {}, "audio": {}, "embeddedContext": {}},
                 "delete": {},
+                "archive": {},
                 "additionalDirectories": {},
                 "mcp": {"stdio": {}, "http": {}},
                 "fork": {},

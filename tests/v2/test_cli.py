@@ -133,6 +133,12 @@ _CAPABILITY_IDS = {
     "ACP-DELETE-202",
     "ACP-DELETE-204",
     "ACP-DELETE-205",
+    "ACP-ARCHIVE-002",
+    "ACP-ARCHIVE-003",
+    "ACP-ARCHIVE-004",
+    "ACP-ARCHIVE-005",
+    "ACP-ARCHIVE-006",
+    "ACP-ARCHIVE-201",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -245,6 +251,7 @@ _CANCEL_RACE_SKIP_IDS = {
     "ACP-CANCEL-207",
     "ACP-CANCEL-208",
     "ACP-CANCEL-214",
+    "ACP-ARCHIVE-201",
     "ACP-CLOSE-202",
     "ACP-CLOSE-203",
     "ACP-DELETE-204",
@@ -318,6 +325,12 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-DELETE-203",
     "ACP-DELETE-204",
     "ACP-DELETE-205",
+    "ACP-ARCHIVE-002",
+    "ACP-ARCHIVE-003",
+    "ACP-ARCHIVE-004",
+    "ACP-ARCHIVE-005",
+    "ACP-ARCHIVE-006",
+    "ACP-ARCHIVE-201",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -447,6 +460,12 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-DELETE-203",
     "ACP-DELETE-204",
     "ACP-DELETE-205",
+    "ACP-ARCHIVE-002",
+    "ACP-ARCHIVE-003",
+    "ACP-ARCHIVE-004",
+    "ACP-ARCHIVE-005",
+    "ACP-ARCHIVE-006",
+    "ACP-ARCHIVE-201",
     "ACP-ADDDIRS-201",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -525,12 +544,12 @@ def _assert_conforming_baseline(result: subprocess.CompletedProcess[str], fixtur
 
 def test_v2_conforming_agent_passes_everything():
     """`conforming.py` advertises only the plain `session: {}` baseline -- no prompt-content
-    capabilities, no `delete`/`additionalDirectories`/`mcp`/`fork`/`systemPrompt` marker, no
+    capabilities, no `delete`/`archive`/`additionalDirectories`/`mcp`/`fork`/`systemPrompt` marker, no
     `configOptions`, no
     `authMethods`, and it never asks for permission or opts into `_send_rich_turn_updates`. So
     every capability row that needs more than that SKIPs rather than PASSes:
     `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201..203`/`ACP-PERM-002` ("no
-    permission request observed"), `ACP-DELETE-201..205`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
+    permission request observed"), `ACP-DELETE-201..205`/`ACP-ARCHIVE-002..006,201`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
     `ACP-FORK-201..205`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
     extras absent), `ACP-AUTH-203/204/207` (no
     `authMethods`, no `--auth-method`/`--allow-logout`), and `ACP-ENUM-203`/
@@ -3022,6 +3041,118 @@ def test_resume_after_delete_succeeds_fails_delete_205_only():
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-DELETE-205"}, result.stdout
     assert statuses.get("ACP-DELETE-202") == "PASS", result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+_ARCHIVE_IDS = (
+    "ACP-ARCHIVE-002",
+    "ACP-ARCHIVE-003",
+    "ACP-ARCHIVE-004",
+    "ACP-ARCHIVE-005",
+    "ACP-ARCHIVE-006",
+    "ACP-ARCHIVE-201",
+)
+
+
+def _archive_run(fixture: str, *, expected_fails: set[str], expected_skips: set[str] = frozenset()):
+    """Run `fixture` against the session-capability rows with `--cancel-prompt __hang__` (so
+    `ACP-ARCHIVE-201` is exercised), assert the exact FAIL set, that the other archive ids PASS
+    except `expected_skips`, and return `(statuses, stdout)`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        fixture,
+        protocol_version=2,
+        cancel_prompt="__hang__",
+        k="session_capabilities",
+    )
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == expected_fails, result.stdout
+    for req_id in _ARCHIVE_IDS:
+        if req_id in expected_fails:
+            continue
+        expected = "SKIPPED" if req_id in expected_skips else "PASS"
+        assert statuses.get(req_id) == expected, f"{req_id}: {result.stdout}"
+    if expected_fails:  # a `-k`-scoped run is NOT CONFORMANT regardless (unbound MANDATORY ids)
+        assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+    return statuses, result.stdout
+
+
+def test_conforming_full_passes_every_archive_row():
+    """`conforming_full.py` advertises `archive` and `delete` and lists fresh sessions, so every
+    archive row PASSes (`ACP-ARCHIVE-201` with `--cancel-prompt __hang__`)."""
+    _archive_run("conforming_full.py", expected_fails=set())
+
+
+def test_archive_omits_archived_flag_fails_archive_002_only():
+    _archive_run("archive_omits_archived_flag.py", expected_fails={"ACP-ARCHIVE-002"})
+
+
+def test_archive_still_listed_fails_archive_003_only():
+    _archive_run("archive_still_listed.py", expected_fails={"ACP-ARCHIVE-003"})
+
+
+def test_archive_rejecting_include_and_only_fails_the_views_that_need_them():
+    """`archive_rejects_include_and_only.py` answers `-32602` for `include`/`only`:
+    `ACP-ARCHIVE-002` (its `only` check), `-003` and `-006` each need one of those views."""
+    _statuses, out = _archive_run(
+        "archive_rejects_include_and_only.py",
+        expected_fails={"ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-006"},
+    )
+    assert "docs/rfds/session-archive.mdx:112" in out, out
+
+
+def test_archive_filter_falling_back_fails_archive_004_only():
+    _archive_run("archive_filter_falls_back.py", expected_fails={"ACP-ARCHIVE-004"})
+
+
+def test_archive_unknown_succeeding_fails_archive_005_only():
+    _archive_run("archive_unknown_succeeds.py", expected_fails={"ACP-ARCHIVE-005"})
+
+
+def test_archive_unknown_wrong_code_fails_archive_005_only():
+    """`archive_unknown_wrong_code.py` fails an unknown session with `-32602`: an error, but not
+    the `-32002` the docs name."""
+    _statuses, out = _archive_run("archive_unknown_wrong_code.py", expected_fails={"ACP-ARCHIVE-005"})
+    assert "expected code -32002" in out, out
+
+
+def test_archive_not_idempotent_fails_archive_005_only():
+    _archive_run("archive_not_idempotent.py", expected_fails={"ACP-ARCHIVE-005"})
+
+
+def test_archive_not_cancelling_fails_archive_201_only():
+    """`archive_does_not_cancel.py` archives without cancelling a hanging `__hang__` turn, so the
+    cancelled idle never arrives and the TCK's wait times out."""
+    _archive_run("archive_does_not_cancel.py", expected_fails={"ACP-ARCHIVE-201"})
+
+
+def test_delete_archiving_instead_fails_archive_006_only():
+    """`delete_archives_instead.py` hides a deleted session from the default view only, so
+    `ACP-DELETE-202` and `-205` still PASS."""
+    statuses, _out = _archive_run("delete_archives_instead.py", expected_fails={"ACP-ARCHIVE-006"})
+    assert statuses.get("ACP-DELETE-202") == "PASS", statuses
+    assert statuses.get("ACP-DELETE-205") == "PASS", statuses
+
+
+def test_archive_agent_listing_nothing_skips_the_view_comparisons_not_passes_them():
+    """`archive_lists_nothing_unprompted.py` never lists a fresh session, so `ACP-ARCHIVE-002`,
+    `-003` and `-006` SKIP rather than PASS vacuously; the rest still PASS."""
+    _archive_run(
+        "archive_lists_nothing_unprompted.py",
+        expected_fails=set(),
+        expected_skips={"ACP-ARCHIVE-002", "ACP-ARCHIVE-003", "ACP-ARCHIVE-006"},
+    )
+
+
+def test_answers_unadvertised_archive_fails_error_202_only():
+    """`answers_unadvertised_archive.py` serves `session/archive`/`session/unarchive` without
+    advertising `session.archive` -- MANDATORY, so the verdict is NOT CONFORMANT."""
+    result = _run_cli(FIXTURES_DIR_V2, "answers_unadvertised_archive.py", protocol_version=2, k=_ERROR_K)
+    statuses = _table_statuses(result.stdout)
+    fails = {r for r, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-ERROR-202"}, result.stdout
+    assert "session/archive" in result.stdout, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
