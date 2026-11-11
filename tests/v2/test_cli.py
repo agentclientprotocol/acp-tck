@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 FIXTURES_DIR_V2 = Path(__file__).parent.parent / "fixtures" / "agents" / "v2"
 FIXTURES_DIR_V1 = Path(__file__).parent.parent / "fixtures" / "agents" / "v1"
 CLI_SUBPROCESS_TIMEOUT = 60
@@ -135,6 +137,7 @@ _CAPABILITY_IDS = {
     "ACP-FORK-202",
     "ACP-FORK-203",
     "ACP-FORK-204",
+    "ACP-FORK-205",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -303,6 +306,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-FORK-202",
     "ACP-FORK-203",
     "ACP-FORK-204",
+    "ACP-FORK-205",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -423,6 +427,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-FORK-202",
     "ACP-FORK-203",
     "ACP-FORK-204",
+    "ACP-FORK-205",
     "ACP-SYSPROMPT-201",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -476,7 +481,7 @@ def test_v2_conforming_agent_passes_everything():
     every capability row that needs more than that SKIPs rather than PASSes:
     `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201` ("no permission request
     observed"), `ACP-DELETE-201..205`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
-    `ACP-FORK-201..204`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
+    `ACP-FORK-201..205`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
     extras absent), `ACP-AUTH-203/204/207` (no
     `authMethods`, no `--auth-method`/`--allow-logout`), and `ACP-ENUM-203`/
     `ACP-PATCH-204..209` (no rich turn updates, no permission request). `ACP-PATCH-201/203` and
@@ -2945,6 +2950,23 @@ def test_fork_unknown_source_invalid_params_fails_fork_203_only():
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-FORK-203"}, result.stdout
     for req_id in ("ACP-FORK-201", "ACP-FORK-202", "ACP-FORK-204"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize(
+    "fixture", ["fork_omits_config_options.py", "fork_omits_available_commands.py"]
+)
+def test_fork_omitting_a_list_session_new_carried_fails_fork_205_only(fixture):
+    """`fork_omits_config_options.py`/`fork_omits_available_commands.py` carry both lists on
+    `session/new` but drop one from the `session/fork` response -- FAILs exactly `ACP-FORK-205`."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="fork")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-FORK-205"}, result.stdout
+    for req_id in ("ACP-FORK-201", "ACP-FORK-202"):
         assert statuses.get(req_id) == "PASS", f"{req_id}: {result.stdout}"
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 

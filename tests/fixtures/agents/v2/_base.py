@@ -706,7 +706,12 @@ class ConformingAgent:
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
         self._history[session_id] = [dict(update) for update in self._history.get(source_id, [])]
-        self._reply(msg_id, {"sessionId": session_id, **self._initial_state_fields()})
+        self._reply(msg_id, {"sessionId": session_id, **self._fork_state_fields()})
+
+    def _fork_state_fields(self) -> dict[str, Any]:
+        """Hook: `configOptions`/`availableCommands` on the fork response
+        (session-setup.mdx:108; `ACP-FORK-205`)."""
+        return self._initial_state_fields()
 
     def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-CANCEL-208: closing a session with a still-hanging `__hang__` prompt MUST cancel

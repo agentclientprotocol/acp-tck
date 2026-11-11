@@ -1776,6 +1776,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-FORK-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "A successful `session/fork` response carries each list -- `configOptions`, "
+            "`availableCommands` -- that the source session's own `session/new` response carried "
+            "non-empty, and non-empty: a setup response replaces the lists the client holds, so "
+            "an agent whose session has options or commands MUST include them. The source is "
+            "forked on the connection that created it. Presence and non-emptiness only; shape is "
+            "`ACP-CONFIG-201`/`203`'s concern. SKIPs when `session/new` carried neither list, or "
+            "when the fork errors (`ACP-FORK-201`/`202` judge the error). The premise \"the new "
+            "session has them\" is inferred from the source's `session/new`: an agent whose fork "
+            "legitimately has no options or commands answers the same way."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:108,138,140; "
+            "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse"
+        ),
+    ),
+    Requirement(
         id="ACP-SYSPROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.systemPrompt",

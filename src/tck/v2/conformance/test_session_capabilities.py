@@ -3,7 +3,7 @@
 -- `ACP-CLOSE-202` is covered by `test_cancel.py`'s `test_close_cancels_foreground_work`, see
 `tck.v2.requirements`'s module docstring), `session/delete` (ACP-DELETE-201..205), the
 `additionalDirectories` carrier on `session/new`/`session/resume` (ACP-ADDDIRS-201..203), the
-MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201..204) and `systemPrompt`
+MCP-server rows (ACP-MCP-201..205), and the `session/fork` (ACP-FORK-201..205) and `systemPrompt`
 (ACP-SYSPROMPT-201/202, and the error paths ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-204`/`207`, `ACP-DELETE-203`,
@@ -1529,7 +1529,7 @@ async def test_mcp_header_value_is_never_echoed(agent_launch, tmp_path):
     assert not leaks, f"the MCP header value {canary!r} leaked into: {'; '.join(leaks)}"
 
 
-# --- session/fork (ACP-FORK-201..204, unstable) ---
+# --- session/fork (ACP-FORK-201..205, unstable) ---
 
 
 async def _fork_session(agent, session_id: str, cwd: Any, *, timeout: float) -> TranscriptEntry:
@@ -1625,6 +1625,37 @@ async def test_fork_of_closed_listed_session_succeeds(agent_launch, tmp_path):
         assert isinstance(forked_id, str) and forked_id and forked_id != source_id, (
             f"session/fork must return a new sessionId distinct from the source {source_id!r}, "
             f"got {forked_id!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-FORK-205")
+@pytest.mark.capability("capabilities.session.fork")
+async def test_fork_carries_the_lists_session_new_carried(agent_launch, tmp_path):
+    """ACP-FORK-205. Forks on the connection that created the source, so `session/new`'s own
+    response is the evidence the session has options or commands. Only presence and
+    non-emptiness are judged. A fork that errors SKIPs here; `ACP-FORK-201`/`202` judge that."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        created = await new_session_result(agent, tmp_path, timeout=timeout)
+        expected = [
+            name
+            for name in ("configOptions", "availableCommands")
+            if isinstance(created.get(name), list) and created[name]
+        ]
+        if not expected:
+            pytest.skip("session/new carried neither configOptions nor availableCommands")
+        entry = await _fork_session(agent, created["sessionId"], tmp_path, timeout=timeout)
+        msg = entry.parsed
+        if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
+            pytest.skip(f"session/fork of the just-created session did not succeed: {entry.text!r}")
+        missing = [
+            name
+            for name in expected
+            if not (isinstance(msg["result"].get(name), list) and msg["result"][name])
+        ]
+        assert not missing, (
+            f"session/new carried {expected} but session/fork's result omits or empties "
+            f"{missing}: {entry.text!r}"
         )
 
 
