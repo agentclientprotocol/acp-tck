@@ -3959,6 +3959,7 @@ _TOOL_CALL_K = "test_permission or patches or background or test_enums or test_p
         ("permission_without_requires_action.py", "ACP-PATCH-209"),
         ("tool_call_reopens_after_final.py", "ACP-PATCH-210"),
         ("leaves_tool_call_in_progress.py", "ACP-PATCH-211"),
+        ("leaves_terminal_tool_call_in_progress.py", "ACP-PATCH-211"),
         ("advertises_cancel_after_final.py", "ACP-PATCH-212"),
     ],
 )
@@ -3978,6 +3979,18 @@ def test_tool_call_defect_fails_its_row_only(fixture: str, failing_id: str):
         # No `requires_action` at all: cancelling while blocked is still judged (no state gate).
         assert statuses["ACP-CANCEL-209"] == "PASS", stdout
         assert statuses["ACP-CANCEL-213"] == "PASS", stdout
+
+
+def test_tool_call_referencing_a_listed_terminal_is_live_at_idle():
+    """`references_background_terminal.py` is Codex-style: its command's tool call stays
+    `in_progress` at the turn-ending idle, and the terminal it references is the one listed in
+    `background`. `ACP-PATCH-211` PASSes (it judged a tool call, not a SKIP) next to
+    `ACP-STATE-206`/`207`, and nothing FAILs (`ACP-STATE-208` SKIPs: no item is ever removed). `leaves_terminal_tool_call_in_progress.py` keeps the
+    FAIL for the same tool call when no list names the terminal."""
+    fails, statuses, stdout = _fails_for("references_background_terminal.py", _TOOL_CALL_K)
+    assert fails == set(), stdout
+    for req_id in ("ACP-PATCH-210", "ACP-PATCH-211", "ACP-STATE-206", "ACP-STATE-207"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
 
 
 def test_permission_before_requires_action_judges_cancel_while_blocked():

@@ -2988,11 +2988,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "When the turn's idle arrives, every tool call reported for the prompted session "
             "during the turn has a final status (`completed`, `failed` or `cancelled`), unless "
-            "a `background` list reported during the turn names it. SKIPPED when no tool call "
-            "is reported, or the turn ends with an error response. The test is gated on "
-            "`capabilities.session`."
+            "a `background` list reported during the turn names it, or names a terminal it "
+            "references with a `terminal` content item (a tool call that references a listed "
+            "terminal is live, like Codex's command items that stay `in_progress` until the "
+            "process exits; an Active RFD allows this explicitly). The docs are not uniform: "
+            "`tool-calls.mdx:423` exempts only tool calls in the list, while the other draft "
+            "docs treat a tool call that references a listed terminal as live too, so the row "
+            "follows the broader text. SKIPPED when no tool call is reported, or the turn ends "
+            "with an error response. The test is gated on `capabilities.session`."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:423"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:216,998,1175; "
+            "docs/protocol/v2/draft/session-setup.mdx:391; "
+            "docs/protocol/v2/draft/tool-calls.mdx:423; "
+            "docs/rfds/v2/background-work.mdx:56 (Active RFD)"
+        ),
     ),
     Requirement(
         id="ACP-PATCH-212",

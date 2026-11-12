@@ -326,19 +326,21 @@ async def test_tool_call_status_never_regresses(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_foreground_tool_calls_are_final_at_idle(agent_launch, tmp_path):
     """ACP-PATCH-211 (ADVISORY). When the turn's idle arrives, every tool call reported during the
-    turn has a final status, unless a `background` list reported during the turn named it: tool
-    calls in that list are not part of the foreground work (`tool-calls.mdx:423`)."""
+    turn has a final status, unless a `background` list reported during the turn named it, or
+    named a terminal it references: tool calls in that list are not part of the foreground work
+    (`tool-calls.mdx:423`), and the docs treat a tool call that references a listed terminal as
+    live too (`prompt-lifecycle.mdx:216,998,1175`; `session-setup.mdx:391`), as Codex's command
+    items that stay `in_progress` until the process exits."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     if turn.idle_update is None:
         pytest.skip("the turn ended with an error response, not an idle")
     tracker = PatchTracker()
-    listed: set[str] = set()
+    listed: set[tuple[str, str]] = set()
     for index, kind, payload in session_events(turn):
         tracker.apply(kind, payload)
         if kind != "update" or payload.get("sessionUpdate") != "state_update":
             continue
-        keys = background_keys(payload) or set()
-        listed |= {item_id for item_type, item_id in keys if item_type == "tool_call"}
+        listed |= background_keys(payload) or set()
         if index == turn.idle_index and payload.get("state") == "idle":
             break
     if not tracker.tool_calls:
@@ -346,7 +348,9 @@ async def test_foreground_tool_calls_are_final_at_idle(agent_launch, tmp_path):
     unfinished = {
         tool_call_id: tool_call.status
         for tool_call_id, tool_call in tracker.tool_calls.items()
-        if tool_call.status not in FINAL_TOOL_CALL_STATUSES and tool_call_id not in listed
+        if tool_call.status not in FINAL_TOOL_CALL_STATUSES
+        and ("tool_call", tool_call_id) not in listed
+        and not any(("terminal", terminal_id) in listed for terminal_id in tool_call.terminal_ids)
     }
     assert not unfinished, (
         f"the turn's idle arrived with foreground tool calls not given a final status "

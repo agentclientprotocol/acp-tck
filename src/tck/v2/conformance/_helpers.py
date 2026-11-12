@@ -2162,6 +2162,9 @@ def _advertises_cancel(capabilities: Any) -> bool:
 class TrackedToolCall:
     status: Any = "pending"
     cancel: bool = False
+    terminal_ids: set[str] = field(default_factory=set)
+    """Every `terminalId` a `terminal` content item of this tool call has referenced
+    (tool-calls.mdx:482-488)."""
 
 
 @dataclass
@@ -2189,10 +2192,27 @@ class PatchTracker:
         report = tool_call_report(kind, payload)
         if report is not None:
             self._apply_tool_call(*report)
+            self._note_terminal_references(report, payload)
         elif kind == "update" and payload.get("sessionUpdate") in ("terminal_update", "terminal_output_chunk"):
             terminal_id = payload.get("terminalId")
             if isinstance(terminal_id, str) and terminal_id:
                 self._apply_terminal(terminal_id, payload)
+
+    def _note_terminal_references(
+        self, report: tuple[str, str, dict[str, Any]], payload: dict[str, Any]
+    ) -> None:
+        """Record the terminals the report's `content` references: an update's or permission
+        subject's `content` list, or a content chunk's single `content` object."""
+        tool_call_id, source, fields = report
+        content = payload.get("content") if source == "tool_call_content_chunk" else fields.get("content")
+        items = [content] if isinstance(content, dict) else content if isinstance(content, list) else []
+        for item in items:
+            if (
+                isinstance(item, dict)
+                and item.get("type") == "terminal"
+                and isinstance(item.get("terminalId"), str)
+            ):
+                self.tool_calls[tool_call_id].terminal_ids.add(item["terminalId"])
 
     def _apply_tool_call(self, tool_call_id: str, source: str, fields: dict[str, Any]) -> None:
         tool_call = self.tool_calls.setdefault(tool_call_id, TrackedToolCall())
