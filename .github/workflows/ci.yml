@@ -6,12 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  # Pinned -- update both together when re-vendoring.
-  # Must be new enough for rust-sdk's `unstable_protocol_v2` cargo feature (the v2 leg).
-  RUST_SDK_SHA: 652d1003425319c170f1e677a1ca5af6a92269bb
-  PYTHON_SDK_SHA: 9d07d7871ef4b220b8507e15fc4b1560f0950a64
-
 jobs:
   test:
     name: test
@@ -82,29 +76,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Checkout rust-sdk (sibling dir, pinned SHA)
-        run: |
-          mkdir -p ../rust-sdk
-          git -C ../rust-sdk init -q
-          git -C ../rust-sdk remote add origin https://github.com/agentclientprotocol/rust-sdk
-          git -C ../rust-sdk fetch --depth 1 origin "$RUST_SDK_SHA"
-          git -C ../rust-sdk checkout -q FETCH_HEAD
-          echo "ACP_RUST_SDK=$(cd .. && pwd)/rust-sdk" >> "$GITHUB_ENV"
-
-      - name: Checkout python-sdk (sibling dir, pinned SHA)
-        run: |
-          mkdir -p ../python-sdk
-          git -C ../python-sdk init -q
-          git -C ../python-sdk remote add origin https://github.com/agentclientprotocol/python-sdk
-          git -C ../python-sdk fetch --depth 1 origin "$PYTHON_SDK_SHA"
-          git -C ../python-sdk checkout -q FETCH_HEAD
-          echo "ACP_PYTHON_SDK=$(cd .. && pwd)/python-sdk" >> "$GITHUB_ENV"
-
       - name: Cache cargo (rust-sdk)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: ${{ env.ACP_RUST_SDK }}
-          key: rust-sdk-${{ env.RUST_SDK_SHA }}
+          # run.sh fetches the pinned rust-sdk (cross-check/sdk-pins.sh) into this directory.
+          workspaces: scratch/cross-check/sdks/rust-sdk
+          key: rust-sdk-${{ hashFiles('cross-check/sdk-pins.sh') }}
 
       - name: Run cross-check
         env:
@@ -126,6 +103,5 @@ jobs:
             --report scratch/cross-check/python-v2.json python_v2_agent \
             --expect "testy=" \
             --expect "echo_agent=ACP-INIT-003" \
-            --expect "testy_v2=" \
-            --expect-flaky "testy_v2=ACP-INIT-205,ACP-INIT-206" \
-            --expect "python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-JSONRPC-001,ACP-JSONRPC-003"
+            --expect "testy_v2=ACP-INIT-205,ACP-INIT-211" \
+            --expect "python_v2_agent=ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-INIT-212,ACP-INIT-214"

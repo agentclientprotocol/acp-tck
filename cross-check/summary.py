@@ -20,7 +20,7 @@ report is ACP-INIT-003. Passing no ids after the flag asserts zero MANDATORY FAI
 
 `--expect LABEL=ID,ID,...` (repeatable) overrides that default for one specific report by
 label -- needed because the v1 and v2 legs have different expected upstream baselines (e.g.
-`echo_agent=ACP-INIT-003` vs `python_v2_agent=ACP-BATCH-201,ACP-BATCH-202,...`).
+`echo_agent=ACP-INIT-003` vs `python_v2_agent=ACP-INIT-202,ACP-INIT-205,...`).
 `LABEL=` (an empty id list) asserts zero MANDATORY FAILs for that report. A report with
 neither a `--expect` override nor `--expect-only-mandatory-fail` given is not checked at all.
 
