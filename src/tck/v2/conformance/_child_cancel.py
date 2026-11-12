@@ -42,6 +42,7 @@ from ._helpers import (
     PatchTracker,
     PromptTurn,
     _ItemProbe,
+    answer_post_turn_requests,
     background_keys,
     is_active_state,
     iter_messages,
@@ -105,8 +106,8 @@ class _Driver:
         self.parent_state: dict[str, Any] | None = None
         self.result = ChildCancelRun()
         self.probes = {
-            "tool_call": _ItemProbe("tool_call", "tool_call/cancel", "toolCallId"),
-            "terminal": _ItemProbe("terminal", "terminal/cancel", "terminalId"),
+            "tool_call": _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=self.quiet),
+            "terminal": _ItemProbe("terminal", "terminal/cancel", "terminalId", grace=self.quiet),
         }
         self.probe_child: dict[str, str | None] = {"tool_call": None, "terminal": None}
         self.target_sent_index: int | None = None
@@ -326,6 +327,7 @@ async def drive_child_cancel(
     driver = _Driver(agent, session_id, timeout)
     cursor = len(agent.transcript)
     started = last_activity = loop.time()
+    answer_from: int | None = None
     # Several times the per-response timeout: the waits above are bounded one by one and add up
     # to less, so the turn's own deadline never fires first in a normal run.
     turn_task = asyncio.ensure_future(
@@ -338,7 +340,11 @@ async def drive_child_cancel(
                 error = turn_task.exception()
                 if error is not None and not isinstance(error, AgentTimeout):
                     raise error
+            if turn_done and answer_from is None:
+                answer_from = len(agent.transcript)
             while cursor < len(agent.transcript):
+                if answer_from is not None and cursor >= answer_from:
+                    await answer_post_turn_requests(agent, agent.transcript[cursor])
                 driver.ingest(cursor, agent.transcript[cursor])
                 cursor += 1
                 last_activity = loop.time()

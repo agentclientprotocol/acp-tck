@@ -188,7 +188,7 @@ reason = "Unobservable: depends on what the agent knows about its own work and o
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:205,207 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "When background work starts, the Agent re-sends the current state with the updated `background` list, and when it knows finished work starts follow-up foreground work it reports `running` no later than the snapshot that removes the item (SHOULD)."
-reason = "Unobservable: work that has started is invisible to the client until a list names it, since an announced item that no list names yet cannot be told from foreground work, and whether the agent already knows of follow-up foreground work when it removes an item is internal. The re-send when work ends is judged by ACP-STATE-209."
+reason = "Deferred: the start-side re-send (a non-final tool call or running terminal announced while the session is `idle`, with neither a `running` state nor a list that names it afterwards) is observable but not yet built. Whether the agent already knows of follow-up foreground work when it removes an item is internal to the agent. The re-send when work ends is judged by ACP-STATE-209."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:208 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -598,14 +598,24 @@ statement = "A `git_patch` diff's paths (including `rename`/`copy` lines) MUST b
 reason = "Deferred: a passive check of agent-emitted `diff` content is possible but not yet built, and it is vacuous against agents that emit no diff in a short turn."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:459,460; schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`tool_call/cancel` is answered with `-32602` if the tool call is unknown, already final or not cancellable, and cancelling a tool call does not change the foreground state by itself."
-reason = "Not observable without breaking a client rule: the `-32602` cases are an unknown or non-cancellable tool call, which the client MUST NOT cancel (:456), or one that went final first, which only a race reaches (`ACP-TOOLCANCEL-201` leaves that answer unjudged). Whether the foreground state changed because of the cancel or because the agent chose to end or go on with its work cannot be told apart."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:459; schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`tool_call/cancel` is answered with `-32602` if the tool call is unknown or not cancellable."
+reason = "Deferred: the unknown case needs a request for an id no update announced, and the not-cancellable case a request for a live tool call that does not advertise `cancel`, which on a defective agent would cancel real work. Both break the client rule at :456, which the probe rules allow only where the spec defines the agent's answer, as it does here, but neither probe is built. The already-final case is `ACP-TOOLCANCEL-204`/`205`."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:605,606; schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`terminal/cancel` is answered with `-32602` if the terminal is unknown, has exited or is not cancellable, and cancelling does not release the terminal or change the foreground state or the status of any tool call that references it."
-reason = "Not observable without breaking a client rule: the `-32602` cases are an unknown or non-cancellable terminal, which the client MUST NOT cancel (:602), or one that exited first, which only a race reaches (`ACP-TERMCANCEL-201` leaves that answer unjudged). Whether the terminal stays available, and whether the foreground state or a referencing tool call changed because of the cancel or for the agent's own reasons, cannot be told apart."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:460 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Cancelling a tool call does not change the foreground state by itself."
+reason = "Unobservable: a foreground state change after the cancel cannot be attributed to the cancel rather than to the agent finishing, ending or continuing its work on its own."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/tool-calls.mdx:605; schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`terminal/cancel` is answered with `-32602` if the terminal is unknown or not cancellable."
+reason = "Deferred: the unknown case needs a request for an id no update announced, and the not-cancellable case a request for a running terminal that does not advertise `cancel`, which on a defective agent would stop a real process. Both break the client rule at :602, which the probe rules allow only where the spec defines the agent's answer, as it does here, but neither probe is built. The already-exited case is `ACP-TERMCANCEL-204`/`205`."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/tool-calls.mdx:606 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Cancelling a terminal stops the process but does not release it: its output remains available for display and replay, and it does not change the foreground state or the status of any tool call that references it."
+reason = "Unobservable: a change of the foreground state or of a referencing tool call's status after the cancel cannot be attributed to the cancel rather than to the agent's own work, and whether the agent keeps the terminal's output for replay is internal to the agent, since the client already holds the output it received."
 
 # --- agent-plan.mdx ---
 

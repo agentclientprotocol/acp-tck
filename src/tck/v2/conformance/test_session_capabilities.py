@@ -625,9 +625,9 @@ async def test_resume_announces_background_items_before_the_snapshot(agent_launc
 @pytest.mark.requirement("ACP-RESUME-217")
 @pytest.mark.capability("capabilities.session")
 async def test_resume_snapshot_keeps_the_background_list(agent_launch, tmp_path):
-    """ACP-RESUME-217. An agent that reported a `background` list for the session before the
-    resume (`session/new`'s turn and any earlier snapshot, on the same connection) carries one
-    on the resume's current-state snapshot too: an omitted or `null` list means "not reported"
+    """ACP-RESUME-217. An agent that reported a `background` list for the session on the test's
+    connection before the resume (the turn the test runs first and any earlier snapshot) carries
+    one on the resume's current-state snapshot too: an omitted or `null` list means "not reported"
     (prompt-lifecycle.mdx:204; session-setup.mdx:346). SKIPs when no list was reported."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
@@ -2110,7 +2110,8 @@ async def test_fork_does_not_inherit_background_work(agent_launch, tmp_path):
     background work and reports `background: []` until it starts its own
     (session-setup.mdx:49). The fork is prompted once so that it reports its state. Definitional
     (no RFC keyword), like `ACP-FORK-202`. SKIPs when the source has no listed work, or the fork
-    or its turn fails (`ACP-FORK-201`/`202` judge those)."""
+    fails or its turn never ends and no snapshot shows a copied item (`ACP-FORK-201`/`202` judge
+    those)."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         source_id = await new_session(agent, tmp_path, timeout=timeout)
@@ -2125,10 +2126,11 @@ async def test_fork_does_not_inherit_background_work(agent_launch, tmp_path):
         forked_id = result.get("sessionId") if isinstance(result, dict) else None
         if not isinstance(forked_id, str) or not forked_id or forked_id == source_id:
             pytest.skip("prerequisite not met: session/fork gave no new sessionId -- see ACP-FORK-201")
+        turn_ended = True
         try:
             await run_prompt(agent, forked_id, [{"type": "text", "text": "hi"}], timeout=timeout)
         except AgentTimeout:
-            pytest.skip("the forked session's turn never ended -- see ACP-FORK-202")
+            turn_ended = False  # the snapshots received so far are still judged below
         await drain_quiet(agent, quiet_period(timeout))
         copied = sorted(
             {
@@ -2144,6 +2146,8 @@ async def test_fork_does_not_inherit_background_work(agent_launch, tmp_path):
             f"the forked session's state snapshots list background item(s) {copied} that the "
             f"source session had running at fork time (source list {sorted(inherited)})"
         )
+        if not turn_ended:
+            pytest.skip("the forked session's turn never ended -- see ACP-FORK-202")
 
 
 @pytest.mark.requirement("ACP-SYSPROMPT-001")

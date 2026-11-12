@@ -2376,10 +2376,11 @@ class ItemCancel:
 
     outcome: str = "none"
     """`none`: no item advertised `capabilities.cancel` while still live. `raced`: every such
-    item was already final when the agent read the request, so it rightly rejected it.
-    `rejected`: an error for an item the agent had not finalized. `unanswered`: no response in
-    time. `unconfirmed`: an empty result, but no final status or `exitStatus` in time.
-    `confirmed`: a result, then the final update (tool-calls.mdx:458,604)."""
+    item was final, or had stopped advertising `cancel`, when the agent read the request, so it
+    rightly answered `-32602` (tool-calls.mdx:440,459,605). `rejected`: any other error, or a
+    `-32602` for an item that stayed live and kept advertising `cancel`. `unanswered`: no
+    response in time. `unconfirmed`: an empty result, but no final status or `exitStatus` in
+    time. `confirmed`: a result, then the final update (tool-calls.mdx:458,604)."""
     item_id: str | None = None
     result: Any = None
     """The response's `result`, for `unconfirmed`/`confirmed`."""
@@ -2388,21 +2389,39 @@ class ItemCancel:
 
 
 @dataclass
+class StaleCancel:
+    """What a further cancel request showed for an item that was final yet still advertised
+    `capabilities.cancel` (the agent SHOULD have stopped, tool-calls.mdx:440,600)."""
+
+    outcome: str = "none"
+    """`none`: no item was final and still advertising `cancel`. `error`: answered with an
+    error (`error`). `result`: answered with a result (`result`). `unanswered`: no response in
+    time."""
+    item_id: str | None = None
+    result: Any = None
+    error: dict[str, Any] | None = None
+
+
+@dataclass
 class ItemCancelRun:
     """The outcome of `drive_item_cancel`."""
 
     turn: PromptTurn | None
-    """The driven turn, or `None` when it did not end within `timeout` after the TCK's own
-    `session/cancel` (a cancellation defect that the cancel rows judge)."""
+    """The driven turn, or `None` when it did not end in time (the turn is not judged here)."""
     tool_call: ItemCancel
     terminal: ItemCancel
+    tool_call_stale: StaleCancel = field(default_factory=StaleCancel)
+    terminal_stale: StaleCancel = field(default_factory=StaleCancel)
 
 
 class _ItemProbe:
     """One kind of item's cancel request, from choosing a live candidate to the verdict."""
 
-    def __init__(self, kind: str, method: str, id_field: str) -> None:
+    def __init__(self, kind: str, method: str, id_field: str, *, grace: float) -> None:
         self.kind, self.method, self.id_field = kind, method, id_field
+        self.grace = grace
+        """How long a `-32602` waits for the final update or the withdrawal of `cancel` that
+        explains it."""
         self.result = ItemCancel()
         self.tried: set[str] = set()
         self.request_id: Any = None
@@ -2410,6 +2429,9 @@ class _ItemProbe:
         self.response: TranscriptEntry | None = None
         self.response_index = -1
         self.final_index: int | None = None
+        self.withdrawn = False
+        """The item stopped advertising `cancel` after the request was sent."""
+        self.grace_until: float | None = None
         self.done = False
 
     def _live(self, tracker: PatchTracker) -> list[str]:
@@ -2424,18 +2446,32 @@ class _ItemProbe:
 
     def _is_final(self, tracker: PatchTracker) -> bool:
         item_id = self.result.item_id
+        assert item_id is not None
         if self.kind == "tool_call":
             return tracker.tool_calls[item_id].status in FINAL_TOOL_CALL_STATUSES
         return tracker.terminals[item_id].exited
 
+    def _advertises_cancel(self, tracker: PatchTracker) -> bool:
+        item_id = self.result.item_id
+        assert item_id is not None
+        if self.kind == "tool_call":
+            return tracker.tool_calls[item_id].cancel
+        return tracker.terminals[item_id].cancel
+
     def observe(self, index: int, entry: TranscriptEntry, tracker: PatchTracker) -> None:
-        """Called after `tracker` applied `entry`: note the response and the final update."""
+        """Called after `tracker` applied `entry`: note the response, the final update and a
+        withdrawal of `cancel`."""
         if self.request_id is None or self.done:
             return
         if self.response is None and entry.matches_id(self.request_id):
             self.response, self.response_index = entry, index
         if self.final_index is None and self._is_final(tracker):
             self.final_index = index
+        if not self._advertises_cancel(tracker):
+            self.withdrawn = True
+
+    def in_flight(self) -> bool:
+        return self.request_id is not None and not self.done
 
     async def step(
         self, agent: AgentProcess, session_id: str, tracker: PatchTracker, now: float, window: float
@@ -2447,7 +2483,7 @@ class _ItemProbe:
                 if item_id not in self.tried:
                     self.tried.add(item_id)
                     self.result.item_id = item_id
-                    self.final_index = None
+                    self.final_index, self.withdrawn, self.grace_until = None, False, None
                     self.sent_at = now
                     self.request_id = await agent.send_request(
                         self.method, {"sessionId": session_id, self.id_field: item_id}
@@ -2457,13 +2493,22 @@ class _ItemProbe:
         if self.response is not None:
             message = self.response.parsed
             if "error" in message:
-                if self.final_index is not None and self.final_index < self.response_index:
-                    # The item was already final when the agent read the request: nothing to
-                    # judge (tool-calls.mdx:459,605). Try another live item.
-                    self.request_id, self.response = None, None
-                    self.result.outcome = "raced"
-                    return
-                self._finish("rejected", error=message["error"])
+                error = message["error"]
+                code = error.get("code") if isinstance(error, dict) else None
+                if code == INVALID_PARAMS:
+                    # `-32602` is the documented answer for an item that is already final or
+                    # not cancellable (tool-calls.mdx:459,605). Either explains it: the final
+                    # update (it may be flushed after the response) or the agent no longer
+                    # advertising `cancel`. Wait a moment for one, then judge.
+                    if self.final_index is not None or self.withdrawn:
+                        self.request_id, self.response, self.grace_until = None, None, None
+                        self.result.outcome = "raced"
+                        return
+                    if self.grace_until is None:
+                        self.grace_until = now + self.grace
+                    if now < self.grace_until:
+                        return
+                self._finish("rejected", error=error)
                 return
             self.result.result = message.get("result")
             if self.final_index is not None:
@@ -2480,6 +2525,89 @@ class _ItemProbe:
         return self.request_id is None and not any(i not in self.tried for i in self._live(tracker))
 
 
+class _StaleProbe:
+    """A further cancel request for the first item that is final yet still advertises `cancel`.
+    Such an item is not live, but the client may send the request while the advertisement
+    stands, and the agent must answer `-32602` (tool-calls.mdx:440,459,600,605). Sent only
+    while the kind's main probe has no request in flight."""
+
+    def __init__(self, main: _ItemProbe) -> None:
+        self.main = main
+        self.result = StaleCancel()
+        self.request_id: Any = None
+        self.sent_at = 0.0
+        self.response: TranscriptEntry | None = None
+        self.done = False
+
+    def _candidates(self, tracker: PatchTracker) -> list[str]:
+        if self.main.kind == "tool_call":
+            return [
+                item_id
+                for item_id, item in tracker.tool_calls.items()
+                if item.cancel and item.status in FINAL_TOOL_CALL_STATUSES
+            ]
+        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and item.exited]
+
+    def observe(self, entry: TranscriptEntry) -> None:
+        if self.request_id is not None and self.response is None and entry.matches_id(self.request_id):
+            self.response = entry
+
+    def in_flight(self) -> bool:
+        return self.request_id is not None and not self.done
+
+    async def step(
+        self, agent: AgentProcess, session_id: str, tracker: PatchTracker, now: float, window: float
+    ) -> None:
+        if self.done:
+            return
+        if self.request_id is None:
+            candidates = self._candidates(tracker)
+            if candidates and not self.main.in_flight():
+                self.result.item_id = candidates[0]
+                self.sent_at = now
+                self.request_id = await agent.send_request(
+                    self.main.method, {"sessionId": session_id, self.main.id_field: candidates[0]}
+                )
+            return
+        if self.response is not None:
+            message = self.response.parsed
+            if "error" in message:
+                self.result.outcome, self.result.error = "error", message["error"]
+            else:
+                self.result.outcome, self.result.result = "result", message.get("result")
+            self.done = True
+        elif now - self.sent_at > window:
+            self.result.outcome, self.done = "unanswered", True
+
+
+async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry) -> None:
+    """Answer the agent -> client requests in `entry`, a line read after `run_prompt` returned,
+    as `run_prompt` would have: `session/request_permission` per the `allow` policy, anything
+    else `-32601` (the mock client advertises no capabilities). Background work may ask after
+    the turn's idle (tool-calls.mdx:268), and an agent may wait for the answer."""
+    if entry.direction is not Direction.RECEIVED:
+        return
+    for message in iter_messages(entry):
+        if "method" not in message or "id" not in message:
+            continue
+        if message["method"] == "session/request_permission":
+            params = message.get("params")
+            outcome, _note = _answer_permission(
+                params.get("options") if isinstance(params, dict) else None, "allow"
+            )
+            await agent.send_message(
+                {"jsonrpc": "2.0", "id": message["id"], "result": {"outcome": outcome}}
+            )
+        else:
+            await agent.send_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "error": {"code": METHOD_NOT_FOUND, "message": "Method not found"},
+                }
+            )
+
+
 async def drive_item_cancel(
     agent: AgentProcess, session_id: str, prompt_text: str, *, timeout: float
 ) -> ItemCancelRun:
@@ -2487,39 +2615,57 @@ async def drive_item_cancel(
     advertise `capabilities.cancel` while still live, send `tool_call/cancel` / `terminal/cancel`
     and watch for the confirming final update (tool-calls.mdx:440,456-459,600-605). The client
     MUST NOT send either unless the item currently advertises `cancel`, so nothing is sent for an
-    item that does not.
+    item that does not. A further request goes to the first item that is final yet still
+    advertises `cancel` (`_StaleProbe`).
 
-    A candidate is judged on what the TCK had read when it chose it, so an item the agent
-    finalized in the meantime answers `-32602` after its final update; that is `raced`, and the
-    next live item is tried. Items still live after the turn's idle (background work) count too.
-    Each request gets `timeout / 2` for its response and its final update. Once every kind is
-    settled (judged, or nothing live for `max(quiet_period(timeout), timeout / 4)` of silence), the
-    TCK sends `session/cancel` if the turn is still running so no work is left behind. The
-    turn's own end is not judged here; `turn` is `None` if it never ends."""
+    A candidate is judged on what the TCK had read when it chose it. A `-32602` is the documented
+    answer for an item that is already final or not cancellable (:459,605), so it is `raced`
+    when the item's final update, or the agent's withdrawal of `cancel`, arrives before it or
+    within `quiet_period(timeout)` after it, and the next live item is tried; any other error is
+    `rejected`. Items still live, or announced, after the turn's idle (background work) count
+    too: the TCK keeps reading for `quiet_period(timeout)` after it.
+
+    Every wait is bounded per step, never by one overall deadline that a long turn could exhaust:
+    `timeout` to find something to cancel, `timeout / 2` for each response and its final update.
+    Once every kind is settled (judged, nothing live for `max(quiet_period(timeout), timeout / 4)`
+    of silence, `quiet_period(timeout)` of silence after the idle, or the `timeout` search over),
+    the TCK sends `session/cancel` if the turn is still
+    running so no work is left behind. The turn's own end is not judged here (`ACP-CANCEL-*` own
+    that): `turn` is `None` if it does not end within `timeout * 3`. Agent requests read after the
+    turn's idle are answered like `run_prompt` does."""
     loop = asyncio.get_running_loop()
     window = timeout / 2
-    silence = max(quiet_period(timeout), timeout / 4)
+    grace = quiet_period(timeout)
+    silence = max(grace, timeout / 4)
     probes = [
-        _ItemProbe("tool_call", "tool_call/cancel", "toolCallId"),
-        _ItemProbe("terminal", "terminal/cancel", "terminalId"),
+        _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=grace),
+        _ItemProbe("terminal", "terminal/cancel", "terminalId", grace=grace),
     ]
+    stale = [_StaleProbe(probe) for probe in probes]
     tracker = PatchTracker()
     cursor = len(agent.transcript)
-    last_activity = loop.time()
+    started = last_activity = loop.time()
     cancel_sent = False
+    answer_from: int | None = None
     turn: PromptTurn | None = None
+    # Several times the per-response timeout: the waits above are bounded one by one and add up
+    # to less, so the turn's own deadline never fires first in a normal run.
     turn_task = asyncio.ensure_future(
-        run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout)
+        run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout * 3)
     )
     try:
         while True:
             turn_done = turn_task.done()
+            if turn_done and answer_from is None:
+                answer_from = len(agent.transcript)
             while cursor < len(agent.transcript):
                 index, entry = cursor, agent.transcript[cursor]
                 cursor += 1
                 last_activity = loop.time()
                 if entry.direction is not Direction.RECEIVED:
                     continue
+                if answer_from is not None and index >= answer_from:
+                    await answer_post_turn_requests(agent, entry)
                 for message in iter_messages(entry):
                     params = message.get("params")
                     if not isinstance(params, dict) or params.get("sessionId") != session_id:
@@ -2530,22 +2676,26 @@ async def drive_item_cancel(
                         tracker.apply("permission", params)
                 for probe in probes:
                     probe.observe(index, entry, tracker)
+                for probe in stale:
+                    probe.observe(entry)
             now = loop.time()
             for probe in probes:
                 await probe.step(agent, session_id, tracker, now, window)
-            if turn_done and (error := turn_task.exception()) is not None:
-                if cancel_sent and isinstance(error, AgentTimeout):
-                    break
+            for probe in stale:
+                await probe.step(agent, session_id, tracker, now, window)
+            error = turn_task.exception() if turn_done else None
+            if error is not None and not isinstance(error, AgentTimeout):
                 raise error
+            quiet = now - last_activity
+            search_over = (turn_done and quiet > grace) or now - started > timeout or quiet > silence
             settled = all(
-                probe.done or (probe.idle(tracker) and (turn_done or now - last_activity > silence))
-                for probe in probes
-            )
-            if settled and not turn_done and not cancel_sent:
+                probe.done or (probe.idle(tracker) and search_over) for probe in probes
+            ) and not any(probe.in_flight() for probe in stale)
+            if settled and not cancel_sent and (not turn_done or error is not None):
                 await agent.send_notification("session/cancel", {"sessionId": session_id})
                 cancel_sent = True
             if settled and turn_done:
-                turn = turn_task.result()
+                turn = turn_task.result() if error is None else None
                 break
             if turn_done:
                 with contextlib.suppress(AgentTimeout):
@@ -2562,7 +2712,13 @@ async def drive_item_cancel(
         if probe.result.outcome == "none" and probe.tried:
             probe.result.outcome = "raced"
         results.append(probe.result)
-    return ItemCancelRun(turn=turn, tool_call=results[0], terminal=results[1])
+    return ItemCancelRun(
+        turn=turn,
+        tool_call=results[0],
+        terminal=results[1],
+        tool_call_stale=stale[0].result,
+        terminal_stale=stale[1].result,
+    )
 
 
 _USER_MESSAGE_UPDATES = frozenset({"user_message", "user_message_chunk"})

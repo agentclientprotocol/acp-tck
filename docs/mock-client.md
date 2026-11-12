@@ -110,3 +110,27 @@ finished first is not misreported as having ignored the cancel.
 Anything else is judged normally: `cancelled` passes; an error or a late non-`cancelled` stop reason fails.
 `quiet_period(timeout)` is `timeout / 10` clamped to 0.5-2.0 s.
 `--cancel-prompt TEXT` gives a real agent enough work to still be in flight when the trigger lands.
+
+## Cancelling a single item (v2 only)
+
+`ACP-TOOLCANCEL-*` and `ACP-TERMCANCEL-*` use `drive_item_cancel` instead of `run_prompt`'s trigger. It sends
+`--cancel-prompt` (so those rows SKIP against an agent whose turn offers nothing cancellable; the default essay
+prompt essentially never does) and reads the turn in wire order, tracking each tool call's and terminal's
+`capabilities.cancel` with the patch rules. Then:
+
+- for the first tool call and the first terminal that advertise `cancel` while not final, it sends `tool_call/cancel` /
+  `terminal/cancel` (never for an item that does not currently advertise it) and waits `timeout / 2` for the response
+  and the confirming final update. A `-32602` is not a rejection when the item's final update, or the agent's
+  withdrawal of `cancel`, arrives before it or within `quiet_period(timeout)` after it; any other error is. The next
+  live item is tried after such a race;
+- for the first item that is final yet still advertises `cancel`, it sends one further request, which must be rejected
+  (`-204`/`-205` rows);
+- once nothing more is live (nothing new for `max(quiet_period(timeout), timeout / 4)`, `quiet_period(timeout)` after
+  the turn's idle, or `timeout` since the prompt), it sends its own `session/cancel` for the turn.
+
+Every wait is bounded per step, never by one overall deadline, so a turn that streams for a long time is judged on what
+it advertised and not failed because the TCK ran out of time. The turn's own end is not judged (the `ACP-CANCEL-*` rows
+own that): the driver gives the turn `timeout * 3` and ignores a timeout. Agent -> client requests that arrive after the
+turn's idle (background work may ask for permission) are answered like `run_prompt` does: `session/request_permission`
+per the `allow` policy, anything else `-32601`. `drive_child_cancel` (`_child_cancel.py`) does the same for the child
+rows.

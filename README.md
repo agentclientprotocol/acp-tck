@@ -106,6 +106,14 @@ something that keeps a real agent busy long enough for `session/cancel` to land 
 otherwise those tests report `SKIPPED` ("cancellation not exercised"), which means exactly that, not a conformance
 failure.
 
+Protocol version 2 also uses it for the `tool_call/cancel` and `terminal/cancel` tests (`ACP-TOOLCANCEL-*`,
+`ACP-TERMCANCEL-*`), which judge only an agent that advertises `capabilities.cancel` on a tool call or terminal that is
+still running. The TCK sends this prompt, watches for such an item (for up to `--timeout` seconds, or until the turn
+ends), cancels the first tool call and the first terminal it finds, then sends `session/cancel` for the turn. With the
+default essay prompt an agent essentially never has such an item, so those tests report `SKIPPED` ("no tool call
+advertised `capabilities.cancel` while still live"). To exercise them, choose a prompt that makes the agent start a
+long-running cancellable command or background task.
+
 ### `--auth-method ID`
 
 Authenticates with this method id (one advertised in `initialize`'s `authMethods`) right after `initialize`, before any

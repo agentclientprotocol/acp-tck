@@ -884,9 +884,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "session is `idle`, a later `state_update` for the session drops it from the list: "
             "the Agent SHOULD re-send the state with the updated list when background work "
             "ends. Judged over one prompt turn plus a quiet drain after it. The start of "
-            "background work is not judged (an announced item that no list names yet cannot be "
-            "told from foreground work), nor is an end during active work (the next snapshot "
-            "follows anyway). SKIPPED when no listed item ends while idle. The test is gated "
+            "background work is not judged here, nor is an end during active work (the next "
+            "snapshot follows anyway). SKIPPED when no listed item ends while idle. The test is gated "
             "on `capabilities.session`."
         ),
         citation=_cite(
@@ -1913,12 +1912,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "When the agent reported a `background` array for a session before it was resumed "
-            "(on the connection that created it, `[]` counts), the resume's current-state "
+            "When the agent reported a `background` array for a session on the connection the test "
+            "resumes it on, before the resume (`[]` counts), the resume's current-state "
             "snapshot carries an array too, not an omitted or `null` one: the snapshot carries "
             "the list like any other, and an agent that reports background work MUST include "
             "it on every `state_update`. Checked with `replayFrom` omitted, after a turn on the "
-            "session. SKIPs when no list was reported before the resume, or the resume sent no "
+            "session on that connection. SKIPs when no list was reported before the resume, or the resume sent no "
             "snapshot (`ACP-RESUME-206` judges that)."
         ),
         citation=_cite(
@@ -2449,8 +2448,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "no background work, and its snapshots report `background: []` until it starts its "
             "own. The fork is prompted once so that it reports its state. Definitional (the "
             "draft docs state it with no RFC keyword), like `ACP-FORK-202`. SKIPs when the "
-            "source has no listed work at fork time, or when the fork or its turn fails "
-            "(`ACP-FORK-201`/`202` judge those)."
+            "source has no listed work at fork time, or when the fork fails, or its turn never "
+            "ends and no snapshot received so far lists a copied item (`ACP-FORK-201`/`202` "
+            "judge those)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:49; "
@@ -3166,10 +3166,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "When the turn's idle arrives, every tool call reported for the prompted session "
             "during the turn has a final status (`completed`, `failed` or `cancelled`), unless "
-            "a `background` list reported during the turn names it, or names a terminal it "
-            "references with a `terminal` content item (a tool call that references a listed "
-            "terminal is live, like Codex's command items that stay `in_progress` until the "
-            "process exits; an Active RFD allows this explicitly). The docs are not uniform: "
+            "a `background` list reported during the turn names it, or the idle's own `background` "
+            "list names a terminal it references with a `terminal` content item that has not "
+            "reported `exitStatus` (a tool call that references a live listed terminal is live, "
+            "like Codex's command items that stay `in_progress` until the process exits; an "
+            "Active RFD allows this explicitly). A terminal that exited, or that left the list, "
+            "keeps nothing alive. The docs are not uniform: "
             "`tool-calls.mdx:423` exempts only tool calls in the list, while the other draft "
             "docs treat a tool call that references a listed terminal as live too, so the row "
             "follows the broader text. SKIPPED when no tool call is reported, or the turn ends "
@@ -3211,14 +3213,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "marker announces it, so the row is CAPABILITY and gated by `inferred:toolCallCancel` "
             "(documentation-only): the test SKIPs itself when no tool call advertises `cancel` "
             "while live during the driven turn. The TCK sends the request only for such a tool "
-            "call (the client MUST NOT otherwise) and treats a `-32602` that follows the tool "
-            "call's own final update as the legitimate `already final` answer, not judged; it "
-            "then tries the next live tool call. The driven turn runs the cancel prompt; a "
+            "call (the client MUST NOT otherwise). A `-32602` is the documented answer for an "
+            "item that is already final or not cancellable, so one that comes with (before or "
+            "shortly after) the tool call's own final status, or with the agent no longer "
+            "advertising `cancel`, is a race and not judged (the TCK then tries the next live "
+            "tool call). Any other error, or a `-32602` for a tool call that stays live and "
+            "keeps advertising `cancel`, FAILs. The driven turn runs the cancel prompt; a "
             "`tool_call/cancel` stops a real tool call, and the TCK then sends `session/cancel` so "
             "no work is left running."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/tool-calls.mdx:440,456-459; "
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456,458; "
             "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
             "schema/v2/schema.unstable.json#/$defs/CancelToolCallResponse"
         ),
@@ -3242,6 +3247,41 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-TOOLCANCEL-204",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` for a tool call that has a final status but still advertises "
+            "`capabilities.cancel` is rejected with an error, not answered with a result (\"The "
+            "Agent responds with `-32602` if the tool call is unknown, already final, or not "
+            "cancellable\"; declarative, no RFC keyword). The code is judged separately "
+            "(`ACP-TOOLCANCEL-205`). The client may send the request: it MUST NOT only when the "
+            "tool call does not currently advertise `cancel`, and the agent SHOULD have stopped "
+            "advertising it (`ACP-PATCH-212` judges that), so this is the already-final case "
+            "reached without breaking a client rule. Gated by `inferred:toolCallCancel` "
+            "(documentation-only): the test SKIPs itself unless a tool call is final while "
+            "still advertising `cancel` during the `ACP-TOOLCANCEL-201` driven turn. v2-only "
+            "(`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456,459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-205",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `tool_call/cancel` for a tool call that is final but still "
+            "advertises `cancel` (`ACP-TOOLCANCEL-204`'s request) uses `-32602` (Invalid "
+            "params). The sentence naming the code carries no RFC keyword, so the code is "
+            "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
+            "or was not rejected (`ACP-TOOLCANCEL-204`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
+    ),
+    Requirement(
         id="ACP-TOOLCANCEL-203",
         tier=Tier.CAPABILITY,
         capability="inferred:toolCallCancel",
@@ -3258,12 +3298,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "items: judged over the driven turn that also exercises the child cancel "
             "(`ACP-SUBAGENT-016`), for the first child tool call that advertises `cancel` while "
             "live, so a defect in routing by the child's `sessionId` fails exactly this row. "
-            "SKIPs when no child tool call advertises `cancel` while live, or it was final when "
-            "the agent read the request (a `-32602` after its own final update is the "
-            "`already final` answer, not judged). v2-only (`2xx`)."
+            "SKIPs when no child tool call advertises `cancel` while live, or it was already "
+            "final (or no longer advertising `cancel`) when the agent read the request, judged "
+            "like `ACP-TOOLCANCEL-201`: a `-32602` with that evidence is a race, any other "
+            "error FAILs. v2-only (`2xx`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/tool-calls.mdx:440,456-459; "
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456-458; "
             "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
             "docs/rfds/subagents.mdx:1042-1045 (Active RFD)"
         ),
@@ -3278,13 +3319,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "not an error. Same encoding as `ACP-TOOLCANCEL-201`: no RFC keyword and no "
             "`initialize` marker, so the row is CAPABILITY, gated by `inferred:terminalCancel` "
             "(documentation-only) and SKIPPED when no terminal advertises `cancel` while running "
-            "during the driven turn. The TCK sends the request only for such a terminal and "
-            "treats a `-32602` that follows the terminal's own `exitStatus` as the legitimate "
-            "`already exited` answer, not judged. `terminal/cancel` stops a real process; the "
-            "TCK then sends `session/cancel` so no work is left running."
+            "during the driven turn. The TCK sends the request only for such a terminal. A "
+            "`-32602` is the documented answer for a terminal that has already exited or is not "
+            "cancellable, so one that comes with (before or shortly after) the terminal's own "
+            "`exitStatus`, or with the agent no longer advertising `cancel`, is a race and not "
+            "judged. Any other error, or a `-32602` for a terminal that keeps running and "
+            "advertising `cancel`, FAILs. `terminal/cancel` stops a real process; the TCK then "
+            "sends `session/cancel` so no work is left running."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/tool-calls.mdx:600-605; "
+            "docs/protocol/v2/draft/tool-calls.mdx:600-604; "
             "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
             "schema/v2/schema.unstable.json#/$defs/CancelTerminalResponse"
         ),
@@ -3305,6 +3349,39 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-TERMCANCEL-204",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` for a terminal that reported `exitStatus` but still advertises "
+            "`capabilities.cancel` is rejected with an error, not answered with a result "
+            "(\"The Agent responds with `-32602` if the terminal is unknown, has already "
+            "exited, or is not cancellable\"; declarative, no RFC keyword). The code is judged "
+            "separately (`ACP-TERMCANCEL-205`). Same encoding as `ACP-TOOLCANCEL-204`: the "
+            "client may send the request while the advertisement stands (the agent SHOULD have "
+            "stopped it, `ACP-PATCH-212`), gated by `inferred:terminalCancel` "
+            "(documentation-only), and SKIPPED unless a terminal has exited while still "
+            "advertising `cancel` during the `ACP-TERMCANCEL-201` driven turn. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:600,602,605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-205",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `terminal/cancel` for a terminal that has exited but still "
+            "advertises `cancel` (`ACP-TERMCANCEL-204`'s request) uses `-32602` (Invalid "
+            "params). The sentence naming the code carries no RFC keyword, so the code is "
+            "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
+            "or was not rejected (`ACP-TERMCANCEL-204`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
+    ),
+    Requirement(
         id="ACP-TERMCANCEL-203",
         tier=Tier.CAPABILITY,
         capability="inferred:terminalCancel",
@@ -3318,10 +3395,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "reason as `ACP-TOOLCANCEL-203`: CAPABILITY, gated by `inferred:terminalCancel` "
             "(documentation-only), judged over the child-cancel driven turn for the first child "
             "terminal that advertises `cancel` while running; SKIPs when none does, or it had "
-            "already exited when the agent read the request. v2-only (`2xx`)."
+            "already exited (or stopped advertising `cancel`) when the agent read the request, "
+            "judged like `ACP-TERMCANCEL-201`: a `-32602` with that evidence is a race, any "
+            "other error FAILs. v2-only (`2xx`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/tool-calls.mdx:600-605; "
+            "docs/protocol/v2/draft/tool-calls.mdx:600-604; "
             "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
             "docs/rfds/subagents.mdx:1042-1045 (Active RFD)"
         ),
