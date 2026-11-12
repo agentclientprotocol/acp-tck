@@ -1,6 +1,7 @@
 # acp-tck
 
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
+[![Latest release](https://img.shields.io/github/v/tag/agentclientprotocol/acp-tck?sort=semver&label=release+tag)](https://github.com/agentclientprotocol/acp-tck/tags)
 
 A Test Compatibility Kit for the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). It launches an agent
 implementation as a stdio subprocess, drives it through the protocol - initialize, session lifecycle, prompt turns,
@@ -17,48 +18,48 @@ See ["What is covered"](#what-is-covered) below for the exact per-version breakd
 > report format, and verdicts may change without notice, and a result from this TCK is not an official statement of ACP conformance.
 > The v2 suite tracks a draft version of the protocol and is especially likely to change.
 
-## Run
+## Install and run
 
-```
-uv run acp-tck [args] -- <agent command> [agent args...]
+Needs [uv](https://docs.astral.sh/uv/); it fetches Python 3.14 if you don't have it. Run the TCK straight from GitHub,
+with no checkout:
+
+```bash
+uvx --from git+https://github.com/agentclientprotocol/acp-tck@<release tag> acp-tck [args] -- <agent command> [agent args...]
 ```
 
-For example, against the bundled self-test fixture:
+Replace `<release tag>` with a tag from [the tags page](https://github.com/agentclientprotocol/acp-tck/tags) (the
+latest is on the badge above), or a commit SHA, so results are reproducible. Without `@...`, uv runs the latest
+`main`, and may keep reusing a cached copy of it until you pass `--refresh`.
 
-```
-uv run acp-tck -- python tests/fixtures/agents/v1/conforming.py
+To keep `acp-tck` on your PATH instead:
+
+```bash
+uv tool install git+https://github.com/agentclientprotocol/acp-tck@<release tag>
+acp-tck [args] -- <agent command> [agent args...]
 ```
 
 Everything after `--` is the agent's own command line, launched as a stdio subprocess - a fresh process per test, so one
-crash can't cascade into unrelated failures.
+crash can't cascade into unrelated failures. To run the TCK from a checkout instead, see
+[`docs/development.md`](docs/development.md#running-the-tck-from-source).
 
 ### Examples
 
-Run the v1 suite against the bundled conforming fixture agent, using defaults for everything else:
+Run the v1 suite against an agent from inside its own project directory, using defaults for everything else:
 
 ```bash
-uv run acp-tck -- python tests/fixtures/agents/v1/conforming.py
+uvx --from git+https://github.com/agentclientprotocol/acp-tck@<release tag> acp-tck -- node ./dist/index.js
 ```
 
-Run against a real agent binary, with a scratch working directory for it to run in, longer per-response and per-test
-timeouts (real agents are slower than fixtures), and write the full JSON report for later inspection:
+Run the v2 suite with a scratch working directory for the agent, longer per-response and per-test timeouts (real
+agents are slower than the TCK's own fixtures), and the full JSON report written for later inspection:
 
 ```bash
-uv run acp-tck \
+uvx --from git+https://github.com/agentclientprotocol/acp-tck@<release tag> acp-tck \
+  --protocol-version 2 \
   --agent-cwd /tmp/acp-tck-wd \
   --timeout 90 --test-timeout 300 \
   --report-json report.json \
   -- node /path/to/some-agent/dist/index.js
-```
-
-Run the v2 suite from inside the agent's own project directory, without a separate acp-tck checkout on PATH - uv's
---project points at wherever acp-tck actually lives, so `uv run acp-tck` resolves and runs from there while the agent
-command still runs relative to the current directory:
-
-```bash
-uv --project ../acp-tck run acp-tck \
-  --timeout 90 --test-timeout 300 --protocol-version 2 \
-  -- node ./dist/index.js
 ```
 
 ## Options
