@@ -244,6 +244,9 @@ spec commit recorded in `src/tck/v1/schema/VENDORED.md`.
 - Client-capability negatives: the agent must never call `fs/*`, `terminal/*`, or `elicitation/create`, or send
   notice, compaction, plan or subagent updates, when the client didn't advertise the matching capability
   (`ACP-CLIENTCAP-001`..`007`)
+- Subagents (unstable): over a connection that advertises `clientCapabilities.subagents`, an agent that exposes a
+  child must announce it before any traffic for it, keep the association and `session` references consistent, report
+  absolute directories and schema-valid state (`ACP-SUBAGENT-*`; they SKIP when the agent exposes no child)
 - Error codes: unknown sessions, requests before `initialize`, unadvertised methods, unknown modes and config values,
   reserved-range codes
 - Extensibility and hygiene: `_`-prefixed custom methods must get a response (`ACP-EXT-001`), custom notifications

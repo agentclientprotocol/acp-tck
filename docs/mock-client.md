@@ -6,7 +6,10 @@ Each version's conformance suite drives `session/prompt` through its own `run_pr
 - answers `session/request_permission` per a [policy](#permission-policies). A request carrying another
   session's ID (a subagent's) is answered the same way, but is never held and is not cancelled by the trigger;
 - answers every other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) with `-32601`,
-  because the mock client advertises no client capabilities, and records it in `PromptTurn.client_requests_seen`;
+  because the mock client advertises no client capabilities, and records it in `PromptTurn.client_requests_seen`.
+  The one exception to "no capabilities" is v1's subagent rows (`test_subagents.py`), whose connection advertises
+  `clientCapabilities.subagents` and nothing else, so `fs/*`, `terminal/*` and `elicitation/create` are still
+  answered `-32601` there;
 - records `session/update` notifications in wire order;
 - optionally fires a trigger mid-turn (`on_cancel` sends `session/cancel`, `on_action` sends another request,
   for example `session/close`);

@@ -149,32 +149,32 @@ statement = "Archive state persists across connections and restarts; closing, lo
 reason = "Out of scope for now: it needs a two-process test against the agent's real persistent store, and `session/load`/`session/resume` of an archived session MAY be rejected (line 257), which makes the load half inconclusive."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:297 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Calling `auth/status` MUST NOT modify any agent state."
 reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007 only checks the answer."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:291 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:291 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
 reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD list the accounts and credentials they have configured in `auth/status` `accounts`, and SHOULD mark the ones in effect with `active: true`."
 reason = "Not observable: the TCK cannot know which accounts the agent has configured, so an empty or unmarked list proves nothing."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:295,301 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:295,301 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
 reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:307 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:307 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD send `auth/status_update` when their status changes (including after `authenticate` or `logout`), and only when it differs from the last one sent on the connection."
 reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
 
@@ -194,19 +194,6 @@ reason = "Out of scope: the combinations are combinatorial. The TCK exercises th
 citation = "docs/protocol/v1/draft/initialization.mdx:246 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD specify whether they support each of the listed agent capabilities."
 reason = "Not observable: an omitted capability is defined as unsupported (line 109), so an agent that omits one cannot be told apart from one that sets it to false or null."
-
-
-# --- prompt-turn.mdx ---
-
-[[not_requirement]]
-citation = "docs/protocol/v1/draft/prompt-turn.mdx:106-111 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Agents SHOULD report the task a parent gives a subagent as an incoming `session_message` in the child's transcript, with `senderSessionId` set to the parent, and SHOULD NOT report it as a `user_message_chunk`."
-reason = "Not observable: it needs the unstable `clientCapabilities.subagents`, which the TCK never advertises, and an agent that actually delegates, which no prompt can force."
-
-[[not_requirement]]
-citation = "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A `subagent_update`'s `cwd` and each `additionalDirectories` entry must be absolute paths."
-reason = "Out of scope: `subagent_update` is only legitimate when `clientCapabilities.subagents` is advertised, which the TCK never does; any `subagent_update` it sees already fails ACP-CLIENTCAP-007."
 
 
 # --- extensibility.mdx and transports.mdx ---
@@ -299,11 +286,6 @@ citation = "docs/protocol/v1/draft/tool-calls.mdx:377-381; docs/protocol/v1/draf
 statement = "`ToolCallLocation.line` is a 1-based line number."
 reason = "Not enforced: the statement carries no RFC 2119 keyword and the v1 schema deliberately keeps `minimum: 0`, so a `0` is schema-valid and the TCK does not fail it."
 
-[[not_requirement]]
-citation = "docs/protocol/v1/draft/tool-calls.mdx:349-351; docs/rfds/subagents.mdx:636-638 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A `session` tool-call reference names a session already known through ordinary session setup or a prior `subagent_update`."
-reason = "Out of scope: it applies only when the client advertises `subagents`, which the TCK never does, and provoking subagent spawns is model-driven. Revisit if a `subagents`-advertising test is added."
-
 
 # --- agent-plan.mdx ---
 
@@ -342,16 +324,16 @@ statement = "`session/archive` of a loaded session cancels any ongoing work and 
 reason = "Deferred (unstable archive): needs a prompt still in flight when the session is archived, which is race-prone against a real agent, and it is not yet tested."
 
 [[not_requirement]]
-citation = "docs/protocol/v1/draft/session-list.mdx:259; docs/protocol/v1/draft/error.mdx:66; docs/rfds/session-status.mdx:126,130; schema/v1/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v1/draft/session-list.mdx:259; docs/protocol/v1/draft/error.mdx:66; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v1/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`session/status` reports an archived session as `saved`, answers an unknown session with `-32002` and the requested `sessionId` in `data`, and MUST NOT have side effects."
 reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
 
 [[not_requirement]]
-citation = "docs/rfds/session-set-title.mdx:178-179; docs/protocol/v1/draft/error.mdx:68; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/session-set-title.mdx:178-179 (Draft RFD); docs/protocol/v1/draft/error.mdx:68; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
 reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
 
 [[not_requirement]]
-citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents receive `initialize` and are terminal; only a conductor sends `proxy/initialize`, and `proxy/successor` is exchanged only between a conductor and its proxies."
 reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediary-only methods of a Draft RFD that the TCK does not exercise; an agent that sends one is still caught by ACP-SCHEMA-001 as an unknown method."

@@ -321,32 +321,32 @@ statement = "After a successful `auth/logout`, authentication-gated requests req
 reason = "Out of scope: seeing it needs the destructive `--allow-logout`, which may revoke the operator's own credentials, and gating itself is only a MAY (`schema.mdx:954`)."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:297; docs/protocol/v2/draft/schema.mdx:144 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD); docs/protocol/v2/draft/schema.mdx:144 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Calling `auth/status` MUST NOT modify any agent state."
 reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007/008 only check the answer."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:291 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:291 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
 reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD list the accounts and credentials they have configured in `auth/status` `accounts`, and SHOULD mark the ones in effect with `active: true`."
 reason = "Not observable: the TCK cannot know which accounts the agent has configured, so an empty or unmarked list proves nothing."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:295,301 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:295,301 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
 reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:307; schema/v2/schema.unstable.json#/$defs/AuthStatusUpdateNotification @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:307 (Draft RFD); schema/v2/schema.unstable.json#/$defs/AuthStatusUpdateNotification @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents that advertise `auth.status` SHOULD send `auth/status_update` when their status changes (including after `auth/login` or `auth/logout`), and only when it differs from the last one sent on the connection."
 reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
 
@@ -644,12 +644,12 @@ reason = "Not elicitable: it needs an agent that reports `background` work, whic
 # --- deferred unstable methods and rules ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/error.mdx:65; docs/protocol/v2/draft/session-list.mdx:250; docs/rfds/session-status.mdx:126,130; schema/v2/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/error.mdx:65; docs/protocol/v2/draft/session-list.mdx:250; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`session/status` answers an unknown session with `-32002` and the requested `sessionId` in `data`, reports an archived session as `saved`, and MUST NOT have side effects."
 reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/error.mdx:67; docs/rfds/session-set-title.mdx:178,179; schema/v2/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/error.mdx:67; docs/rfds/session-set-title.mdx:178,179 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
 reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
 
@@ -664,7 +664,7 @@ statement = "`terminal/cancel` is answered with an empty result once accepted, w
 reason = "Deferred unstable method: it is gated per terminal by a dynamic `capabilities.cancel` the TCK cannot elicit, and the error paths need the client to send it against that rule. ACP-PATCH-212 covers the passive half, that an exited terminal stops advertising `cancel`."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/overview.mdx:266; docs/rfds/proxy-chains.mdx:235,236,304,305; schema/v2/schema.unstable.json#/$defs/ProxyRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/overview.mdx:266; docs/rfds/proxy-chains.mdx:235,236,304,305 (Draft RFD); schema/v2/schema.unstable.json#/$defs/ProxyRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents receive `initialize` and are terminal; only a conductor sends `proxy/initialize`, and `proxy/successor` is exchanged only between a conductor and its proxies."
 reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediary-only methods of a Draft RFD that the TCK does not exercise; an agent that sends one is still caught by ACP-CLIENTCAP-202 as an undefined client method."
 

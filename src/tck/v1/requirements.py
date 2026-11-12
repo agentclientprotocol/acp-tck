@@ -1125,6 +1125,313 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-001",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "The announcing `subagent_update` precedes every live request or notification on a "
+            "connection that advertised `clientCapabilities.subagents` and carries a child "
+            "session's ID: a `session/update` for the child (inside a prompt turn or outside it, "
+            "including after the turn ends and during `session/load` replay), an agent -> client "
+            "request such as `session/request_permission`, `elicitation/create`, `fs/*` or "
+            "`terminal/*` with the child's `sessionId`, and a `session_message` naming the child "
+            "as `senderSessionId` or `recipientSessionId`. The announcement must itself be sent "
+            "on a known session (nested children included); traffic for an unannounced child "
+            "FAILs. Stated by the draft docs' `SubagentUpdate` and the Subagents RFD (Active "
+            "RFD). Judged in wire order over one `session/new`, one prompt turn, a `session/load` "
+            "of that session when `loadSession` is advertised, and a quiet period after them. "
+            "The mock client advertises only `subagents`, so which `fs/*`/`terminal/*`/"
+            "`elicitation/create` requests an agent may send at all is not judged here "
+            "(`ACP-CLIENTCAP-001`..`003`'s, on the connection that advertises nothing); this row "
+            "judges only whether the child's ID was announced first. Subagents have an "
+            "`initialize` marker only on the client side, so support is inferred from the "
+            "traffic (`capability=\"inferred:subagents\"` is documentation-only); SKIPs when no "
+            "session ID the client did not create appears on the connection. Shared id: the v2 "
+            "row judges the same rule without the client marker and without `fs/*`/`terminal/*`, "
+            "which v2 removed."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/schema.mdx:8709-8713; "
+            "schema/v1/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/rfds/subagents.mdx:95-99,189-193 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-002",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `session` tool-call content item (`SessionReference`) names a session already "
+            "known: one the client created, or a child announced by an earlier `subagent_update` "
+            "on a known session. Judged for every such item in a `tool_call` or "
+            "`tool_call_update` `content` array and a `session/request_permission` request's "
+            "`toolCall.content`, in wire order over the connection that advertised `subagents` "
+            "(see `ACP-SUBAGENT-001` for its scope). A reference to a session no announcement "
+            "preceded FAILs. A reference does not count as traffic carrying the child's ID, so it "
+            "never FAILs `ACP-SUBAGENT-001`. The draft docs state the rule, but only an agent "
+            "that emits `session` content is bound and no agent-side `initialize` marker "
+            "announces that, so the row is gated by `inferred:subagents` (documentation-only) "
+            "and SKIPs when no `session` content item appears. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/tool-calls.mdx:349-351; "
+            "docs/rfds/subagents.mdx:636-638 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-003",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `subagent_update` never makes a session its own parent: `update.sessionId` differs "
+            "from the `sessionId` of the session the notification is sent on, whichever session "
+            "that is. Stated only by the Subagents RFD (Active RFD: `the association cannot ... "
+            "refer to itself`), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents` (documentation-only). Judged for every `subagent_update` over "
+            "the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
+            "SKIPs when none appears. A self-referencing update is judged here and by no other "
+            "association row (`ACP-SUBAGENT-004`/`-005` leave it out), so one defect never FAILs "
+            "several. Shared id with v2."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:165-169 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-004",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `subagent_update` never announces a session ID that is already an ordinary session "
+            "the client created with `session/new`, as the child of another session. The child's "
+            "ID identifies the child session in all ACP messages and is unique within the "
+            "connection, so it is not reused for an unrelated session. Stated only by the "
+            "Subagents RFD (Active RFD), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents`. A client session announced as its own child is "
+            "`ACP-SUBAGENT-003`'s. Judged for every `subagent_update` over the connection that "
+            "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs when none "
+            "appears. Announcing a client session under one of its own descendants is the cycle "
+            "case of this row. Shared id with v2."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:122-124,165-169 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-005",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A child announced on a known session keeps that one immediate parent: a later "
+            "`subagent_update` for the same `sessionId` sent on a different session (a "
+            "reparenting, which includes one that would create a cycle) FAILs. Later updates only "
+            "modify the association's metadata, not its ownership. The draft docs state the "
+            "ownership rule and the RFD states the one-parent, no-cycle rule; the rule binds only "
+            "an agent that emits `subagent_update`, so the row is CAPABILITY and gated by "
+            "`inferred:subagents`. The remaining ways to close a cycle are `ACP-SUBAGENT-003` (a "
+            "self-parent) and `-004` (a client session announced as a child), so a cycle never "
+            "FAILs more than one row. Judged for every `subagent_update` sent on a known session "
+            "over the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its "
+            "scope); SKIPs when none appears. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/schema.mdx:8705-8707; "
+            "docs/rfds/subagents.mdx:165-169 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-006",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "`SubagentUpdate.cwd` and every `additionalDirectories` entry is an absolute path: "
+            "POSIX `/...`, a Windows drive path or a UNC path (native syntax of the agent's "
+            "machine, not a URI). `null` clears the field and an omitted field is unchanged, so "
+            "neither is judged. The vendored schema types both as a bare `string`, so schema "
+            "validation (`ACP-SUBAGENT-015`) accepts a relative path and this row is the only "
+            "check for it; a value of the wrong type (a non-string `cwd`, a non-array "
+            "`additionalDirectories`, a non-string entry) is a schema defect, "
+            "`ACP-SUBAGENT-015`'s, and is not judged here. The draft docs state the rule; only an "
+            "agent that emits `subagent_update` is bound, so the row is CAPABILITY and gated by "
+            "`inferred:subagents`. Judged for every `subagent_update` over the connection that "
+            "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs when none "
+            "carries a string `cwd` or `additionalDirectories` entry. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/schema.mdx:8741,8760; "
+            "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; "
+            "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories; "
+            "docs/rfds/subagents.mdx:298-308 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-007",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "In a `session_message` whose `senderSessionId` and `recipientSessionId` are both "
+            "known (supplied by this upsert or an earlier one for the same `messageId` in the "
+            "same transcript; `null` clears, omitted keeps), they identify different sessions. A "
+            "message a session sends to itself FAILs, whatever session the update is sent on "
+            "(`ACP-SUBAGENT-008` judges only messages with different participants, so one defect "
+            "never FAILs both). Stated only by the Subagents RFD (Active RFD: `they identify "
+            "different sessions`), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents` (documentation-only). Judged for every `session_message` over "
+            "the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
+            "SKIPs when no message has both participants known. Shared id with v2."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:477-480 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-008",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "In a `session_message` whose `senderSessionId` and `recipientSessionId` are both "
+            "known and different, the outer `params.sessionId` is one of them: the sender's "
+            "transcript holds the outgoing view and the recipient's the incoming view, so an "
+            "update sent on a third session FAILs. Participants are stored across upserts of the "
+            "same `messageId`, as for `ACP-SUBAGENT-007`, whose equal-participant case this row "
+            "leaves out. Stated only by the Subagents RFD (Active RFD: `the outer "
+            "params.sessionId matches one of them`), so the row is capped at CAPABILITY and gated "
+            "by `inferred:subagents`. Judged for every `session_message` over the connection that "
+            "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs when no message "
+            "has both participants known. A participant that was never announced is "
+            "`ACP-SUBAGENT-001`'s. Shared id with v2."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:477-481 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-009",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "When both views of one message carry a reference, they name each other: an outgoing "
+            "view's `recipientMessageId` names a view in the recipient's transcript, an incoming "
+            "view's `senderMessageId` one in the sender's, and if that view was reported on the "
+            "connection and carries the reverse reference, it names the first view's "
+            "`messageId`. Conflicting references FAIL, including when the referenced view's own "
+            "sender or recipient is a third session. A reference to a view the agent never "
+            "reported, or to a view with no reference of its own, is not judged (each side is "
+            "reported only when observed, and the draft docs add that views are not linked by "
+            "equal IDs alone). The draft docs define what each field names; the RFD alone states "
+            "the MUST that both references agree, so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents`. Judged on the stored state after every `session_message` over "
+            "the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
+            "SKIPs when no two views were found that both carry a reference, so no link was "
+            "judged. `session_message_chunk` carries no identity, so is not judged. Shared id "
+            "with v2."
+        ),
+        citation=_cite(
+            "docs/rfds/subagents.mdx:466-475 (Active RFD); "
+            "docs/protocol/v1/draft/prompt-turn.mdx:96-100; "
+            "docs/protocol/v1/draft/schema.mdx:7249,7263"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-011",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The task a parent gives a child is not reported as a `user_message_chunk` in the "
+            "child's transcript (SHOULD NOT): none appears for an announced child before that "
+            "child's first agent output (`agent_message_chunk` or `agent_thought_chunk`), which "
+            "is when the first task has started its work. The Client cannot prompt a child, so "
+            "such a message would attribute the task to the user. Judged over the connection that "
+            "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs itself when no "
+            "announced child produces agent output and none has a user message. Shared id with "
+            "v2, whose rule also covers its `user_message`."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:106-111; "
+            "docs/rfds/subagents.mdx:648-664 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-012",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The task a parent gives a child is reported as an incoming `session_message` in the "
+            "child's transcript, with `senderSessionId` set to the parent, before the child's "
+            "first agent output (SHOULD): the child's `agent_message_chunk` or "
+            "`agent_thought_chunk` is preceded by such an upsert (the sender is stored across "
+            "upserts of the `messageId`; the parent is the session that announced the child). A "
+            "child whose task was reported as a `user_message_chunk` is `ACP-SUBAGENT-011`'s "
+            "FAIL, so is not judged here. Judged over the connection that advertised `subagents` "
+            "(see `ACP-SUBAGENT-001` for its scope); SKIPs itself when no announced child that "
+            "was not told its task as a `user_message_chunk` produces agent output. Shared id "
+            "with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:106-111; "
+            "docs/rfds/subagents.mdx:648-657 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-013",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Participant IDs go on the first `session_message` for a message when available, "
+            "before the first `session_message_chunk` of a streamed message (SHOULD). Whether "
+            "they were available cannot be seen, so a streamed message is flagged only when no "
+            "participant ID was stored when its first chunk arrived and a later `session_message` "
+            "for it supplies one (participant IDs follow the patch convention). A message that "
+            "never names a participant, or has one before its first chunk, is not flagged. The "
+            "draft docs state it without an RFC keyword (\"Include them ... when available\") "
+            "and the Active RFD as a SHOULD; either way it is not a MUST. Judged over the "
+            "connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
+            "SKIPs itself when no `session_message_chunk` appears. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:46-50; "
+            "docs/rfds/subagents.mdx:461-464 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-014",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A select config option reported for a child in a `config_option_update` offers only "
+            "its current value (SHOULD): the child does not permit Client-initiated "
+            "configuration changes (the only mutation the Subagents RFD defines is `cancel`, and "
+            "`session/set_config_option` is not authorized for a child), so the value is kept for "
+            "its name without advertising choices the Client cannot select. Values are counted "
+            "across option groups; boolean options and updates for a not-yet-announced child are "
+            "not judged. Stated only by the Subagents RFD (Active RFD), so the row is ADVISORY. "
+            "Judged over the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for "
+            "its scope); SKIPs itself when no `config_option_update` for an announced child "
+            "carries a select. Shared id with v2."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:392-419 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-015",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "Every subagent message the agent sends to a client that advertised `subagents` "
+            "validates against the v1 schema: a `session/update` of kind `subagent_update`, "
+            "`session_message` or `session_message_chunk`, and a `tool_call`/`tool_call_update` "
+            "update or `session/request_permission` request whose `toolCall` content carries a "
+            "`session` item. That includes a `subagent_update.state` (v1 reports a child's work "
+            "state only there): a `StateUpdate` with a `state` discriminator. The whole message "
+            "is judged, so every other field of the update is too. The draft schema defines "
+            "these shapes; only an agent that exposes subagents is "
+            "bound, so the row is CAPABILITY and gated by `inferred:subagents` "
+            "(documentation-only) and SKIPs when no such message appears. Judged over the "
+            "connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope). "
+            "v1-only: v2 validates every update of a turn in `ACP-PROMPT-002`, so this has no v2 "
+            "counterpart."
+        ),
+        citation=_cite(
+            "schema/v1/schema.unstable.json#/$defs/SubagentUpdate; "
+            "schema/v1/schema.unstable.json#/$defs/StateUpdate; "
+            "schema/v1/schema.unstable.json#/$defs/SessionMessage; "
+            "schema/v1/schema.unstable.json#/$defs/SessionMessageChunk; "
+            "schema/v1/schema.unstable.json#/$defs/SessionReference; "
+            "docs/rfds/subagents.mdx:815-829 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PLAN-001",
         tier=Tier.MANDATORY,
         capability=None,

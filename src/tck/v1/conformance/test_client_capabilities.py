@@ -20,7 +20,8 @@ ACP-CLIENTCAP-004..007 cover client-gated `session/update` kinds rather than req
 compaction, plan operations, subagent updates). These may be sent outside a prompt turn too, and
 compaction also during `session/load` replay, so each test scans the whole connection's
 transcript (see `_received_with_no_client_capabilities`), again one id per test. ACP-CLIENTCAP-007
-also scans tool-call content for `session` items.
+also scans tool-call content for `session` items. None of these connections ever advertises
+`subagents`; what an agent sends once it *is* advertised is judged by `test_subagents.py`.
 """
 
 from __future__ import annotations
