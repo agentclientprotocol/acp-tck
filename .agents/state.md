@@ -44,7 +44,9 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 ## Next
 - S4.3 917def0 — acp-tck main() passes a private per-run `--basetemp` (mkdtemp acp-tck-*, rmtree in finally); tests/common/test_cli_basetemp.py. 3 consecutive full runs green (969 passed each, ~345 s).
 - M4 review — .agents/research/review-m4.md — 0 blockers, 3 should-fix (S1 016/017: any non-cancelled idle within timeout/2 = raced -> ignored cancel SKIPs; S2 202 FAILs a background child announced after the parent's latest snapshot; S3 v2.toml:204-206 entity-ID reuse entry falsely 'unobservable', overlaps :592), 9 nits incl. N2 pre-existing on main: run_prompt answers permission `allow` after the drivers' own cancels, and its fallback session/cancel cancels the parent for a child's request (v1) / a child without `cancel` (v2 _helpers.py:1959-1962, client MUST NOT).
-- S4.4 (running): fix M4 review S1-S3 + N1-N9 (N9: harden 0.25 s fixtures if cheap).
+- S4.4 1e38d44 — M4 review fixes: 016 race only within quiet_period + plausible stop reason (else FAIL); 202 judges only children announced before the parent's latest list; v2.toml entity-ID entry narrowed; 017 judges only the parent half, sibling cancels recorded as report property `acp_tck_cancelled_siblings` (RFD:1071-1073 lets the agent stop its own work; user sign-off requested); run_prompt (pre-existing on main): `cancelled` after TCK's own cancel, fallback session/cancel only for the prompted session; v1 answer_post_turn_requests; docs; event-driven race fixture. Full suite twice 981 passed; spec-tracker --spec-repo 120. M4 DONE.
+- `.agents/` grep over src tests cross-check spec-tracker docs README AGENTS: clean.
+## ALL PLANNED MILESTONES DONE (M0-M6). Remaining: S0.3 (awaiting approval).
 - Then M4 (S4.1 child cancel tests v1+v2, S4.2 ledger incl. v1 S9 Deferred), final review of M4.
 - S4.2 must add a 'Deferred' v1 ledger entry for S9 (child terminal/create cwd; blocker: mock client implements no terminal). S20: at most INFORMATIONAL; skip.
 ## Follow-ups (not scheduled)
