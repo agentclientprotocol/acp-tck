@@ -371,8 +371,7 @@ def test_cli_selftest_tier_sets_match_the_registry():
     `tests/v2/test_cli.py` hand-maintains `_MANDATORY_IDS`/`_CAPABILITY_IDS`, which must mirror
     `REGISTRY`'s own `Tier` field exactly -- otherwise a tier misclassification could go
     unnoticed. `tests/v2` is a package (unlike `tests/v1`), so the sibling module is imported as
-    `v2.test_cli`, not the bare `test_cli` v1 uses -- see `AGENTS.md`'s `tests/v2/__init__.py`
-    layout note."""
+    `v2.test_cli`, not the bare `test_cli` v1 uses."""
     import v2.test_cli as test_cli
 
     by_tier: dict[Tier, set[str]] = {tier: set() for tier in Tier}

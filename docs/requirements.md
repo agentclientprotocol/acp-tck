@@ -17,8 +17,10 @@ tests, so the same id can exist in both.
   different tier or gate in each registry.
 - A `2xx` number is a v2 rule with no v1 counterpart.
 - A changed tier does not need a fresh id. Change the tier in place; the rule is the same.
-- If v2 judges a narrower or different rule than v1 on the same topic, it gets its own id (a `2xx` number),
-  not a shared one.
+- Whether an id is shared depends on the rule (what the agent must do), not on how strictly or how fully each
+  version's test checks it. A narrower or stricter v2 assertion keeps the shared id. A separate `2xx` id is for
+  a v2 rule that differs (v2's version negotiation algorithm vs v1's), or for a v1 rule that v2 splits into several
+  rows, each stating only part of it.
 
 ### Lifecycle
 

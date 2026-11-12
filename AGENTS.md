@@ -17,7 +17,7 @@ The codebase is split into a version-agnostic core and one package per protocol 
   validation, pytest plugin shim, and full conformance suite. v1 is the default and complete.
 - `src/tck/v2/` -- the same shape for ACP v2 (Draft). Nothing under `v2/` imports from `v1/` or
   vice versa -- each version package is a self-contained, honestly-duplicated implementation
-  sharing only `common/`. v2 is behind `--protocol-version 2` and still growing.
+  sharing only `common/`. v2 is Draft and behind `--protocol-version 2`.
 
 This split lets a new protocol version be added without duplicating or forking the harness,
 report model, or plugin machinery. For the precise, current set of requirements each version

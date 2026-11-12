@@ -27,8 +27,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=(1, 2),
         default=1,
         metavar="{1,2}",
-        help="ACP protocol version to run the conformance suite for (default: 1). 2 is Draft "
-        "and covers only a skeleton subset of requirements so far -- see AGENTS.md.",
+        help="ACP protocol version to run the conformance suite for (default: 1). 2 is the Draft "
+        "protocol version.",
     )
     parser.add_argument("--agent-cwd", default=None, metavar="DIR", help="Working directory for the agent.")
     parser.add_argument(
