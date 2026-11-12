@@ -65,6 +65,10 @@ _MANDATORY_IDS = {
 _SUBAGENT_CAPABILITY_IDS = {f"ACP-SUBAGENT-{n:03}" for n in (*range(1, 10), 15)}
 _SUBAGENT_ADVISORY_IDS = {f"ACP-SUBAGENT-{n:03}" for n in range(11, 15)}
 _SUBAGENT_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS
+# The child-cancel rows need a running child that advertises `capabilities.cancel` in the driven
+# `--cancel-prompt` turn, which only `cancellable_subagent.py` and its siblings offer. Every other
+# fixture SKIPs them, `exposes_subagent.py` included.
+_SUBAGENT_CANCEL_IDS = {"ACP-SUBAGENT-016", "ACP-SUBAGENT-017"}
 
 _ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | {
     "ACP-JSONRPC-004",
@@ -102,7 +106,7 @@ _INFORMATIONAL_IDS = {
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
 }
-_CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | {
+_CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
     "ACP-LOAD-001",
     "ACP-LOAD-002",
     "ACP-RESUME-001",
@@ -833,8 +837,8 @@ def test_conforming_full_agent_passes_everything_with_cancel_prompt_hang():
         f"requirement table missing/extra ids: {result.stdout}"
     )
     # The subagent rows SKIP too: `conforming_full.py` exposes no child (`exposes_subagent.py`
-    # and `replays_subagent_history.py` exercise them).
-    not_applicable = {"ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS
+    # and `replays_subagent_history.py` exercise them, `cancellable_subagent.py` the cancel rows).
+    not_applicable = {"ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS | _SUBAGENT_CANCEL_IDS
     for req_id, status in statuses.items():
         if req_id in not_applicable:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED (not applicable):\n{result.stdout}"
@@ -862,7 +866,7 @@ def test_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
         f"requirement table missing/extra ids: {result.stdout}"
     )
-    expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS
+    expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS | _SUBAGENT_CANCEL_IDS
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -1641,6 +1645,58 @@ def test_subagent_violators_fail_exactly_their_row(fixture, failing):
     expected = {failing} if isinstance(failing, str) else failing
     assert _output_fail_ids(result.stdout) == expected, f"{fixture}:\n{result.stdout}"
     assert statuses["ACP-CLIENTCAP-007"] == "PASS", result.stdout
+
+
+_CHILD_STOP_K = "test_subagent_controls"
+
+
+def _child_stop_statuses(fixture: str) -> tuple[dict[str, str], str]:
+    """Run only `test_subagent_controls.py` against `fixture` with the `__hang__` cancel prompt,
+    which is what makes the cancellable child appear."""
+    result = _run_cli(fixture, k=_CHILD_STOP_K, cancel_prompt="__hang__")
+    statuses = _table_statuses(result.stdout)
+    return {r: statuses.get(r) for r in sorted(_SUBAGENT_CANCEL_IDS)}, result.stdout
+
+
+def test_cancellable_child_passes_the_child_cancel_rows():
+    """`cancellable_subagent.py` advertises `capabilities.cancel` on a running child, stops it on
+    `session/cancel` for it (idle/cancelled on the parent snapshot) and leaves the parent and the
+    sibling running: both rows PASS."""
+    statuses, stdout = _child_stop_statuses("cancellable_subagent.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():
+    """`child_ends_before_cancel.py`'s child finishes (`end_turn`) as the cancel arrives: a cancel
+    racing with ended work is not judged, so both rows SKIP and nothing FAILs."""
+    statuses, stdout = _child_stop_statuses("child_ends_before_cancel.py")
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+    assert "FAIL" not in set(_table_statuses(stdout).values()), stdout
+
+
+def test_child_cancel_rows_skip_without_a_cancellable_child():
+    """`exposes_subagent.py` exposes a child that advertises no `cancel`, and `conforming.py` none:
+    nothing is cancelled, so both rows SKIP."""
+    for fixture in ("exposes_subagent.py", "conforming.py"):
+        statuses, stdout = _child_stop_statuses(fixture)
+        assert set(statuses.values()) == {"SKIPPED"}, f"{fixture}:\n{stdout}"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("child_cancel_ignored.py", "ACP-SUBAGENT-016"),
+        ("child_cancel_cancels_parent.py", "ACP-SUBAGENT-017"),
+        ("child_cancel_cancels_sibling.py", "ACP-SUBAGENT-017"),
+    ],
+)
+def test_child_cancel_defect_fails_its_row_only(fixture: str, failing: str):
+    """Each defect trips its own row: a child that ignores its cancel fails the confirmation row
+    (`-016`); a cancel that also ends the parent's turn or a sibling fails `-017`, whose child
+    still confirmed its own cancellation."""
+    statuses, stdout = _child_stop_statuses(fixture)
+    for req_id, status in statuses.items():
+        assert status == ("FAIL" if req_id == failing else "PASS"), f"{req_id}:\n{stdout}"
 
 
 def test_subagent_rows_are_judged_on_the_turn_when_the_load_never_answers():

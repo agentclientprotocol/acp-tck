@@ -1456,6 +1456,54 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-016",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "A child whose `subagent_update` capabilities carry a `cancel` object may be cancelled "
+            "with `session/cancel` for the child's `sessionId`, and confirms it: the child's "
+            "state snapshot on the parent association (`subagent_update.state`, the only place v1 "
+            "reports a child's work state) becomes `idle` with `stopReason: \"cancelled\"`. The "
+            "per-child capability is stated by the draft docs and schema "
+            "(`SubagentSessionCapabilities`: `cancel` `Permits the client to cancel this child's "
+            "current work`); the confirmation is stated only by the Subagents RFD (Active RFD), "
+            "and no `initialize` marker announces it, so the row is CAPABILITY, gated by "
+            "`inferred:subagentCancel` (documentation-only). Judged on the connection that "
+            "advertised `subagents`, in a driven turn of the cancel prompt: the TCK sends the "
+            "request only to a child that advertises `cancel` and was last reported running (the "
+            "client MUST NOT cancel one that does not) and gives the child `timeout / 2` to "
+            "confirm. A child reported idle without being cancelled had ended first: a "
+            "cancellation racing with already-ended work does not rewrite its outcome, so that "
+            "SKIPs. SKIPs when no child advertised `cancel` while reported running. Shared id "
+            "with v2 (which also accepts the confirmation on the child's own `state_update`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/schema.mdx:8694; "
+            "schema/v1/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
+            "docs/rfds/subagents.mdx:1069-1073,1089-1095 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-017",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "`session/cancel` for a child cancels current work in that child, not its parent or "
+            "its siblings: after the TCK cancels a running child that advertises `cancel`, the "
+            "parent's `session/prompt` is not answered with `stopReason: \"cancelled\"` and no "
+            "other child (other than the cancelled child's own descendants, which the cascade "
+            "may stop) is reported `idle` with `stopReason: \"cancelled\"`, before the TCK "
+            "itself cancels the parent. Stated only by the Subagents RFD (Active RFD: `This "
+            "cancels current work in that child, not its parent or siblings`), so the row is "
+            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). Judged over the "
+            "same driven turn as `ACP-SUBAGENT-016`, which owns the child's own confirmation, so "
+            "one defect never FAILs both; a window of `quiet_period` after the child settles "
+            "catches the parent's or a sibling's reaction. SKIPs when no child was cancelled or "
+            "it had ended first. Shared id with v2."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:1069-1073 (Active RFD)"),
+    ),
+    Requirement(
         id="ACP-PLAN-001",
         tier=Tier.MANDATORY,
         capability=None,

@@ -639,6 +639,80 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-016",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "A child whose `subagent_update` capabilities carry a `cancel` object may be cancelled "
+            "with `session/cancel` for the child's `sessionId`, and confirms it: the child "
+            "reports `idle` with `stopReason: \"cancelled\"` in a `state_update` on its own "
+            "session, or in its mirror on the parent association (`subagent_update.state`). The "
+            "per-child capability is stated by the draft docs and schema (`SubagentSessionCapabilities`: "
+            "`cancel` `Permits the client to cancel this child's current work`); the confirmation "
+            "is stated only by the Subagents RFD (Active RFD), and no `initialize` marker "
+            "announces it, so the row is CAPABILITY, gated by `inferred:subagentCancel` "
+            "(documentation-only). The TCK sends the request only to a child that advertises "
+            "`cancel` and was last reported running (the client MUST NOT cancel one that does "
+            "not), in the driven turn of the cancel prompt, and gives the child `timeout / 2` to "
+            "confirm. A child that reports an idle that is not a cancellation had ended first: a "
+            "cancellation racing with already-ended work does not rewrite its outcome, so that "
+            "SKIPs. SKIPs when no child advertised `cancel` while reported running. Shared id "
+            "with v1 (which confirms through the parent snapshot alone)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:10178; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
+            "docs/rfds/subagents.mdx:1069-1073,1089-1095 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-017",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "`session/cancel` for a child cancels current work in that child, not its parent or "
+            "its siblings: after the TCK cancels a running child that advertises `cancel`, "
+            "neither the parent nor another child (other than the cancelled child's own "
+            "descendants, which the cascade may stop) reports `idle` with `stopReason: "
+            "\"cancelled\"` before the TCK itself cancels the parent. Stated only by the "
+            "Subagents RFD (Active RFD: `This cancels current work in that child, not its parent "
+            "or siblings`), so the row is CAPABILITY, gated by `inferred:subagentCancel` "
+            "(documentation-only). Judged over the same driven turn as `ACP-SUBAGENT-016`, which "
+            "owns the child's own confirmation, so one defect never FAILs both; a window of "
+            "`quiet_period` after the child settles catches the parent's or a sibling's reaction. "
+            "SKIPs when no child was cancelled or it had ended first. Shared id with v1."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:1069-1073 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "Cancelling a session's current work also cancels the descendant work it waits on, "
+            "and the Client learns that from the descendants' reported state: after the TCK "
+            "sends `session/cancel` for the parent and its turn ends `cancelled`, every "
+            "descendant that was running at that moment and is foreground work (not in its "
+            "parent's latest `background` list) reaches `idle`. A descendant in the list, or "
+            "one whose parent never reported a `background` list (the TCK cannot tell which "
+            "children the parent waits on), is not judged: whether other descendants keep "
+            "running is the Agent's choice. An omitted per-child `cancel` capability does not "
+            "waive the cascade. The draft docs state that `session/cancel` covers foreground "
+            "work and that foreground work is not listed in `background`; that a child the "
+            "cancelled work waits on stops is stated by the Subagents RFD (Active RFD), so the "
+            "row is CAPABILITY, gated by `inferred:subagents` (documentation-only). Each "
+            "descendant gets `timeout / 2` after the parent's turn ends. SKIPs when the parent's "
+            "turn did not end `cancelled` (the cancel raced with its end, or `ACP-CANCEL-*` own "
+            "that turn), or no such descendant was running. v2-only (`2xx`): v1 has no "
+            "`background` list, so the TCK cannot tell which running children the parent waits "
+            "on."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:208,210,1173; "
+            "docs/rfds/subagents.mdx:1075-1087,1413-1425 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -3163,6 +3237,33 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-TOOLCANCEL-203",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` sent with a child session's `sessionId` for a child tool call that "
+            "currently advertises `capabilities.cancel` and is not final is accepted and "
+            "confirmed like a tool call of the prompted session (`ACP-TOOLCANCEL-201/202`): an "
+            "empty result, then a `tool_call_update` that gives it a final status. `sessionId` is "
+            "the session that reports the tool call, and the tool call's own `cancel` enables the "
+            "request even when the child advertises no `cancel`. The docs state this as the rule "
+            "without an RFC keyword, and no `initialize` marker announces it, so the row is "
+            "CAPABILITY and gated by `inferred:toolCallCancel` (documentation-only). A separate "
+            "row from 201/202 because the prompted-session driver does not follow a child's "
+            "items: judged over the driven turn that also exercises the child cancel "
+            "(`ACP-SUBAGENT-016`), for the first child tool call that advertises `cancel` while "
+            "live, so a defect in routing by the child's `sessionId` fails exactly this row. "
+            "SKIPs when no child tool call advertises `cancel` while live, or it was final when "
+            "the agent read the request (a `-32602` after its own final update is the "
+            "`already final` answer, not judged). v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456-459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
+            "docs/rfds/subagents.mdx:1042-1045 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-TERMCANCEL-201",
         tier=Tier.CAPABILITY,
         capability="inferred:terminalCancel",
@@ -3196,6 +3297,28 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/tool-calls.mdx:604; "
             "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-203",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` sent with a child session's `sessionId` for a child terminal that "
+            "currently advertises `capabilities.cancel` and has no `exitStatus` is accepted and "
+            "confirmed like a terminal of the prompted session (`ACP-TERMCANCEL-201/202`): an "
+            "empty result, then a `terminal_update` that sets `exitStatus`. `sessionId` is the "
+            "session that reports the terminal, and the terminal's own `cancel` enables the "
+            "request even when the child advertises no `cancel`. Same encoding and separate-row "
+            "reason as `ACP-TOOLCANCEL-203`: CAPABILITY, gated by `inferred:terminalCancel` "
+            "(documentation-only), judged over the child-cancel driven turn for the first child "
+            "terminal that advertises `cancel` while running; SKIPs when none does, or it had "
+            "already exited when the agent read the request. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:600-605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
+            "docs/rfds/subagents.mdx:1042-1045 (Active RFD)"
         ),
     ),
     Requirement(
