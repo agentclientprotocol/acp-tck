@@ -29,9 +29,11 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 - M0: S0.1 dbaafc1, S0.2 3e80423 + 69729e4 (RFD policy in update-to-spec skill, docs/requirements.md, docs/spec-updates.md; spec-impact "7. RFD stages"; researcher.md wording; relabels; inferred: docs + guard tests/common/test_capability_markers.py). Review: review-m0.md.
 - Backfill research: backfill-v2-background-work.md, backfill-mcp-over-acp.md.
 - M2 (v2 ACP-SUBAGENT-001..009, 011..014, 201): S2.1 b9021ac, S2.2 f9f9b99, S2.3 28a0f22, S2.5 08f59b4, S2.6 28eb901, S2.7 2714a68 (review fixes: permission subject.toolCall carrier, 010->201, no vacuous PASS, shared cached connection per process in test_subagents.py). Full suite at 2714a68: 801 passed (308 s); spec-tracker 115/5. Review: review-m2.md.
+- M3: S3.1 dfe13a0 — v1 `subagents: {}` connection (cached per process; session/new, turn, session/load replay if loadSession, quiet drain); v1 ACP-SUBAGENT-001..009 (CAP inferred:subagents), 011..014 (ADVISORY), v1-only 015 (CAP: schema validity of subagent messages incl. state snapshot; S6; accepted as 015 — rule B only reserves 2xx for v2-only, so 015 must never mean another rule in v2); 001 also judges child-ID fs/*/terminal/*; 3 'never advertises' v1 ledger entries -> rows; 18 ledger RFD citations labelled (Draft RFD); 24 v1 fixtures (exposes_subagent, replays_subagent_history, 22 violators). Full suite 830 passed (290 s); spec-tracker 115/5.
 ## Next
-- S3.1 (M3).
+- M3 review (dfe13a0), then M5.
 ## Follow-ups (not scheduled)
+- v1 S11 row (child-ID fs/terminal/elicitation request on a connection advertising none) and S20 heuristic row; S9 (child terminal/create cwd) untestable with the mock client answering -32601.
 - `session` refs and child traffic during load/resume replay not judged by SUBAGENT rows (RESUME-209 owns replay).
 - S37 converse (listed child idle with empty own background) could be a row; touches STATE-206/207/208.
 - Upstream drift past pin (upstream/main c392d7e9): subagents RFD adds "`unknown` freezes the child's background list; MUST NOT invent final statuses" -> next spec update.
