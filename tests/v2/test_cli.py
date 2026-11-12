@@ -187,6 +187,11 @@ _CAPABILITY_IDS = {
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
+    "ACP-SUBAGENT-010",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
     "ACP-STATE-204",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
@@ -304,6 +309,11 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-010",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -520,6 +530,11 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-010",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
@@ -572,6 +587,11 @@ _SUBAGENT_EXERCISED_IDS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-010",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
     "ACP-PATCH-204",
     "ACP-PATCH-208",
     "ACP-PATCH-210",
@@ -654,6 +674,11 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-010",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -1694,8 +1719,8 @@ def test_subagent_rows_skip_without_a_child():
     result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
     statuses = _table_statuses(result.stdout)
     assert statuses["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
-    for number in range(2, 10):
-        assert statuses[f"ACP-SUBAGENT-00{number}"] == "SKIPPED", result.stdout
+    for number in range(2, 15):
+        assert statuses[f"ACP-SUBAGENT-{number:03}"] == "SKIPPED", result.stdout
 
 
 @pytest.mark.parametrize(
@@ -1736,6 +1761,28 @@ def test_session_message_inconsistencies_fail_one_row_only(fixture, failing):
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {failing}, result.stdout
     for req_id in ("ACP-PROMPT-002", "ACP-SUBAGENT-001", "ACP-SUBAGENT-002"):
+        assert statuses[req_id] == "PASS", result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("unmirrored_child_state.py", "ACP-SUBAGENT-010"),
+        ("child_task_as_user_message.py", "ACP-SUBAGENT-011"),
+        ("child_task_after_output.py", "ACP-SUBAGENT-012"),
+        ("session_message_chunk_before_participants.py", "ACP-SUBAGENT-013"),
+        ("child_select_with_choices.py", "ACP-SUBAGENT-014"),
+    ],
+)
+def test_subagent_should_violations_fail_one_advisory_row_only(fixture, failing):
+    """Each defect is schema-valid and announced, so the MUST rows PASS and only the intended one of
+    `ACP-SUBAGENT-010..014` (all ADVISORY) FAILs. An ADVISORY FAIL does not change the verdict, so
+    the row outcome, not the exit code, is what is asserted."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {failing}, result.stdout
+    assert failing in _ADVISORY_IDS
+    for req_id in ("ACP-PROMPT-002", *(f"ACP-SUBAGENT-00{n}" for n in range(1, 10))):
         assert statuses[req_id] == "PASS", result.stdout
 
 
@@ -2617,6 +2664,11 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-SUBAGENT-007",
             "ACP-SUBAGENT-008",
             "ACP-SUBAGENT-009",
+            "ACP-SUBAGENT-010",
+            "ACP-SUBAGENT-011",
+            "ACP-SUBAGENT-012",
+            "ACP-SUBAGENT-013",
+            "ACP-SUBAGENT-014",
         }
     )
     for req_id, status in statuses.items():

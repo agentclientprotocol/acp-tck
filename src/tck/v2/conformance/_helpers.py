@@ -941,6 +941,249 @@ def session_messages(
     return result
 
 
+@dataclass
+class ChildStateMirrors:
+    """What `child_state_mirrors` found: how many child `state_update` snapshots were judged and
+    the ones with no mirror on the immediate parent."""
+
+    judged: int = 0
+    unmirrored: list[str] = field(default_factory=list)
+
+
+def child_state_mirrors(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildStateMirrors:
+    """Replay the agent's traffic in wire order and judge the state mirroring rule
+    (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session states"; `SubagentUpdate`): every
+    state a child reports in its own `state_update` is also reported in the `state` of a
+    `subagent_update` for that child on its immediate parent (the session that first announced it).
+
+    A child is judged once a `subagent_update` on a known session announces it. For each child the
+    distinct consecutive states of its own `state_update`s (a repeated snapshot is idempotent) must
+    appear, in order, among the states of its mirrors. A mirror may arrive before or after the copy
+    on the child's own stream and extra mirrors are fine. Only `state.state` is compared: a
+    mirror is "the same snapshot", and `stopReason`/`background` are not judged."""
+    parents: dict[str, str] = {}
+    own: dict[str, list[str]] = {}
+    mirrored: dict[str, list[str]] = {}
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        child = update.get("sessionId")
+        if kind == "subagent_update" and isinstance(child, str):
+            if outer in known and child != outer and child not in client_sessions:
+                parents.setdefault(child, outer)
+            state = update.get("state")
+            if (
+                parents.get(child) == outer
+                and isinstance(state, dict)
+                and isinstance(state.get("state"), str)
+            ):
+                mirrored.setdefault(child, []).append(state["state"])
+        elif kind == "state_update" and outer in parents and isinstance(update.get("state"), str):
+            states = own.setdefault(outer, [])
+            if not states or states[-1] != update["state"]:
+                states.append(update["state"])
+    result = ChildStateMirrors()
+    for child, states in own.items():
+        copies = mirrored.get(child, [])
+        position = 0
+        for state in states:
+            result.judged += 1
+            while position < len(copies) and copies[position] != state:
+                position += 1
+            if position == len(copies):
+                result.unmirrored.append(
+                    f"child {child!r} reported state {state!r}, but no `subagent_update.state` "
+                    f"for it on its parent {parents[child]!r} mirrors it (in order)"
+                )
+            else:
+                position += 1
+    return result
+
+
+_CHILD_OUTPUT_KINDS = {"agent_message", "agent_message_chunk", "agent_thought", "agent_thought_chunk"}
+_USER_MESSAGE_KINDS = {"user_message", "user_message_chunk"}
+
+
+@dataclass
+class ChildTasks:
+    """What `child_task_reports` found: how many announced children began agent output and, per
+    rule, the violations."""
+
+    started: int = 0
+    user_message_tasks: list[str] = field(default_factory=list)
+    unreported: list[str] = field(default_factory=list)
+
+
+def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[str]) -> ChildTasks:
+    """Replay the agent's traffic in wire order and judge how each announced child is told its
+    task (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session-directed messages"; Active
+    Subagents RFD, "Delegated tasks"). The task starts the child's work, so only what the child's
+    transcript holds before its first agent output (`agent_message`, `agent_thought` or a chunk of
+    either) is judged.
+
+    The two rules are disjoint by construction. A `user_message`/`user_message_chunk` there is
+    `user_message_tasks`. Otherwise a child whose first output was not preceded by an incoming
+    `session_message` (outer `sessionId` the child, `senderSessionId` its immediate parent, the
+    parent being the session that first announced it; the sender is stored across upserts of the
+    `messageId`) is `unreported`. A child that never produces output is not judged."""
+    result = ChildTasks()
+    parents: dict[str, str] = {}
+    senders: dict[tuple[str, str], str | None] = {}
+    tasked: set[str] = set()  # children told the task, either way
+    started: set[str] = set()
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        if kind == "subagent_update":
+            child = update.get("sessionId")
+            if (
+                isinstance(child, str)
+                and outer in known
+                and child != outer
+                and child not in client_sessions
+            ):
+                parents.setdefault(child, outer)
+            continue
+        if outer not in parents or outer in started:
+            continue
+        if kind in _USER_MESSAGE_KINDS:
+            tasked.add(outer)
+            result.user_message_tasks.append(
+                f"child {outer!r} has a {kind} before its first agent output; the task a parent "
+                f"gives a child is a `session_message`, not the user's"
+            )
+        elif kind == "session_message" and isinstance(update.get("messageId"), str):
+            key = (outer, update["messageId"])
+            senders[key] = _patched(senders.get(key), update, "senderSessionId")
+            if senders[key] == parents[outer]:
+                tasked.add(outer)
+        elif kind in _CHILD_OUTPUT_KINDS:
+            started.add(outer)
+            result.started += 1
+            if outer not in tasked:
+                result.unreported.append(
+                    f"child {outer!r} produced agent output before an incoming `session_message` "
+                    f"from its parent {parents[outer]!r}"
+                )
+    return result
+
+
+@dataclass
+class SessionMessageStreams:
+    """What `session_message_streams` found: how many session-directed messages were streamed (got
+    a `session_message_chunk`) and the ones whose participants came only after the first chunk."""
+
+    streamed: int = 0
+    late_participants: list[str] = field(default_factory=list)
+
+
+def session_message_streams(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> SessionMessageStreams:
+    """Replay the agent's `session_message` / `session_message_chunk` updates in wire order and
+    judge the participant-ordering rule (`docs/protocol/v2/draft/prompt-lifecycle.mdx`
+    "Session-directed messages"): participant IDs go on the first `session_message` when
+    available, before the first chunk of a streamed message.
+
+    A message is `(params.sessionId, messageId)`. Whether the participants were available
+    cannot be seen, so a message is flagged only when it is streamed, none of its participant IDs
+    was stored when its first chunk arrived (no upsert yet, or one without them) and some upsert
+    for it supplies one later, evidence that the agent knew them. A message that never names a
+    participant, or has one stored at its first chunk, is not flagged. Participant IDs follow the
+    patch convention across upserts (omitted keeps, `null` clears)."""
+    result = SessionMessageStreams()
+    stored: dict[tuple[str, str], tuple[str | None, str | None]] = {}
+    at_first_chunk: dict[tuple[str, str], bool] = {}
+    later: set[tuple[str, str]] = set()
+    for _msg, method, params, _known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        message_id = update.get("messageId")
+        if kind not in ("session_message", "session_message_chunk") or not isinstance(message_id, str):
+            continue
+        key = (outer, message_id)
+        if kind == "session_message_chunk":
+            if key not in at_first_chunk:
+                at_first_chunk[key] = any(value is not None for value in stored.get(key, (None, None)))
+            continue
+        sender, recipient = stored.get(key, (None, None))
+        sender = _patched(sender, update, "senderSessionId")
+        recipient = _patched(recipient, update, "recipientSessionId")
+        stored[key] = (sender, recipient)
+        if key in at_first_chunk and not at_first_chunk[key] and (sender or recipient):
+            later.add(key)
+    for key, had_participants in at_first_chunk.items():
+        result.streamed += 1
+        if not had_participants and key in later:
+            result.late_participants.append(
+                f"session_message {key[1]!r} on session {key[0]!r} was streamed with "
+                f"`session_message_chunk` before any `session_message` upsert named its participants"
+            )
+    return result
+
+
+@dataclass
+class ChildConfigSelects:
+    """What `child_config_selects` found: how many select options a child reported and the ones
+    that offer a value other than the current one."""
+
+    selects: int = 0
+    with_choices: list[str] = field(default_factory=list)
+
+
+def child_config_selects(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildConfigSelects:
+    """Replay the agent's traffic in wire order and judge the child configuration rule (Active
+    Subagents RFD, "Child configuration"): a select option in a `config_option_update` for an
+    announced child offers only its current value, because no Client-initiated configuration
+    change is permitted on a child. Values are counted across option groups. Updates for a
+    session the client created, or for a child not yet announced (`child_session_traffic`'s), are
+    not judged, and neither are boolean options."""
+    result = ChildConfigSelects()
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if (
+            not isinstance(update, dict)
+            or update.get("sessionUpdate") != "config_option_update"
+            or outer not in known
+            or outer in client_sessions
+            or not isinstance(update.get("configOptions"), list)
+        ):
+            continue
+        for option in update["configOptions"]:
+            if not isinstance(option, dict) or option.get("type") != "select":
+                continue
+            entries = option.get("options")
+            if not isinstance(entries, list) or not entries:
+                continue
+            values = []
+            for entry in entries:
+                nested = entry.get("options") if isinstance(entry, dict) else None
+                values.extend(nested if isinstance(nested, list) else [entry])
+            values = [item.get("value") for item in values if isinstance(item, dict)]
+            result.selects += 1
+            extra = [value for value in values if value != option.get("currentValue")]
+            if extra:
+                result.with_choices.append(
+                    f"config_option_update for child {outer!r}: select {option.get('configId')!r} "
+                    f"has current value {option.get('currentValue')!r} but also offers {extra!r}"
+                )
+    return result
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
     array line, even a malformed one missing `id`/`result`/`error`.

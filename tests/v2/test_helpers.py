@@ -12,6 +12,10 @@ import pytest
 
 from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
+    child_config_selects,
+    child_state_mirrors,
+    child_task_reports,
+    session_message_streams,
     _LIST_ROUTE_MAX_PAGES,
     PatchTracker,
     _route_from_list,
@@ -609,3 +613,169 @@ def test_view_links_are_judged_only_when_both_views_reference_each_other():
     # equal message IDs on two transcripts do not link them
     twin = _msg("c", "out", senderSessionId="p", recipientSessionId="c")
     assert _problems(session_messages(_traffic(out, twin), {"p"})) == (0, 0, 0)
+
+
+def _state(outer: str, state: str) -> dict[str, Any]:
+    return _update(outer, {"sessionUpdate": "state_update", "state": state})
+
+
+def _mirror(state: str, parent: str = "p", child: str = "c") -> dict[str, Any]:
+    return _update(
+        parent, {"sessionUpdate": "subagent_update", "sessionId": child, "state": {"state": state}}
+    )
+
+
+def test_child_states_mirrored_in_either_order_are_conforming():
+    transcript = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _mirror("running"),
+        _mirror("idle"),  # the mirror may precede the copy on the child's own stream
+        _state("c", "idle"),
+        _state("c", "idle"),  # a repeated snapshot needs no second mirror
+        _state("p", "running"),  # the parent's own state is not a child's
+    )
+    found = child_state_mirrors(transcript, {"p"})
+    assert (found.judged, found.unmirrored) == (2, [])
+
+
+def test_a_child_state_with_no_mirror_is_reported():
+    transcript = _traffic(_ANNOUNCE, _state("c", "running"), _mirror("running"), _state("c", "idle"))
+    found = child_state_mirrors(transcript, {"p"})
+    assert found.judged == 2 and len(found.unmirrored) == 1 and "'idle'" in found.unmirrored[0]
+    # nothing mirrored at all, and a mirror on a session that is not the child's parent
+    assert len(child_state_mirrors(_traffic(_ANNOUNCE, _state("c", "idle")), {"p"}).unmirrored) == 1
+    elsewhere = _traffic(_ANNOUNCE, _state("c", "idle"), _mirror("idle", parent="g"))
+    assert len(child_state_mirrors(elsewhere, {"p"}).unmirrored) == 1
+
+
+def test_mirrors_must_follow_the_order_of_the_child_states():
+    transcript = _traffic(
+        _ANNOUNCE, _state("c", "running"), _state("c", "idle"), _mirror("idle"), _mirror("running")
+    )
+    assert len(child_state_mirrors(transcript, {"p"}).unmirrored) == 1
+
+
+def test_an_unannounced_child_state_is_not_judged_for_mirroring():
+    found = child_state_mirrors(_traffic(_state("c", "idle")), {"p"})
+    assert (found.judged, found.unmirrored) == (0, [])
+
+
+def _session_message(outer: str, message_id: str, **fields: Any) -> dict[str, Any]:
+    return _update(outer, {"sessionUpdate": "session_message", "messageId": message_id, **fields})
+
+
+_TASK = _session_message("c", "in", senderSessionId="p", recipientSessionId="c")
+_USER = _update("c", {"sessionUpdate": "user_message", "messageId": "u"})
+
+
+def test_a_task_session_message_before_the_output_is_conforming():
+    found = child_task_reports(_traffic(_ANNOUNCE, _TASK, _CHILD_CHUNK), {"p"})
+    assert (found.started, found.user_message_tasks, found.unreported) == (1, [], [])
+    # the sender may be supplied by a later upsert, before the output
+    split = child_task_reports(
+        _traffic(
+            _ANNOUNCE,
+            _session_message("c", "in", recipientSessionId="c"),
+            _session_message("c", "in", senderSessionId="p"),
+            _CHILD_CHUNK,
+        ),
+        {"p"},
+    )
+    assert split.unreported == []
+
+
+def test_a_task_that_follows_or_misses_the_output_is_unreported():
+    after = child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK, _TASK), {"p"})
+    assert (after.started, len(after.unreported), after.user_message_tasks) == (1, 1, [])
+    not_the_parent = _session_message("c", "in", senderSessionId="g", recipientSessionId="c")
+    assert len(child_task_reports(_traffic(_ANNOUNCE, not_the_parent, _CHILD_CHUNK), {"p"}).unreported) == 1
+    assert len(child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK), {"p"}).unreported) == 1
+
+
+def test_a_user_message_task_is_judged_only_as_a_user_message():
+    for user in (_USER, _update("c", {"sessionUpdate": "user_message_chunk", "messageId": "u"})):
+        found = child_task_reports(_traffic(_ANNOUNCE, user, _CHILD_CHUNK), {"p"})
+        assert (len(found.user_message_tasks), found.unreported) == (1, [])
+    # a user message after the child's output is not the task that started it
+    late = child_task_reports(_traffic(_ANNOUNCE, _TASK, _CHILD_CHUNK, _USER), {"p"})
+    assert (late.user_message_tasks, late.unreported) == ([], [])
+    # a child that never produces output is not judged for an unreported task
+    quiet = child_task_reports(_traffic(_ANNOUNCE), {"p"})
+    assert (quiet.started, quiet.unreported) == (0, [])
+
+
+def test_task_traffic_of_an_unannounced_session_is_not_judged():
+    found = child_task_reports(_traffic(_USER, _CHILD_CHUNK), {"p"})
+    assert (found.started, found.user_message_tasks, found.unreported) == (0, [], [])
+
+
+def _chunk(outer: str, message_id: str) -> dict[str, Any]:
+    return _update(
+        outer, {"sessionUpdate": "session_message_chunk", "messageId": message_id, "content": {}}
+    )
+
+
+def test_participants_before_the_first_chunk_are_conforming():
+    transcript = _traffic(
+        _session_message("p", "m", senderSessionId="p"),  # one participant is enough
+        _chunk("p", "m"),
+        _chunk("p", "m"),
+        _session_message("p", "m", recipientSessionId="c"),
+        _chunk("p", "never-named"),  # no participant is ever supplied: nothing to flag
+    )
+    found = session_message_streams(transcript, {"p"})
+    assert (found.streamed, found.late_participants) == (2, [])
+
+
+def test_participants_supplied_only_after_the_first_chunk_are_flagged():
+    first_chunk = _traffic(_chunk("p", "m"), _session_message("p", "m", senderSessionId="p"))
+    found = session_message_streams(first_chunk, {"p"})
+    assert found.streamed == 1 and len(found.late_participants) == 1
+    bare_upsert = _traffic(
+        _session_message("p", "m", content=[]), _chunk("p", "m"), _session_message("p", "m", senderSessionId="p")
+    )
+    assert len(session_message_streams(bare_upsert, {"p"}).late_participants) == 1
+    # null clears participants, so none is stored at the chunk
+    cleared = _traffic(
+        _session_message("p", "m", senderSessionId="p"),
+        _session_message("p", "m", senderSessionId=None),
+        _chunk("p", "m"),
+        _session_message("p", "m", senderSessionId="p"),
+    )
+    assert len(session_message_streams(cleared, {"p"}).late_participants) == 1
+    # a message on another transcript is another message
+    other = _traffic(_session_message("c", "m", senderSessionId="p"), _chunk("p", "m"))
+    assert session_message_streams(other, {"p"}).late_participants == []
+
+
+def _config(outer: str, *options: dict[str, Any]) -> dict[str, Any]:
+    return _update(outer, {"sessionUpdate": "config_option_update", "configOptions": list(options)})
+
+
+def _select(current: str, *values: str, group: bool = False) -> dict[str, Any]:
+    entries = [{"value": value, "name": value} for value in values]
+    if group:
+        entries = [{"groupId": "g", "name": "G", "options": entries}]
+    return {"configId": "x", "name": "X", "type": "select", "currentValue": current, "options": entries}
+
+
+def test_a_child_select_with_only_its_current_value_is_conforming():
+    transcript = _traffic(
+        _ANNOUNCE,
+        _config("c", _select("a", "a"), {"configId": "b", "name": "B", "type": "boolean", "currentValue": True}),
+        _config("c", _select("a", "a", group=True)),
+    )
+    found = child_config_selects(transcript, {"p"})
+    assert (found.selects, found.with_choices) == (2, [])
+
+
+def test_a_child_select_with_other_values_is_flagged():
+    for option in (_select("a", "a", "b"), _select("a", "a", "b", group=True), _select("a", "b")):
+        found = child_config_selects(_traffic(_ANNOUNCE, _config("c", option)), {"p"})
+        assert found.selects == 1 and len(found.with_choices) == 1, option
+
+
+def test_selects_of_the_clients_own_or_an_unannounced_session_are_not_judged():
+    transcript = _traffic(_config("p", _select("a", "a", "b")), _config("c", _select("a", "a", "b")))
+    assert child_config_selects(transcript, {"p"}).selects == 0

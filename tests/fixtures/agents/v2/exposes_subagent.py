@@ -29,6 +29,7 @@ _CHILD_DIR = str(Path(__file__).resolve().parent)  # absolute on every platform
 
 class ExposesSubagentAgent(ConformingAgent):
     announce_child = True
+    _mirrors_child_state = True
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -41,10 +42,11 @@ class ExposesSubagentAgent(ConformingAgent):
         self._turn_child = child_id
         self._announce_child(session_id, child_id)
         self._report_child_placement(session_id, child_id)
+        self._report_child_config(child_id)
         self._announce_nested_child(child_id)
         self._send_session_messages(session_id, child_id)
         self._send_session_reference(session_id, child_id)
-        self._send_update(child_id, {"sessionUpdate": "state_update", "state": "running"})
+        self._send_child_state(session_id, child_id, {"state": "running"})
         self._child_permission_step(child_id)
         self._send_update(
             child_id,
@@ -54,9 +56,8 @@ class ExposesSubagentAgent(ConformingAgent):
                 "content": {"type": "text", "text": "child output"},
             },
         )
-        self._send_update(
-            child_id, {"sessionUpdate": "state_update", "state": "idle", "stopReason": "end_turn"}
-        )
+        self._send_child_state(session_id, child_id, {"state": "idle", "stopReason": "end_turn"})
+        self._after_child_output(session_id, child_id)
         return False
 
     def _announce_child(self, session_id: Any, child_id: str) -> None:
@@ -79,6 +80,39 @@ class ExposesSubagentAgent(ConformingAgent):
                 },
             )
 
+    def _send_child_state(self, session_id: Any, child_id: str, state: dict[str, Any]) -> None:
+        """The child's own `state_update`, then its mirror on the parent's `subagent_update.state`
+        (an unannounced child has no association to carry one)."""
+        self._send_update(child_id, {"sessionUpdate": "state_update", **state})
+        if self.announce_child and self._mirrors_child_state:
+            self._send_update(
+                session_id, {"sessionUpdate": "subagent_update", "sessionId": child_id, "state": state}
+            )
+
+    def _report_child_config(self, child_id: str) -> None:
+        """The child's configuration after its announcement: a select restricted to its current
+        value, as for a child that permits no Client-initiated change."""
+        if self.announce_child:
+            self._send_update(
+                child_id,
+                {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": [self._child_select_option()],
+                },
+            )
+
+    def _child_select_option(self) -> dict[str, Any]:
+        return {
+            "configId": "child_model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "m1",
+            "options": [{"value": "m1", "name": "Model one"}],
+        }
+
+    def _after_child_output(self, session_id: Any, child_id: str) -> None:
+        """Hook: what the child's turn sends once it has produced its output and gone idle."""
+
     def _announce_nested_child(self, child_id: str) -> None:
         """The child spawns a subagent of its own: announced on the child, its immediate parent."""
         if self.announce_child:
@@ -93,10 +127,40 @@ class ExposesSubagentAgent(ConformingAgent):
             )
 
     def _send_session_messages(self, session_id: Any, child_id: str) -> None:
-        """The delegated task, in both views: outgoing on the parent, incoming on the child.
-        Both name the participants and each other's `messageId`."""
+        """The delegated task and a streamed follow-up, both before the child's output."""
+        self._send_delegated_task(session_id, child_id)
+        self._send_streamed_follow_up(session_id, child_id)
+
+    def _send_delegated_task(self, session_id: Any, child_id: str) -> None:
+        """The task, in both views: outgoing on the parent, incoming on the child. Both name the
+        participants and each other's `messageId`."""
         self._send_session_message_pair(
             session_id, child_id, f"{child_id}-task-out", f"{child_id}-task-in"
+        )
+
+    def _send_streamed_follow_up(self, session_id: Any, child_id: str) -> None:
+        """A message the parent streams to the child (outgoing view only): the participants go on
+        the upsert that precedes the first chunk."""
+        message_id = f"{child_id}-follow-up-stream"
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "session_message",
+                "messageId": message_id,
+                "senderSessionId": session_id,
+                "recipientSessionId": child_id,
+            },
+        )
+        self._send_session_message_chunk(session_id, message_id)
+
+    def _send_session_message_chunk(self, session_id: Any, message_id: str) -> None:
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "session_message_chunk",
+                "messageId": message_id,
+                "content": {"type": "text", "text": "and one more thing"},
+            },
         )
 
     def _send_session_message_pair(

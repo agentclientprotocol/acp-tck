@@ -1,5 +1,5 @@
-"""Subagent announcement ordering, `session` content references and association integrity
-(ACP-SUBAGENT-001..009).
+"""Subagent announcement ordering, `session` content references, association integrity and
+the SHOULDs around them (ACP-SUBAGENT-001..014).
 
 There is no `initialize` marker for subagents in v2 -- support is baseline and *inferred* from the
 agent's traffic, so `Requirement.capability` is the documentation-only `"inferred:subagents"`
@@ -18,6 +18,10 @@ a reparented child) are disjoint by construction in `subagent_updates`, as is 00
 appears (006: none carries a directory field). 007..009 judge `session_message` participants
 and view links, SKIP when none appears, and are disjoint by construction in `session_messages`
 (007 equal participants, 008 an outer session that is neither, 009 conflicting view references).
+010..014 are ADVISORY (SHOULDs: state mirroring, the delegated task as an incoming
+`session_message` rather than a user message, participants before the first chunk, a child's
+select restricted to its current value). An ADVISORY row has no `capability`, so each SKIPs itself
+when the agent shows nothing to judge; 011/012 are disjoint by construction in `child_task_reports`.
 """
 
 from __future__ import annotations
@@ -27,12 +31,16 @@ import pytest
 from tck.common.harness import TranscriptEntry
 
 from ._helpers import (
+    child_config_selects,
     child_session_traffic,
+    child_state_mirrors,
+    child_task_reports,
     drain_quiet,
     new_session,
     quiet_period,
     run_prompt,
     session_content_references,
+    session_message_streams,
     session_messages,
     subagent_updates,
     v2_only_agent,
@@ -164,3 +172,60 @@ async def test_session_message_views_reference_each_other(agent_launch, tmp_path
     if not found.count:
         pytest.skip("the agent sent no `session_message`")
     assert not found.unlinked_views, _summary(found.unlinked_views)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-010")
+async def test_child_state_is_mirrored_on_the_parent(agent_launch, tmp_path):
+    """ACP-SUBAGENT-010. Each state an announced child reports in its own `state_update` is also
+    the `state` of a `subagent_update` for it on its parent, in order. SKIPs when no announced
+    child reports a `state_update`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = child_state_mirrors(transcript, {session_id})
+    if not found.judged:
+        pytest.skip("no announced child reported a `state_update`")
+    assert not found.unmirrored, _summary(found.unmirrored)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-011")
+async def test_child_task_is_not_a_user_message(agent_launch, tmp_path):
+    """ACP-SUBAGENT-011. An announced child has no `user_message`/`user_message_chunk` before its
+    first agent output. SKIPs when no announced child produces agent output or has one."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = child_task_reports(transcript, {session_id})
+    if not found.started and not found.user_message_tasks:
+        pytest.skip("no announced child produced agent output")
+    assert not found.user_message_tasks, _summary(found.user_message_tasks)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-012")
+async def test_child_task_is_an_incoming_session_message_before_its_output(agent_launch, tmp_path):
+    """ACP-SUBAGENT-012. An announced child's first agent output is preceded by an incoming
+    `session_message` whose `senderSessionId` is its parent. A task reported as a user message is
+    `ACP-SUBAGENT-011`'s. SKIPs when no announced child produces agent output."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = child_task_reports(transcript, {session_id})
+    if not found.started:
+        pytest.skip("no announced child produced agent output")
+    assert not found.unreported, _summary(found.unreported)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-013")
+async def test_session_message_participants_precede_the_first_chunk(agent_launch, tmp_path):
+    """ACP-SUBAGENT-013. A streamed `session_message` has a participant ID stored by its first
+    chunk, unless none is ever supplied. SKIPs when no `session_message_chunk` appears."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = session_message_streams(transcript, {session_id})
+    if not found.streamed:
+        pytest.skip("the agent sent no `session_message_chunk`")
+    assert not found.late_participants, _summary(found.late_participants)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-014")
+async def test_child_select_offers_only_its_current_value(agent_launch, tmp_path):
+    """ACP-SUBAGENT-014. A select option in a `config_option_update` for an announced child
+    offers no value but the current one. SKIPs when no such select is reported."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = child_config_selects(transcript, {session_id})
+    if not found.selects:
+        pytest.skip("the agent reported no select config option for an announced child")
+    assert not found.with_choices, _summary(found.with_choices)

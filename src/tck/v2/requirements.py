@@ -534,6 +534,104 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-010",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every state a child reports in its own `state_update` is mirrored on the immediate "
+            "parent (the session that announced it) as the `state` of a `subagent_update` for "
+            "that child (SHOULD). For each child announced on a known session, the distinct "
+            "consecutive states of its own `state_update`s appear, in order, among the states "
+            "of its `subagent_update` mirrors; a mirror may arrive before or after the copy on "
+            "the child's stream, a repeated snapshot needs no second mirror, and only `state` "
+            "is compared. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child reports a `state_update` (an agent "
+            "that exposes no subagent, or none that reports state). ADVISORY rows carry no "
+            "`capability`, so the SKIP is the test's own."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1015-1018; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/rfds/subagents.mdx:765-774 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-011",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The task a parent gives a child is not reported as a `user_message` or "
+            "`user_message_chunk` in the child's transcript (SHOULD NOT): none appears for an "
+            "announced child before that child's first agent output (`agent_message`, "
+            "`agent_thought` or a chunk of either), which is when the first task has started its "
+            "work. The Client cannot prompt a child, so such a message would attribute the task "
+            "to the user. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child produces agent output and none has a "
+            "user message."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-142; "
+            "docs/rfds/subagents.mdx:648-664 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-012",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The task a parent gives a child is reported as an incoming `session_message` in the "
+            "child's transcript, with `senderSessionId` set to the parent, before the child's "
+            "first agent output (SHOULD): the child's `agent_message`, `agent_thought` or a "
+            "chunk of either is preceded by such an upsert (the sender is stored across upserts "
+            "of the `messageId`; the parent is the session that announced the child). A child "
+            "whose task was reported as a `user_message` is `ACP-SUBAGENT-011`'s FAIL, so is not "
+            "judged here. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child produces agent output."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-142; "
+            "docs/rfds/subagents.mdx:648-657 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-013",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Participant IDs go on the first `session_message` for a message when available, "
+            "before the first `session_message_chunk` of a streamed message (SHOULD). Whether "
+            "they were available cannot be seen, so a streamed message is flagged only when no "
+            "participant ID was stored when its first chunk arrived and a later `session_message` "
+            "for it supplies one (participant IDs follow the patch convention). A message that "
+            "never names a participant, or has one before its first chunk, is not flagged. "
+            "The draft docs state it without an RFC keyword (\"Include them ... when "
+            "available\") and the Active RFD as a SHOULD; either way it is not a MUST. Judged "
+            "over one `session/new`, one prompt turn and a quiet period after it; SKIPs itself "
+            "when no `session_message_chunk` appears."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:77-81; "
+            "docs/rfds/subagents.mdx:461-464 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-014",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A select config option reported for a child in a `config_option_update` offers only "
+            "its current value (SHOULD): the child does not permit Client-initiated "
+            "configuration changes (the only mutation the Subagents RFD defines is `cancel`, and "
+            "`session/set_config_option` is not authorized for a child), so the value is kept for "
+            "its name without advertising choices the Client cannot select. Values are counted "
+            "across option groups; boolean options and updates for a not-yet-announced child are "
+            "not judged. Stated only by the Subagents RFD (Active RFD), so the row is ADVISORY. "
+            "Judged over one `session/new`, one prompt turn and a quiet period after it; SKIPS "
+            "itself when no `config_option_update` for an announced child carries a select."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:392-419 (Active RFD)"),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
