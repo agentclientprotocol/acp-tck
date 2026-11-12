@@ -1,5 +1,5 @@
 """Subagent announcement ordering, `session` content references and association integrity
-(ACP-SUBAGENT-001..006).
+(ACP-SUBAGENT-001..009).
 
 There is no `initialize` marker for subagents in v2 -- support is baseline and *inferred* from the
 agent's traffic, so `Requirement.capability` is the documentation-only `"inferred:subagents"`
@@ -15,7 +15,9 @@ All tests judge the same connection, but a `session` content reference is not ch
 an unknown reference FAILs only 002. 003..005 (self-parent, a client session announced as a child,
 a reparented child) are disjoint by construction in `subagent_updates`, as is 006 (absolute
 `cwd`/`additionalDirectories`), so one defect FAILs one row; each SKIPs when no `subagent_update`
-appears (006: none carries a directory field).
+appears (006: none carries a directory field). 007..009 judge `session_message` participants
+and view links, SKIP when none appears, and are disjoint by construction in `session_messages`
+(007 equal participants, 008 an outer session that is neither, 009 conflicting view references).
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from ._helpers import (
     quiet_period,
     run_prompt,
     session_content_references,
+    session_messages,
     subagent_updates,
     v2_only_agent,
 )
@@ -126,3 +129,38 @@ async def test_subagent_update_directories_are_absolute(agent_launch, tmp_path):
     if not found.reported_directories:
         pytest.skip("no `subagent_update` reported `cwd` or `additionalDirectories`")
     assert not found.relative_paths, _summary(found.relative_paths)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-007")
+async def test_session_message_participants_differ(agent_launch, tmp_path):
+    """ACP-SUBAGENT-007. When both `senderSessionId` and `recipientSessionId` of a
+    `session_message` are known, they identify different sessions. SKIPs when the agent sends no
+    `session_message`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = session_messages(transcript, {session_id})
+    if not found.count:
+        pytest.skip("the agent sent no `session_message`")
+    assert not found.same_participants, _summary(found.same_participants)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-008")
+async def test_session_message_outer_session_is_a_participant(agent_launch, tmp_path):
+    """ACP-SUBAGENT-008. When both participants of a `session_message` are known and differ,
+    `params.sessionId` is one of them. SKIPs when the agent sends no `session_message`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = session_messages(transcript, {session_id})
+    if not found.count:
+        pytest.skip("the agent sent no `session_message`")
+    assert not found.foreign_outer, _summary(found.foreign_outer)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-009")
+async def test_session_message_views_reference_each_other(agent_launch, tmp_path):
+    """ACP-SUBAGENT-009. When both views of one message carry `senderMessageId` /
+    `recipientMessageId`, each names the other's `messageId`. SKIPs when the agent sends no
+    `session_message`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = session_messages(transcript, {session_id})
+    if not found.count:
+        pytest.skip("the agent sent no `session_message`")
+    assert not found.unlinked_views, _summary(found.unlinked_views)

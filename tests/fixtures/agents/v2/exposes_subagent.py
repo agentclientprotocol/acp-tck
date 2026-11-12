@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Conforming fixture: during each turn it announces a child session with `subagent_update` on
 the prompted session, then exchanges a `session_message` with the child in both views (outgoing
-on the parent, incoming on the child), announces the delegation with a completed
-tool call whose content is a `session` reference to the child, has the child ask for permission
+on the parent, incoming on the child, each naming both participants and the other view),
+announces the delegation with a completed tool call whose content is a `session` reference to the child, has the child ask for permission
 with a `session/request_permission` carrying the child's `sessionId`, and streams the child's own
 `running` -> `agent_message_chunk` -> `idle(end_turn)` under that `sessionId`. After the parent's
 turn has ended, the child sends one more `agent_message_chunk` (child work outlives the parent's
 turn). The association stays one tree: the child is later patched under the same parent with an
 absolute `cwd` and `additionalDirectories`, and announces one nested child of its own (also with
 an absolute `cwd`). Everything is legal once announced, and the child's idle must not end the
-parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..006` and `ACP-STATE-201..205`
+parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..009` and `ACP-STATE-201..205`
 like `conforming.py` (the mock client answers the child's permission request; it is not awaited).
 
 The `_`-hooks below are the seams the violator fixtures override.
@@ -93,23 +93,42 @@ class ExposesSubagentAgent(ConformingAgent):
             )
 
     def _send_session_messages(self, session_id: Any, child_id: str) -> None:
-        """The delegated task, in both views: outgoing on the parent, incoming on the child."""
+        """The delegated task, in both views: outgoing on the parent, incoming on the child.
+        Both name the participants and each other's `messageId`."""
+        self._send_session_message_pair(
+            session_id, child_id, f"{child_id}-task-out", f"{child_id}-task-in"
+        )
+
+    def _send_session_message_pair(
+        self,
+        session_id: Any,
+        child_id: str,
+        out_id: str,
+        in_id: str,
+        *,
+        incoming_sender_message_id: str | None = None,
+    ) -> None:
+        """One message from the parent to the child, as its outgoing and its incoming view."""
+        content = [{"type": "text", "text": "please help"}]
+        participants = {"senderSessionId": session_id, "recipientSessionId": child_id}
         self._send_update(
             session_id,
             {
                 "sessionUpdate": "session_message",
-                "messageId": f"{child_id}-task-out",
-                "recipientSessionId": child_id,
-                "content": [{"type": "text", "text": "please help"}],
+                "messageId": out_id,
+                **participants,
+                "recipientMessageId": in_id,
+                "content": content,
             },
         )
         self._send_update(
             child_id,
             {
                 "sessionUpdate": "session_message",
-                "messageId": f"{child_id}-task-in",
-                "senderSessionId": session_id,
-                "content": [{"type": "text", "text": "please help"}],
+                "messageId": in_id,
+                **participants,
+                "senderMessageId": incoming_sender_message_id or out_id,
+                "content": content,
             },
         )
 

@@ -844,6 +844,103 @@ def subagent_updates(
     return result
 
 
+@dataclass
+class SessionMessages:
+    """What `session_messages` found: how many `session_message` upserts were seen and, per rule,
+    the violations."""
+
+    count: int = 0
+    same_participants: list[str] = field(default_factory=list)
+    foreign_outer: list[str] = field(default_factory=list)
+    unlinked_views: list[str] = field(default_factory=list)
+
+
+def _patched(stored: str | None, update: dict[str, Any], key: str) -> str | None:
+    """The stored value of a nullable string patch field: omitted leaves it, `null` clears it, a
+    string replaces it. Anything else is malformed (`ACP-PROMPT-002`'s) and counts as unknown."""
+    if key not in update:
+        return stored
+    value = update[key]
+    return value if isinstance(value, str) else None
+
+
+def session_messages(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> SessionMessages:
+    """Replay the agent's `session_message` upserts in wire order and judge the participant and
+    link consistency rules (Active Subagents RFD, "Session-directed messages"). A message is the
+    transcript entry `(params.sessionId, messageId)`, and its participants and references follow
+    the patch convention across upserts (omitted keeps, `null` clears, a value replaces).
+
+    The participant rules are judged once both participant IDs are stored and are disjoint by
+    construction: equal participants are `same_participants`, whatever the outer session is;
+    different ones whose outer session is neither are `foreign_outer`. The link rule is judged on
+    the final stored state: a view's `recipientMessageId` names a view in the recipient's
+    transcript and its `senderMessageId` one in the sender's, and when that view was reported and
+    references back, the two must name each other, else `unlinked_views`. A referenced view that
+    was not reported, or has no reference of its own, is not judged. `session_message_chunk`
+    carries no identity."""
+    result = SessionMessages()
+    views: dict[tuple[str, str], dict[str, str | None]] = {}
+    seen: set[tuple[str, str, str]] = set()
+    for _msg, method, params, _known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "session_message":
+            continue
+        outer, message_id = params.get("sessionId"), update.get("messageId")
+        if not isinstance(outer, str) or not isinstance(message_id, str):
+            continue
+        result.count += 1
+        view = views.setdefault(
+            (outer, message_id),
+            {"sender": None, "recipient": None, "sender_msg": None, "recipient_msg": None},
+        )
+        for name, key in (
+            ("sender", "senderSessionId"),
+            ("recipient", "recipientSessionId"),
+            ("sender_msg", "senderMessageId"),
+            ("recipient_msg", "recipientMessageId"),
+        ):
+            view[name] = _patched(view[name], update, key)
+        sender, recipient = view["sender"], view["recipient"]
+        if sender is None or recipient is None:
+            continue
+        if sender == recipient:
+            if ("same", outer, message_id) not in seen:
+                seen.add(("same", outer, message_id))
+                result.same_participants.append(
+                    f"session_message {message_id!r} on session {outer!r} has {sender!r} as both "
+                    f"senderSessionId and recipientSessionId"
+                )
+        elif outer not in (sender, recipient) and ("foreign", outer, message_id) not in seen:
+            seen.add(("foreign", outer, message_id))
+            result.foreign_outer.append(
+                f"session_message {message_id!r} is sent on session {outer!r}, which is neither "
+                f"its sender {sender!r} nor its recipient {recipient!r}"
+            )
+
+    for (outer, message_id), view in views.items():
+        # (this view's session / message reference, the other view's reference back)
+        for session_key, ref_key, back_session, back_ref, back_name in (
+            ("recipient", "recipient_msg", "sender", "sender_msg", "senderMessageId"),
+            ("sender", "sender_msg", "recipient", "recipient_msg", "recipientMessageId"),
+        ):
+            target_session, target_id = view[session_key], view[ref_key]
+            if target_session is None or target_id is None or target_session == outer:
+                continue
+            other = views.get((target_session, target_id))
+            if other is None or other[back_ref] is None or other[back_ref] == message_id:
+                continue
+            if other[back_session] not in (None, outer):
+                continue  # the other view's own participant is someone else: not this message
+            result.unlinked_views.append(
+                f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
+                f"session {target_session!r} as its other view, but that view's {back_name} "
+                f"is {other[back_ref]!r}"
+            )
+    return result
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
     array line, even a malformed one missing `id`/`result`/`error`.

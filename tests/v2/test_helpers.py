@@ -22,6 +22,7 @@ from tck.v2.conformance._helpers import (
     is_agent_initiated,
     is_response_line,
     session_content_references,
+    session_messages,
     subagent_updates,
     tool_call_report,
 )
@@ -500,3 +501,111 @@ def test_a_relative_or_malformed_directory_is_a_problem(fields):
 def test_is_absolute_path_accepts_native_absolute_syntaxes_only():
     assert all(is_absolute_path(path) for path in ("/a", "/", "C:\\a", "C:/a", "\\\\srv\\share"))
     assert not any(is_absolute_path(path) for path in ("a", "./a", "", "C:a", "\\a", "file:///a", None, 5))
+
+
+def _msg(outer: str, message_id: str, **fields: Any) -> dict[str, Any]:
+    return _update(outer, {"sessionUpdate": "session_message", "messageId": message_id, **fields})
+
+
+def _problems(found) -> tuple[int, int, int]:
+    return len(found.same_participants), len(found.foreign_outer), len(found.unlinked_views)
+
+
+def test_no_session_message_is_not_a_session_message_connection():
+    found = session_messages(_traffic(_update("p", {"sessionUpdate": "session_message_chunk", "messageId": "m"})), {"p"})
+    assert found.count == 0 and _problems(found) == (0, 0, 0)
+
+
+def test_consistent_views_in_both_directions_are_conforming():
+    transcript = _traffic(
+        _msg("p", "out", senderSessionId="p", recipientSessionId="c", recipientMessageId="in"),
+        _msg("c", "in", senderSessionId="p", recipientSessionId="c", senderMessageId="out"),
+        # the child answers: outgoing on the child, incoming on the parent
+        _msg("c", "ans-out", senderSessionId="c", recipientSessionId="p", recipientMessageId="ans-in"),
+        _msg("p", "ans-in", senderSessionId="c", recipientSessionId="p", senderMessageId="ans-out"),
+        _msg("p", "one-sided", recipientSessionId="c"),  # one participant: nothing to compare
+    )
+    found = session_messages(transcript, {"p"})
+    assert found.count == 5 and _problems(found) == (0, 0, 0)
+
+
+def test_equal_participants_are_judged_only_as_same_participants():
+    for outer in ("p", "c"):  # whichever session the update is sent on
+        found = session_messages(_traffic(_msg(outer, "m", senderSessionId="p", recipientSessionId="p")), {"p"})
+        assert _problems(found) == (1, 0, 0), outer
+
+
+def test_an_outer_session_that_is_neither_participant_is_judged_only_as_foreign_outer():
+    found = session_messages(_traffic(_msg("g", "m", senderSessionId="p", recipientSessionId="c")), {"p"})
+    assert _problems(found) == (0, 1, 0)
+    # one known participant is not enough to judge the outer session
+    assert _problems(session_messages(_traffic(_msg("g", "m", senderSessionId="p")), {"p"})) == (0, 0, 0)
+
+
+def test_participants_are_stored_across_upserts_and_null_clears():
+    split = _traffic(
+        _msg("g", "m", senderSessionId="p"),
+        _msg("g", "m", recipientSessionId="c"),  # now both are known: the outer session is foreign
+    )
+    assert _problems(session_messages(split, {"p"})) == (0, 1, 0)
+    cleared = _traffic(
+        _msg("g", "m", senderSessionId="p", recipientSessionId="c"),
+        _msg("g", "m", recipientSessionId=None),
+        _msg("g", "n", senderSessionId="p"),
+    )
+    assert len(session_messages(cleared, {"p"}).foreign_outer) == 1  # only the first upsert
+    # the same messageId on another transcript is another message
+    other = _traffic(_msg("c", "m", senderSessionId="p"), _msg("p", "m", recipientSessionId="c"))
+    assert _problems(session_messages(other, {"p"})) == (0, 0, 0)
+
+
+def test_a_repeated_defective_message_is_reported_once():
+    transcript = _traffic(
+        _msg("g", "m", senderSessionId="p", recipientSessionId="c"),
+        _msg("g", "m", content=[]),
+    )
+    assert _problems(session_messages(transcript, {"p"})) == (0, 1, 0)
+
+
+def test_conflicting_view_references_are_judged_only_as_unlinked_views():
+    out = _msg("p", "out", senderSessionId="p", recipientSessionId="c", recipientMessageId="in")
+    for incoming in (
+        _msg("c", "in", senderSessionId="p", recipientSessionId="c", senderMessageId="elsewhere"),
+        _msg("c", "in", recipientSessionId="c", senderMessageId="elsewhere"),  # sender not repeated
+    ):
+        found = session_messages(_traffic(out, incoming), {"p"})
+        assert _problems(found) == (0, 0, 1), found.unlinked_views
+    # the reference arrives later with a metadata-only upsert, and is judged then
+    late = session_messages(
+        _traffic(
+            out,
+            _msg("c", "in", senderSessionId="p", recipientSessionId="c"),
+            _msg("c", "in", senderMessageId="elsewhere"),
+        ),
+        {"p"},
+    )
+    assert _problems(late) == (0, 0, 1)
+    # and a corrected reference clears it
+    fixed = session_messages(
+        _traffic(
+            out,
+            _msg("c", "in", senderSessionId="p", recipientSessionId="c", senderMessageId="elsewhere"),
+            _msg("c", "in", senderMessageId="out"),
+        ),
+        {"p"},
+    )
+    assert _problems(fixed) == (0, 0, 0)
+
+
+def test_view_links_are_judged_only_when_both_views_reference_each_other():
+    out = _msg("p", "out", senderSessionId="p", recipientSessionId="c", recipientMessageId="in")
+    # the referenced view was never reported, or carries no reference back: nothing to compare
+    assert _problems(session_messages(_traffic(out), {"p"})) == (0, 0, 0)
+    bare = _msg("c", "in", senderSessionId="p", recipientSessionId="c")
+    assert _problems(session_messages(_traffic(out, bare), {"p"})) == (0, 0, 0)
+    # a view of someone else entirely is not this message's other view
+    stranger = _msg("c", "in", senderSessionId="x", recipientSessionId="c", senderMessageId="elsewhere")
+    assert _problems(session_messages(_traffic(out, stranger), {"p"})) == (0, 0, 0)
+    # equal message IDs on two transcripts do not link them
+    twin = _msg("c", "out", senderSessionId="p", recipientSessionId="c")
+    assert _problems(session_messages(_traffic(out, twin), {"p"})) == (0, 0, 0)
