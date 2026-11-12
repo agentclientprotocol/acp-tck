@@ -28,6 +28,9 @@ def _diff_item(**overrides) -> dict:
 def test_conforming_values_at_every_site_pass():
     updates = [
         {"sessionUpdate": "state_update", "state": "running"},
+        {"sessionUpdate": "state_update", "state": "idle", "background": [
+            {"type": "terminal", "terminalId": "t"}, {"type": "tool_call", "toolCallId": "c"},
+            {"type": "subagent", "sessionId": "s"}]},
         {"sessionUpdate": "tool_call_update", "toolCallId": "t", "kind": "read", "status": "paused",
          "content": [{"type": "session"}, _diff_item()]},
         {"sessionUpdate": "tool_call_content_chunk", "toolCallId": "t", "content": _diff_item()},
@@ -54,6 +57,13 @@ def test_underscore_prefixed_values_pass_everywhere():
             patch={"format": "_tck_fmt", "text": "x"})],
     }
     assert _scan_update(update).violations == []
+
+
+def test_underscore_prefixed_background_type_passes_and_custom_state_list_is_not_judged():
+    listed = {"sessionUpdate": "state_update", "state": "idle", "background": [{"type": "_tck_job"}]}
+    assert _scan_update(listed).violations == []
+    custom = {"sessionUpdate": "state_update", "state": "_tck_busy", "background": [{"type": "task"}]}
+    assert _scan_update(custom).violations == []
 
 
 @pytest.mark.parametrize(
@@ -84,6 +94,9 @@ def test_underscore_prefixed_values_pass_everywhere():
           "availableCommands": [{"type": "macro", "name": "n", "description": "d"}]},
          "available command type"),
         ({"sessionUpdate": "state_update", "state": "busy"}, "state_update.state"),
+        ({"sessionUpdate": "state_update", "state": "idle", "background": [
+            {"type": "terminal", "terminalId": "t"}, {"type": "task", "id": "x"}]},
+         "background item type"),
         ({"sessionUpdate": "surprise"}, "sessionUpdate"),
     ],
 )

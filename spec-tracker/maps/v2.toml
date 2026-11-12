@@ -187,8 +187,8 @@ reason = "Unobservable: depends on what the agent knows about its own work and o
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:205,207 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "When background work starts or ends, the Agent re-sends the current state with the updated `background` list, and when it knows finished work starts follow-up foreground work it reports `running` no later than the snapshot that removes the item (SHOULD)."
-reason = "Out of scope: the TCK cannot make an agent start background work, and when the agent learns of a change or of a follow-up is not observable."
+statement = "When background work starts, the Agent re-sends the current state with the updated `background` list, and when it knows finished work starts follow-up foreground work it reports `running` no later than the snapshot that removes the item (SHOULD)."
+reason = "Unobservable: work that has started is invisible to the client until a list names it, since an announced item that no list names yet cannot be told from foreground work, and whether the agent already knows of follow-up foreground work when it removes an item is internal. The re-send when work ends is judged by ACP-STATE-209."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:208 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -391,8 +391,8 @@ reason = "Deferred (elicitation coverage): an agent cannot be made to hold an el
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:49 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A forked session starts with no background work: unfinished tool calls and running terminals copied into its history are not live, and its state snapshots report `background: []` until it starts its own."
-reason = "Not observable in practice: the session the TCK forks has no unfinished work, so a conforming fork and one that wrongly carries work over report the same state."
+statement = "Unfinished tool calls and running terminals copied into a forked session's history are not live."
+reason = "Not observable: whether the agent treats copied history as live is internal. What it would show, a fork's `background` snapshots listing the source's work, is judged by ACP-FORK-206, which SKIPs unless the source session has listed work at fork time."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:223 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -649,7 +649,7 @@ reason = "Not observable: \"ignored\" cannot be told apart from \"used without v
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:1173; docs/protocol/v2/draft/tool-calls.mdx:268 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`session/cancel` does not cover work in the latest `background` list or its permission requests, which keep running, and the Agent MAY stop background activity it does not list."
-reason = "Not elicitable: it needs an agent that reports `background` work, which the TCK cannot make an agent start."
+reason = "Not observable as a violation: listed work may end on its own at any moment, so an item that reaches a final status after `session/cancel` cannot be told from one that finished by itself, and an item that keeps running proves nothing about unlisted activity, which the Agent MAY stop. ACP-INFO-BACKGROUND-202 records what happens to the listed items."
 
 # --- deferred unstable methods and rules ---
 

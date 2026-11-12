@@ -117,6 +117,7 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-210",
     "ACP-RESUME-212",
     "ACP-RESUME-213",
+    "ACP-RESUME-217",
     "ACP-ERROR-003",
     "ACP-ERROR-004",
     "ACP-LIST-001",
@@ -149,6 +150,7 @@ _CAPABILITY_IDS = {
     "ACP-FORK-203",
     "ACP-FORK-204",
     "ACP-FORK-205",
+    "ACP-FORK-206",
     "ACP-SYSPROMPT-001",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -197,6 +199,7 @@ _ADVISORY_IDS = {
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
     "ACP-STATE-204",
+    "ACP-STATE-209",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
@@ -237,6 +240,8 @@ _ADVISORY_IDS = {
 _INFORMATIONAL_IDS = {
     "ACP-INFO-CONCURRENT-201",
     "ACP-INFO-CANCEL-201",
+    "ACP-INFO-BACKGROUND-201",
+    "ACP-INFO-BACKGROUND-202",
     "ACP-MCP-201",
     "ACP-MCP-202",
     "ACP-STDERR-001",
@@ -298,6 +303,18 @@ _ITEM_CANCEL_IDS = {"ACP-TOOLCANCEL-201", "ACP-TOOLCANCEL-202", "ACP-TERMCANCEL-
 # `reports_background_work.py`, whose turns finish their work before they end.
 _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 
+# The other background rows judge only an agent that reports a `background` list, and
+# `ACP-STATE-209` needs one of its items to end while idle (`background_outlives_turn="finish"`),
+# `ACP-INFO-BACKGROUND-202` a list that is non-empty when `session/cancel` lands. A fixture that
+# merely reports lists (`reports_background_work.py`) PASSes `ACP-RESUME-217` and
+# `ACP-INFO-BACKGROUND-201` and SKIPs the other two.
+_BACKGROUND_OTHER_SKIP_IDS = {
+    "ACP-STATE-209",
+    "ACP-INFO-BACKGROUND-201",
+    "ACP-INFO-BACKGROUND-202",
+    "ACP-RESUME-217",
+}
+
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
 # `capabilities.session.prompt.*` marker, and `ACP-PERM-201`/`202` SKIP whenever a turn never
 # actually triggers a `session/request_permission` (`ACP-PERM-203`/`204`/`002` also need a `tool_call`
@@ -352,7 +369,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _ITEM_CANCEL_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
 # session-related at all) legitimately SKIPs the session-management extras below -- `delete`,
@@ -386,6 +403,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-FORK-203",
     "ACP-FORK-204",
     "ACP-FORK-205",
+    "ACP-FORK-206",
     "ACP-SYSPROMPT-001",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -550,6 +568,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-FORK-203",
     "ACP-FORK-204",
     "ACP-FORK-205",
+    "ACP-FORK-206",
     "ACP-SYSPROMPT-001",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -581,7 +600,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _ITEM_CANCEL_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
 # Skipped for `conforming.py` but exercised by a fixture whose child asks for permission, whose
@@ -698,7 +717,8 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-ERROR-204",
     "ACP-META-203",
     "ACP-META-204",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS
+    "ACP-FORK-206",  # no listed work at fork time
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -1365,6 +1385,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -1537,6 +1558,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -1582,7 +1604,14 @@ def test_reports_background_work_agent_passes_everything():
     assert result.returncode == 0, result.stdout + result.stderr
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
-    exercised = _BACKGROUND_SKIP_IDS | {"ACP-PATCH-204", "ACP-PATCH-208", "ACP-PATCH-210", "ACP-PATCH-211"}
+    exercised = _BACKGROUND_SKIP_IDS | {
+        "ACP-PATCH-204",
+        "ACP-PATCH-208",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-RESUME-217",
+        "ACP-INFO-BACKGROUND-201",
+    }
     for req_id, status in statuses.items():
         expected = "SKIPPED" if req_id in _CONFORMING_EXPECTED_SKIPS - exercised else "PASS"
         assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
@@ -1617,6 +1646,97 @@ def test_background_removed_unfinished_fails_only_state_208():
     assert statuses == {
         "ACP-STATE-206": "PASS", "ACP-STATE-207": "PASS", "ACP-STATE-208": "FAIL"
     }, stdout
+
+
+def _full_run(fixture: str, tmp_path, **kwargs) -> tuple[dict[str, str], dict[str, dict], str]:
+    """The whole suite against `fixture`: every row's status, each row's report entry by id, and
+    stdout."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2, fixture, protocol_version=2, report_json=str(report_path), **kwargs
+    )
+    statuses = _table_statuses(result.stdout)
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    return statuses, by_id, result.stdout
+
+
+def _recorded(by_id: dict[str, dict], req_id: str) -> dict[str, str]:
+    (test,) = by_id[req_id]["tests"]
+    return test["properties"]
+
+
+def test_finishes_background_after_idle_passes_state_209(tmp_path):
+    """The positive control: the background tool call ends after the turn's idle, and the agent
+    re-sends the idle with it removed. `ACP-STATE-209` PASSes (judged), next to the rows that
+    judge the same traffic."""
+    statuses, _by_id, stdout = _full_run("finishes_background_after_idle.py", tmp_path)
+    assert _fails(statuses) == set(), stdout
+    for req_id in ("ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208", "ACP-STATE-209"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_background_end_not_resent_fails_only_state_209(tmp_path):
+    """The item finishes after the idle and no snapshot drops it. `ACP-STATE-208` SKIPs: no
+    snapshot removed anything, so there is no removal to judge."""
+    statuses, _by_id, stdout = _full_run("background_end_not_resent.py", tmp_path)
+    assert _fails(statuses) == {"ACP-STATE-209"}, stdout
+    assert statuses["ACP-STATE-208"] == "SKIPPED", stdout
+
+
+def test_resume_snapshot_omits_background_fails_only_resume_217(tmp_path):
+    """Live updates carry the list, the resume snapshot omits it. `ACP-RESUME-213` SKIPs (the
+    snapshot lists nothing); `reports_background_work.py` PASSes `ACP-RESUME-217`."""
+    statuses, _by_id, stdout = _full_run("resume_snapshot_omits_background.py", tmp_path)
+    assert _fails(statuses) == {"ACP-RESUME-217"}, stdout
+    assert statuses["ACP-RESUME-213"] == "SKIPPED", stdout
+
+
+def test_keeps_background_work_passes_fork_206_and_records_the_cancel(tmp_path):
+    """The positive control for the fork row: the source session's work is still listed at fork
+    time and the fork's snapshots do not list it. Run with a `__hang__` cancel prompt, its
+    `session/cancel` leaves that listed work running, so `ACP-INFO-BACKGROUND-202` records it."""
+    statuses, by_id, stdout = _full_run(
+        "keeps_background_work.py", tmp_path, cancel_prompt="__hang__"
+    )
+    assert _fails(statuses) == set(), stdout
+    for req_id in ("ACP-FORK-206", "ACP-RESUME-213", "ACP-RESUME-217", "ACP-INFO-BACKGROUND-202"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+    recorded = _recorded(by_id, "ACP-INFO-BACKGROUND-202")
+    assert "tool-bg-" in recorded["acp_tck_background_listed_at_cancel"], recorded
+    assert recorded["acp_tck_background_finalized_after_cancel"] == "[]", recorded
+    assert "tool-bg-" in recorded["acp_tck_background_listed_at_idle"], recorded
+
+
+def test_fork_copies_background_work_fails_only_fork_206(tmp_path):
+    statuses, _by_id, stdout = _full_run("fork_copies_background_work.py", tmp_path)
+    assert _fails(statuses) == {"ACP-FORK-206"}, stdout
+
+
+def test_unprefixed_background_type_fails_only_enum_201(tmp_path):
+    """`background[].type` is `"task"`: the `other` branch accepts it, `ACP-STATE-206..208` ignore
+    items of other types, and only the open-enum sweep objects."""
+    statuses, _by_id, stdout = _full_run("unprefixed_background_type.py", tmp_path)
+    assert _fails(statuses) == {"ACP-ENUM-201"}, stdout
+    for req_id in ("ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_lists_tool_call_with_its_terminal_is_recorded_not_failed(tmp_path):
+    """The list names a command's tool call and the terminal that tool call references. The rule
+    against listing both cannot be judged, so `ACP-INFO-BACKGROUND-201` records the pair."""
+    statuses, by_id, stdout = _full_run("lists_tool_call_with_its_terminal.py", tmp_path)
+    assert _fails(statuses) == set(), stdout
+    assert statuses["ACP-INFO-BACKGROUND-201"] == "PASS", stdout
+    recorded = _recorded(by_id, "ACP-INFO-BACKGROUND-201")
+    assert "tool-cmd-" in recorded["acp_tck_listed_tool_calls_with_listed_terminal"], recorded
+
+
+def test_references_background_terminal_records_no_pair(tmp_path):
+    """The Codex-style agent lists only the terminal, so the record is empty."""
+    statuses, by_id, stdout = _full_run("references_background_terminal.py", tmp_path)
+    assert statuses["ACP-INFO-BACKGROUND-201"] == "PASS", stdout
+    recorded = _recorded(by_id, "ACP-INFO-BACKGROUND-201")
+    assert recorded["acp_tck_listed_tool_calls_with_listed_terminal"] == "[]", recorded
 
 
 _PROMPT_K = "test_prompt and not capabilities"
@@ -2112,6 +2232,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
@@ -2223,6 +2344,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
@@ -2332,6 +2454,7 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-ENUM-201",
         "ACP-META-001",
@@ -2699,7 +2822,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
         | _BACKGROUND_SKIP_IDS
-        | _RESUME_BACKGROUND_SKIP_IDS
+        | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS
         | _ITEM_CANCEL_IDS
         | {
             "ACP-PROMPT-207",

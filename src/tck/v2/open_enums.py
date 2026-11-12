@@ -15,6 +15,7 @@ from typing import Any
 
 from .protocol import (
     AVAILABLE_COMMAND_TYPE,
+    BACKGROUND_WORK_TYPE,
     DIFF_FILE_TYPE,
     DIFF_OPERATION,
     DIFF_PATCH_FORMAT,
@@ -51,6 +52,11 @@ class OpenEnumScan:
         self.check("sessionUpdate", kind, SESSION_UPDATE_KIND)
         if kind == "state_update" and "state" in update:
             self.check("state_update.state", update["state"], STATE_UPDATE_STATE)
+            # A custom state's shape is its own, so only a defined state's list is judged.
+            background = update.get("background") if update["state"] in STATE_UPDATE_STATE else None
+            for item in background if isinstance(background, list) else []:
+                if isinstance(item, dict) and "type" in item:
+                    self.check("background item type", item["type"], BACKGROUND_WORK_TYPE)
         elif kind == "tool_call_update":
             self._scan_tool_call("tool_call_update", update)
         elif kind == "tool_call_content_chunk":

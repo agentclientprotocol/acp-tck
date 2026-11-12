@@ -94,6 +94,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-STATE-206",
         "ACP-STATE-207",
         "ACP-STATE-208",
+        "ACP-STATE-209",
         "ACP-PERM-201",
         "ACP-PERM-202",
         "ACP-PERM-203",
@@ -102,6 +103,8 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CLIENTCAP-003",
         "ACP-CLIENTCAP-202",
         "ACP-INFO-CONCURRENT-201",
+        "ACP-INFO-BACKGROUND-201",
+        "ACP-INFO-BACKGROUND-202",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
@@ -147,6 +150,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-RESUME-213",
         "ACP-RESUME-214",
         "ACP-RESUME-216",
+        "ACP-RESUME-217",
         "ACP-LIST-001",
         "ACP-LIST-002",
         "ACP-LIST-203",
@@ -180,6 +184,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-FORK-203",
         "ACP-FORK-204",
         "ACP-FORK-205",
+        "ACP-FORK-206",
         "ACP-SYSPROMPT-001",
         "ACP-SYSPROMPT-202",
         "ACP-SYSPROMPT-002",
@@ -300,6 +305,7 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-SESSION-209",
         "ACP-LIST-207",
         "ACP-SHUTDOWN-001",
+        "ACP-STATE-209",
         "ACP-STATE-204",
     }
 
@@ -310,6 +316,8 @@ def test_informational_tier_is_exactly_these_ids():
     in the record-only tier."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.INFORMATIONAL} == {
         "ACP-CANCEL-204",
+        "ACP-INFO-BACKGROUND-201",
+        "ACP-INFO-BACKGROUND-202",
         "ACP-INFO-CANCEL-201",
         "ACP-INFO-CONCURRENT-201",
         "ACP-INFO-INVALIDREQ-001",

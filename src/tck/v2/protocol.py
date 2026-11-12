@@ -109,12 +109,15 @@ STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"}
 TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal", "session"})
 PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
 # More `ACP-ENUM-201` sites: `PlanUpdateContent.type`, the diff-content enums, and
-# `AvailableCommand.type`. Cross-checked against the schema the same way as the sets above.
+# `AvailableCommand.type`, `BackgroundWork.type`. Cross-checked against the schema the same way as the sets above.
 PLAN_CONTENT_TYPE = frozenset({"items", "file", "markdown"})
 DIFF_OPERATION = frozenset({"add", "delete", "modify", "move", "copy"})
 DIFF_FILE_TYPE = frozenset({"text", "binary", "directory", "symlink"})
 DIFF_PATCH_FORMAT = frozenset({"git_patch"})
 AVAILABLE_COMMAND_TYPE = frozenset({"command"})
+# `BackgroundWork.type` (a `state_update`'s `background` items); the schema's `other` branch accepts
+# any string, and says values that do not begin with `_` are reserved for future ACP variants.
+BACKGROUND_WORK_TYPE = frozenset({"terminal", "tool_call", "subagent"})
 
 
 def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:

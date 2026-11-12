@@ -96,6 +96,13 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `background_on_resume` (opt-in, default `False`, needs `report_background_work`): every
   resume leaves the session with one unfinished background tool call, listed on the snapshot and
   announced by a `tool_call_update` before it (`_resume_background`, session-setup.mdx:346).
+- `background_outlives_turn` (opt-in, default `None`, needs `report_background_work`): the turn's
+  background tool call is still listed on the turn-ending idle instead of finished before it.
+  `"finish"` then finalizes it, takes it off the list and re-sends the idle snapshot
+  (`_finish_outlasting_background`, prompt-lifecycle.mdx:205); `"keep"` leaves it listed for the
+  rest of the session (one item per session), through a `__hang__` turn's cancel too
+  (`_start_hung_background_work`, prompt-lifecycle.mdx:1173), so a fork has live source work to
+  not inherit (`_fork_background`, session-setup.mdx:49).
 - `cancellable_work` (opt-in, default `False`; `conforming_full.py` and the `*_cancel_*` defect
   fixtures set it): a `__hang__` turn also starts one tool call and one terminal that advertise
   `capabilities.cancel` and stay live (`_start_cancellable_work`). `tool_call/cancel` and
@@ -182,8 +189,11 @@ class ConformingAgent:
         available_commands: list[dict[str, Any]] | None = None,
         background_on_resume: bool = False,
         cancellable_work: bool = False,
+        background_outlives_turn: str | None = None,
     ) -> None:
         self._persist_sessions = persist_sessions
+        self._background_outlives_turn = background_outlives_turn
+        self._outlasting_background: dict[Any, str] = {}  # sessionId -> toolCallId to finish
         self._cancellable_work = cancellable_work
         self._open_tool_calls: dict[Any, list[str]] = {}  # sessionId -> cancellable, not final
         self._open_terminals: dict[Any, list[str]] = {}  # sessionId -> cancellable, running
@@ -745,7 +755,12 @@ class ConformingAgent:
     def _resume_background(self, session_id: Any) -> None:
         """For `background_on_resume`: the session has one unfinished background tool call when
         it is resumed. List it (so the snapshot reports it) and announce it
-        (session-setup.mdx:346). Idempotent across repeated resumes."""
+        (session-setup.mdx:346). Idempotent across repeated resumes. With
+        `background_outlives_turn="keep"` the session's still-listed work is announced again."""
+        if self._background_outlives_turn == "keep":
+            for item in self._background.get(session_id, []):
+                self._announce_background_item(session_id, item["toolCallId"])
+            return
         if not self._background_on_resume:
             return
         item = {"type": "tool_call", "toolCallId": "tool-bg-resume"}
@@ -779,7 +794,12 @@ class ConformingAgent:
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
         self._history[session_id] = [dict(update) for update in self._history.get(source_id, [])]
+        self._fork_background(source_id, session_id)
         self._reply(msg_id, {"sessionId": session_id, **self._fork_state_fields()})
+
+    def _fork_background(self, source_id: Any, session_id: Any) -> None:
+        """Hook: a fork starts with no background work (session-setup.mdx:49), so nothing of the
+        source's list is carried over."""
 
     def _fork_state_fields(self) -> dict[str, Any]:
         """Hook: `configOptions`/`availableCommands` on the fork response
@@ -914,6 +934,8 @@ class ConformingAgent:
         message_id = f"msg-{self._message_count:04d}"
         self._reply_to_prompt(msg_id, message_id)
         self._send_user_message_update(session_id, message_id, prompt)
+        if self._is_hang_prompt(prompt):
+            self._start_hung_background_work(session_id)
         self._send_running_update(session_id)
         self._send_rich_turn_updates(session_id)
         if self._is_hang_prompt(prompt):
@@ -1125,6 +1147,14 @@ class ConformingAgent:
             },
         )
         self._send_idle_update(session_id, stop_reason)
+        self._finish_outlasting_background(session_id)
+
+    def _start_hung_background_work(self, session_id: Any) -> None:
+        """For `background_outlives_turn="keep"`: a `__hang__` turn lists the session's background
+        work on its first `running` snapshot, and it stays listed when `session/cancel` ends the
+        turn: that work is not covered (prompt-lifecycle.mdx:1173)."""
+        if self._report_background_work and self._background_outlives_turn == "keep":
+            self._list_background_item(session_id)
 
     def _start_cancellable_work(self, session_id: Any) -> None:
         """For `cancellable_work`: one tool call and one terminal that advertise
@@ -1222,14 +1252,45 @@ class ConformingAgent:
         """One background tool call: announced, listed on a repeated `running` snapshot, then
         finalized and taken off the list, so the next snapshot (the turn-ending idle) removes
         it."""
+        listed = self._background.setdefault(session_id, [])
+        if self._background_outlives_turn == "keep" and listed:
+            return
+        tool_call_id = self._list_background_item(session_id)
+        self._send_running_update(session_id)
+        if self._background_outlives_turn is not None:
+            if self._background_outlives_turn == "finish":
+                self._outlasting_background[session_id] = tool_call_id
+            return
+        self._finalize_background_item(session_id, tool_call_id)
+        listed.remove({"type": "tool_call", "toolCallId": tool_call_id})
+
+    def _list_background_item(self, session_id: Any) -> str:
+        """Announce a new background tool call and put it on the session's list. In `keep` mode a
+        session has at most one."""
+        listed = self._background.setdefault(session_id, [])
+        if self._background_outlives_turn == "keep" and listed:
+            return listed[0]["toolCallId"]
         self._tool_call_count += 1
         tool_call_id = f"tool-bg-{self._tool_call_count:04d}"
         self._announce_background_item(session_id, tool_call_id)
-        listed = self._background.setdefault(session_id, [])
         listed.append({"type": "tool_call", "toolCallId": tool_call_id})
-        self._send_running_update(session_id)
+        return tool_call_id
+
+    def _finish_outlasting_background(self, session_id: Any) -> None:
+        """For `background_outlives_turn="finish"`: the work ends after the turn's idle. Its final
+        status is sent, it leaves the list, and the state is re-sent with the updated list
+        (prompt-lifecycle.mdx:205-206)."""
+        tool_call_id = self._outlasting_background.pop(session_id, None)
+        if tool_call_id is None:
+            return
         self._finalize_background_item(session_id, tool_call_id)
-        listed.remove({"type": "tool_call", "toolCallId": tool_call_id})
+        self._background[session_id].remove({"type": "tool_call", "toolCallId": tool_call_id})
+        self._resend_background_state(session_id)
+
+    def _resend_background_state(self, session_id: Any) -> None:
+        """Hook: the repeated `idle` snapshot (no new stop reason) that follows a change of the
+        background list (prompt-lifecycle.mdx:205)."""
+        self._send_idle_update(session_id, None)
 
     def _announce_background_item(self, session_id: Any, tool_call_id: str) -> None:
         """Hook: the `tool_call_update` sent before the first snapshot that lists the item."""

@@ -1,11 +1,11 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-001/002/202/204..210/
-212..214/216, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
+212..214/216/217, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
 `session/close`'s own contract (ACP-CLOSE-001/003/203/204/206 -- `ACP-CLOSE-002` is covered by
 `test_cancel.py`'s `test_close_cancels_foreground_work`, see its row text), `session/delete`
 (ACP-DELETE-001..003/204/205), `session/archive`/`session/unarchive` (ACP-ARCHIVE-002..006,
 201), the `additionalDirectories` carrier on `session/new`/`session/resume`
 (ACP-ADDDIRS-001/202/203), the MCP-server rows (ACP-MCP-201..204 and ACP-SESSION-006), and the
-`session/fork` (ACP-FORK-201..205) and `systemPrompt` (ACP-SYSPROMPT-001/202, and the error paths
+`session/fork` (ACP-FORK-201..206) and `systemPrompt` (ACP-SYSPROMPT-001/202, and the error paths
 ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-003`/`204`, `ACP-DELETE-002`,
@@ -50,6 +50,7 @@ from ._helpers import (
     drain_quiet,
     is_active_state,
     iter_messages,
+    last_known_background,
     list_sessions,
     background_keys,
     new_session,
@@ -60,6 +61,7 @@ from ._helpers import (
     resume_session,
     run_prompt,
     same_dir,
+    session_state_update,
     skip_if_auth_gated,
     skip_if_turn_end_race_not_exercised,
 )
@@ -617,6 +619,43 @@ async def test_resume_announces_background_items_before_the_snapshot(agent_launc
         assert not unannounced, (
             f"the resume snapshot lists background item(s) {unannounced} that no update sent "
             f"before it announced: {[update for _, update in ordered]!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-RESUME-217")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_snapshot_keeps_the_background_list(agent_launch, tmp_path):
+    """ACP-RESUME-217. An agent that reported a `background` list for the session before the
+    resume (`session/new`'s turn and any earlier snapshot, on the same connection) carries one
+    on the resume's current-state snapshot too: an omitted or `null` list means "not reported"
+    (prompt-lifecycle.mdx:204; session-setup.mdx:346). SKIPs when no list was reported."""
+    async with obtain_resumable_session(
+        agent_launch, tmp_path, timeout=agent_launch.default_timeout
+    ) as (agent, session_id, _entry, resume_cwd):
+        await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        reported = any(
+            entry.direction is Direction.RECEIVED
+            and (update := session_state_update(msg, session_id)) is not None
+            and isinstance(update.get("background"), list)
+            for entry in agent.transcript
+            for msg in iter_messages(entry)
+        )
+        response_entry, updates = await resume_session(
+            agent, session_id, resume_cwd, timeout=agent_launch.default_timeout
+        )
+        _assert_resume_succeeded(response_entry, "session/resume")
+        snapshots = [
+            update
+            for _, update in _resume_updates_for(updates, session_id)
+            if update.get("sessionUpdate") == "state_update"
+        ]
+        if not reported:
+            pytest.skip("the agent reported no background list for this session before the resume")
+        if not snapshots:
+            pytest.skip("session/resume sent no current-state snapshot (ACP-RESUME-206 judges that)")
+        assert isinstance(snapshots[-1].get("background"), list), (
+            "the agent reported a background list for this session before the resume, but the "
+            f"resume's current-state snapshot omits it or sends a non-array: {snapshots[-1]!r}"
         )
 
 
@@ -2054,6 +2093,50 @@ async def _new_session_with_system_prompt(agent, cwd: Any, mode: str, *, timeout
     assert isinstance(session_id, str) and session_id, (
         f"session/new with a {mode!r} systemPrompt returned no sessionId: {entry.text!r}"
     )
+
+
+@pytest.mark.requirement("ACP-FORK-206")
+@pytest.mark.capability("capabilities.session.fork")
+async def test_fork_does_not_inherit_background_work(agent_launch, tmp_path):
+    """ACP-FORK-206. When the source session's latest `background` list is non-empty at fork
+    time, no state snapshot of the fork lists one of those items: a fork starts with no
+    background work and reports `background: []` until it starts its own
+    (session-setup.mdx:49). The fork is prompted once so that it reports its state. Definitional
+    (no RFC keyword), like `ACP-FORK-202`. SKIPs when the source has no listed work, or the fork
+    or its turn fails (`ACP-FORK-201`/`202` judge those)."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        source_id = await new_session(agent, tmp_path, timeout=timeout)
+        await run_prompt(agent, source_id, [{"type": "text", "text": "hi"}], timeout=timeout)
+        await drain_quiet(agent, quiet_period(timeout))
+        inherited = last_known_background(agent, source_id)
+        if not inherited:
+            pytest.skip("the source session had no listed background work at fork time")
+        entry = await _fork_session(agent, source_id, tmp_path, timeout=timeout)
+        msg = entry.parsed
+        result = msg.get("result") if isinstance(msg, dict) else None
+        forked_id = result.get("sessionId") if isinstance(result, dict) else None
+        if not isinstance(forked_id, str) or not forked_id or forked_id == source_id:
+            pytest.skip("prerequisite not met: session/fork gave no new sessionId -- see ACP-FORK-201")
+        try:
+            await run_prompt(agent, forked_id, [{"type": "text", "text": "hi"}], timeout=timeout)
+        except AgentTimeout:
+            pytest.skip("the forked session's turn never ended -- see ACP-FORK-202")
+        await drain_quiet(agent, quiet_period(timeout))
+        copied = sorted(
+            {
+                key
+                for transcript_entry in agent.transcript
+                if transcript_entry.direction is Direction.RECEIVED
+                for message in iter_messages(transcript_entry)
+                if (update := session_state_update(message, forked_id)) is not None
+                for key in (background_keys(update) or set()) & inherited
+            }
+        )
+        assert not copied, (
+            f"the forked session's state snapshots list background item(s) {copied} that the "
+            f"source session had running at fork time (source list {sorted(inherited)})"
+        )
 
 
 @pytest.mark.requirement("ACP-SYSPROMPT-001")

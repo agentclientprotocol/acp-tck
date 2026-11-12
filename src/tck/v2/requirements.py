@@ -800,6 +800,27 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-STATE-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When a `terminal`/`tool_call` item in the session's latest `background` list "
+            "reaches its final status (a `terminal_update` with a non-null `exitStatus`, or a "
+            "`tool_call_update` with status `completed`/`failed`/`cancelled`) while the "
+            "session is `idle`, a later `state_update` for the session drops it from the list: "
+            "the Agent SHOULD re-send the state with the updated list when background work "
+            "ends. Judged over one prompt turn plus a quiet drain after it. The start of "
+            "background work is not judged (an announced item that no list names yet cannot be "
+            "told from foreground work), nor is an end during active work (the next snapshot "
+            "follows anyway). SKIPPED when no listed item ends while idle. The test is gated "
+            "on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:205-206; "
+            "docs/rfds/v2/background-work.mdx:193-194 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -1068,6 +1089,36 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:382-384,1118-1119; "
             "docs/rfds/v2/prompt.mdx:88 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-INFO-BACKGROUND-201",
+        tier=Tier.INFORMATIONAL,
+        capability=None,
+        text=(
+            "Record (never assert) which tool calls a `background` list names together with a "
+            "terminal that they reference in `terminal` content and that the list also names. "
+            "Process-backed work is listed as its terminal, and the Agent MUST NOT also list a "
+            "tool call whose only live work is a listed terminal, but the client cannot tell "
+            "whether the tool call has other live work. SKIPPED when no list is reported."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:208"),
+    ),
+    Requirement(
+        id="ACP-INFO-BACKGROUND-202",
+        tier=Tier.INFORMATIONAL,
+        capability=None,
+        text=(
+            "Record (never assert) what happens to the items of the latest `background` list "
+            "when `session/cancel` is sent: which of them reach a final status before the "
+            "cancelled turn's idle, and which the idle still lists. Work in the list is not "
+            "covered by `session/cancel` and keeps running, but it may also end on its own, so "
+            "an item finishing proves nothing. SKIPPED when the cancel did not land or no "
+            "work was listed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1173; "
+            "docs/protocol/v2/draft/tool-calls.mdx:268"
         ),
     ),
     Requirement(
@@ -1771,6 +1822,25 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/session-setup.mdx:49,53"),
     ),
     Requirement(
+        id="ACP-RESUME-217",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When the agent reported a `background` array for a session before it was resumed "
+            "(on the connection that created it, `[]` counts), the resume's current-state "
+            "snapshot carries an array too, not an omitted or `null` one: the snapshot carries "
+            "the list like any other, and an agent that reports background work MUST include "
+            "it on every `state_update`. Checked with `replayFrom` omitted, after a turn on the "
+            "session. SKIPs when no list was reported before the resume, or the resume sent no "
+            "snapshot (`ACP-RESUME-206` judges that)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:346; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:204; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background"
+        ),
+    ),
+    Requirement(
         id="ACP-LIST-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -2280,6 +2350,25 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:108,140; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-FORK-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "When the source session's latest `background` list is non-empty at fork time, no "
+            "`state_update` of the forked session lists one of those items: a fork starts with "
+            "no background work, and its snapshots report `background: []` until it starts its "
+            "own. The fork is prompted once so that it reports its state. Definitional (the "
+            "draft docs state it with no RFC keyword), like `ACP-FORK-202`. SKIPs when the "
+            "source has no listed work at fork time, or when the fork or its turn fails "
+            "(`ACP-FORK-201`/`202` judge those)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background; "
+            "docs/rfds/v2/background-work.mdx:226 (Active RFD)"
         ),
     ),
     Requirement(
@@ -3113,7 +3202,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`tool_call_update`, on a chunk's single `content` object, and on a `subject.toolCall`), "
             "`diff` content's `changes[].operation`/`changes[].fileType`/`patch.format`, "
             "`plan_update`'s `plan.type` and plan entries' `priority`/`status`, "
-            "`available_commands_update` commands' `type`, and `session/request_permission` "
+            "`available_commands_update` commands' `type`, a defined state's `background[].type`, "
+            "and `session/request_permission` "
             "options' `kind` (the permission sites are only observable if the agent asks for "
             "permission). A curated, non-exhaustive subset of the schema's open-enum sites; "
             "`subject.type` is not checked."
@@ -3123,6 +3213,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/tool-calls.mdx:76,372,419,662,685-686,700-701; "
             "docs/protocol/v2/draft/agent-plan.mdx:145,164,176; "
             "docs/protocol/v2/draft/slash-commands.mdx:110; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:209; "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork; "
             "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),
