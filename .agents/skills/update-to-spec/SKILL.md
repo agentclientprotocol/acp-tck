@@ -31,10 +31,17 @@ Run one researcher (`sonnet`) per version. It writes `.agents/research/spec-diff
 - the output of `uv run --package spec-tracker spec-impact <base> <target> --version v<N>
   --spec-repo <spec checkout>`, where the checkout is the `check-specification` skill's;
 - the matching `CHANGELOG.md` entries and RFD status changes;
+- the tracked RFDs (see below) with their stage at the target and whether each changed in `<base>..<target>`;
 - a one-line summary per changed area.
 
+**Tracked RFDs** ([policy](../../../docs/spec-updates.md#tracked-rfds)): every RFD whose stage at the target is
+Active or Preview (sidebar group in the spec repo's `docs/docs.json`), plus any RFD that moved into Active or later
+within the range. Skip Completed RFDs (their rules are in the docs). Keep those whose wire shapes are in that
+version's schema (stable or unstable) or that otherwise apply to that version. Each is an affected doc in its own
+right. Draft RFDs are not tracked: cite them only where nothing else states the rule.
+
 If the script doesn't exist yet, the researcher produces the same content by hand from
-`git diff <base>..<target> -- docs/protocol/v<N> schema/v<N> docs/rfds` and says so in the report.
+`git diff <base>..<target> -- docs/protocol/v<N> schema/v<N> docs/rfds docs/docs.json` and says so in the report.
 That content is:
 
 - changed docs and `$defs`;
@@ -51,18 +58,21 @@ The core docs and the ledger of deliberate non-requirements live in `spec-tracke
 A diff alone misses behavior that changes transitively, for example a core rule that other docs
 assume without linking to it. So choose the depth from the inventory:
 
-- **Diff mode** (the default): only the affected docs from step 2 go to step 4.
+- **Diff mode** (the default): only the affected docs from step 2 go to step 4. A tracked RFD that changed (or moved
+  stage) is an affected doc.
 - **Escalate** a touched core doc: re-check every area that depends on it, not just the hunks.
 - **Full audit:** run it when `full` is given, when v2's schema version changes, or when the
-  inventory is too broad to reason about piecemeal. Every doc of that version goes to step 4.
+  inventory is too broad to reason about piecemeal. Every doc of that version, **and every tracked RFD**, goes to
+  step 4.
 
 Tell the user which depth you chose and why before starting step 4.
 
 ## 4. Impact research
 
-Run one researcher per affected doc, in parallel. Each brief contains:
+Run one researcher per affected doc, in parallel; a tracked RFD gets its own researcher, never folded into a doc's.
+Each brief contains:
 
-- the doc path at the target revision;
+- the doc path at the target revision (and, for an RFD, its stage there);
 - its diff hunks, if any;
 - the registry rows and ledger entries that cite it;
 - the docs it links to, and the docs that link to it.
@@ -76,6 +86,18 @@ doc depends on in those linked docs. It reports each requirement as one of:
 - removed;
 - new;
 - new deliberate non-requirement (with its reason).
+
+Tier rules for RFD-sourced requirements (details in [`docs/requirements.md`](../../../docs/requirements.md#tiers)):
+
+- A rule stated only in an Active, Preview or Draft RFD is never `MANDATORY`: `CAPABILITY` for a MUST (behind a real
+  gate, or an `inferred:<feature>` gate when the feature has no `initialize` marker) or `ADVISORY` for a SHOULD.
+- When the draft docs or schema also state the rule, the tier follows them and may be `MANDATORY`.
+- Label RFD citations with the RFD's stage at the pinned revision, e.g. `(Active RFD)`.
+
+A new deliberate non-requirement must not rest on a TCK choice such as "the TCK never advertises X". If the rule
+becomes observable when the TCK changes its own behaviour, make it a row that can SKIP, or a ledger entry marked
+"Deferred" with the real blocker. Do not copy a "not observable" reason from the other version's ledger without
+re-deriving it: the two versions gate features differently.
 
 Consult the reference SDKs only where a requirement relies on runtime behavior the spec leaves
 implicit, or where the new spec text is silent or ambiguous.

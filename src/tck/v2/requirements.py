@@ -1289,11 +1289,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "With `replayFrom` omitted (or `null`), no conversation-history `session/update` for "
             "the resumed session arrives before the response. Vacuous -- and recorded, never "
             "FAILed on that account -- for an agent that retains no history to replay. Live "
-            "traffic for other (child) sessions is not judged (Draft Subagents RFD)."
+            "traffic for other (child) sessions is not judged (Active Subagents RFD)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history); "
-            "docs/rfds/subagents.mdx:1008-1013 (Draft RFD)"
+            "docs/rfds/subagents.mdx:1008-1013 (Active RFD)"
         ),
     ),
     Requirement(
@@ -1324,11 +1324,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the chunks then append to (a client cannot tell the two apart). Vacuous -- "
             "recorded, never FAILed -- for an agent whose replay uses only whole-message "
             "updates. Live traffic for other (child) sessions, which may accompany a replay, "
-            "is not judged (Draft Subagents RFD)."
+            "is not judged (Active Subagents RFD)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:299-312; "
-            "docs/rfds/subagents.mdx:999-1006 (Draft RFD)"
+            "docs/rfds/subagents.mdx:999-1006 (Active RFD)"
         ),
     ),
     Requirement(
@@ -1385,13 +1385,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`replayFrom: {\"type\": \"start\"}` (replay plus the state snapshot) validates "
             "against the v2 schema and carries the resumed `sessionId` or that of a child "
             "session announced earlier in that same exchange by a `subagent_update` (on the "
-            "Draft Subagents RFD's rule that child updates keep the child's own `sessionId` and "
+            "Active Subagents RFD's rule that child updates keep the child's own `sessionId` and "
             "follow its announcement within the load/resume). An update for a session not "
             "announced within the exchange FAILs, even if an earlier turn announced it."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
-            "docs/rfds/subagents.mdx:925-935,995-1003 (Draft RFD); "
+            "docs/rfds/subagents.mdx:925-935,995-1003 (Active RFD); "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
     ),

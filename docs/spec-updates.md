@@ -12,13 +12,13 @@ The tooling is documented in [`spec-tracker/README.md`](../spec-tracker/README.m
 2. **Change inventory**, per version: the `spec-impact` report for base..target (changed docs and `$defs`, the
    `$ref` closure of each changed `$def`, docs that link to changed sections, requirement ids and ledger entries
    whose citations fall inside a change, and core docs touched), plus the matching changelog entries and RFD status
-   changes.
+   changes. The inventory also lists the [tracked RFDs](#tracked-rfds) and which of them changed.
 3. **Depth.** A diff alone misses behavior that changes transitively, such as a core rule that other docs assume
    without linking to it. Default to diff mode: only the affected docs go on to impact research. Escalate when a core
    doc changes (re-check every area that depends on it, not just the hunks). Run a full audit (every doc of that
    version) when asked, when v2's schema version changes, or when the inventory is too broad to reason about
-   piecemeal.
-4. **Impact research**, per affected doc: read the whole doc at the target, plus the docs it relies on, and classify
+   piecemeal. Tracked RFDs belong to the affected docs in diff mode when they changed, and to every full audit.
+4. **Impact research**, per affected doc (a tracked RFD is a doc in its own right): read the whole doc at the target, plus the docs it relies on, and classify
    each requirement as unchanged, citation-only change, changed text/tier/gate, removed, new, or new deliberate
    non-requirement. Consult the reference SDKs only where a requirement relies on runtime behavior the spec leaves
    implicit.
@@ -32,6 +32,22 @@ The tooling is documented in [`spec-tracker/README.md`](../spec-tracker/README.m
 
 Id handling follows [requirements.md](requirements.md#lifecycle): removals are deletions, and an area slice that
 adds a row picks a provisional number that the id-alignment step settles.
+
+## Tracked RFDs
+
+Besides the protocol docs, a spec update tracks RFDs that already govern agent behaviour:
+
+- every RFD whose stage at the target revision is **Active** or **Preview** (its sidebar group in the spec repo's
+  `docs/docs.json`), plus any RFD that moved into Active or later within the update range;
+- not Completed RFDs: their rules are already in the docs;
+- only those whose wire shapes are in that version's schema (stable or unstable), or that apply to that version.
+
+A tracked RFD gets its own impact researcher when it changed (diff mode) and is part of every full audit, with
+nearly the weight of a doc. Its rules are tiered by the [RFD cap](requirements.md#tiers): a rule stated only in an
+RFD is `CAPABILITY` or `ADVISORY`, never `MANDATORY`; when the draft docs or schema also state it, the tier follows
+them. Draft RFDs keep the old handling: cite one only where nothing else states the rule.
+
+Each researcher also checks that no ledger `reason` rests on a TCK choice ([ledger rules](requirements.md#the-ledger-of-deliberate-non-requirements)).
 
 ## Re-vendor
 

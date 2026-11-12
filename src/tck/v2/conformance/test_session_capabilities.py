@@ -460,7 +460,7 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
                             msg,
                             f"sessionId is neither the resumed {session_id!r} nor a child "
                             f"announced earlier in this resume via subagent_update (known: "
-                            f"{sorted(known)!r}; Draft Subagents RFD: child announcements "
+                            f"{sorted(known)!r}; Active Subagents RFD: child announcements "
                             "precede child traffic within the load/resume)",
                         )
                     )
