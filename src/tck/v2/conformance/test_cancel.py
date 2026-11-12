@@ -367,18 +367,14 @@ async def _run_held_permission_turn(agent, session_id, cancel_prompt_text, timeo
 
 
 def _skip_unless_cancelled_while_blocked(turn, record_property) -> None:
-    """`ACP-CANCEL-209`/`213` preconditions: a permission request was held when cancel was sent,
-    and the session was reported blocked on it (else the request may belong to work that could
-    finish on its own)."""
+    """`ACP-CANCEL-209`/`213` precondition: a foreground permission request was held when cancel
+    was sent (`run_prompt` never holds one for listed background work). No state gate: the
+    spec's own diagram sends the request before `requires_action` (prompt-lifecycle.mdx:246-247),
+    and reporting `requires_action` is only SHOULD (:153)."""
     record_property("acp_tck_state_at_cancel", turn.state_at_cancel)
     record_property("acp_tck_held_permission_answered_on", turn.held_answered_on)
     if turn.held_permission is None:
         pytest.skip("no session/request_permission was pending when session/cancel was sent")
-    if turn.state_at_cancel != "requires_action":
-        pytest.skip(
-            f"the session was {turn.state_at_cancel!r}, not requires_action, when its permission "
-            "request was held -- cancellation while blocked not exercised"
-        )
 
 
 def _cancel_request_index(agent, request_id, *, start: int, end: int | None = None) -> int | None:
@@ -405,14 +401,14 @@ async def test_cancel_while_blocked_on_permission(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
     """ACP-CANCEL-209. Cancelling while the turn is blocked on the agent's own permission
-    request (`requires_action` reported, the request still unanswered) ends the work with an
+    request for foreground work (the request still unanswered) ends the work with an
     idle carrying `stopReason: "cancelled"`, without the TCK answering that request: the agent
     must stop waiting for it (prompt-lifecycle.mdx:1177,1188-1189). The TCK answers it
     `cancelled` only once the agent withdraws it with `$/cancel_request` (it may then wait for
     that answer, cancellation.mdx:31), or once the turn has ended. If the turn has not ended by
     the deadline, the TCK answers it anyway and FAILs either way, saying whether the agent ended
-    the turn only once answered. SKIPs if no permission request was pending when cancel was
-    sent, or the session was not reported blocked."""
+    the turn only once answered. SKIPs if no foreground permission request was pending when
+    cancel was sent."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)

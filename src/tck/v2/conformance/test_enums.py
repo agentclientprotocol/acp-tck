@@ -25,8 +25,9 @@ so `Tier.CAPABILITY`, `capability="capabilities.session"` per the session-baseli
 `ACP-ENUM-203` is the receiver-tolerance direction (client sends a `_`-prefixed value, agent must
 not crash/`-32602`): receivers MUST accept unknown discriminator values where the schema has a
 fallback (extensibility.mdx:51-55), so `Tier.CAPABILITY`, `capability="capabilities.session"`.
-`run_prompt()` has no hook to inject a non-standard permission-outcome value, so this test drives
-its own minimal turn by hand instead of reusing it.
+It drives its own minimal turn by hand, so a crash or a `-32602` on the prompt is judged here
+rather than surfacing as `run_prompt`'s error turn end. Whether the agent treats the value as
+approval is `ACP-PERM-204`'s concern (`run_prompt(permission="unknown_outcome")`).
 """
 
 from __future__ import annotations
@@ -105,11 +106,8 @@ async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_laun
     """ACP-ENUM-203 (CAPABILITY, `capabilities.session`). Answers a `session/request_permission`
     with a `_`-prefixed, non-standard `outcome`
     value instead of `selected`/`cancelled`; the agent must not crash or answer the *prompt*
-    itself with `-32602` (Invalid params) -- it may treat the unrecognised outcome however it
-    likes internally (untestable, B4/B6), but the connection and the turn must survive it.
-
-    `run_prompt()` always answers with `selected`/`cancelled`, with no hook to override the
-    outcome value, so this drives a minimal turn by hand instead."""
+    itself with `-32602` (Invalid params): the connection and the turn must survive it. That it
+    is not treated as approval is `ACP-PERM-204`."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         prompt_id = await agent.send_request(

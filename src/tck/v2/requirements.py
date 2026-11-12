@@ -724,6 +724,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PERM-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After the client answers a `session/request_permission` whose `subject` is a "
+            "`tool_call` X with a `_`-prefixed custom outcome (`_tck_unknown`) the agent does "
+            "not understand, the agent does not treat it as approval: it never reports X "
+            "`completed` later in the turn. SKIPPED when no permission request with a "
+            "`tool_call` subject is observed. The probe is a legal client answer: the outcome "
+            "is an open enum. `ACP-ENUM-203` judges only that the agent survives such a value."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:348-349,423; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome/anyOf/2"
+        ),
+    ),
+    Requirement(
         id="ACP-CLIENTCAP-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -897,16 +914,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "Cancelling a turn blocked on the agent's own pending `session/request_permission` "
-            "(the session last reported `requires_action`) ends the work with an idle "
+            "for foreground work (not for an item in the latest `background` list; no "
+            "`requires_action` needed) ends the work with an idle "
             "`stopReason: \"cancelled\"` without the client answering that request: the agent "
             "MUST stop waiting for it. The TCK leaves it unanswered and answers it `cancelled` "
             "only once the agent withdraws it with `$/cancel_request` (waiting for that answer "
             "is allowed) or the turn has ended. A turn that ends only after the TCK answers it "
-            "at the deadline FAILs. SKIPPED when no permission request was pending when cancel "
-            "was sent, or the session was not reported blocked."
+            "at the deadline FAILs. SKIPPED when no foreground permission request was pending "
+            "when cancel was sent."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1153,1177,1185-1189; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:246-247,1153,1173,1177,1185-1189; "
             "docs/protocol/v2/draft/cancellation.mdx:20,31,40-43; "
             "docs/protocol/v2/draft/tool-calls.mdx:326; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome; "
@@ -2733,8 +2751,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "A `_`-prefixed value at an open-enum site the client sends (here: "
             "`session/request_permission`'s answered `outcome`, whose schema has an `other` "
             "fallback) is accepted by the agent -- no crash, the prompt is not answered with "
-            "`-32602`, and the turn still reaches idle. Untestable how the agent treats the "
-            "value internally; only survival is checked."
+            "`-32602`, and the turn still reaches idle. Only survival is checked; that it is "
+            "not treated as approval is `ACP-PERM-204`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/extensibility.mdx:51-55,237,249; "

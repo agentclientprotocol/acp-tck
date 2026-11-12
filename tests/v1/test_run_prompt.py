@@ -105,10 +105,20 @@ def test_allow_falls_back_to_allow_always_and_says_so():
     assert note == "allow_always selected (allow_once not offered)"
 
 
-def test_allow_without_any_allow_option_falls_back_to_the_first_option():
-    outcome, note = permission_outcome(_opts("reject_once", "reject_always"), "allow")
-    assert outcome == _selected("id-0-reject_once")
-    assert note == "first option selected (no allow_once offered)"
+_NO_ALLOW_NOTE = "agent offered no allow_once, allow_always or reject_once option"
+
+
+def test_allow_without_any_allow_option_falls_back_to_reject_once_never_reject_always():
+    outcome, note = permission_outcome(_opts("reject_always", "reject_once"), "allow")
+    assert outcome == _selected("id-1-reject_once")
+    assert note == "reject_once selected (no allow option offered)"
+
+
+def test_allow_never_selects_reject_always_or_an_unknown_kind():
+    for kinds in (("reject_always",), ("reject_always", "_tck_custom_kind"), ()):
+        outcome, note = permission_outcome(_opts(*kinds), "allow")
+        assert outcome == {"outcome": "cancelled"}
+        assert note == _NO_ALLOW_NOTE
 
 
 def test_reject_once_picks_reject_once_regardless_of_position():
@@ -138,7 +148,7 @@ def test_cancelled_policy_answers_cancelled():
 
 
 def test_malformed_or_missing_options_do_not_crash():
-    assert permission_outcome(None, "allow")[0] == _selected(None)
+    assert permission_outcome(None, "allow")[0] == {"outcome": "cancelled"}
     assert permission_outcome(["junk", {"kind": "allow_once", "optionId": "x"}], "allow") == (
         _selected("x"),
         None,
@@ -220,6 +230,27 @@ def test_reject_once_without_a_reject_option_cancels_the_turn_instead_of_selecti
     assert turn.permission_fallbacks == []
     assert props == [("acp_tck_permission_fallback", note)]
     assert turn.response_entry.parsed["result"]["stopReason"] == "cancelled"
+
+
+def test_allow_with_only_reject_always_cancels_the_turn_instead_of_selecting_it():
+    options = [{"optionId": "never", "name": "Never", "kind": "reject_always"}]
+    steps = [
+        _permission_request(options),
+        {"wait_method": "session/cancel"},
+        {"wait_id": "perm-1"},
+        {"jsonrpc": "2.0", "id": "$ID", "result": {"stopReason": "cancelled"}},
+    ]
+    agent, turn, props = _recording(steps)
+    answer_index, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    cancels = [
+        i for i, e in enumerate(agent.transcript)
+        if e.direction is Direction.SENT and (e.parsed or {}).get("method") == "session/cancel"
+    ]
+    assert len(cancels) == 1 and cancels[0] < answer_index
+    assert turn.cancelled_at_index == cancels[0]
+    assert turn.permission_cancels == [_NO_ALLOW_NOTE]
+    assert props == [("acp_tck_permission_fallback", _NO_ALLOW_NOTE)]
 
 
 def test_unknown_option_policy_selects_an_unoffered_id():

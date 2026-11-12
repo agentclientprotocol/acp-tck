@@ -41,13 +41,13 @@ from tck.v2.validation import validate_agent_message, validate_agent_response
 
 from ..protocol import AUTHENTICATION_REQUIRED, INVALID_PARAMS, REQUEST_CANCELLED, RESOURCE_NOT_FOUND
 from ._helpers import (
-    ACTIVE_STATES,
     BACKGROUND_ID_FIELDS,
     assert_unknown_session_error,
     close_session,
     connected_agent,
     delete_session,
     drain_quiet,
+    is_active_state,
     iter_messages,
     list_sessions,
     background_keys,
@@ -522,7 +522,7 @@ async def test_resume_replay_has_no_historical_active_state_update(agent_launch,
             for _, update in _resume_updates_for(updates, session_id)
             if update.get("sessionUpdate") == "state_update"
         ]
-        replayed_active = [u for u in states[:-1] if u.get("state") in ACTIVE_STATES]
+        replayed_active = [u for u in states[:-1] if is_active_state(u.get("state"))]
         assert not replayed_active, (
             f"session/resume replayed historical state_update(s) as current activity before "
             f"the snapshot: {states!r}"

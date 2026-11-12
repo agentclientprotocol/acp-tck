@@ -289,10 +289,12 @@ def cancel_race_peek(timeout: float) -> float:
 
 PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "cancelled"]
 """How `run_prompt` answers `session/request_permission` (until `session/cancel` is sent):
-`allow` (the default) selects `allow_once`; `reject_once` selects `reject_once` or, when none
-is offered, sends `session/cancel` and answers `cancelled` (never another option: that could
-persist an approval or a standing deny); `unknown_option` selects an `optionId` the agent never
-offered; `cancelled` answers the `cancelled` outcome without sending `session/cancel`."""
+`allow` (the default) selects `allow_once`, else `allow_always`, else `reject_once`;
+`reject_once` selects `reject_once`. When the policy's kinds are not offered it never picks
+another option (a `*_always` would persist an approval or a standing deny in the operator's
+agent): it sends `session/cancel` and answers `cancelled`. `unknown_option` selects an
+`optionId` the agent never offered; `cancelled` answers the `cancelled` outcome without sending
+`session/cancel`."""
 
 UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
 """The `optionId` the `unknown_option` policy selects (`_`-prefixed per the extensibility rule)."""
@@ -300,11 +302,11 @@ UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
 
 def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
     """The `RequestPermissionOutcome` for `policy`, plus a note when the preferred option kind
-    was not offered (else `None`). Options are picked by `kind`, never by position: an
-    `allow_always` would persist a lasting approval in the operator's agent.
+    was not offered (else `None`). Options are picked by `kind`, never by position.
 
-    `allow`: `allow_once`, else `allow_always`, else the first option. `reject_once`:
-    `reject_once` only. If none is offered it answers `cancelled` *with a note*; the caller must
+    `allow`: `allow_once`, else `allow_always` (noted), else `reject_once` (noted).
+    `reject_once`: `reject_once` only. Neither ever selects a `*_always` it was not asked for:
+    with none of its kinds offered it answers `cancelled` *with a note*, and the caller must
     then send `session/cancel` first, as a conforming client does before answering a pending
     permission request `cancelled`. Tolerates malformed options."""
     if policy == "cancelled":
@@ -317,20 +319,20 @@ def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str
         return next((o for o in candidates if o.get("kind") == kind), None)
 
     if policy == "reject_once":
-        chosen = first_of_kind("reject_once")
-        if chosen is None:
-            return {"outcome": "cancelled"}, "agent offered no reject_once option"
-        return {"outcome": "selected", "optionId": chosen.get("optionId")}, None
-    chosen = first_of_kind("allow_once")
-    note = None
-    if chosen is None:
-        chosen = first_of_kind("allow_always")
+        preferences = [("reject_once", None)]
+        missing = "agent offered no reject_once option"
+    else:
+        preferences = [
+            ("allow_once", None),
+            ("allow_always", "allow_always selected (allow_once not offered)"),
+            ("reject_once", "reject_once selected (no allow option offered)"),
+        ]
+        missing = "agent offered no allow_once, allow_always or reject_once option"
+    for kind, note in preferences:
+        chosen = first_of_kind(kind)
         if chosen is not None:
-            note = "allow_always selected (allow_once not offered)"
-    if chosen is None:
-        chosen = candidates[0] if candidates else None
-        note = "first option selected (no allow_once offered)"
-    return {"outcome": "selected", "optionId": chosen.get("optionId") if chosen else None}, note
+            return {"outcome": "selected", "optionId": chosen.get("optionId")}, note
+    return {"outcome": "cancelled"}, missing
 
 
 def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
@@ -359,7 +361,7 @@ class PromptTurn:
     unadvertised method" into its own negative tests using this list."""
     cancelled_at_index: int | None = None
     """The transcript index at which `run_prompt` sent `session/cancel` (for `on_cancel`, or by
-    the `reject_once` policy -- see `permission_cancels`), or `None` if `on_cancel` was false or
+    an unsatisfiable permission policy -- see `permission_cancels`), or `None` if `on_cancel` was false or
     the prompt resolved before a cancel was ever sent (a race the TCK cannot always avoid -- see
     `test_cancel.py`)."""
     action_response: TranscriptEntry | None = None
@@ -373,9 +375,9 @@ class PromptTurn:
     """A note per `session/request_permission` answered with other than the preferred option
     kind (`permission_outcome`); also recorded as the `acp_tck_permission_fallback` property."""
     permission_cancels: list[str] = field(default_factory=list)
-    """A note per `session/request_permission` the `reject_once` policy could not satisfy: the
-    mock client sent `session/cancel` and answered `cancelled` instead. Also recorded as the
-    `acp_tck_permission_fallback` property."""
+    """A note per `session/request_permission` the policy could not satisfy (none of its option
+    kinds offered): the mock client sent `session/cancel` and answered `cancelled` instead. Also
+    recorded as the `acp_tck_permission_fallback` property."""
 
 
 async def run_prompt(
@@ -511,7 +513,7 @@ async def run_prompt(
             else:
                 outcome, note = _answer_permission(options, permission)
                 if note is not None and outcome["outcome"] == "cancelled":
-                    # The policy's option kind was not offered: cancel the turn first, then
+                    # The policy's option kinds were not offered: cancel the turn first, then
                     # answer `cancelled` (`prompt-turn.mdx:641`).
                     await agent.send_notification("session/cancel", {"sessionId": session_id})
                     cancelled_at_index = len(agent.transcript) - 1

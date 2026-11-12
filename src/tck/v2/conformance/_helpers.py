@@ -836,6 +836,11 @@ ACTIVE_STATES = frozenset({"running", "requires_action"})
 start directly in `requires_action` (:1080-1082), so both count as "active"."""
 
 
+def is_active_state(state: Any) -> bool:
+    """Whether `state` is in `ACTIVE_STATES`; a non-string (even unhashable) value never is."""
+    return isinstance(state, str) and state in ACTIVE_STATES
+
+
 def session_state_update(msg: dict[str, Any], session_id: str) -> dict[str, Any] | None:
     """The `update` payload if `msg` is a `session/update` `state_update` for `session_id`, else
     `None`. A child session's state (announced via `subagent_update`) is never the parent's."""
@@ -865,7 +870,8 @@ def background_keys(update: dict[str, Any]) -> set[tuple[str, str]] | None:
     for item in items:
         if not isinstance(item, dict):
             continue
-        field_name = BACKGROUND_ID_FIELDS.get(item.get("type"))
+        item_type = item.get("type")
+        field_name = BACKGROUND_ID_FIELDS.get(item_type) if isinstance(item_type, str) else None
         if field_name is not None and isinstance(item.get(field_name), str):
             keys.add((item["type"], item[field_name]))
     return keys
@@ -920,50 +926,59 @@ def last_known_state(agent: AgentProcess, session_id: str) -> Any:
     return state
 
 
-PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "cancelled"]
+PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "unknown_outcome", "cancelled"]
 """How `run_prompt` answers `session/request_permission` (until `session/cancel` is sent):
-`allow` (the default) selects `allow_once`; `reject_once` selects `reject_once` or, when none
-is offered, sends `session/cancel` and answers `cancelled` (never another option: that could
-persist an approval or a standing deny); `unknown_option` selects an `optionId` the agent never
-offered; `cancelled` answers the `cancelled` outcome without sending `session/cancel`."""
+`allow` (the default) selects `allow_once`, else `allow_always`, else `reject_once`;
+`reject_once` selects `reject_once`. When the policy's kinds are not offered it never picks
+another option (a `*_always` would persist an approval or a standing deny in the operator's
+agent): it sends `session/cancel` and answers `cancelled`. `unknown_option` selects an
+`optionId` the agent never offered; `unknown_outcome` answers a `_`-prefixed custom outcome
+(`UNKNOWN_PERMISSION_OUTCOME`); `cancelled` answers the `cancelled` outcome without sending
+`session/cancel`."""
 
 UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
 """The `optionId` the `unknown_option` policy selects (`_`-prefixed per the extensibility rule)."""
 
+UNKNOWN_PERMISSION_OUTCOME = "_tck_unknown"
+"""The `outcome` the `unknown_outcome` policy answers. A legal custom value: the outcome is an
+open enum (`#/$defs/RequestPermissionOutcome`, `other` branch) and `_` marks an extension."""
+
 
 def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
     """The `RequestPermissionOutcome` for `policy`, plus a note when the preferred option kind
-    was not offered (else `None`). Options are picked by `kind`, never by position: an
-    `allow_always` would persist a lasting approval in the operator's agent.
+    was not offered (else `None`). Options are picked by `kind`, never by position.
 
-    `allow`: `allow_once`, else `allow_always`, else the first option. `reject_once`:
-    `reject_once` only. If none is offered it answers `cancelled` *with a note*; the caller must
+    `allow`: `allow_once`, else `allow_always` (noted), else `reject_once` (noted).
+    `reject_once`: `reject_once` only. Neither ever selects a `*_always` it was not asked for:
+    with none of its kinds offered it answers `cancelled` *with a note*, and the caller must
     then send `session/cancel` first, as a conforming client does before answering a pending
     permission request `cancelled`. Tolerates malformed options."""
     if policy == "cancelled":
         return {"outcome": "cancelled"}, None
     if policy == "unknown_option":
         return {"outcome": "selected", "optionId": UNKNOWN_PERMISSION_OPTION_ID}, None
+    if policy == "unknown_outcome":
+        return {"outcome": UNKNOWN_PERMISSION_OUTCOME}, None
     candidates = [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
 
     def first_of_kind(kind: str) -> dict[str, Any] | None:
         return next((o for o in candidates if o.get("kind") == kind), None)
 
     if policy == "reject_once":
-        chosen = first_of_kind("reject_once")
-        if chosen is None:
-            return {"outcome": "cancelled"}, "agent offered no reject_once option"
-        return {"outcome": "selected", "optionId": chosen.get("optionId")}, None
-    chosen = first_of_kind("allow_once")
-    note = None
-    if chosen is None:
-        chosen = first_of_kind("allow_always")
+        preferences = [("reject_once", None)]
+        missing = "agent offered no reject_once option"
+    else:
+        preferences = [
+            ("allow_once", None),
+            ("allow_always", "allow_always selected (allow_once not offered)"),
+            ("reject_once", "reject_once selected (no allow option offered)"),
+        ]
+        missing = "agent offered no allow_once, allow_always or reject_once option"
+    for kind, note in preferences:
+        chosen = first_of_kind(kind)
         if chosen is not None:
-            note = "allow_always selected (allow_once not offered)"
-    if chosen is None:
-        chosen = candidates[0] if candidates else None
-        note = "first option selected (no allow_once offered)"
-    return {"outcome": "selected", "optionId": chosen.get("optionId") if chosen else None}, note
+            return {"outcome": "selected", "optionId": chosen.get("optionId")}, note
+    return {"outcome": "cancelled"}, missing
 
 
 def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
@@ -1026,7 +1041,8 @@ class PromptTurn:
     when the trigger fired."""
     held_cancel_request_index: int | None = None
     """Transcript index of the first agent `$/cancel_request` naming `held_permission` that
-    `run_prompt` read, before or after the turn-ending idle."""
+    `run_prompt` read while the request was still unanswered, before or after the turn-ending
+    idle."""
     held_answered_on: str | None = None
     """What made `run_prompt` answer `held_permission` `cancelled`: `"cancel_request"` (the agent
     withdrew it), `"turn_end"` (the turn ended with it still pending), `"timeout"` (the turn had
@@ -1037,10 +1053,12 @@ class PromptTurn:
     """Transcript index at which `on_action`'s request was sent."""
     permission_fallbacks: list[str] = field(default_factory=list)
     """A note per `session/request_permission` answered with other than the preferred option
-    kind (`permission_outcome`); also recorded as the `acp_tck_permission_fallback` property."""
+    kind (`permission_outcome`), including one for listed background work that the policy could
+    not satisfy (answered `cancelled`, no `session/cancel`); also recorded as the
+    `acp_tck_permission_fallback` property."""
     permission_cancels: list[str] = field(default_factory=list)
-    """A note per `session/request_permission` the `reject_once` policy could not satisfy: the
-    mock client sent `session/cancel` and answered `cancelled` instead. Also recorded as the
+    """A note per other `session/request_permission` the policy could not satisfy: the mock
+    client sent `session/cancel` and answered `cancelled` instead. Also recorded as the
     `acp_tck_permission_fallback` property."""
 
 
@@ -1108,7 +1126,8 @@ async def run_prompt(
     agent -> client request gets `-32601` (the mock client advertises no capabilities).
     A request whose `subject` names an item in the session's latest `background` list is
     background work, which `session/cancel` does not cover (prompt-lifecycle.mdx:1173,1177;
-    tool-calls.mdx:268): it is never held and is always answered per `permission`. A
+    tool-calls.mdx:268): it is never held and is always answered per `permission`, and if the
+    policy's kinds are not offered it is answered `cancelled` without `session/cancel`. A
     `state_update` that omits the list leaves none known (:204).
 
     v2 lets a client prompt in any state (prompt-lifecycle.mdx:382), but `run_prompt` cannot
@@ -1133,7 +1152,7 @@ async def run_prompt(
     response_at: float | None = None
     response_error = False
     message_id: str | None = None
-    active = seed_state in ACTIVE_STATES
+    active = is_active_state(seed_state)
     active_seen = active
     requires_action_seen = False
     last_state = seed_state
@@ -1310,7 +1329,7 @@ async def run_prompt(
             states.append((line_index, update))
             last_state = state
             latest_background = background_keys(update)
-            if state in ACTIVE_STATES:
+            if is_active_state(state):
                 active = active_seen = True
                 requires_action_seen = requires_action_seen or state == "requires_action"
                 provisional = None
@@ -1334,9 +1353,10 @@ async def run_prompt(
             permission_requests.append((line_index, entry))
             req_params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
             for_this_session = req_params.get("sessionId") == session_id
-            for_foreground = for_this_session and not (
+            for_background = for_this_session and bool(
                 latest_background and permission_subject_keys(req_params) & latest_background
             )
+            for_foreground = for_this_session and not for_background
             if hold_permission and not trigger_sent and for_foreground:
                 held_permission = entry
                 await _fire_trigger()
@@ -1346,8 +1366,13 @@ async def run_prompt(
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
-                if note is not None and outcome["outcome"] == "cancelled":
-                    # The policy's option kind was not offered: cancel the request's session
+                if note is not None and outcome["outcome"] == "cancelled" and for_background:
+                    # `session/cancel` does not cover listed background work
+                    # (prompt-lifecycle.mdx:1173,1177), so only this request is declined
+                    # (tool-calls.mdx:340).
+                    permission_fallbacks.append(note)
+                elif note is not None and outcome["outcome"] == "cancelled":
+                    # The policy's option kinds were not offered: cancel the request's session
                     # first, then answer `cancelled` without waiting for `$/cancel_request`
                     # (prompt-lifecycle.mdx:1177). The turn then drains to its `idle` like any
                     # other cancelled turn.
@@ -1378,7 +1403,8 @@ async def run_prompt(
         if method is not None:
             client_requests_seen.append(entry)
             if method == "$/cancel_request" and _names_held(msg):
-                if held_cancel_request_index is None:
+                # One read after the TCK already answered the request is not a withdrawal.
+                if held_cancel_request_index is None and held_answered_on is None:
                     held_cancel_request_index = line_index
                 await _answer_held("cancel_request")
 
@@ -1719,7 +1745,7 @@ async def prompt_during_active_work(
 
     if turn.action_sent_at_index is None:
         return _result(None, "the first prompt's turn ended before a second prompt could be sent")
-    if turn.state_at_cancel not in ACTIVE_STATES:
+    if not is_active_state(turn.state_at_cancel):
         return _result(
             None,
             f"the session was {turn.state_at_cancel!r}, not running/requires_action, when the "
@@ -1786,6 +1812,6 @@ async def assert_prompt_rejected_not_inserted(
             kind = update.get("sessionUpdate")
             if kind in _USER_MESSAGE_UPDATES:
                 problems.append(f"a {kind} update was emitted for it (it was inserted)")
-            elif kind == "state_update" and update.get("state") in ACTIVE_STATES:
+            elif kind == "state_update" and is_active_state(update.get("state")):
                 problems.append(f"state {update.get('state')!r} was reported for it (it was inserted)")
     assert not problems, f"{what}: {'; '.join(dict.fromkeys(problems))} ({entry.text!r})"

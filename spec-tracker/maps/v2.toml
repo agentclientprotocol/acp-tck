@@ -554,11 +554,6 @@ statement = "The Agent MUST list background work before sending a permission req
 reason = "Unobservable: whether a request belongs to background work is internal to the agent, and the TCK cannot make an agent start background work. ACP-PATCH-209 excludes such requests from the `requires_action` check."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:349 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Agents that do not understand a permission outcome MUST NOT treat it as approval."
-reason = "Mostly unobservable: ACP-ENUM-203 checks only that an agent survives an unknown outcome. Whether it counted as approval shows on the wire only for a `tool_call` subject that then completes, which ACP-PERM-203 judges for the `cancelled` outcome."
-
-[[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:385 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD NOT give a permission option a `name` that contradicts its `kind`."
 reason = "Not mechanically decidable: it needs a natural-language judgement of `name`. ACP-PERM-002 covers the other half of the line (acting on a selected option)."

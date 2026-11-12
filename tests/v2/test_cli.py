@@ -89,6 +89,7 @@ _CAPABILITY_IDS = {
     "ACP-PERM-202",
     "ACP-PERM-203",
     "ACP-PERM-002",
+    "ACP-PERM-204",
     "ACP-CLIENTCAP-201",
     "ACP-CLIENTCAP-202",
     "ACP-CANCEL-201",
@@ -274,7 +275,7 @@ _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
 # `capabilities.session.prompt.*` marker, and `ACP-PERM-201`/`202` SKIP whenever a turn never
-# actually triggers a `session/request_permission` (`ACP-PERM-203`/`002` also need a `tool_call`
+# actually triggers a `session/request_permission` (`ACP-PERM-203`/`204`/`002` also need a `tool_call`
 # subject) -- both legitimate, expected SKIPs (not
 # FAILs) for a fixture that neither advertises nor exercises them.
 #
@@ -293,6 +294,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PERM-202",
     "ACP-PERM-203",
     "ACP-PERM-002",
+    "ACP-PERM-204",
     "ACP-ENUM-203",
     "ACP-ENUM-204",
     "ACP-META-203",
@@ -457,6 +459,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PERM-202",
     "ACP-PERM-203",
     "ACP-PERM-002",
+    "ACP-PERM-204",
     "ACP-DELETE-201",
     "ACP-DELETE-202",
     "ACP-DELETE-203",
@@ -550,7 +553,7 @@ def test_v2_conforming_agent_passes_everything():
     `configOptions`, no
     `authMethods`, and it never asks for permission or opts into `_send_rich_turn_updates`. So
     every capability row that needs more than that SKIPs rather than PASSes:
-    `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201..203`/`ACP-PERM-002` ("no
+    `ACP-PROMPTCAP-001/002/003` ("not advertised"), `ACP-PERM-201..204`/`ACP-PERM-002` ("no
     permission request observed"), `ACP-DELETE-201..205`/`ACP-ARCHIVE-002..006,201`/`ACP-ADDDIRS-201/202`/`ACP-MCP-201/202`/
     `ACP-FORK-201..205`/`ACP-SYSPROMPT-201/202`/`ACP-CONFIG-201..204,206` (session-management
     extras absent), `ACP-AUTH-203/204/207` (no
@@ -1272,6 +1275,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
@@ -1443,6 +1447,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
@@ -1843,6 +1848,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
@@ -1961,6 +1967,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
@@ -2067,6 +2074,7 @@ def test_cancel_wrong_stop_reason_fails_201_203_206_207_only():
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
@@ -2391,7 +2399,7 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
     # fixture is built on `AsksPermissionAgent` (it asks for permission mid-turn, same as
     # `conforming_full.py`), so the permission-dependent `ACP-ENUM-203`/`ACP-PATCH-209` PASS
     # here rather than SKIP -- only the tool-call rows (`ACP-PATCH-208`/`210..212`, and
-    # `ACP-PERM-203`/`002`, which need a `tool_call` subject) still SKIP.
+    # `ACP-PERM-203`/`204`/`002`, which need a `tool_call` subject) still SKIP.
     _RICH_TURN_SKIP_IDS = {
         "ACP-PATCH-204",
         "ACP-PATCH-205",
@@ -2403,6 +2411,7 @@ def test_v2_emits_batch_updates_fails_transport_201_only():
         "ACP-PATCH-212",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-META-203",
         "ACP-META-204",
     }
@@ -3659,6 +3668,7 @@ _TOOL_CALL_K = "test_permission or patches or background or test_enums or test_p
         ("permission_command_relative_cwd.py", "ACP-PERM-202"),
         ("proceeds_after_cancelled_permission.py", "ACP-PERM-203"),
         ("perm_unknown_option_is_approval.py", "ACP-PERM-002"),
+        ("perm_unknown_outcome_is_approval.py", "ACP-PERM-204"),
         ("tool_call_chunk_first.py", "ACP-PATCH-208"),
         ("permission_without_requires_action.py", "ACP-PATCH-209"),
         ("tool_call_reopens_after_final.py", "ACP-PATCH-210"),
@@ -3670,10 +3680,50 @@ def test_tool_call_defect_fails_its_row_only(fixture: str, failing_id: str):
     """Each tool-call defect fixture trips exactly its own row (see its docstring)."""
     fails, statuses, stdout = _fails_for(fixture, _TOOL_CALL_K)
     assert fails == {failing_id}, stdout
-    if fixture == "proceeds_after_cancelled_permission.py":
-        assert statuses["ACP-PERM-002"] == "PASS", stdout
-    if fixture == "perm_unknown_option_is_approval.py":
-        assert statuses["ACP-PERM-203"] == "PASS", stdout
+    if fixture in (
+        "proceeds_after_cancelled_permission.py",
+        "perm_unknown_option_is_approval.py",
+        "perm_unknown_outcome_is_approval.py",
+    ):
+        # The three "not approved" rows judge one turn shape each, so the others still PASS.
+        for req_id in {"ACP-PERM-203", "ACP-PERM-002", "ACP-PERM-204"} - {failing_id}:
+            assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+    if fixture == "permission_without_requires_action.py":
+        # No `requires_action` at all: cancelling while blocked is still judged (no state gate).
+        assert statuses["ACP-CANCEL-209"] == "PASS", stdout
+        assert statuses["ACP-CANCEL-213"] == "PASS", stdout
+
+
+def test_permission_before_requires_action_judges_cancel_while_blocked():
+    """`permission_before_requires_action.py` sends its permission request before
+    `requires_action` (the spec diagram's order), so the held request is cancelled while the
+    session is still `running`. `ACP-CANCEL-209`/`213` are judged and PASS; nothing FAILs."""
+    fails, statuses, stdout = _fails_for("permission_before_requires_action.py", _TOOL_CALL_K)
+    assert fails == set(), stdout
+    for req_id in ("ACP-CANCEL-209", "ACP-CANCEL-213", "ACP-PATCH-209", "ACP-PERM-201"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_only_reject_always_offered_is_never_selected(tmp_path):
+    """`perm_only_reject_always.py` offers only `reject_always`. The default `allow` policy
+    sends `session/cancel` and answers `cancelled` instead of selecting it (recorded as the
+    test's fallback note), and the agent stays conformant within this scope."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "perm_only_reject_always.py",
+        protocol_version=2,
+        k=_TOOL_CALL_K,
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    assert statuses["ACP-PERM-201"] == "PASS", result.stdout
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (perm_201,) = by_id["ACP-PERM-201"]["tests"]
+    assert perm_201["properties"].get("acp_tck_permission_fallback") == (
+        "agent offered no allow_once, allow_always or reject_once option"
+    ), perm_201
 
 
 def test_permission_for_background_work_needs_no_requires_action(tmp_path):
@@ -3695,6 +3745,7 @@ def test_permission_for_background_work_needs_no_requires_action(tmp_path):
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-PATCH-208",
         "ACP-PATCH-210",
         "ACP-PATCH-211",

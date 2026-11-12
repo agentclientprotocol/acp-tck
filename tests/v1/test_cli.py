@@ -1569,6 +1569,28 @@ def test_agent_without_a_reject_option_skips_perm_001_and_never_fails():
     assert _output_fail_ids(result.stdout) == set(), result.stdout
 
 
+def test_only_reject_always_offered_is_never_selected(tmp_path):
+    """`perm_only_reject_always.py` offers only `reject_always` on every prompt. The default
+    `allow` policy cancels the turn and answers `cancelled` instead of selecting it (recorded as
+    the fallback note); ACP-PERM-001 SKIPs and nothing FAILs within this scope. (`test_errors` is
+    left out: the `asks_permission.py` base ignores unknown session ids, an ACP-ERROR-003 FAIL
+    of its own.)"""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "perm_only_reject_always.py",
+        timeout="5",
+        k="(permission or reject or unrecognised or test_prompt or cancel) and not test_errors",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    assert statuses.get("ACP-PERM-001") == "SKIPPED", result.stdout
+    assert statuses.get("ACP-PROMPT-001") == "PASS", result.stdout
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    notes = {test["properties"].get("acp_tck_permission_fallback") for test in by_id["ACP-PROMPT-001"]["tests"]}
+    assert notes == {"agent offered no allow_once, allow_always or reject_once option"}, notes
+
+
 def test_perm_ignores_reject_fails_both_permission_ids_advisory_only():
     """`perm_ignores_reject.py` creates the file whatever the client answered -- two ADVISORY
     FAILs, so the run stays CONFORMANT."""

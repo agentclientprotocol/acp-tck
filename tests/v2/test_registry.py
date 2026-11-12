@@ -84,6 +84,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PERM-202",
         "ACP-PERM-203",
         "ACP-PERM-002",
+        "ACP-PERM-204",
         "ACP-CLIENTCAP-201",
         "ACP-CLIENTCAP-202",
         "ACP-INFO-CONCURRENT-201",

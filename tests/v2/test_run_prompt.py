@@ -21,6 +21,8 @@ from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Directio
 from tck.common.plugin import _TEST_PROPERTIES
 from tck.v2.conformance._helpers import (
     UNKNOWN_PERMISSION_OPTION_ID,
+    UNKNOWN_PERMISSION_OUTCOME,
+    background_keys,
     permission_outcome,
     prompt_during_active_work,
     run_prompt,
@@ -427,6 +429,28 @@ def test_hold_permission_answers_at_the_deadline_and_records_it():
     assert answer_index < turn.idle_index
 
 
+def test_hold_permission_ignores_a_withdrawal_after_answering_at_the_deadline():
+    _, turn = _hold([{"wait_id": "perm-1"}, _CANCEL_REQUEST, _state("idle", stopReason="cancelled")])
+    assert turn.held_answered_on == "timeout"
+    assert turn.held_cancel_request_index is None
+
+
+def test_hold_permission_holds_a_request_sent_before_requires_action():
+    """The diagram order (prompt-lifecycle.mdx:246-247): the request is held while the session
+    is still `running`."""
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _permission_request(_ALLOW_ONCE), _state("requires_action"),
+         {"wait_method": "session/cancel"}, _CANCEL_REQUEST, {"wait_id": "perm-1"},
+         _state("idle", stopReason="cancelled")],
+        on_cancel=True,
+        hold_permission=True,
+    )
+    assert turn.held_permission is not None
+    assert turn.state_at_cancel == "running"
+    assert turn.held_answered_on == "cancel_request"
+    assert turn.stop_reason == "cancelled"
+
+
 def test_hold_permission_times_out_when_the_turn_never_ends_even_once_answered():
     with pytest.raises(AgentTimeout, match="not even after its held session/request_permission"):
         _hold([{"wait_id": "perm-1"}])
@@ -454,10 +478,28 @@ def test_allow_falls_back_to_allow_always_and_says_so():
     assert note == "allow_always selected (allow_once not offered)"
 
 
-def test_allow_without_any_allow_option_falls_back_to_the_first_option():
-    outcome, note = permission_outcome(_opts("reject_once", "reject_always"), "allow")
-    assert outcome == _selected("id-0-reject_once")
-    assert note == "first option selected (no allow_once offered)"
+_NO_ALLOW_NOTE = "agent offered no allow_once, allow_always or reject_once option"
+
+
+def test_allow_without_any_allow_option_falls_back_to_reject_once_never_reject_always():
+    outcome, note = permission_outcome(_opts("reject_always", "reject_once"), "allow")
+    assert outcome == _selected("id-1-reject_once")
+    assert note == "reject_once selected (no allow option offered)"
+
+
+def test_allow_never_selects_reject_always_or_an_unknown_kind():
+    for kinds in (("reject_always",), ("reject_always", "_tck_custom_kind"), ()):
+        outcome, note = permission_outcome(_opts(*kinds), "allow")
+        assert outcome == {"outcome": "cancelled"}
+        assert note == _NO_ALLOW_NOTE
+
+
+def test_unknown_outcome_answers_an_underscore_prefixed_custom_outcome():
+    outcome, note = permission_outcome(_opts("allow_once"), "unknown_outcome")
+    assert outcome == {"outcome": UNKNOWN_PERMISSION_OUTCOME}
+    assert UNKNOWN_PERMISSION_OUTCOME.startswith("_")
+    assert UNKNOWN_PERMISSION_OUTCOME not in {"selected", "cancelled"}
+    assert note is None
 
 
 def test_reject_once_picks_reject_once_regardless_of_position():
@@ -487,7 +529,7 @@ def test_cancelled_policy_answers_cancelled():
 
 
 def test_malformed_or_missing_options_do_not_crash():
-    assert permission_outcome(None, "allow")[0] == _selected(None)
+    assert permission_outcome(None, "allow")[0] == {"outcome": "cancelled"}
     assert permission_outcome(["junk", {"kind": "allow_once", "optionId": "x"}], "allow") == (
         _selected("x"),
         None,
@@ -568,6 +610,67 @@ def test_reject_once_without_a_reject_option_cancels_the_turn_instead_of_selecti
     assert turn.permission_cancels == [note]
     assert turn.permission_fallbacks == []
     assert props == [("acp_tck_permission_fallback", note)]
+
+
+def _sent_cancels(agent) -> list[int]:
+    return [
+        i for i, e in enumerate(agent.transcript)
+        if e.direction is Direction.SENT and (e.parsed or {}).get("method") == "session/cancel"
+    ]
+
+
+def test_allow_with_only_reject_always_cancels_the_turn_instead_of_selecting_it():
+    options = [{"optionId": "never", "name": "Never", "kind": "reject_always"}]
+    agent, turn, props = _recording(
+        steps=[_RESPONSE, _state("running"), _permission_request(options),
+               {"wait_method": "session/cancel"}, {"wait_id": "perm-1"},
+               _state("idle", stopReason="cancelled")],
+    )
+    answer_index, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    cancels = _sent_cancels(agent)
+    assert len(cancels) == 1 and cancels[0] < answer_index
+    assert turn.cancelled_at_index == cancels[0]
+    assert turn.stop_reason == "cancelled"
+    assert turn.permission_cancels == [_NO_ALLOW_NOTE]
+    assert props == [("acp_tck_permission_fallback", _NO_ALLOW_NOTE)]
+
+
+def test_background_request_the_policy_cannot_satisfy_is_declined_without_session_cancel():
+    """`session/cancel` does not cover listed background work, so an unsatisfiable background
+    request is only answered `cancelled`; the foreground turn goes on."""
+    never = [{"optionId": "never", "name": "Never", "kind": "reject_always"}]
+    request = _background_permission("bg-perm", _BG_TOOL_SUBJECT)
+    request["params"]["options"] = never
+    agent, turn, _ = _recording(
+        steps=[_RESPONSE, _BG_RUNNING, request, {"wait_id": "bg-perm"},
+               _state("idle", stopReason="end_turn", background=[])],
+    )
+    _assert_answered(agent, "bg-perm", {"outcome": "cancelled"})
+    assert _sent_cancels(agent) == []
+    assert turn.cancelled_at_index is None
+    assert turn.stop_reason == "end_turn"
+    assert turn.permission_cancels == []
+    assert turn.permission_fallbacks == [_NO_ALLOW_NOTE]
+
+
+def test_unknown_outcome_policy_answers_the_custom_outcome():
+    agent, turn, _ = _recording(steps=_permission_steps(_ALLOW_ONCE), permission="unknown_outcome")
+    _assert_answered(agent, "perm-1", {"outcome": UNKNOWN_PERMISSION_OUTCOME})
+    assert _sent_cancels(agent) == []
+    assert turn.permission_fallbacks == [] and turn.permission_cancels == []
+
+
+def test_unhashable_background_type_or_state_does_not_crash_run_prompt():
+    """Agent input never crashes the driver: a list-valued `type` or `state` is just not a
+    known item or active state."""
+    assert background_keys({"background": [{"type": ["tool_call"], "toolCallId": "x"}]}) == set()
+    _, turn = _drive(
+        [_RESPONSE, _state("running", background=[{"type": ["tool_call"], "toolCallId": "x"}]),
+         _update({"sessionUpdate": "state_update", "state": ["running"]}),
+         _state("idle", stopReason="end_turn")]
+    )
+    assert turn.terminated_by == "idle" and turn.stop_reason == "end_turn"
 
 
 def test_unknown_option_policy_selects_an_unoffered_id():
