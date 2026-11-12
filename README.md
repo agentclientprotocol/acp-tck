@@ -111,6 +111,10 @@ session-dependent test runs. Needed for any agent that gates `session/new` behin
 session-dependent tests report `SKIPPED` with an "AUTH-GATED" hint and the run is forced `NOT CONFORMANT`, since those
 requirements were never actually exercised.
 
+If the login never answers within the timeout (an interactive login may stay pending), the tests SKIP with
+`AUTH-GATED:` and a hint instead of failing, and the run is blocked the same way. Use a non-interactive method or raise
+the timeouts.
+
 ### `--allow-logout`
 
 Opts in to actually calling logout against the agent under test (`ACP-AUTH-004`): `logout` on v1 and `auth/logout`
@@ -211,7 +215,7 @@ command after `--` is a usage error (`2`).
 ## Protocol scope
 
 The codebase is structured as a version-agnostic core plus one package per protocol version (`src/tck/common/` +
-`src/tck/v1/` + `src/tck/v2/`, see `AGENTS.md`), so each version's suite does not require forking the harness, report
+`src/tck/v1/` + `src/tck/v2/`, see [`docs/development.md`](docs/development.md#layout)), so each version's suite does not require forking the harness, report
 model, or pytest plugin. ACP **v1** is the default. ACP **v2** is available via `--protocol-version 2`. For the precise,
 current requirement set, `src/tck/v{1,2}/requirements.py` is the source of truth.
 
@@ -267,6 +271,6 @@ commit recorded in `src/tck/v2/schema/VENDORED.md`.
 
 ## Contributing / docs
 
-Contributor docs are in [`docs/`](docs/README.md): requirement ids, tiers and citation rules; how to add a
-requirement and its test; the mock-client prompt driver; the harness API; and how to update the TCK to a new spec
-revision. Repo layout, commands and conventions for contributors and coding agents are in [`AGENTS.md`](AGENTS.md).
+Contributor docs are in [`docs/`](docs/README.md): repo layout, setup and conventions; requirement ids, tiers and
+citation rules; how to add a requirement and its test; the mock-client prompt driver; the harness API; and how to
+update the TCK to a new spec revision. Coding agents also read [`AGENTS.md`](AGENTS.md).

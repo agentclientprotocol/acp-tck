@@ -1,9 +1,10 @@
 # Contributor docs
 
-Contracts for working on the TCK. Operator docs (running the TCK, options, reading a report) are in the
-[top-level README](../README.md); the repo layout, commands and conventions are in
-[`AGENTS.md`](../AGENTS.md).
+Docs for working on the TCK. Operator docs (running the TCK, options, reading a report) are in the
+[top-level README](../README.md).
 
+- [`development.md`](development.md) -- repo layout, setup, running the TCK from source and the repo's own tests,
+  CI, the vendored schema, and coding conventions.
 - [`requirements.md`](requirements.md) -- requirement ids and their lifecycle, tiers, statuses and the verdict,
   citation rules, and the ledger of deliberate non-requirements.
 - [`writing-tests.md`](writing-tests.md) -- adding a requirement and its test, markers, probes, the error-code

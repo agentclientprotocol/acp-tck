@@ -90,7 +90,8 @@ A SKIP says "nothing was judged", so it must be honest.
   when it negotiated a different one (or rejected `initialize` with `-32022`). It sets
   `blocked_by_version_mismatch`, also forcing NOT CONFORMANT. Rows that judge only the negotiation outcome are
   judged normally and do not skip. Tests marked `@pytest.mark.negotiation` still run when `initialize` was
-  rejected with `-32022`.
+  rejected with `-32022`. Only v2's version-tolerant `ACP-INIT-*` rows carry it. v1 marks none: its negotiation
+  rule ("respond with the latest version it supports") predates `-32022` and cannot judge a v2-only agent.
 
 ## Fixtures
 

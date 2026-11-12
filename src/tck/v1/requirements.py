@@ -18,7 +18,7 @@ from ..common.requirements import Requirement, Tier, make_cite
 from .protocol import SCHEMA_REVISION
 
 SPEC_REVISION = SCHEMA_REVISION
-"""The spec commit every citation below is relative to (see `AGENTS.md` "Vendored schema").
+"""The spec commit every citation below is relative to (see `docs/development.md` "Vendored schema").
 Single source of truth is `tck.v1.protocol.SCHEMA_REVISION`."""
 
 _cite = make_cite(SPEC_REVISION)
