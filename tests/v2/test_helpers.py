@@ -18,9 +18,11 @@ from tck.v2.conformance._helpers import (
     agent_requests,
     assert_unknown_session_error,
     child_session_traffic,
+    is_absolute_path,
     is_agent_initiated,
     is_response_line,
     session_content_references,
+    subagent_updates,
     tool_call_report,
 )
 
@@ -426,3 +428,75 @@ def test_session_reference_judgement_ignores_other_content_and_malformed_items()
         {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": "nope"}},
     )
     assert session_content_references(transcript, {"p"}) == ([], [])
+
+
+def _sub(outer: str, child: str, **fields: Any) -> dict[str, Any]:
+    return _update(outer, {"sessionUpdate": "subagent_update", "sessionId": child, **fields})
+
+
+def test_no_subagent_update_is_not_a_subagent_connection():
+    found = subagent_updates(_traffic(_update("p", {"sessionUpdate": "agent_message_chunk", "messageId": "m"})), {"p"})
+    assert found == subagent_updates([], {"p"}) and found.updates == []
+    assert not found.reported_directories
+
+
+def test_a_stable_tree_with_absolute_directories_is_conforming():
+    transcript = _traffic(
+        _sub("p", "c", cwd="/work/c", additionalDirectories=["/work/x", "C:\\work", "\\\\srv\\share\\d"]),
+        _sub("p", "c", title="again", cwd=None, additionalDirectories=[]),  # patch under the same parent
+        _sub("c", "g"),  # nested child
+        _sub("p", "d"),
+        _sub("g", "g2"),
+    )
+    found = subagent_updates(transcript, {"p"})
+    assert found.updates == [("c", "p"), ("c", "p"), ("g", "c"), ("d", "p"), ("g2", "g")]
+    assert found.reported_directories
+    assert not (found.self_parented or found.client_sessions_announced or found.reparented or found.relative_paths)
+
+
+def test_a_self_parent_is_judged_only_as_self_parented():
+    for session in ("p", "c"):  # the client's own session, or an announced child
+        found = subagent_updates(_traffic(_sub("p", "c"), _sub(session, session)), {"p"})
+        assert len(found.self_parented) == 1
+        assert not (found.client_sessions_announced or found.reparented)
+
+
+def test_a_client_session_announced_under_another_session_is_judged_only_as_such():
+    found = subagent_updates(_traffic(_sub("p", "c"), _sub("c", "p")), {"p"})
+    assert len(found.client_sessions_announced) == 1 and "'p'" in found.client_sessions_announced[0]
+    assert not (found.self_parented or found.reparented)
+
+
+def test_a_reparented_child_is_a_problem_and_a_cycle_is_named():
+    found = subagent_updates(_traffic(_sub("p", "c"), _sub("p", "d"), _sub("d", "c")), {"p"})
+    assert len(found.reparented) == 1 and "cycle" not in found.reparented[0]
+    assert not (found.self_parented or found.client_sessions_announced)
+    cycle = subagent_updates(_traffic(_sub("p", "c"), _sub("c", "g"), _sub("g", "c")), {"p"})
+    assert len(cycle.reparented) == 1 and "cycle" in cycle.reparented[0]
+
+
+def test_an_update_on_an_unknown_session_is_not_an_association():
+    found = subagent_updates(_traffic(_sub("p", "c"), _sub("stranger", "c")), {"p"})
+    assert found.reparented == []
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"cwd": "work/c"},
+        {"cwd": "./c"},
+        {"cwd": "file:///work/c"},
+        {"cwd": ""},
+        {"cwd": 5},
+        {"additionalDirectories": ["/ok", "rel"]},
+        {"cwd": "C:work"},
+    ],
+)
+def test_a_relative_or_malformed_directory_is_a_problem(fields):
+    found = subagent_updates(_traffic(_sub("p", "c", **fields)), {"p"})
+    assert found.reported_directories and len(found.relative_paths) == 1, found.relative_paths
+
+
+def test_is_absolute_path_accepts_native_absolute_syntaxes_only():
+    assert all(is_absolute_path(path) for path in ("/a", "/", "C:\\a", "C:/a", "\\\\srv\\share"))
+    assert not any(is_absolute_path(path) for path in ("a", "./a", "", "C:a", "\\a", "file:///a", None, 5))

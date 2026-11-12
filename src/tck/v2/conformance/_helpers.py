@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
 import pytest
@@ -759,6 +759,89 @@ def session_content_references(
                     f"session (known: {sorted(known)!r})"
                 )
     return references, problems
+
+
+def is_absolute_path(value: Any) -> bool:
+    """True if `value` is a string that is an absolute path in the native syntax of the machine
+    the agent runs on (`AbsolutePath`): POSIX `/...`, a Windows drive path or a UNC path. It is not
+    a URI, and a rooted-but-driveless Windows path (`\\dir`) or `C:dir` is not absolute."""
+    return isinstance(value, str) and (
+        PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+    )
+
+
+@dataclass
+class SubagentUpdates:
+    """What `subagent_updates` found: the `updates` seen (`sessionId` of the child and the outer
+    session each was sent on, in wire order) and, per rule, the violations."""
+
+    updates: list[tuple[str, str]] = field(default_factory=list)
+    self_parented: list[str] = field(default_factory=list)
+    client_sessions_announced: list[str] = field(default_factory=list)
+    reparented: list[str] = field(default_factory=list)
+    relative_paths: list[str] = field(default_factory=list)
+    reported_directories: bool = False
+
+
+def subagent_updates(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> SubagentUpdates:
+    """Replay the agent's traffic in wire order and judge the `subagent_update` association
+    rules (`SubagentUpdate`; Active Subagents RFD): the outer `sessionId` is the immediate parent
+    of `update.sessionId`.
+
+    The three association rules are disjoint by construction, so one defect FAILs one row. A
+    child equal to its own parent is `self_parented`, whatever session that is. Otherwise a child
+    that is a session the client created is `client_sessions_announced`. Otherwise, on a known
+    parent, a child already announced under another parent is `reparented` (a cycle is a
+    reparenting whose new parent descends from the child). Reparenting is judged only for an update
+    sent on a known session; one sent on an unknown session is `child_session_traffic`'s to judge.
+    Every update's `cwd` and `additionalDirectories` entries are checked for `relative_paths`
+    regardless."""
+    result = SubagentUpdates()
+    parents: dict[str, str] = {}
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        outer, child = params.get("sessionId"), update.get("sessionId")
+        if not isinstance(outer, str) or not isinstance(child, str):
+            continue
+        result.updates.append((child, outer))
+        if child == outer:
+            result.self_parented.append(
+                f"subagent_update on session {outer!r} announces that same session as its own child"
+            )
+        elif child in client_sessions:
+            result.client_sessions_announced.append(
+                f"subagent_update on session {outer!r} announces session {child!r}, which the "
+                f"client created, as a child"
+            )
+        elif outer in known:
+            old = parents.setdefault(child, outer)
+            if old != outer:
+                ancestor, cycle = outer, False
+                while ancestor in parents and not cycle:  # parents is acyclic by construction
+                    ancestor = parents[ancestor]
+                    cycle = ancestor == child
+                result.reparented.append(
+                    f"subagent_update on session {outer!r} announces {child!r}, already a child "
+                    f"of {old!r}"
+                    + (" (the new parent descends from it: a cycle)" if cycle else "")
+                )
+        for field_name in ("cwd", "additionalDirectories"):
+            value = update.get(field_name)
+            if value is None:
+                continue
+            result.reported_directories = True
+            items = value if field_name == "additionalDirectories" and isinstance(value, list) else [value]
+            for item in items:
+                if not is_absolute_path(item):
+                    result.relative_paths.append(
+                        f"subagent_update for {child!r} reports {field_name} {item!r}, "
+                        f"which is not an absolute path"
+                    )
+    return result
 
 
 def is_response_line(entry: TranscriptEntry) -> bool:

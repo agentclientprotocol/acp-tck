@@ -393,6 +393,86 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-003",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `subagent_update` never makes a session its own parent: `update.sessionId` differs "
+            "from the `sessionId` of the session the notification is sent on, whichever session "
+            "that is. Stated only by the Subagents RFD (Active RFD: `the association cannot ... "
+            "refer to itself`), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents` (documentation-only, no `initialize` marker). Judged for every "
+            "`subagent_update` over one `session/new`, one prompt turn and a quiet period after "
+            "it; SKIPs when none appears. A self-referencing update is judged here and by no "
+            "other association row (`ACP-SUBAGENT-004`/`-005` leave it out), so one defect never "
+            "FAILs several."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:165-169 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-004",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `subagent_update` never announces a session ID that is already an ordinary session "
+            "the client created with `session/new`, as the child of another session. The child's "
+            "ID identifies the child session in all ACP messages and is unique within the "
+            "connection, so it is not reused for an unrelated session. Stated only by the "
+            "Subagents RFD (Active RFD), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents`. A client session announced as its own child is "
+            "`ACP-SUBAGENT-003`'s. Judged for every `subagent_update` over one `session/new`, one "
+            "prompt turn and a quiet period after it; SKIPs when none appears. Announcing a "
+            "client session under one of its own descendants is the cycle case of this row."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:122-124,165-169 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-005",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A child announced on a known session keeps that one immediate parent: a later "
+            "`subagent_update` for the same `sessionId` sent on a different session (a "
+            "reparenting, which includes one that would create a cycle) FAILs. Later updates only "
+            "modify the association's metadata, not its ownership. The draft docs state the "
+            "ownership rule and the RFD states the one-parent, no-cycle rule; there is no "
+            "`initialize` marker and the rule binds only an agent that emits `subagent_update`, "
+            "so the row is CAPABILITY and gated by `inferred:subagents`. The remaining ways to "
+            "close a cycle are `ACP-SUBAGENT-003` (a self-parent) and `-004` (a client session "
+            "announced as a child), so a cycle never FAILs more than one row. Judged for every "
+            "`subagent_update` sent on a known session over one `session/new`, one prompt turn and "
+            "a quiet period after it; SKIPs when none appears."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:10189-10193; "
+            "docs/rfds/subagents.mdx:165-169 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-006",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "`SubagentUpdate.cwd` and every `additionalDirectories` entry is an `AbsolutePath`: "
+            "POSIX `/...`, a Windows drive path or a UNC path (native syntax of the agent's "
+            "machine, not a URI). `null` clears the field and an omitted field is unchanged, so "
+            "neither is judged. The vendored schema defines `AbsolutePath` as a bare `string`, so "
+            "`ACP-PROMPT-002`'s schema validation accepts a relative path and this row is the "
+            "only check. The draft docs state the rule; only an agent that emits `subagent_update` "
+            "is bound and no `initialize` marker announces it, so the row is CAPABILITY and gated "
+            "by `inferred:subagents`. Judged for every `subagent_update` over one `session/new`, "
+            "one prompt turn and a quiet period after it; SKIPs when none carries `cwd` or "
+            "`additionalDirectories`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:10238,10254; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories; "
+            "schema/v2/schema.unstable.json#/$defs/AbsolutePath; "
+            "docs/rfds/subagents.mdx:298-308 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",

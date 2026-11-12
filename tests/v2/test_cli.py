@@ -177,6 +177,10 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-210",
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
@@ -290,6 +294,10 @@ _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUBAGENT-001",  # the fixture exposes no subagent
     "ACP-SUBAGENT-002",  # nor any `session` content
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -499,6 +507,10 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-RESUME-210",
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
@@ -544,6 +556,10 @@ _CONFORMING_EXPECTED_SKIPS = {
 _SUBAGENT_EXERCISED_IDS = {
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
     "ACP-PATCH-204",
     "ACP-PATCH-208",
     "ACP-PATCH-210",
@@ -619,6 +635,10 @@ def test_v2_conforming_agent_passes_everything():
 _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -1659,7 +1679,29 @@ def test_subagent_rows_skip_without_a_child():
     result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
     statuses = _table_statuses(result.stdout)
     assert statuses["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
-    assert statuses["ACP-SUBAGENT-002"] == "SKIPPED", result.stdout
+    for req_id in ("ACP-SUBAGENT-002", "ACP-SUBAGENT-003", "ACP-SUBAGENT-004", "ACP-SUBAGENT-005", "ACP-SUBAGENT-006"):
+        assert statuses[req_id] == "SKIPPED", result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("self_parented_subagent.py", "ACP-SUBAGENT-003"),
+        ("subagent_reuses_session_id.py", "ACP-SUBAGENT-004"),
+        ("reparents_subagent.py", "ACP-SUBAGENT-005"),
+        ("relative_subagent_cwd.py", "ACP-SUBAGENT-006"),
+    ],
+)
+def test_subagent_association_violations_fail_one_row_only(fixture, failing):
+    """Each association defect is announced on a known session and is schema-valid (`AbsolutePath`
+    is a bare string), so `ACP-PROMPT-002`, `ACP-SUBAGENT-001` and `-002` PASS and the disjoint
+    association rows `ACP-SUBAGENT-003..006` FAIL only the intended one."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {failing}, result.stdout
+    for req_id in ("ACP-PROMPT-002", "ACP-SUBAGENT-001", "ACP-SUBAGENT-002"):
+        assert statuses[req_id] == "PASS", result.stdout
 
 
 def test_session_content_unknown_session_fails_subagent_002_only():
@@ -2533,6 +2575,10 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-ERROR-204",
             "ACP-SUBAGENT-001",  # no subagent exposed
             "ACP-SUBAGENT-002",
+            "ACP-SUBAGENT-003",
+            "ACP-SUBAGENT-004",
+            "ACP-SUBAGENT-005",
+            "ACP-SUBAGENT-006",
         }
     )
     for req_id, status in statuses.items():

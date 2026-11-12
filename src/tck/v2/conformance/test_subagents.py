@@ -1,4 +1,5 @@
-"""Subagent announcement ordering and `session` content references (ACP-SUBAGENT-001/002).
+"""Subagent announcement ordering, `session` content references and association integrity
+(ACP-SUBAGENT-001..006).
 
 There is no `initialize` marker for subagents in v2 -- support is baseline and *inferred* from the
 agent's traffic, so `Requirement.capability` is the documentation-only `"inferred:subagents"`
@@ -10,8 +11,11 @@ connection.
 The connection is one `session/new`, one prompt turn and a quiet period after it (child traffic
 may trail the turn), judged in wire order over everything the agent sent. `session/resume`
 replay is not part of it: `ACP-RESUME-209` judges that window, so one defect never FAILs both.
-Both tests judge the same connection, but a `session` content reference is not child traffic, so
-an unknown reference FAILs only 002.
+All tests judge the same connection, but a `session` content reference is not child traffic, so
+an unknown reference FAILs only 002. 003..005 (self-parent, a client session announced as a child,
+a reparented child) are disjoint by construction in `subagent_updates`, as is 006 (absolute
+`cwd`/`additionalDirectories`), so one defect FAILs one row; each SKIPs when no `subagent_update`
+appears (006: none carries a directory field).
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from ._helpers import (
     quiet_period,
     run_prompt,
     session_content_references,
+    subagent_updates,
     v2_only_agent,
 )
 
@@ -76,3 +81,48 @@ async def test_session_content_names_a_known_session(agent_launch, tmp_path):
     if not references:
         pytest.skip("the agent emitted no `session` tool-call content item")
     assert not problems, _summary(problems)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-003")
+async def test_subagent_update_never_makes_a_session_its_own_parent(agent_launch, tmp_path):
+    """ACP-SUBAGENT-003. No `subagent_update` has the same `sessionId` as the session it is sent
+    on. SKIPs when the agent sends no `subagent_update`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = subagent_updates(transcript, {session_id})
+    if not found.updates:
+        pytest.skip("the agent sent no `subagent_update`")
+    assert not found.self_parented, _summary(found.self_parented)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-004")
+async def test_subagent_update_never_announces_a_client_created_session(agent_launch, tmp_path):
+    """ACP-SUBAGENT-004. No `subagent_update` announces, as a child of another session, a session
+    the client created with `session/new`. SKIPs when the agent sends no `subagent_update`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = subagent_updates(transcript, {session_id})
+    if not found.updates:
+        pytest.skip("the agent sent no `subagent_update`")
+    assert not found.client_sessions_announced, _summary(found.client_sessions_announced)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-005")
+async def test_announced_child_keeps_its_one_parent(agent_launch, tmp_path):
+    """ACP-SUBAGENT-005. A child announced on a known session is never announced again on a
+    different session, which would reparent it (or close a cycle). SKIPs when the agent sends no
+    `subagent_update`."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = subagent_updates(transcript, {session_id})
+    if not found.updates:
+        pytest.skip("the agent sent no `subagent_update`")
+    assert not found.reparented, _summary(found.reparented)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-006")
+async def test_subagent_update_directories_are_absolute(agent_launch, tmp_path):
+    """ACP-SUBAGENT-006. Every `subagent_update.cwd` and `additionalDirectories` entry is an
+    absolute path. SKIPs when no `subagent_update` reports either."""
+    transcript, session_id = await _connection_transcript(agent_launch, tmp_path)
+    found = subagent_updates(transcript, {session_id})
+    if not found.reported_directories:
+        pytest.skip("no `subagent_update` reported `cwd` or `additionalDirectories`")
+    assert not found.relative_paths, _summary(found.relative_paths)

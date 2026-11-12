@@ -6,9 +6,11 @@ tool call whose content is a `session` reference to the child, has the child ask
 with a `session/request_permission` carrying the child's `sessionId`, and streams the child's own
 `running` -> `agent_message_chunk` -> `idle(end_turn)` under that `sessionId`. After the parent's
 turn has ended, the child sends one more `agent_message_chunk` (child work outlives the parent's
-turn). Everything is legal once announced, and the child's idle must not end the parent's turn:
-must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001/002` and `ACP-STATE-201..205` like `conforming.py`
-(the mock client answers the child's permission request; it is not awaited).
+turn). The association stays one tree: the child is later patched under the same parent with an
+absolute `cwd` and `additionalDirectories`, and announces one nested child of its own (also with
+an absolute `cwd`). Everything is legal once announced, and the child's idle must not end the
+parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..006` and `ACP-STATE-201..205`
+like `conforming.py` (the mock client answers the child's permission request; it is not awaited).
 
 The `_`-hooks below are the seams the violator fixtures override.
 """
@@ -20,6 +22,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _base import ConformingAgent  # noqa: E402
+
+
+_CHILD_DIR = str(Path(__file__).resolve().parent)  # absolute on every platform
 
 
 class ExposesSubagentAgent(ConformingAgent):
@@ -35,6 +40,8 @@ class ExposesSubagentAgent(ConformingAgent):
         child_id = f"{session_id}-child-{self._child_count}"
         self._turn_child = child_id
         self._announce_child(session_id, child_id)
+        self._report_child_placement(session_id, child_id)
+        self._announce_nested_child(child_id)
         self._send_session_messages(session_id, child_id)
         self._send_session_reference(session_id, child_id)
         self._send_update(child_id, {"sessionUpdate": "state_update", "state": "running"})
@@ -57,6 +64,32 @@ class ExposesSubagentAgent(ConformingAgent):
             self._send_update(
                 session_id,
                 {"sessionUpdate": "subagent_update", "sessionId": child_id, "title": "helper"},
+            )
+
+    def _report_child_placement(self, session_id: Any, child_id: str) -> None:
+        """A patch for the announced child under the same parent: where the Agent placed it."""
+        if self.announce_child:
+            self._send_update(
+                session_id,
+                {
+                    "sessionUpdate": "subagent_update",
+                    "sessionId": child_id,
+                    "cwd": _CHILD_DIR,
+                    "additionalDirectories": [_CHILD_DIR],
+                },
+            )
+
+    def _announce_nested_child(self, child_id: str) -> None:
+        """The child spawns a subagent of its own: announced on the child, its immediate parent."""
+        if self.announce_child:
+            self._send_update(
+                child_id,
+                {
+                    "sessionUpdate": "subagent_update",
+                    "sessionId": f"{child_id}-nested",
+                    "title": "sub-helper",
+                    "cwd": _CHILD_DIR,
+                },
             )
 
     def _send_session_messages(self, session_id: Any, child_id: str) -> None:
