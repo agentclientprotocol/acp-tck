@@ -504,12 +504,12 @@ class ConformingAgent:
         return None
 
     def _mcp_transport_rejection(self, servers: Any) -> str | None:
-        """Only `stdio` and `http`, each only when advertised under `session.mcp`, are supported;
-        anything else (`sse`, an unadvertised or reserved type) is rejected (:545)."""
+        """Only `stdio`, `http` and `acp`, each only when advertised under `session.mcp`, are
+        supported; anything else (`sse`, an unadvertised or reserved type) is rejected (:545)."""
         advertised = self._session_capability("mcp")
         supported = {
             transport
-            for transport in ("stdio", "http")
+            for transport in ("stdio", "http", "acp")
             if isinstance(advertised, dict) and advertised.get(transport) is not None
         }
         for server in servers if isinstance(servers, list) else []:

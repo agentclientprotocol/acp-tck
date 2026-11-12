@@ -2682,6 +2682,17 @@ def test_v2_answers_notifications_fails_jsonrpc_003_only():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
+def test_v2_answers_mcp_notification_fails_jsonrpc_003_only():
+    """`answers_mcp_notification.py` advertises `capabilities.session.mcp.acp` and replies to an
+    `mcp/message` notification only; `session/cancel` and the other probes stay silent, so the
+    `mcp/message` probe alone fails `ACP-JSONRPC-003`."""
+    result = _run_cli(FIXTURES_DIR_V2, "answers_mcp_notification.py", protocol_version=2, k="jsonrpc")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-JSONRPC-003"}, result.stdout
+
+
 def test_v2_pushes_status_notifications_passes_everything():
     """`pushes_status_notifications.py` pushes an unsolicited `_`-prefixed notification right
     after `initialize` and before handling every later message, including ahead of an array's
@@ -4787,9 +4798,21 @@ def test_adddirs_accepts_relative_fails_adddirs_203_only():
 
 def test_mcp_unsupported_transport_fixtures_fail_mcp_203_only():
     """One fixture per probe: `sse` accepted, or a `_`-prefixed custom type accepted."""
-    for fixture in ("accepts_sse_mcp.py", "accepts_custom_mcp_transport.py"):
+    for fixture in (
+        "accepts_sse_mcp.py",
+        "accepts_custom_mcp_transport.py",
+        "accepts_unadvertised_acp_mcp.py",
+    ):
         fails, _statuses, out = _fails_for(fixture, _SETUP_K)
         assert fails == {"ACP-MCP-203"}, f"{fixture}:\n{out}"
+
+
+def test_advertising_acp_mcp_agent_is_not_sent_the_acp_probe():
+    """`advertises_acp_mcp.py` accepts an `acp` declaration because it advertises
+    `capabilities.session.mcp.acp`; `ACP-MCP-203` skips its `acp` probe and PASSes."""
+    fails, statuses, out = _fails_for("advertises_acp_mcp.py", _SETUP_K)
+    assert fails == set(), out
+    assert statuses.get("ACP-MCP-203") == "PASS", out
 
 
 def test_accepts_duplicate_mcp_names_fails_mcp_204_advisory_only():

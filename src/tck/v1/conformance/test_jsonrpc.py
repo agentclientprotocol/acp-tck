@@ -170,6 +170,32 @@ async def test_cancel_request_for_unknown_id_receives_no_response(agent_launch):
         )
 
 
+@pytest.mark.requirement("ACP-JSONRPC-003")
+async def test_mcp_message_notification_receives_no_response(agent_launch):
+    """ACP-JSONRPC-003, probed with `mcp/message` notifications (the unstable MCP-over-ACP
+    envelope, `schema/v1/schema.unstable.json#/$defs/MessageMcpNotification`): a well-formed one
+    for a request nothing is waiting on, and one missing the required `requestId` and `method`.
+    A defined method gets no special treatment: `overview.mdx:239` says notifications never
+    receive responses, and the (Active) MCP-over-ACP RFD repeats it for this envelope
+    (`mcp-over-acp.mdx:225,257`: no response, "malformed notifications do not receive synthetic
+    replies"). Sent whether or not the agent advertises `mcpCapabilities.acp`: an agent that
+    does not know the method must stay silent too."""
+    async with connected_agent(agent_launch) as agent:
+        await agent.send_notification(
+            "mcp/message",
+            {
+                "serverId": "tck-acp-1",
+                "requestId": "tck-mcp-request-1",
+                "method": "notifications/progress",
+                "params": {"progressToken": "tck-progress", "progress": 1, "total": 2},
+            },
+        )
+        await agent.send_notification("mcp/message", {"serverId": "tck-acp-1"})
+        await _assert_no_reply_to_notification(
+            agent, agent_launch.default_timeout, "an `mcp/message` notification"
+        )
+
+
 @pytest.mark.requirement("ACP-JSONRPC-006")
 async def test_connection_survives_cancel_request_for_unknown_id(agent_launch, tmp_path):
     """ACP-JSONRPC-006. Any reply to the notification is ACP-JSONRPC-003's concern; this only

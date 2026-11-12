@@ -1430,10 +1430,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Notifications never receive a response, success or error. Messages the agent "
+            "Notifications never receive a response, success or error. Probed with `session/cancel` "
+            "(no prompt in flight), or `_tck/notify` for an agent without `capabilities.session`, "
+            "and with `mcp/message` notifications (the unstable MCP-over-ACP envelope, "
+            "well-formed and malformed; the rule binds every agent, so the probe is not gated "
+            "on `capabilities.session.mcp.acp`). Messages the agent "
             "itself initiates (they carry `method`) are not responses."
         ),
-        citation=_cite("docs/protocol/v2/draft/overview.mdx:10,227"),
+        citation=_cite(
+            "docs/protocol/v2/draft/overview.mdx:10,227; "
+            "docs/rfds/mcp-over-acp.mdx:225,257 (Active RFD); "
+            "schema/v2/schema.unstable.json#/$defs/MessageMcpNotification"
+        ),
     ),
     Requirement(
         id="ACP-JSONRPC-004",
@@ -2472,12 +2480,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "`session/new` with an MCP server of a transport the agent does not support is "
-            "rejected with `-32602` (the code is named by the spec). Two probes: v1's `sse`, "
-            "which the spec names explicitly, and the implementation-reserved "
-            "`_tck_unsupported_transport`, which no agent supports. A success, or another "
-            "error code, on either FAILs. The probes break the client rule to use only "
-            "advertised transports on purpose, because the spec defines the agent's answer to "
-            "exactly those inputs."
+            "rejected with `-32602` (the code is named by the spec). Three probes: v1's `sse`, "
+            "which the spec names explicitly, the implementation-reserved "
+            "`_tck_unsupported_transport`, which no agent supports, and `acp` (the unstable "
+            "MCP-over-ACP transport, covered by the spec's \"a transport they did not "
+            "advertise\"), sent only when the agent does not advertise "
+            "`capabilities.session.mcp.acp`. A success, or another error code, on any probe "
+            "FAILs. The probes break the client rule to use only advertised transports on "
+            "purpose, because the spec defines the agent's answer to exactly those inputs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:545,553; "

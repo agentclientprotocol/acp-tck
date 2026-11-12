@@ -1241,6 +1241,18 @@ def test_answers_custom_notifications_fails_jsonrpc_003_only():
     assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
 
 
+def test_answers_mcp_notification_fails_jsonrpc_003_only():
+    """`answers_mcp_notification.py` advertises `mcpCapabilities.acp` and replies to an
+    `mcp/message` notification only; the other notification probes stay silent, so the
+    `mcp/message` probe alone fails ACP-JSONRPC-003."""
+    result = _run_cli("answers_mcp_notification.py", k="test_jsonrpc")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-JSONRPC-003"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-006") == "PASS", result.stdout
+
+
 def test_answers_cancel_request_fails_jsonrpc_003_only():
     """`answers_cancel_request.py` replies to `$/cancel_request`; the connection stays usable,
     so ACP-JSONRPC-006 still PASSes."""

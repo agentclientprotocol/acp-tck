@@ -1778,12 +1778,17 @@ def _stdio_server(name: str = "tck-stdio", **extra: Any) -> dict[str, Any]:
 
 @pytest.mark.requirement("ACP-MCP-203")
 @pytest.mark.capability("capabilities.session")
-async def test_new_session_with_unsupported_mcp_transport_is_rejected(agent_launch, tmp_path):
-    """ACP-MCP-203. Two probes on one connection, each must get `-32602`: v1's `sse`, which
-    the spec names (`session-setup.mdx:545`), and `_tck_unsupported_transport`, which no agent
-    supports (`_`-prefixed types are implementation-specific, `:553`). Both break the client
-    rule to send only advertised transports on purpose: the spec defines the agent's answer to
-    exactly these inputs. A success or another code on either FAILs; both are reported."""
+async def test_new_session_with_unsupported_mcp_transport_is_rejected(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-MCP-203. Up to three probes on one connection, each must get `-32602`: v1's `sse`,
+    which the spec names (`session-setup.mdx:545`), `_tck_unsupported_transport`, which no agent
+    supports (`_`-prefixed types are implementation-specific, `:553`), and `acp`, the real but
+    unstable transport a draft-aware agent may parse without advertising it (`:545` covers "a
+    transport they did not advertise"). The `acp` probe is not sent when the agent advertises
+    `capabilities.session.mcp.acp`: it supports the transport then. All break the client rule
+    to send only advertised transports on purpose: the spec defines the agent's answer to
+    exactly these inputs. A success or another code on any probe FAILs; all are reported."""
     probes = {
         "sse": {
             "type": "sse",
@@ -1796,6 +1801,8 @@ async def test_new_session_with_unsupported_mcp_transport_is_rejected(agent_laun
             "name": "tck-unsupported",
         },
     }
+    if not capability_is_supported(agent_initialize_result.result, "capabilities.session.mcp.acp"):
+        probes["acp"] = {"type": "acp", "name": "tck-acp", "serverId": "tck-acp-1"}
     problems = []
     async with connected_agent(agent_launch) as agent:
         for transport, server in probes.items():

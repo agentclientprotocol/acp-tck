@@ -67,15 +67,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Notifications never receive a response, success or error. Probed with `session/cancel` "
-            "(no prompt in flight), an unrecognized `_`-prefixed custom notification, and "
-            "`$/cancel_request` for a request id the agent never saw. Messages the agent itself "
+            "(no prompt in flight), an unrecognized `_`-prefixed custom notification, "
+            "`$/cancel_request` for a request id the agent never saw, and `mcp/message` "
+            "notifications (the unstable MCP-over-ACP envelope, well-formed and malformed; the "
+            "rule binds every agent, so the probe is not gated on `mcpCapabilities.acp`). Messages the agent itself "
             "initiates (they carry `method`) are not responses. Concluding \"no response arrived\" "
             "is a heuristic wait (a quiet period derived from --tck-timeout) -- see "
             "tck.v1.conformance._helpers.quiet_period."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/overview.mdx:239; "
-            "agent-client-protocol-schema/src/v1/error.rs:9"
+            "agent-client-protocol-schema/src/v1/error.rs:9; "
+            "docs/rfds/mcp-over-acp.mdx:225,257 (Active RFD); "
+            "schema/v1/schema.unstable.json#/$defs/MessageMcpNotification"
         ),
     ),
     Requirement(
