@@ -28,8 +28,11 @@ uv run --package spec-tracker spec-impact <base> <target> --version vN --spec-re
 ```
 
 Prints a Markdown report of what a spec diff touches: changed files and sections, hits on the
-map's core docs and `$defs`, the schema `$ref` closure, docs linking to changed docs, and the
-requirement ids and ledger entries whose citations fall in a changed region.
+map's core docs and `$defs`, the schema `$ref` closure, docs linking to changed docs, the
+requirement ids and ledger entries whose citations fall in a changed region, and each RFD's stage
+at base and target (from the sidebar groups in the spec's `docs/docs.json`) with the tracked RFDs
+(Active or Preview at target), the stage moves, and whether the map's `rfd_audit` marker records
+a prior full RFD audit.
 
 With `--fix` it instead remaps the `.mdx` line citations in `src/tck/vN/requirements.py` and
 `maps/vN.toml` from base to target, in place. It is not idempotent, so it refuses unless `<base>`

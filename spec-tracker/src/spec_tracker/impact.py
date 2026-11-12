@@ -5,8 +5,9 @@ Usage:
 
 Prints a Markdown report to stdout for a researcher to interpret: changed files, the sections
 each doc hunk falls in, hits on the core docs and `$defs` listed in `spec-tracker/maps/<version>.toml`,
-the schema `$ref` closure, docs linking to changed docs, and the requirement ids and ledger
-entries whose citations fall in a changed region.
+the schema `$ref` closure, docs linking to changed docs, the requirement ids and ledger
+entries whose citations fall in a changed region, and each RFD's stage at base and target (from
+the sidebar groups in `docs/docs.json`) with the tracked RFDs and stage moves.
 
 With `--fix` it instead remaps the `.mdx` line citations in `src/tck/<version>/requirements.py`
 and `spec-tracker/maps/<version>.toml` from base to target line numbers, in place (see "citation remapping"). It is not
@@ -55,6 +56,10 @@ from .spec_map import (
 )
 
 RFDS_DIR = "docs/rfds/"
+DOCS_JSON = "docs/docs.json"
+RFD_STAGES = ("Draft", "Active", "Preview", "Completed")
+TRACKED_STAGES = ("Active", "Preview")
+V2_RFDS_DIR = f"{RFDS_DIR}v2/"
 
 
 def draft_dir(version: str) -> str:
@@ -201,6 +206,38 @@ def file_changes(repo: SpecRepo, base: str, target: str, version: str) -> dict[s
         path: FileChange(status, path, tuple(hunks.get(path, ())))
         for status, path in parse_name_status(repo.diff(base, target, paths, name_status=True))
     }
+
+
+def rfd_stages(docs_json: str | None) -> dict[str, str]:
+    """`docs/rfds/<name>.mdx` -> stage, from the sidebar groups in `docs/docs.json`. The stage is the
+    nearest enclosing group named like a stage, so `Active > v2` pages are Active. Pages outside a
+    stage group (`rfds/about`) are omitted."""
+    stages: dict[str, str] = {}
+
+    def walk(node: Any, stage: str | None) -> None:
+        if isinstance(node, dict):
+            group = node.get("group")
+            stage = group if group in RFD_STAGES else stage
+            for value in node.values():
+                walk(value, stage)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, stage)
+        elif isinstance(node, str) and stage and node.startswith("rfds/"):
+            stages[f"docs/{node}.mdx"] = stage
+
+    walk(json.loads(docs_json) if docs_json else {}, None)
+    return stages
+
+
+def tracked_rfds(version: str, stages: dict[str, str]) -> list[str]:
+    """RFDs that the update process tracks at the target: Active or Preview (v2 RFDs for v2 only).
+    This includes any that moved there from Draft within the range; Completed RFDs never are."""
+    return sorted(
+        path
+        for path, stage in stages.items()
+        if stage in TRACKED_STAGES and (version == "v2" or not path.startswith(V2_RFDS_DIR))
+    )
 
 
 def overlaps(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
@@ -728,6 +765,9 @@ class Report:
     core_defs: list[tuple[str, str]]
     fan_out: dict[str, list[LinkHit]]
     affected: list[tuple[str, list[str]]] = field(default_factory=list)
+    base_stages: dict[str, str] = field(default_factory=dict)
+    target_stages: dict[str, str] = field(default_factory=dict)
+    rfd_audit: str | None = None
 
     @property
     def escalate(self) -> bool:
@@ -780,7 +820,12 @@ def analyze(
     fan_out = link_fan_out(sources, changed_docs)
 
     affected = [(label, hits) for label, citation in entries if (hits := citation_hits(citation, version, changes, schema))]
-    return Report(version, base, target, changes, sections, core, core_notes, schema, core_defs, fan_out, affected)
+    base_stages = rfd_stages(repo.show(base, DOCS_JSON))
+    target_stages = rfd_stages(repo.show(target, DOCS_JSON))
+    return Report(
+        version, base, target, changes, sections, core, core_notes, schema, core_defs, fan_out, affected,
+        base_stages, target_stages, spec_map.rfd_audit,
+    )
 
 
 _STATUS = {"A": "added", "D": "removed", "M": "modified"}
@@ -855,6 +900,42 @@ def render(report: Report) -> str:
     out += ["", "## 6. Affected entries", ""]
     out += [f"- {label}: " + "; ".join(hits) for label, hits in report.affected] or ["None."]
 
+    tracked = tracked_rfds(report.version, report.target_stages)
+    moves = [
+        (path, report.base_stages.get(path), stage)
+        for path, stage in sorted(report.target_stages.items())
+        if report.base_stages.get(path) != stage
+    ]
+    moves += [(path, stage, None) for path, stage in sorted(report.base_stages.items()) if path not in report.target_stages]
+    out += [
+        "",
+        "## 7. RFD stages",
+        "",
+        f"Stage = nearest stage group in `{DOCS_JSON}` ({', '.join(RFD_STAGES)}), read at base and at target. "
+        f"Tracked = Active or Preview at target ({'all RFDs' if report.version == 'v2' else 'not `rfds/v2/*`'}); "
+        "Completed RFDs are never tracked.",
+        "",
+        "Full RFD audit marker (`rfd_audit` in the spec map): "
+        + (
+            f"`{report.rfd_audit}`."
+            if report.rfd_audit
+            else "**none: audit every tracked RFD in full, changed or not.**"
+        ),
+        "",
+        "Tracked at target:",
+        "",
+    ]
+    for path in tracked:
+        was = report.base_stages.get(path)
+        notes = ["changed" if path in report.changes else "unchanged"]
+        if was != report.target_stages[path]:
+            notes.append(f"moved from {was or 'not listed'}")
+        out.append(f"- `{path}` ({report.target_stages[path]}; {', '.join(notes)})")
+    if not tracked:
+        out.append("None.")
+    out += ["", "Stage moves (base -> target):", ""]
+    out += [f"- `{path}`: {was or 'not listed'} -> {now or 'not listed'}" for path, was, now in moves] or ["None."]
+
     linked = sum(len(v) for v in report.fan_out.values())
     by_kind = {
         "draft docs": sum(p.startswith(draft_dir(report.version)) for p in report.changes),
@@ -870,6 +951,7 @@ def render(report: Report) -> str:
         f"- `$defs`: {len(defs.added)} added, {len(defs.removed)} removed, {len(defs.changed)} changed; "
         f"closure: {len(report.schema.closure)}.",
         f"- Links into changed docs: {linked}.",
+        f"- Tracked RFDs: {len(tracked)} ({sum(p in report.changes for p in tracked)} changed); stage moves: {len(moves)}.",
         f"- Affected entries: {sum(not l.startswith('ledger') for l, _ in report.affected)} requirements, "
         f"{sum(l.startswith('ledger') for l, _ in report.affected)} ledger entries.",
         "- Core hit: "
