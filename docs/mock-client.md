@@ -3,7 +3,8 @@
 Each version's conformance suite drives `session/prompt` through its own `run_prompt` in
 `src/tck/v{1,2}/conformance/_helpers.py`. `run_prompt` acts as a minimal ACP client for the length of one turn:
 
-- answers `session/request_permission` per a [policy](#permission-policies);
+- answers `session/request_permission` per a [policy](#permission-policies). A request carrying another
+  session's ID (a subagent's) is answered the same way, but is never held and is not cancelled by the trigger;
 - answers every other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) with `-32601`,
   because the mock client advertises no client capabilities, and records it in `PromptTurn.client_requests_seen`;
 - records `session/update` notifications in wire order;

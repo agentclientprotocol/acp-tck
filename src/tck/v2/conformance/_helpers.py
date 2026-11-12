@@ -638,6 +638,62 @@ def agent_requests(transcript: list[TranscriptEntry]) -> list[dict[str, Any]]:
     ]
 
 
+def child_session_traffic(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> tuple[set[str], list[str]]:
+    """Replay the agent's traffic in wire order and judge the subagent announcement rule
+    (Active Subagents RFD; `SubagentUpdate`): a child's announcing `subagent_update`, sent on a
+    known session, precedes every live request or notification bearing the child's session ID.
+
+    `client_sessions` are the sessions the client created; they start out known. Returns
+    `(children, problems)`: every session ID on the wire the client did not create (announced
+    or not) and one message per violation. A session ID counts as carried when it is the
+    `params.sessionId` of any agent message with a `method` (a `session/update` notification, a
+    `session/request_permission` or `elicitation/create` request, ...) or a live `session_message`
+    update's `senderSessionId`/`recipientSessionId`. A `subagent_update` announces its own
+    `sessionId` only when it is itself sent on a known session. Responses are not judged."""
+    known = set(client_sessions)
+    children: set[str] = set()
+    problems: list[str] = []
+
+    def carry(session_id: Any, what: str) -> None:
+        if not isinstance(session_id, str):
+            return
+        if session_id not in client_sessions:
+            children.add(session_id)
+        if session_id not in known:
+            problems.append(
+                f"{what} carries session ID {session_id!r}, which no earlier `subagent_update` "
+                f"on a known session announced (known: {sorted(known)!r})"
+            )
+
+    for entry in transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            method = msg.get("method")
+            if not isinstance(method, str):
+                continue
+            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            outer = params.get("sessionId")
+            update = params.get("update") if method == "session/update" else None
+            update = update if isinstance(update, dict) else {}
+            kind = update.get("sessionUpdate")
+            what = f"{method} {kind}" if kind else method
+            if "id" in msg:
+                what = f"request {what} (id {msg['id']!r})"
+            carry(outer, what)
+            if kind == "subagent_update" and isinstance(update.get("sessionId"), str):
+                if update["sessionId"] not in client_sessions:
+                    children.add(update["sessionId"])
+                if isinstance(outer, str) and outer in known:
+                    known.add(update["sessionId"])
+            elif kind == "session_message":
+                carry(update.get("senderSessionId"), f"{what} senderSessionId")
+                carry(update.get("recipientSessionId"), f"{what} recipientSessionId")
+    return children, problems
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
     array line, even a malformed one missing `id`/`result`/`error`.

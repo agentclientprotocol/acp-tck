@@ -175,6 +175,7 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-210",
+    "ACP-SUBAGENT-001",
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
@@ -286,6 +287,7 @@ _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 # SKIP ("no <variant> observed") rather than PASS, exactly as they do for `conforming.py` itself
 # (see `test_v2_conforming_agent_passes_everything` above).
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
+    "ACP-SUBAGENT-001",  # the fixture exposes no subagent
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -493,6 +495,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CONFIG-212",
     "ACP-COMMANDS-201",
     "ACP-RESUME-210",
+    "ACP-SUBAGENT-001",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
@@ -532,15 +535,29 @@ _CONFORMING_EXPECTED_SKIPS = {
 } | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
-def _assert_conforming_baseline(result: subprocess.CompletedProcess[str], fixture: str) -> None:
+# Skipped for `conforming.py` but exercised by a fixture whose child asks for permission and
+# whose announced child shows up on the wire: a request and a custom session ID are observed.
+_SUBAGENT_EXERCISED_IDS = {
+    "ACP-SUBAGENT-001",
+    "ACP-PERM-201",
+    "ACP-PERM-202",
+    "ACP-JSONRPC-202",
+    "ACP-ENUM-203",
+}
+
+
+def _assert_conforming_baseline(
+    result: subprocess.CompletedProcess[str], fixture: str, exercised: set[str] = frozenset()
+) -> None:
     """Assert `result` matches `conforming.py`'s own full-run outcome (see its test below):
-    every id in `_CONFORMING_EXPECTED_SKIPS` SKIPs, every other id PASSes."""
+    every id in `_CONFORMING_EXPECTED_SKIPS` SKIPs, except those in `exercised`, which PASS like
+    every other id."""
     assert result.returncode == 0, result.stdout + result.stderr
 
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
     for req_id, status in statuses.items():
-        if req_id in _CONFORMING_EXPECTED_SKIPS:
+        if req_id in _CONFORMING_EXPECTED_SKIPS - exercised:
             assert status == "SKIPPED", (
                 f"{req_id} is {status}, expected SKIPPED (not advertised / no permission "
                 f"request observed):\n{result.stdout}"
@@ -589,7 +606,9 @@ def test_v2_conforming_agent_passes_everything():
 # `_meta` at all; `emits_w3c_meta.py` exercises them), and `_BACKGROUND_SKIP_IDS` (it reports
 # no background work; `reports_background_work.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
+# `ACP-SUBAGENT-001` SKIPs: it exposes no subagent (`exposes_subagent.py` exercises it).
 _FULL_EXPECTED_SKIPS = {
+    "ACP-SUBAGENT-001",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -1587,17 +1606,48 @@ def test_inserts_cancelled_held_prompt_fails_only_cancel_214():
 
 
 def test_exposes_subagent_passes_everything():
-    """Announced child-session traffic (including the child's own `running`/`idle`) is legal
-    and must not end or start the parent's turn: same outcome as `conforming.py`."""
+    """Announced child-session traffic is legal and must not end or start the parent's turn:
+    the child's own `running`/`idle`, a `session_message` in both views, a child
+    `session/request_permission` after the announcement, and a child chunk after the parent's turn
+    ended. Same outcome as `conforming.py`, except that `_SUBAGENT_EXERCISED_IDS` PASS."""
     result = _run_cli(FIXTURES_DIR_V2, "exposes_subagent.py", protocol_version=2)
-    _assert_conforming_baseline(result, "exposes_subagent.py")
+    _assert_conforming_baseline(result, "exposes_subagent.py", _SUBAGENT_EXERCISED_IDS)
 
 
-def test_unannounced_child_update_fails_prompt_002_only():
-    result = _run_cli(FIXTURES_DIR_V2, "unannounced_child_update.py", protocol_version=2, k=_PROMPT_K)
+_SUBAGENT_K = f"({_PROMPT_K}) or test_subagents"
+
+
+def test_unannounced_child_update_fails_prompt_002_and_subagent_001():
+    """The child's traffic is unannounced inside the turn, so both rows judge the one defect:
+    `ACP-PROMPT-002` (in-turn notifications) and `ACP-SUBAGENT-001` (the whole connection)."""
+    result = _run_cli(FIXTURES_DIR_V2, "unannounced_child_update.py", protocol_version=2, k=_SUBAGENT_K)
     assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
-    assert _fails(statuses) == {"ACP-PROMPT-002"}, result.stdout
+    assert _fails(statuses) == {"ACP-PROMPT-002", "ACP-SUBAGENT-001"}, result.stdout
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "child_permission_before_announce.py",
+        "session_message_unknown_participant.py",
+        "child_update_after_turn_unannounced.py",
+    ],
+)
+def test_unannounced_child_use_outside_prompt_002_fails_subagent_001_only(fixture):
+    """A child request, a `session_message` participant and a post-turn child update are not
+    in-turn `session/update`s for an unannounced child, so only `ACP-SUBAGENT-001` judges them."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-SUBAGENT-001"}, result.stdout
+    assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
+
+
+def test_subagent_001_skips_without_a_child():
+    """`conforming.py` never uses a session ID the client did not create."""
+    result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
+    assert _table_statuses(result.stdout)["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
 
 
 def test_replays_subagent_history_passes_everything():
@@ -1605,7 +1655,7 @@ def test_replays_subagent_history_passes_everything():
     `user_message`), plus live child chunks before every resume response, replay or not, is legal:
     same outcome as `conforming.py`."""
     result = _run_cli(FIXTURES_DIR_V2, "replays_subagent_history.py", protocol_version=2)
-    _assert_conforming_baseline(result, "replays_subagent_history.py")
+    _assert_conforming_baseline(result, "replays_subagent_history.py", _SUBAGENT_EXERCISED_IDS)
 
 
 def test_replays_unannounced_child_fails_resume_209_only():
@@ -2458,6 +2508,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-CANCEL-213",
             "ACP-CLOSE-205",
             "ACP-ERROR-204",
+            "ACP-SUBAGENT-001",  # no subagent exposed
         }
     )
     for req_id, status in statuses.items():

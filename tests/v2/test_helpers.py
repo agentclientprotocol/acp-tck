@@ -17,6 +17,7 @@ from tck.v2.conformance._helpers import (
     _route_from_list,
     agent_requests,
     assert_unknown_session_error,
+    child_session_traffic,
     is_agent_initiated,
     is_response_line,
     tool_call_report,
@@ -271,3 +272,76 @@ def test_a_malformed_or_null_cancel_advertises_nothing() -> None:
         _tool_call("t2", status="completed", capabilities="bogus"),
     )
     assert not tracker.cancel_seen and tracker.cancel_violations == []
+
+
+def _traffic(*messages: dict[str, Any]) -> list[TranscriptEntry]:
+    return [_entry(json.dumps({"jsonrpc": "2.0", **message})) for message in messages]
+
+
+def _update(session_id: str, update: dict[str, Any]) -> dict[str, Any]:
+    return {"method": "session/update", "params": {"sessionId": session_id, "update": update}}
+
+
+_ANNOUNCE = _update("p", {"sessionUpdate": "subagent_update", "sessionId": "c"})
+_CHILD_CHUNK = _update("c", {"sessionUpdate": "agent_message_chunk", "messageId": "m"})
+_CHILD_PERMISSION = {"id": 3, "method": "session/request_permission", "params": {"sessionId": "c"}}
+
+
+def test_child_traffic_without_a_child_is_not_a_subagent_connection():
+    children, problems = child_session_traffic(
+        _traffic(_update("p", {"sessionUpdate": "agent_message_chunk", "messageId": "m"})), {"p"}
+    )
+    assert (children, problems) == (set(), [])
+
+
+def test_child_traffic_after_its_announcement_is_conforming():
+    transcript = _traffic(
+        _ANNOUNCE,
+        _CHILD_CHUNK,
+        _CHILD_PERMISSION,
+        _update("p", {"sessionUpdate": "session_message", "messageId": "x", "recipientSessionId": "c"}),
+        _update("c", {"sessionUpdate": "session_message", "messageId": "y", "senderSessionId": "p"}),
+        # a nested child, announced on a known child
+        _update("c", {"sessionUpdate": "subagent_update", "sessionId": "g"}),
+        _update("g", {"sessionUpdate": "agent_message_chunk", "messageId": "m"}),
+    )
+    assert child_session_traffic(transcript, {"p"}) == ({"c", "g"}, [])
+
+
+@pytest.mark.parametrize(
+    ("message", "mentions"),
+    [
+        (_CHILD_CHUNK, "agent_message_chunk"),
+        (_CHILD_PERMISSION, "session/request_permission"),
+        (
+            {"id": 4, "method": "elicitation/create", "params": {"sessionId": "c", "message": "?"}},
+            "elicitation/create",
+        ),
+        (
+            _update("p", {"sessionUpdate": "session_message", "messageId": "x", "recipientSessionId": "c"}),
+            "recipientSessionId",
+        ),
+        (
+            _update("p", {"sessionUpdate": "session_message", "messageId": "x", "senderSessionId": "c"}),
+            "senderSessionId",
+        ),
+    ],
+)
+def test_child_traffic_before_its_announcement_is_a_problem(message, mentions):
+    children, problems = child_session_traffic(_traffic(message, _ANNOUNCE), {"p"})
+    assert children == {"c"}
+    assert len(problems) >= 1 and mentions in problems[0], problems
+
+
+def test_an_announcement_on_an_unknown_session_does_not_announce():
+    """The announcing update must itself be sent on a known session."""
+    transcript = _traffic(_update("stranger", {"sessionUpdate": "subagent_update", "sessionId": "c"}), _CHILD_CHUNK)
+    children, problems = child_session_traffic(transcript, {"p"})
+    assert children == {"stranger", "c"}
+    assert len(problems) == 2
+
+
+def test_child_traffic_judgement_ignores_client_lines_and_responses():
+    sent = TranscriptEntry.build(Direction.SENT, json.dumps({"jsonrpc": "2.0", **_CHILD_CHUNK}).encode(), 0.0)
+    reply = _entry(json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"sessionId": "other"}}))
+    assert child_session_traffic([sent, reply], {"p"}) == (set(), [])

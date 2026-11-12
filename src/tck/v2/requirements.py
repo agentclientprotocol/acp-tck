@@ -347,6 +347,30 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-001",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "The announcing `subagent_update` precedes every live request or notification on "
+            "the connection that carries a child session's ID: a `session/update` for the child "
+            "(inside a prompt turn or outside it, including after the turn ends), an "
+            "agent -> client request such as `session/request_permission` or "
+            "`elicitation/create` with the child's `sessionId`, and a `session_message` naming "
+            "the child as `senderSessionId` or `recipientSessionId`. The announcement must itself "
+            "be sent on a known session (nested children included); traffic for an unannounced "
+            "child FAILs. Stated by the schema's `SubagentUpdate` and the Subagents RFD (Active "
+            "RFD). Judged in wire order over one `session/new`, one prompt turn and a quiet "
+            "period after it (`session/resume` replay is `ACP-RESUME-209`'s). Subagents have no "
+            "`initialize` marker, so support is inferred from the traffic "
+            "(`capability=\"inferred:subagents\"` is documentation-only); SKIPs when no "
+            "session ID the client did not create appears on the connection."
+        ),
+        citation=_cite(
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/rfds/subagents.mdx:95-99,189-193 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",

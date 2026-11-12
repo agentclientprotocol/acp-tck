@@ -429,6 +429,9 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
         await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        # Child output may trail the turn just run (RFD: child work outlives the parent's
+        # turn); settle it first so it is not read as part of the resume exchange.
+        await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
         response_entry, updates = await resume_session(
             agent,
             session_id,

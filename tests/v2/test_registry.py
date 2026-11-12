@@ -62,6 +62,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-SESSION-001",
         "ACP-SESSION-002",
         "ACP-PROMPT-002",
+        "ACP-SUBAGENT-001",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
         "ACP-STATE-201",
