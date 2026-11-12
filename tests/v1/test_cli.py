@@ -1245,16 +1245,40 @@ def test_answers_custom_notifications_fails_jsonrpc_003_only():
     assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
 
 
-def test_answers_mcp_notification_fails_jsonrpc_003_only():
-    """`answers_mcp_notification.py` advertises `mcpCapabilities.acp` and replies to an
-    `mcp/message` notification only; the other notification probes stay silent, so the
-    `mcp/message` probe alone fails ACP-JSONRPC-003."""
-    result = _run_cli("answers_mcp_notification.py", k="test_jsonrpc")
+@pytest.mark.parametrize(
+    "fixture", ["answers_mcp_notification.py", "answers_malformed_mcp_notification.py"]
+)
+def test_answers_mcp_notification_fails_jsonrpc_003_only(fixture: str):
+    """Each fixture advertises `mcpCapabilities.acp` and replies to one `mcp/message` probe only
+    (`answers_mcp_notification.py` the well-formed one, `answers_malformed_mcp_notification.py`
+    the one missing `requestId`/`method`); the other probes stay silent, so that probe alone fails
+    ACP-JSONRPC-003 and each probe is pinned."""
+    result = _run_cli(fixture, k="test_jsonrpc")
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
     assert _fail_ids(statuses) == {"ACP-JSONRPC-003"}, result.stdout
     assert statuses.get("ACP-JSONRPC-006") == "PASS", result.stdout
+
+
+def test_exit_on_malformed_mcp_message_fails_ext_002_only():
+    """`exits_on_malformed_mcp_message.py` does not advertise `mcpCapabilities.acp` and exits on an
+    `mcp/message` notification missing `requestId`. It sent no reply, so ACP-JSONRPC-003 PASSes;
+    the crash on a notification it does not recognize is ACP-EXT-002's finding."""
+    result = _run_cli("exits_on_malformed_mcp_message.py", k="test_jsonrpc or test_extensibility")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-EXT-002"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-003") == "PASS", result.stdout
+
+
+def test_acp_advertising_agent_is_not_sent_the_ext_002_mcp_probe():
+    """`answers_mcp_notification.py` advertises `mcpCapabilities.acp`, so ACP-EXT-002's `mcp/message`
+    probe is skipped for it; the `_tck/notify` probe still PASSes the row."""
+    result = _run_cli("answers_mcp_notification.py", k="test_extensibility")
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
 
 
 def test_answers_cancel_request_fails_jsonrpc_003_only():

@@ -142,7 +142,8 @@ async def test_connection_survives_an_erroneous_request(agent_launch, tmp_path):
 
 async def _assert_no_reply_to_notification(agent: AgentProcess, timeout: float, what: str) -> None:
     """Shared by the notification probes below. An agent that exits instead of replying sent no
-    reply; whether the connection survives is judged by ACP-EXT-002/ACP-JSONRPC-006."""
+    reply. Whether the connection survives is judged by ACP-EXT-002 (`_tck/notify` and
+    `mcp/message`) and ACP-JSONRPC-006 (`$/cancel_request`)."""
     try:
         entry = await first_response_within(agent, quiet_period(timeout))
     except AgentExited:
@@ -175,11 +176,14 @@ async def test_mcp_message_notification_receives_no_response(agent_launch):
     """ACP-JSONRPC-003, probed with `mcp/message` notifications (the unstable MCP-over-ACP
     envelope, `schema/v1/schema.unstable.json#/$defs/MessageMcpNotification`): a well-formed one
     for a request nothing is waiting on, and one missing the required `requestId` and `method`.
-    A defined method gets no special treatment: `overview.mdx:239` says notifications never
-    receive responses, and the (Active) MCP-over-ACP RFD repeats it for this envelope
-    (`mcp-over-acp.mdx:225,257`: no response, "malformed notifications do not receive synthetic
-    replies"). Sent whether or not the agent advertises `mcpCapabilities.acp`: an agent that
-    does not know the method must stay silent too."""
+    Both break client rules on purpose: the envelope is sent only for an active request on a
+    declared `acp` MCP server and only to an agent that advertised `acp`, and `requestId` and
+    `method` are required. The spec defines the agent's answer to exactly these inputs:
+    `overview.mdx:239` says notifications never receive responses, and the (Active)
+    MCP-over-ACP RFD repeats it for this envelope (`mcp-over-acp.mdx:225,257`: no response,
+    "malformed notifications do not receive synthetic replies"). Sent whether or not the agent
+    advertises `mcpCapabilities.acp`: an agent that does not know the method must stay silent
+    too. An agent that exits sent no reply; `ACP-EXT-002` judges a crash."""
     async with connected_agent(agent_launch) as agent:
         await agent.send_notification(
             "mcp/message",

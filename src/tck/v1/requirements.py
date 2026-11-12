@@ -70,8 +70,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(no prompt in flight), an unrecognized `_`-prefixed custom notification, "
             "`$/cancel_request` for a request id the agent never saw, and `mcp/message` "
             "notifications (the unstable MCP-over-ACP envelope, well-formed and malformed; the "
-            "rule binds every agent, so the probe is not gated on `mcpCapabilities.acp`). Messages the agent itself "
-            "initiates (they carry `method`) are not responses. Concluding \"no response arrived\" "
+            "rule binds every agent, so the probe is not gated on `mcpCapabilities.acp`). The "
+            "`mcp/message` probes break client rules on purpose: the envelope is sent only for "
+            "an active request on a declared `acp` MCP server, to an agent that advertised "
+            "`acp`, and `requestId` and `method` are required; the spec defines the agent's "
+            "answer to exactly these inputs (no reply). An agent that exits instead of replying "
+            "sent no reply (`ACP-EXT-002` judges a crash on `mcp/message`). Messages the agent "
+            "itself initiates (they carry `method`) are not responses. Concluding \"no response arrived\" "
             "is a heuristic wait (a quiet period derived from --tck-timeout) -- see "
             "tck.v1.conformance._helpers.quiet_period."
         ),
@@ -1588,8 +1593,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "An unrecognized `_`-prefixed custom notification is ignored: the connection stays "
-            "usable and a subsequent `session/new` still succeeds. That it gets no reply is "
-            "ACP-JSONRPC-003's concern."
+            "usable and a subsequent `session/new` still succeeds. The same holds for "
+            "`mcp/message` notifications (the unstable MCP-over-ACP envelope, well-formed and "
+            "malformed) sent to an agent that does not advertise `mcpCapabilities.acp`, which "
+            "has not recognized the method; those probes break client rules on purpose (the "
+            "envelope is for an active request on a declared `acp` server, and `requestId` and "
+            "`method` are required) because the spec defines how an agent treats a "
+            "notification it does not recognize, and that probe SKIPs when `acp` is "
+            "advertised. That a notification gets no reply is ACP-JSONRPC-003's concern."
         ),
         citation=_cite("docs/protocol/v1/draft/extensibility.mdx:113"),
     ),

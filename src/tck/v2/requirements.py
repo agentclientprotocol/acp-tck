@@ -1508,7 +1508,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(no prompt in flight), or `_tck/notify` for an agent without `capabilities.session`, "
             "and with `mcp/message` notifications (the unstable MCP-over-ACP envelope, "
             "well-formed and malformed; the rule binds every agent, so the probe is not gated "
-            "on `capabilities.session.mcp.acp`). Messages the agent "
+            "on `capabilities.session.mcp.acp`). The `mcp/message` probes break client rules "
+            "on purpose: the envelope is sent only for an active request on a declared `acp` "
+            "MCP server, to an agent that advertised `acp`, and `requestId` and `method` are "
+            "required; the spec defines the agent's answer to exactly these inputs (no "
+            "reply). An agent that exits instead of replying sent no reply (`ACP-EXT-002` "
+            "judges a crash on `mcp/message`). Messages the agent "
             "itself initiates (they carry `method`) are not responses."
         ),
         citation=_cite(
@@ -3475,7 +3480,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "An unrecognized `_`-prefixed *notification* sent to the agent gets no response "
             "and causes no crash (SHOULD-ignore) -- the v2 analogue of v1's "
             "`answers_notifications.py` defect pattern, generalised from `session/cancel` "
-            "specifically to any custom notification."
+            "specifically to any custom notification. The same holds for `mcp/message` "
+            "notifications (the unstable MCP-over-ACP envelope, well-formed and malformed) "
+            "sent to an agent that does not advertise `capabilities.session.mcp.acp`, which "
+            "has not recognized the method; those probes break client rules on purpose (the "
+            "envelope is for an active request on a declared `acp` server, and `requestId` "
+            "and `method` are required) because the spec defines how an agent treats a "
+            "notification it does not recognize, and that probe SKIPs when `acp` is "
+            "advertised."
         ),
         citation=_cite("docs/protocol/v2/draft/extensibility.mdx:231"),
     ),

@@ -2700,11 +2700,16 @@ def test_v2_answers_notifications_fails_jsonrpc_003_only():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
-def test_v2_answers_mcp_notification_fails_jsonrpc_003_only():
-    """`answers_mcp_notification.py` advertises `capabilities.session.mcp.acp` and replies to an
-    `mcp/message` notification only; `session/cancel` and the other probes stay silent, so the
-    `mcp/message` probe alone fails `ACP-JSONRPC-003`."""
-    result = _run_cli(FIXTURES_DIR_V2, "answers_mcp_notification.py", protocol_version=2, k="jsonrpc")
+@pytest.mark.parametrize(
+    "fixture", ["answers_mcp_notification.py", "answers_malformed_mcp_notification.py"]
+)
+def test_v2_answers_mcp_notification_fails_jsonrpc_003_only(fixture: str):
+    """Each fixture advertises `capabilities.session.mcp.acp` and replies to one `mcp/message`
+    probe only (`answers_mcp_notification.py` the well-formed one,
+    `answers_malformed_mcp_notification.py` the one missing `requestId`/`method`); `session/cancel`
+    and the other probes stay silent, so that probe alone fails `ACP-JSONRPC-003` and each probe is
+    pinned."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="jsonrpc")
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
@@ -2726,6 +2731,35 @@ def test_v2_pushes_status_notifications_passes_everything():
         assert notes[req_id].startswith("(silent"), f"{req_id}: {notes[req_id]}"
     for req_id, note in notes.items():
         assert "_fixture/status_update" not in note, f"{req_id}: {note}"
+
+
+def test_v2_exit_on_malformed_mcp_message_fails_ext_002_only():
+    """`exits_on_malformed_mcp_message.py` does not advertise `capabilities.session.mcp.acp` and
+    exits on an `mcp/message` notification missing `requestId`. It sent no reply, so
+    `ACP-JSONRPC-003` PASSes (v1 agrees); the crash on a notification it does not recognize is
+    `ACP-EXT-002`'s finding."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "exits_on_malformed_mcp_message.py",
+        protocol_version=2,
+        k="jsonrpc or extensibility",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-EXT-002"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-003") == "PASS", result.stdout
+
+
+def test_v2_acp_advertising_agent_is_not_sent_the_ext_002_mcp_probe():
+    """`answers_mcp_notification.py` advertises `capabilities.session.mcp.acp`, so
+    `ACP-EXT-002`'s `mcp/message` probe is skipped for it; the `_tck/ping` probe still PASSes the
+    row."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "answers_mcp_notification.py", protocol_version=2, k="extensibility"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
 
 
 def test_v2_pushes_status_and_answers_notifications_fails_no_reply_rows_only():
@@ -4875,7 +4909,8 @@ def test_adddirs_accepts_relative_fails_adddirs_203_only():
 
 
 def test_mcp_unsupported_transport_fixtures_fail_mcp_203_only():
-    """One fixture per probe: `sse` accepted, or a `_`-prefixed custom type accepted."""
+    """One fixture per probe: `sse` accepted, a `_`-prefixed custom type accepted, or an `acp`
+    declaration accepted by an agent that does not advertise `capabilities.session.mcp.acp`."""
     for fixture in (
         "accepts_sse_mcp.py",
         "accepts_custom_mcp_transport.py",
