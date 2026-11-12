@@ -1778,8 +1778,8 @@ def test_cancel_before_insertion_is_conforming():
 def test_cancel_no_idle_fails_every_cancel_dependent_id():
     """`cancel_no_idle.py` hangs on *every* prompt (not just the dedicated cancel-test one) and
     silently ignores `session/cancel` -- so every test that drives a turn through `run_prompt` at
-    all times out with an uncaught `AgentTimeout`, a FAIL (not a SKIP -- see `AGENTS.md`
-    "Statuses"), the same broad cascade shape as `no_idle_after_running.py`/
+    all times out with an uncaught `AgentTimeout`, a FAIL (not a SKIP -- see
+    `docs/requirements.md` "Statuses"), the same broad cascade shape as `no_idle_after_running.py`/
     `update_wrong_session.py` above. `ACP-CANCEL-208`/`ACP-CLOSE-002`/`ACP-CLOSE-203` are the
     exception: `session/close` still rescues the hanging turn via `ConformingAgent`'s inherited
     default handler, so they PASS. Also FAILs `ACP-RESUME-002`/`202`/`204`..`206`/`209`

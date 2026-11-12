@@ -33,7 +33,9 @@ well-specified slices don't need it.
   `uv add --project cross-check <pkg>` for the other projects), never by hand-editing
   `pyproject.toml` and never with bare `pip`.
 - Always pin dependencies to the exact version.
-- Read `AGENTS.md` before starting; read `.agents/state.md` if instructed. They describe current
+- Read `AGENTS.md` before starting, and the [`docs/`](../../docs/README.md) page for what you touch
+  (ids and tiers: `docs/requirements.md`; tests, markers and fixtures: `docs/writing-tests.md`;
+  `run_prompt`: `docs/mock-client.md`). Read `.agents/state.md` if instructed. They describe current
   conventions and decisions.
 
 ## Worker modes

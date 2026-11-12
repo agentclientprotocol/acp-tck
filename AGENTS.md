@@ -49,7 +49,8 @@ Mirroring this split, `tests/common/`, `tests/v1/`, `tests/v2/` hold unit/regist
 conforming baseline plus one fixture per defect, each designed to trip exactly the requirement(s)
 named in its filename/docstring. Read a conformance test's own `@pytest.mark.requirement(...)`/
 `@pytest.mark.capability(...)` markers, and a fixture's own docstring, for ground truth --
-`tests/v{1,2}/test_cli.py` asserts each fixture's exact FAIL/PASS set.
+`tests/v{1,2}/test_cli.py` asserts each fixture's exact FAIL/PASS set (see
+[Writing tests](docs/writing-tests.md#fixtures)).
 
 ## Running the TCK against an agent
 
@@ -124,126 +125,36 @@ its README).
 spec-tracker tests against a fetched spec checkout) and an informational `cross-check` job
 (`continue-on-error: true`). See each project's README for what its CI step checks.
 
-## How to add a requirement + test
+## Contributor docs
 
-(Describes v1; a future version's suite follows the same shape under its own package.)
-v2 cites its schema by JSON-Pointer name path (`schema/v2/schema.unstable.json#/$defs/IdleStateUpdate`),
-never by line number; `tests/v2/test_registry.py` checks that every such pointer resolves.
-v2 prose citations point at the draft doc tree (`docs/protocol/v2/draft/*.mdx`), which pairs with the draft schema.
-v1 follows the same rules (`schema/v1/schema.unstable.json#/$defs/...`, `docs/protocol/v1/draft/*.mdx`),
-checked by `tests/v1/test_registry.py`.
+The contracts live in [`docs/`](docs/README.md); read the page before changing what it covers.
 
-1. Add a `Requirement(...)` entry to `_DECLARATIONS` in `src/tck/v1/requirements.py`: pick an id
-   (`ACP-<AREA>-<NNN>`), a `Tier` (from `tck.common.requirements`), and cite the upstream
-   spec/schema location that backs it. Take it from the research report for the task, not from
-   memory of the protocol, but never cite the report itself (see Conventions).
-2. Write a test under `src/tck/v1/conformance/`, marked `@pytest.mark.requirement("ACP-…")` with
-   a docstring starting with the id(s). Use `connected_agent()` from `_helpers.py` to spawn the
-   agent; `async def` tests work without extra setup.
-3. If the requirement only applies when the agent advertises a capability, add
-   `@pytest.mark.capability("agentCapabilities.some.path")` -- the test SKIPs with a
-   "capability not advertised" reason otherwise. This checks for an *object marker* by default
-   (present + non-null counts, even `{}`); pass `boolean=True` for a plain boolean gate. See
-   `capability_is_supported()` in `src/tck/common/plugin.py`.
-   If the test takes away something other tests rely on (today only the logout tests), add
-   `@pytest.mark.revokes("auth", reason=...)`: the common plugin moves it to the end of the run.
-   At most one `revokes` test may be collected per run (`pytest.UsageError` otherwise; a second
-   would need dependency ordering). Don't use it for archive/delete of the TCK's own sessions.
-4. If the test needs to send a custom/probe method the agent isn't expected to recognize, prefix
-   it with `_` (`_tck/does_not_exist`, ...) -- the extensibility rule requires custom methods to
-   be `_`-prefixed, and the TCK holds its own probe traffic to the same rule.
-5. Run `uv run pytest` -- `tests/v1/test_registry.py` fails if the new id isn't referenced by a
-   test, or if a test references an unregistered id.
-6. Consider adding a non-conforming fixture under `tests/fixtures/agents/v1/` that trips only the
-   new requirement, and assert on it in `tests/v1/test_cli.py`.
-
-## Tiers, statuses, reporting
-
-Tiers (`tck.common.requirements.Tier`, shared across versions): `MANDATORY` (MUST), `CAPABILITY`
-(only applies when advertised), `ADVISORY` (SHOULD -- reported, never the sole cause of a failing
-verdict), `INFORMATIONAL` (spec silent / SDKs disagree -- reported only, never affects verdict).
-
-Statuses (`tck.common.report.Status`): `PASS`, `FAIL`, `SKIPPED`, `NOT_TESTED` (a registered id no
-test bound to during the run). A test that errors (setup/teardown exception, or an
-`AgentExited`/`AgentTimeout` propagating out) is `FAIL`, not a separate status. Aggregating
-several tests bound to the same requirement: any FAIL wins; else any PASS; else any SKIPPED; no
-records -> NOT_TESTED.
-
-`--report-json PATH` writes the full run as JSON: `tck_version`, `protocol_version`,
-`schema_revision`, `agent_command`, `agent_info`/`agent_capabilities`, timestamps, `requirements`
-(one entry per registry id with tier/capability/text/citation and every bound test's outcome --
-FAIL outcomes carry a capped transcript), and `verdict` (`{conformant, blocked_by_auth,
-blocked_by_version_mismatch, tier_counts}`). `conformant` is `true` iff no MANDATORY FAIL/
-NOT_TESTED, no CAPABILITY FAIL, and neither block flag is set -- ADVISORY/INFORMATIONAL never
-affect it, and a SKIPPED/NOT_TESTED CAPABILITY doesn't either. See `src/tck/common/report.py` and
-`tests/common/test_report.py` for the exact aggregation rules.
-
-## Harness API (`tck.common.harness`)
-
-A raw, hand-rolled asyncio NDJSON stdio client -- deliberately not built on the ACP Python SDK,
-whose typed layer cannot emit malformed traffic and whose transport silently drops
-non-conforming lines. It never drops or crashes on anything the agent sends; it records it.
-
-- `AgentLaunch(command, cwd=None, env_overrides={}, startup_timeout=5.0, default_timeout=5.0,
-  max_line_bytes=64*1024*1024)`.
-- `AgentProcess(launch)` -- async context manager, its own process group (POSIX).
-  - `send_raw` / `send_message` / `send_request(method, params=None, *, id=None) -> id` /
-    `send_notification`.
-  - `read_line(timeout=None) -> TranscriptEntry` -- byte-lossless even past `max_line_bytes`
-    (flags `oversize` rather than truncating). Raises `AgentTimeout` or `AgentExited` (both carry
-    the transcript so far; the latter also stderr and exit code).
-  - `wait_for_response(id, timeout=None)` / `wait_for_message(predicate, timeout=None)`.
-  - `transcript` (everything sent/received, both directions, malformed lines included),
-    `stderr_text()`, `close(grace=2.0)` (stdin-close -> SIGTERM -> SIGKILL ladder, draining
-    stdout at each stage so late-written output is still captured).
-- `TranscriptEntry` -- `direction`, `raw`, `timestamp`, `text`/`text_error`, `parsed`/
-  `parse_error`, `oversize`. Decode/parse failures are recorded as fields, never raised.
-
-## Mock-client prompt driver (`_helpers.run_prompt`)
-
-Each version's conformance suite drives `session/prompt` through its own `run_prompt` helper,
-which acts as a minimal ACP client: answers `session/request_permission`, records/rejects other
-agent -> client requests, records `session/update` notifications in order, and supports
-`on_cancel`/`on_action` to send `session/cancel`/another action mid-turn with a race-aware peek so
-an agent that resolves before the driver acts isn't misreported.
-
-v1 and v2 have genuinely different turn-end contracts and so have separate, non-shared
-implementations: in v1 the `session/prompt` response itself carries `stopReason` and *is* the
-turn's result; in v2 the response is only an acceptance receipt (`{messageId}`), and the turn's
-outcome is learned from the `state_update{state:"idle"}` that follows an active state
-(`running`/`requires_action`); its `stopReason` is only SHOULD. Read
-`src/tck/v{1,2}/conformance/_helpers.py` directly for the exact turn-end predicate and
-cancel-race handling before writing a new prompt test.
-
-Cancellation tests never turn an unavoidable race into a false PASS/FAIL: they SKIP with
-"cancellation not exercised" when the response was read before cancel could be sent, or when a
-stop reason the agent could plausibly have reached on its own arrives within a short race window
-after cancel was sent (v2 never excuses `error` that way).
-`--cancel-prompt` exists specifically to make that race less likely against a real agent.
+- [Requirements](docs/requirements.md): id format, rule B and the id lifecycle, tiers, statuses, the verdict
+  (`blocked_by_auth`/`blocked_by_version_mismatch`), citation rules, the ledger of deliberate non-requirements.
+- [Writing tests](docs/writing-tests.md): how to add a requirement + test, markers, probes, the error-code
+  policy, SKIP vs FAIL, fixtures.
+- [Mock-client prompt driver](docs/mock-client.md): the `run_prompt` contract.
+- [Harness API](docs/harness.md): `tck.common.harness`.
+- [Spec updates](docs/spec-updates.md): the `/update-to-spec` procedure, id alignment, cross-check refresh.
 
 ## Vendored schema
 
 `src/tck/v1/schema/schema.unstable.json`/`meta.unstable.json` and `src/tck/v2/schema/schema.unstable.json`/
-`meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. Both v1 and
-v2 (Draft) verify entirely against the draft (unstable) superset. The RFD-gated
-fields and methods it adds are optional for agents, but any an agent uses are validated against
-the draft shapes. Commit hash, vendor date, and
-refresh procedure live in each `schema/VENDORED.md`. Do not hand-edit the JSON files.
-`tck.v{1,2}.protocol` and `tck.v{1,2}.validation`
-derive their method-name tables and validation rules from these files at import time, so a schema
-refresh mostly self-updates them -- but check each version's `validation.py` docstring for
-hand-written carve-outs a refresh could invalidate (e.g. v1's `session/load` null-response quirk,
+`meta.unstable.json` are verbatim copies of the ACP JSON Schema from the spec repo. Both v1 and v2 (Draft) verify
+entirely against the draft (unstable) superset. The RFD-gated fields and methods it adds are optional for agents,
+but any an agent uses are validated against the draft shapes. Commit hash, vendor date and the refresh steps live
+in each `schema/VENDORED.md`; the update procedure is in [`docs/spec-updates.md`](docs/spec-updates.md). Do not
+hand-edit the JSON files.
+
+`tck.v{1,2}.protocol` and `tck.v{1,2}.validation` derive their method-name tables and validation rules from these
+files at import time, so a schema refresh mostly self-updates them -- but check each version's `validation.py`
+docstring for hand-written carve-outs a refresh could invalidate (e.g. v1's `session/load` null-response quirk,
 v2's any-array-is-one-issue rule and open-enum discriminator carve-out).
 
 `tck.v{1,2}.validation` only validates messages the *agent under test* authors (its requests/
 notifications to the client, and its responses to methods it implements) -- never a message the
 TCK's own mock client writes. There is no `validate_client_message`; add one only if a future
 requirement needs to assert on the harness's own outgoing traffic.
-
-## Spec updates
-
-The `/update-to-spec` skill drives a whole spec update; follow it rather than refreshing by hand.
-The spec maps and the `spec-impact` CLI it uses are described in `spec-tracker/README.md`.
 
 ## Conventions
 

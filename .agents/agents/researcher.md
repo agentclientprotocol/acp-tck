@@ -46,7 +46,8 @@ instructions — ask before cloning; do not clone silently.
   three positions and the discrepancy. Do not pick a winner silently.
 - **Separate tiers.** Explicitly classify each requirement as MUST (mandatory), SHOULD
   (recommended), MAY/optional, or capability-conditional (only applies when the agent advertises a
-  given capability). The TCK's test tiering depends on this classification being right.
+  given capability). The TCK's test tiering depends on this classification being right; the tiers
+  are defined in `docs/requirements.md`.
 - **No product writes.** The only file you create is your report. Never touch `src/`, `tests/`,
   `pyproject.toml`, `AGENTS.md`, or git.
 - Use `Bash` for read-only inspection (`git -C … pull --ff-only` as the skills instruct, `rg`,

@@ -43,7 +43,8 @@ That content is:
 - the requirement ids and ledger entries whose citations fall inside a change;
 - the core docs that were touched.
 
-The core docs and the ledger of deliberate non-requirements live in `spec-tracker/maps/v<N>.toml`.
+The core docs and the ledger of deliberate non-requirements live in `spec-tracker/maps/v<N>.toml`
+(ledger rules: [`docs/requirements.md`](../../../docs/requirements.md#the-ledger-of-deliberate-non-requirements)).
 
 ## 3. Depth
 
@@ -72,7 +73,7 @@ doc depends on in those linked docs. It reports each requirement as one of:
 - unchanged;
 - citation-only change;
 - changed text, tier, or capability gate;
-- retired;
+- removed;
 - new;
 - new deliberate non-requirement (with its reason).
 
@@ -81,25 +82,30 @@ implicit, or where the new spec text is silent or ambiguous.
 
 ## 5. Plan
 
-Show the user the requirement changes (add, change, retier, retire, ledger additions) and the
-slice plan. Tier choices and retirements are decisions: wait for the user's answers.
+Show the user the requirement changes (add, change, retier, remove, ledger additions) and the
+slice plan. Tier choices and removals are decisions: wait for the user's answers.
 
 ## 6. Slices
 
-1. **Re-vendor, first and alone:** remap line citations, re-vendor per `VENDORED.md`'s refresh
-   steps (copy the schema; update the commit, date, and `SCHEMA_REVISION`), and fix the citations
-   `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag (run the latter with
-   `--spec-repo <spec checkout>`; without it the spec-doc checks skip). Order matters: remap first, with the pin still at the old revision:
-   `uv run --package spec-tracker spec-impact <old-pin> <new-pin> --version vN --spec-repo <spec checkout> --fix`. It rewrites the
-   `.mdx` line numbers in `requirements.py` and `spec-tracker/maps/vN.toml` in place (line numbers only, never
-   the pin) and prints "Needs review" first, listing citations inside changed regions that it
-   left as written. It is not idempotent, so it refuses unless `<old-pin>` equals the current
-   `SCHEMA_REVISION`; bumping the pin afterwards blocks a second run. Fix the "Needs review"
-   citations by hand against the new text. Changes to the semantics of requirements don't belong
-   in this slice.
+The contract for each slice is in [`docs/spec-updates.md`](../../../docs/spec-updates.md); the id
+rules are in [`docs/requirements.md`](../../../docs/requirements.md). Run them in this order:
+
+1. **Re-vendor, first and alone** ([details](../../../docs/spec-updates.md#re-vendor)). Remap the line
+   citations with `spec-impact --fix` while the pin is still at the old revision, then re-vendor per
+   `VENDORED.md` and fix what `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag (run the
+   latter with `--spec-repo <spec checkout>`). No requirement semantics change in this slice.
 2. **One slice per area:** registry rows, conformance tests, fixtures, the `test_cli.py`
-   expectations, and the ledger additions for that area.
-3. **Cross-check:** if a change moves the upstream agents' expected results, update the
-   `--expect` lines in `cross-check/run.sh` and say why.
+   expectations, and the ledger additions for that area. Area slices pick provisional ids; step 3
+   settles them.
+3. **Final id alignment** ([details](../../../docs/spec-updates.md#id-alignment)), after all area
+   slices and before the cross-check refresh. A researcher produces a read-only inventory of every v2
+   `2xx` row against v1 and of every shared id, with a proposed rename and "same rule because..." for
+   each. **The user approves each rename**; borderline pairs are the user's call. Then a programmer
+   applies the renames everywhere: registries, markers, `test_cli.py`/`test_registry.py` sets, fixture
+   docstrings, cross-check `--expect`, and `ci.yml`.
+4. **Cross-check refresh** ([details](../../../docs/spec-updates.md#cross-check-refresh)): bump the
+   SDK pins if needed, re-observe the baselines, and update the `--expect` lines in
+   `cross-check/run.sh` and `ci.yml`, saying why each id moved. Never bake a suspected TCK false
+   positive into `--expect`.
 
 Then finish as the orchestrator skill says.

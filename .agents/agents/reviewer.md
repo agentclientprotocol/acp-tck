@@ -17,17 +17,20 @@ task is this milestone's range.
 
 ## What to check
 
-Read `AGENTS.md` first. Then read the diff (`git diff <base>..<head>`) and enough surrounding code
+Read `AGENTS.md` first, then the contracts in [`docs/`](../../docs/README.md) that the diff touches
+(`requirements.md`, `writing-tests.md`, `mock-client.md`). Then read the diff (`git diff <base>..<head>`) and enough surrounding code
 to judge it. Look for:
 
 - **Correctness.** Logic bugs, races, and timeout or cancellation handling in the harness and the
   `run_prompt` drivers. A conformance test that can false-PASS or false-FAIL against a real agent.
 - **Spec fidelity.** Every new or changed `Requirement` has the right tier, the right capability
-  gate, and a citation that actually says what the requirement claims. Check against the cited
-  research reports. Use the `check-*` skills only to confirm a specific doubtful claim.
+  gate, and a citation that actually says what the requirement claims, in the forms
+  `docs/requirements.md` allows, with ids that follow its rule B and lifecycle. Check against the
+  cited research reports. Use the `check-*` skills only to confirm a specific doubtful claim.
 - **Test quality.** Tests that pass trivially, weakened assertions, `skip`/`xfail` that hides a
   failure, a missing non-conforming fixture, or `test_cli.py` FAIL/PASS sets that don't match the
-  fixtures' docstrings.
+  fixtures' docstrings. SKIP-vs-FAIL, probe and error-code choices should follow
+  `docs/writing-tests.md`.
 - **Conventions and scope.** v1/v2 cross-imports, plugin-shim footguns, comments and code that cite
   `.agents/research/`, and changes the milestone goal didn't call for.
 

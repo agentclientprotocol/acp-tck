@@ -157,6 +157,8 @@ plus failure diagnostics:
 
 ## The tier / status / verdict model
 
+(The contract for how requirements are named, tiered and counted is in [`docs/requirements.md`](docs/requirements.md).)
+
 ### Tier
 
 Every requirement has a **tier**
@@ -262,3 +264,9 @@ commit recorded in `src/tck/v2/schema/VENDORED.md`.
 - Extensibility/`_meta`/schema-hygiene, error shape, shutdown promptness
 - `INFORMATIONAL` probes: malformed JSON, structurally-invalid requests, unknown session ids, stderr volume, MCP
   connection details
+
+## Contributing / docs
+
+Contributor docs are in [`docs/`](docs/README.md): requirement ids, tiers and citation rules; how to add a
+requirement and its test; the mock-client prompt driver; the harness API; and how to update the TCK to a new spec
+revision. Repo layout, commands and conventions for contributors and coding agents are in [`AGENTS.md`](AGENTS.md).

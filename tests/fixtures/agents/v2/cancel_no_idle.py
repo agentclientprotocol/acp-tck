@@ -8,7 +8,7 @@ resolves a hanging session via `_finish_turn(..., "cancelled")`), so this fixtur
 FAILs `ACP-CANCEL-001`/`002`/`203`/`205`..`207`/`209` (each times out inside `run_prompt`,
 since the turn never reaches a terminating idle within `--tck-timeout`) and the INFORMATIONAL
 `ACP-CANCEL-204` for the same reason (an uncaught `AgentTimeout` is a `FAIL`, not a `SKIP` --
-see `AGENTS.md` "Statuses"). `ACP-CANCEL-213` SKIPs instead: it does not judge a turn that never
+see `docs/requirements.md` "Statuses"). `ACP-CANCEL-213` SKIPs instead: it does not judge a turn that never
 ends. `ACP-CANCEL-208` and
 `ACP-INFO-CANCEL-201` are unaffected: neither one ever calls `session/cancel` on a session this
 fixture is holding hostage.
