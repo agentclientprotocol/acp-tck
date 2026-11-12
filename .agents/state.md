@@ -21,7 +21,12 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 - S1.1 — d899514 — RESUME-209 accepts announced children (connection-wide known set), RESUME-002 scoped to resumed session; fixtures replays_subagent_history (+), replays_unannounced_child (-); v2.toml:197,:599 reasons rewritten as 'Deferred'; pytest 716 passed, spec-tracker 110+5 skip. Follow-up: live child traffic during a replay-requested resume FAILs RESUME-205 (RFD only allows it on no-replay) — decide later.
 - M1 review — .agents/research/review-m1.md — 0 blockers, 2 should-fix (RESUME-209 false PASS, RESUME-205 false FAIL), 1 nit (RESUME-204).
 - S1.2 — c25547e — RESUME-209 walks only the resume exchange; RESUME-205/204 scoped to the resumed session (live child traffic not judged); fixture replays_child_before_announce (-); replays_subagent_history extended (live child chunks on every resume + child user_message); pytest 717 passed (~39 min), spec-tracker 110+5 skip. M1 DONE.
+- S0.1 — dbaafc1 — update-to-spec skill steps 2-4 track Active/Preview RFDs (+ moved into Active+), own researcher each; docs/requirements.md: RFD-only tier cap, `inferred:<feature>` section, stage label rule, ledger-reason rule; docs/spec-updates.md 'Tracked RFDs'; v2 subagents labels -> (Active RFD). At pin 3961af94 Active = subagents, streamable-http-websocket-transport, mcp-over-acp. Narrow tests green (381 + spec-tracker 110/5 + 28 cli). M0 DONE (review pending).
+## Verification cadence
+- Per slice: narrow (unit/registry + spec-tracker + `test_cli.py -k` the slice's fixtures and `conforming`). Full `uv run pytest` (~40 min) by the orchestrator at each milestone end, before its review.
 ## Next
-- S0.1 (process/docs + relabel), then M2.
+- M0 review (6faf774..dbaafc1), in parallel with S2.1.
+- M2: S2.1..S2.6.
+- S3.1 must also fix v1 ledger reasons v1.toml:197-205, :298-301 ('TCK never advertises').
 ## Open questions (waiting on the user)
 - none
