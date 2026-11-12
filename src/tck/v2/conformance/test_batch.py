@@ -1,10 +1,10 @@
 """No JSON-RPC batching (`docs/protocol/v2/draft/transports.mdx:65-67`): ACP-BATCH-209, plus the
-array evidence for ACP-TRANSPORT-201 and ACP-JSONRPC-005.
+array evidence for ACP-TRANSPORT-001 and ACP-JSONRPC-005.
 
 ACP v2 does not use JSON-RPC batches: "Senders MUST NOT send a JSON array of messages, and
 receivers reject one with a single `-32600` (Invalid Request) response with `id: null`." The
 sender MUST NOT binds the agent as a sender too: an agent that answers with an array fails
-`ACP-TRANSPORT-201` (MANDATORY); `test_transport.py` judges the arrays it sees in an ordinary
+`ACP-TRANSPORT-001` (MANDATORY); `test_transport.py` judges the arrays it sees in an ordinary
 exchange, and `test_array_reply_is_never_an_array` here judges the replies to the probe arrays.
 That row is kept apart from `ACP-BATCH-209` (ADVISORY, the receiver clause has no RFC 2119
 keyword) so an agent that ignores or crashes on an array fails only the ADVISORY rows.
@@ -106,9 +106,9 @@ async def test_array_yields_a_single_invalid_request_object(agent_launch, case):
         assert extra is None, f"more than one reply to a single JSON array: {extra.raw!r}"
 
 
-@pytest.mark.requirement("ACP-TRANSPORT-201")
+@pytest.mark.requirement("ACP-TRANSPORT-001")
 async def test_array_reply_is_never_an_array(agent_launch):
-    """ACP-TRANSPORT-201 (MANDATORY). Whatever the agent does with the probe arrays, no line it
+    """ACP-TRANSPORT-001 (MANDATORY). Whatever the agent does with the probe arrays, no line it
     writes to stdout is itself an array: senders MUST NOT send one (`transports.mdx:67`), the
     agent included. `test_transport.py` covers arrays in an ordinary exchange; this covers an
     array answered with an array.

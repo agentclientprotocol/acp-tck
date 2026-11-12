@@ -189,7 +189,7 @@ def skip_if_auth_gated_msg(msg: Any) -> None:
     capability-not-advertised skip) and set `Verdict.blocked_by_auth`.
 
     Only excuses the `-32000` when the cached `initialize` result actually advertised at least
-    one `authMethods` entry (mirrors v1's AUTH-A1 rule, re-cited as `ACP-AUTH-205`) -- an agent
+    one `authMethods` entry (the `ACP-AUTH-005` rule) -- an agent
     that advertises none and still returns `-32000` has no defined remedy; this is left as an
     ordinary, un-excused failure of whatever the caller was asserting, not something the TCK can
     route around.
@@ -263,7 +263,7 @@ async def resume_session(
 ) -> tuple[TranscriptEntry, list[tuple[int, TranscriptEntry]]]:
     """Send `session/resume` and collect every `session/update` notification observed on the
     wire before its response arrives, in wire order -- this *is* the replay stream
-    `ACP-RESUME-202..209` need to inspect. `session/resume`'s response is not an acceptance
+    `ACP-RESUME-002/202/204..209` need to inspect. `session/resume`'s response is not an acceptance
     receipt (unlike `session/prompt`'s): it carries the actual result directly, so unlike
     `run_prompt` there is no separate turn-end predicate to wait for, just the matching response.
 
@@ -388,7 +388,7 @@ def assert_unknown_session_error(entry: TranscriptEntry, method: str, session_id
     """Assert `entry` is the `error.mdx:54-56` answer to a session-scoped request naming a
     session that is not active: error `-32002` with `data.sessionId` equal to `session_id`. A
     success, a wrong code and a missing or wrong `data.sessionId` are reported together. Shared
-    by `ACP-ERROR-201` and `ACP-RESUME-211`; the schema's `Other` error-data branch accepts any
+    by `ACP-ERROR-003` and `ACP-ERROR-004`; the schema's `Other` error-data branch accepts any
     `data`, so the shape is checked here."""
     msg = entry.parsed
     error = msg.get("error") if isinstance(msg, dict) else None
@@ -517,7 +517,7 @@ async def _attempt_resumable_route(
             pytest.fail(
                 "session/resume answered -32601 Method not found -- session/resume is "
                 "part of the baseline once capabilities.session is advertised at all, so "
-                "this is a hard failure of ACP-RESUME-201, not a route-specific SKIP"
+                "this is a hard failure of ACP-RESUME-001, not a route-specific SKIP"
             )
         errors.append(f"session/resume error: {msg['error']!r}")
         return None
@@ -533,7 +533,7 @@ async def obtain_resumable_session(
 ) -> AsyncIterator[tuple[AgentProcess, str, TranscriptEntry, Any]]:
     """Yield `(agent, session_id, resume_response_entry, resume_cwd)` for a connected,
     initialized agent, a session id this helper found `session/resume` accepts, the response
-    entry from the successful probe call that proved it (`ACP-RESUME-201` uses this directly
+    entry from the successful probe call that proved it (`ACP-RESUME-001` uses this directly
     rather than issuing a second, redundant `session/resume` for the same id), and the `cwd`
     that probe used -- always `cwd` itself, since resume requires the session's own `cwd` and
     every route only ever resumes a session the TCK created in `cwd`.
@@ -614,7 +614,7 @@ def iter_messages(entry: TranscriptEntry) -> list[dict[str, Any]]:
     `[entry.parsed]` for an ordinary object line, every dict element of an array line, or `[]`
     for anything else (a parse failure, a bare scalar line, ...).
 
-    ACP v2 has no batches, so an array line is itself non-conformant -- `ACP-TRANSPORT-201`
+    ACP v2 has no batches, so an array line is itself non-conformant -- `ACP-TRANSPORT-001`
     judges that. It is flattened here only so every other row can still read what it carries
     (an agent that batches fails the TRANSPORT row, not every prompt row). A non-dict element
     is dropped: there is nothing meaningful to dispatch."""
@@ -728,7 +728,7 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
     "broken": the negotiation itself is judged normally by `ACP-INIT-001`/`003`/`201`/`202`/`208`, which
     only ever assert on the negotiation outcome, never on the *shape* of the result payload. But
     a test that goes on to assert v2-only shape requirements against that same result -- `info`
-    being REQUIRED (`ACP-INIT-203`), capability markers being objects (`ACP-INIT-204`), or the
+    being REQUIRED (`ACP-INIT-004`), capability markers being objects (`ACP-INIT-204`), or the
     exchange validating against the v2 schema (`ACP-SCHEMA-001`) -- cannot honestly judge a
     result the agent never claimed was v2-shaped; call this right after such a test has its own
     `init_result` in hand, before evaluating any v2-shape assertion.
@@ -1023,7 +1023,7 @@ class PromptTurn:
     """`(transcript_index, update)` for every `state_update` of `session_id` during the turn."""
     updates: list[tuple[int, TranscriptEntry]] = field(default_factory=list)
     """`(transcript_index, entry)` for every `session/update` observed during the turn, in wire
-    order, whatever `sessionId` it carried (`ACP-PROMPT-205` judges attribution)."""
+    order, whatever `sessionId` it carried (`ACP-PROMPT-002` judges attribution)."""
     client_requests_seen: list[TranscriptEntry] = field(default_factory=list)
     """Every agent -> client request (answered by the mock client) and every agent -> client
     notification other than `session/update` (e.g. `$/cancel_request`, or an undefined method,
@@ -1285,7 +1285,7 @@ async def run_prompt(
         return True
 
     async def _handle_one(entry: TranscriptEntry) -> None:
-        """Dispatch one line. An array line is non-conformant (`ACP-TRANSPORT-201` judges it)
+        """Dispatch one line. An array line is non-conformant (`ACP-TRANSPORT-001` judges it)
         but is still dispatched element by element, through synthetic per-item entries sharing
         the line's raw/timestamp, so the agent fails only that row; their recorded index is the
         line's own."""

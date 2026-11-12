@@ -2,7 +2,7 @@
 """Non-conforming fixture: `session/resume` of a session the agent never created succeeds and
 creates it, instead of `-32002` with `data.sessionId`.
 
-FAILs exactly `ACP-RESUME-211`. Everything else about resume is the conforming baseline.
+FAILs exactly `ACP-ERROR-004` (its `session/resume` probe). Everything else about resume is the conforming baseline.
 """
 
 import sys

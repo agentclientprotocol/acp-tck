@@ -2,7 +2,7 @@
 """Non-conforming fixture, for `--cancel-prompt __hang__`: `cancel_before_insertion.py`, but a
 `$/cancel_request` naming the held `__hang__` prompt silently discards it -- no response, ever,
 not even after `session/cancel`. The receiver MUST still send a response for the original
-request: FAILs exactly `ACP-CANCEL-212`.
+request: FAILs exactly `ACP-JSONRPC-007`.
 """
 
 import sys

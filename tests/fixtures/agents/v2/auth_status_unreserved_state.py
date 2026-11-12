@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Defect fixture for ACP-AUTH-209: advertises `auth.status` and answers `state: "logged_in"`,
-which the schema accepts (open enum) but is neither a defined `AuthState` value nor
-`_`-prefixed, so it is reserved for future ACP variants.
+"""Defect fixture for ACP-AUTH-008: advertises `auth.status` and answers `state: "logged_in"`,
+which the schema accepts (open enum, so ACP-AUTH-007 PASSes) but is neither a defined
+`AuthState` value nor `_`-prefixed, so it is reserved for future ACP variants.
 """
 
 import sys

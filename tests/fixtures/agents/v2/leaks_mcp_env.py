@@ -4,7 +4,7 @@
 pick the channel: `meta` echoes every stdio `env` value and http `headers` value in the `_meta`
 of the `session/new` result (stdout), `stderr` writes them to stderr, `argv` appends the `env`
 values to the stdio server's command line, `header` echoes only the `headers` values in `_meta`.
-Advertises `session.mcp.{stdio,http}`. Trips only `ACP-MCP-205`; `ACP-MCP-201/202` still PASS.
+Advertises `session.mcp.{stdio,http}`. Trips only `ACP-SESSION-006`; `ACP-MCP-201/202` still PASS.
 """
 
 import sys

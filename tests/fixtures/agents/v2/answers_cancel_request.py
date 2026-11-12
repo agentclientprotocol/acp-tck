@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: answers every `$/cancel_request` notification with an error naming
 the cancelled id (`-32602`, "unknown request"). A receiver MUST ignore one for an unknown or
-already-answered id and never send a second response: FAILs exactly `ACP-CANCEL-210`,
-`ACP-CANCEL-211`, and `ACP-CANCEL-212` (the withdrawn prompt, already answered, gets this error
+already-answered id and never send a second response: FAILs exactly `ACP-JSONRPC-006`,
+`ACP-CANCEL-211`, and `ACP-JSONRPC-007` (the withdrawn prompt, already answered, gets this error
 as a second response).
 """
 

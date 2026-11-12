@@ -185,7 +185,8 @@ async def test_logout_succeeds(agent_launch):
     called standalone. Only its own success is checked, nothing about session state after.
 
     SKIPs unless `--allow-logout`/`--tck-allow-logout` was given, since calling `logout` for
-    real may revoke the operator's own credentials -- mirrors v2's `ACP-AUTH-203`."""
+    real may revoke the operator's own credentials -- v2's `ACP-AUTH-004` gates `auth/logout`
+    the same way."""
     if not current_allow_logout():
         pytest.skip(
             "logout not exercised: pass --allow-logout (it may revoke the operator's credentials)"

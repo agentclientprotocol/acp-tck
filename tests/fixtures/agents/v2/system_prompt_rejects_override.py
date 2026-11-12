@@ -2,7 +2,7 @@
 """Non-conforming fixture: advertises `capabilities.session.systemPrompt.mode.override` but
 rejects an `override` `systemPrompt`; `append` works.
 
-FAILs exactly `ACP-SYSPROMPT-202`. `ACP-SYSPROMPT-201` PASSes.
+FAILs exactly `ACP-SYSPROMPT-202`. `ACP-SYSPROMPT-001` PASSes.
 """
 
 import sys

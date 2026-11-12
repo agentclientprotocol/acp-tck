@@ -3,7 +3,7 @@
 `data.sessionId`. The schema's `Other` error-data branch accepts that, so only the hand check in
 `_helpers.assert_unknown_session_error` catches it.
 
-FAILs `ACP-ERROR-201` and `ACP-RESUME-211`, which share that assertion.
+FAILs `ACP-ERROR-003` and `ACP-ERROR-004`, which share that assertion.
 """
 
 import sys

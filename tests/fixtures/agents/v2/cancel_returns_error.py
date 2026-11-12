@@ -9,7 +9,7 @@ have been a conforming pre-insertion cancel, see `cancel_before_insertion.py`) a
 (a `session/close` sent instead of `session/cancel` cannot rescue the pending prompt either --
 `_handle_prompt` never registers the session in `_hanging_sessions`, so the inherited
 `_handle_close_session` has nothing to resolve, and the original `session/prompt` request is
-simply never answered at all -- `run_prompt` itself times out). `ACP-CANCEL-201`/`202`/`206`/`207`
+simply never answered at all -- `run_prompt` itself times out). `ACP-CANCEL-001`/`002`/`206`/`207`
 SKIP, deferring to `ACP-CANCEL-203` -- the turn never reaches a terminating idle at all, so they
 have nothing of their own to check.
 """

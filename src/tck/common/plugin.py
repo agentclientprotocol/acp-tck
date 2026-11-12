@@ -365,8 +365,8 @@ _ALLOW_LOGOUT: contextvars.ContextVar[bool] = contextvars.ContextVar("_ALLOW_LOG
 
 def current_allow_logout() -> bool:
     """Whether `--tck-allow-logout` was given for this run. Read by both versions' logout
-    requirements -- v1's `ACP-AUTH-004` (`logout`) and v2's `ACP-AUTH-203` (`auth/logout`) --
-    to decide whether to actually call the destructive logout method; mirrors the
+    requirement, `ACP-AUTH-004` (`logout` in v1, `auth/logout` in v2), to decide whether to
+    actually call the destructive logout method; mirrors the
     `current_auth_method_id()` contextvar pattern above."""
     return _ALLOW_LOGOUT.get()
 

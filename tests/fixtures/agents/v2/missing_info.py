@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: omits the (v2-REQUIRED) `info` field from the `initialize` result.
 
-FAILs `ACP-INIT-203` directly and cascades into `ACP-SCHEMA-001` (both validate the same
+FAILs `ACP-INIT-004` directly and cascades into `ACP-SCHEMA-001` (both validate the same
 `initialize` result against the vendored schema, which lists `info` as required). Does not
 cascade into `ACP-INIT-001`, which only checks for a non-error result, not its shape.
 

@@ -1,4 +1,4 @@
-"""A minimal stdio MCP server used by ACP-MCP-205, run as a standalone script:
+"""A minimal stdio MCP server used by ACP-SESSION-006, run as a standalone script:
 
     python _mcp_stub.py <marker-path>
 
@@ -6,7 +6,7 @@ Speaks just enough newline-delimited JSON-RPC to complete an MCP handshake: answ
 `initialize` (echoing the requested `protocolVersion`), `ping`, and `tools/list` (no tools), and
 `-32601` to any other request. Notifications are ignored. On the first `initialize` it writes
 `<marker-path>` as a JSON object holding the `argv` it was launched with, which is how the TCK
-observes that the agent actually connected and what command line it used (ACP-MCP-205
+observes that the agent actually connected and what command line it used (ACP-SESSION-006
 checks that no `env` value reached it). Exits on stdin EOF. Pure stdlib, and not imported by the
 test suite.
 """

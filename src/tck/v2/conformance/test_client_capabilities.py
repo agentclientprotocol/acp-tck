@@ -1,6 +1,6 @@
-"""Client-capability negative tests: ACP-CLIENTCAP-201 (elicitation MUST NOT be requested in an
+"""Client-capability negative tests: ACP-CLIENTCAP-003 (elicitation MUST NOT be requested in an
 unadvertised mode) and ACP-CLIENTCAP-202 (every agent -> client method seen during a turn is a
-defined v2 method or `_`-prefixed) -- v2's collapse of v1's `ACP-CLIENTCAP-001/002/003`, since v2
+defined v2 method or `_`-prefixed) -- v2's collapse of v1's `ACP-CLIENTCAP-001/002`, since v2
 removed `fs/*`/`terminal/*` entirely, so calling them just FAILs as undefined methods.
 
 Both rows are `Tier.CAPABILITY`/`capabilities.session` per the session-baseline tiering rule
@@ -37,16 +37,16 @@ async def _agent_to_client_methods_seen(agent_launch, tmp_path) -> list[str | No
     ]
 
 
-@pytest.mark.requirement("ACP-CLIENTCAP-201")
+@pytest.mark.requirement("ACP-CLIENTCAP-003")
 @pytest.mark.capability("capabilities.session")
 async def test_no_unadvertised_elicitation_call(agent_launch, tmp_path):
-    """ACP-CLIENTCAP-201 (`elicitation.mdx:56`: agents MUST NOT request an elicitation mode the
+    """ACP-CLIENTCAP-003 (`elicitation.mdx:56`: agents MUST NOT request an elicitation mode the
     client has not advertised). PASS is vacuous for an agent that never uses elicitation at
     all."""
     methods_seen = await _agent_to_client_methods_seen(agent_launch, tmp_path)
     elicitation_calls = [m for m in methods_seen if m == "elicitation/create"]
     assert not elicitation_calls, (
-        f"ACP-CLIENTCAP-201: elicitation/create called without an elicitation mode advertised: "
+        f"ACP-CLIENTCAP-003: elicitation/create called without an elicitation mode advertised: "
         f"{elicitation_calls!r}"
     )
 

@@ -2,11 +2,11 @@
 """Non-conforming fixture: advertises `capabilities.session.delete: {}` but `session/delete`
 always errors, regardless of the sessionId given.
 
-FAILs `ACP-DELETE-201` (delete of an existing session must succeed), `ACP-DELETE-202` (cascades:
+FAILs `ACP-DELETE-001` (delete of an existing session must succeed), `ACP-DELETE-003` (cascades:
 its own `session/delete` call fails the same way before it can compare before/after
-`session/list` results), and `ACP-DELETE-203` (ADVISORY: deleting an unknown sessionId should
-also succeed silently, but this fixture errors unconditionally). `ACP-DELETE-201`/`202` are
-`Tier.CAPABILITY`, so this flips the overall verdict to NOT CONFORMANT; `ACP-DELETE-203` being
+`session/list` results), and `ACP-DELETE-002` (ADVISORY: deleting an unknown sessionId should
+also succeed silently, but this fixture errors unconditionally). `ACP-DELETE-001`/`003` are
+`Tier.CAPABILITY`, so this flips the overall verdict to NOT CONFORMANT; `ACP-DELETE-002` being
 ADVISORY does not add to that on its own. Mirrors v1's `advertises_load_but_errors.py`.
 """
 

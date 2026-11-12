@@ -38,7 +38,7 @@ async def test_error_messages_are_non_empty_single_line(agent_launch):
             continue
         assert message != "", f"{what}: error.message must not be empty"
         assert "\n" not in message, f"{what}: error.message must not contain a newline: {message!r}"
-        # error.data's shape depends on the code (`error.mdx:10`); ACP-ERROR-201 checks the
+        # error.data's shape depends on the code (`error.mdx:10`); ACP-ERROR-003/004 check the
         # `-32002` shape, nothing is asserted on it here.
 
 

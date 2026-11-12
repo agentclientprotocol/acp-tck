@@ -4,7 +4,7 @@ correctly (before responding), but strips `messageId` from every replayed update
 replayed `user_message` can never be matched back to the original prompt turn it came from.
 
 FAILs exactly `ACP-RESUME-204` and `ACP-RESUME-209` (a message update without `messageId` is
-schema-invalid). `ACP-RESUME-201`/`202`/`203`/`206` (resume itself, replay-before-response
+schema-invalid). `ACP-RESUME-001`/`002`/`202`/`206` (resume itself, replay-before-response
 ordering, the no-`replayFrom` no-replay rule, and the state snapshot) are unaffected -- none of
 them inspect `messageId`. `ACP-RESUME-205` is vacuous here regardless (this fixture, like
 `ConformingAgent`, never emits a `*_chunk` update).

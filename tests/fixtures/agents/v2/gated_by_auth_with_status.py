@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """A conforming agent that requires authentication before `session/new` (like
 `gated_by_auth.py`) and advertises `auth.status`: `auth/status` answers
-`state: "unauthenticated"` on a fresh connection instead of `-32000`, so ACP-AUTH-209 PASSes
+`state: "unauthenticated"` on a fresh connection instead of `-32000`, so ACP-AUTH-007/008 PASS
 against a genuinely unauthenticated agent. Passing `--auth-method tck` must not change that
-result (ACP-AUTH-209's test never logs in).
+result (their tests never log in).
 """
 
 import sys

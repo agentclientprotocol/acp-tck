@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Defect fixture for ACP-AUTH-209: advertises `auth.status` and answers `auth/status` with a
-result that lacks the required `state`, so it fails `AuthStatusResponse` validation.
+"""Defect fixture for ACP-AUTH-007: advertises `auth.status` and answers `auth/status` with a
+result that lacks the required `state`, so it fails `AuthStatusResponse` validation. ACP-AUTH-008
+SKIPs: there is no `state` to judge.
 """
 
 import sys

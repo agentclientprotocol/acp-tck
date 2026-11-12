@@ -1,6 +1,7 @@
-"""Cancellation conformance: ACP-CANCEL-201..214, ACP-INFO-CANCEL-201, ACP-CLOSE-205.
+"""Cancellation conformance: ACP-CANCEL-001/002/203..209/211/213/214, ACP-JSONRPC-006/007,
+ACP-INFO-CANCEL-201, ACP-CLOSE-205.
 
-`ACP-CLOSE-202` is also bound to `test_close_cancels_foreground_work` below, alongside its own
+`ACP-CLOSE-002` is also bound to `test_close_cancels_foreground_work` below, alongside its own
 `ACP-CANCEL-208` id -- see `tck.v2.requirements` for why this is a deliberate reuse rather than
 a duplicate probe. `ACP-CLOSE-205` lives here because it uses the same held-permission scenario
 as `ACP-CANCEL-209`/`213`.
@@ -10,8 +11,8 @@ the `session/prompt` response (only an acceptance receipt; prompt-lifecycle.mdx:
 A prompt cancelled before insertion is instead answered `-32800`, and then owes an idle only if
 foreground work was active (:1173,1191-1192). `ACP-CANCEL-204` is INFORMATIONAL (promptness has
 no wire signal) and always SKIPs after recording what it saw; `ACP-INFO-CANCEL-201` records
-behaviour without asserting. `ACP-CANCEL-210`/`211` (`$/cancel_request` for an unknown or
-answered id) are MANDATORY and need no session; `ACP-CANCEL-213` is ADVISORY. Everything else is
+behaviour without asserting. `ACP-JSONRPC-006` and `ACP-CANCEL-211` (`$/cancel_request` for an
+unknown or answered id) are MANDATORY and need no session; `ACP-CANCEL-213` is ADVISORY. Everything else is
 CAPABILITY on `capabilities.session`.
 
 **The race, and the honest-SKIP pattern**: `run_prompt(..., on_cancel=True)` fires
@@ -27,7 +28,7 @@ CAPABILITY on `capabilities.session`.
 `error` is never excused: reporting an abort as `error` is exactly the defect the spec singles
 out (:1199). Reserved non-`_` values and late plausible ones are judged too.
 
-`ACP-CANCEL-201`/`207` share one test: a single `stopReason == "cancelled"` check evidences both
+`ACP-CANCEL-001`/`207` share one test: a single `stopReason == "cancelled"` check evidences both
 the "MUST send a cancelled idle" rule and the "no illegal substitute value" rule.
 
 `ACP-CANCEL-209`/`213` and `ACP-CLOSE-205` hold the agent's own `session/request_permission`
@@ -130,12 +131,12 @@ async def _run_cancel_turn(agent_launch, tmp_path, cancel_prompt_text, **kwargs)
         return agent, turn
 
 
-@pytest.mark.requirement("ACP-CANCEL-201", "ACP-CANCEL-207")
+@pytest.mark.requirement("ACP-CANCEL-001", "ACP-CANCEL-207")
 @pytest.mark.capability("capabilities.session")
 async def test_cancel_resolves_with_a_cancelled_idle(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
-    """ACP-CANCEL-201/207. When `session/cancel` lands on active foreground work, the idle that
+    """ACP-CANCEL-001/207. When `session/cancel` lands on active foreground work, the idle that
     ends it carries exactly `stopReason: "cancelled"` -- not another defined value, not an
     unprefixed substitute."""
     agent, turn = await _run_cancel_turn(agent_launch, tmp_path, cancel_prompt_text)
@@ -179,12 +180,12 @@ async def test_cancel_does_not_surface_as_a_generic_failure(
         )
 
 
-@pytest.mark.requirement("ACP-CANCEL-202")
+@pytest.mark.requirement("ACP-CANCEL-002")
 @pytest.mark.capability("capabilities.session")
 async def test_no_cancelled_work_output_after_the_cancelled_idle(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
-    """ACP-CANCEL-202. Updates for the cancelled work precede its cancelled idle: within
+    """ACP-CANCEL-002. Updates for the cancelled work precede its cancelled idle: within
     `quiet_period` after it, no agent message/thought update for the session reuses a
     `messageId` seen during the cancelled turn. Repeated idle snapshots, `unknown`, and new work
     are allowed. SKIPs unless the turn resolved as `cancelled`.
@@ -206,7 +207,7 @@ async def test_no_cancelled_work_output_after_the_cancelled_idle(
         if turn.idle_update is None or turn.stop_reason != "cancelled":
             pytest.skip(
                 "prerequisite not met: the turn did not resolve with stopReason 'cancelled' -- "
-                "see ACP-CANCEL-201/207"
+                "see ACP-CANCEL-001/207"
             )
 
         def _output_entity(msg):
@@ -244,7 +245,7 @@ async def test_cancel_stops_work_promptly(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
     """ACP-CANCEL-204 (INFORMATIONAL -- "as soon as possible" has no wire-observable signal).
-    Runs the `ACP-CANCEL-201` scenario, records whether cancel was exercised, and always SKIPs."""
+    Runs the `ACP-CANCEL-001` scenario, records whether cancel was exercised, and always SKIPs."""
     _, turn = await _run_cancel_turn(agent_launch, tmp_path, cancel_prompt_text)
     record_property("acp_tck_cancel_sent", turn.cancelled_at_index is not None)
     record_property("acp_tck_stop_reason", turn.stop_reason)
@@ -304,16 +305,16 @@ async def test_cancel_with_meta_is_accepted(
     )
 
 
-@pytest.mark.requirement("ACP-CANCEL-208", "ACP-CLOSE-202")
+@pytest.mark.requirement("ACP-CANCEL-208", "ACP-CLOSE-002")
 @pytest.mark.capability("capabilities.session")
 async def test_close_cancels_foreground_work(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
-    """ACP-CANCEL-208 / ACP-CLOSE-202. `session/close` on a session with an in-flight turn
+    """ACP-CANCEL-208 / ACP-CLOSE-002. `session/close` on a session with an in-flight turn
     cancels that work as `session/cancel` would: the idle ending it carries `cancelled`. If the
     close kept the prompt from being inserted, the prompt is answered `-32800`
-    (session-setup.mdx:395) -- any other error FAILs. `ACP-CLOSE-202` reuses this exact
-    evidence; `ACP-CLOSE-201` covers `session/close`'s own result on an idle session."""
+    (session-setup.mdx:395) -- any other error FAILs. `ACP-CLOSE-002` reuses this exact
+    evidence; `ACP-CLOSE-001` covers `session/close`'s own result on an idle session."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
 
@@ -476,7 +477,7 @@ async def test_close_withdraws_the_pending_permission_request(
                 agent, session_id, cancel_prompt_text, timeout, on_action=_close
             )
         except AgentTimeout:
-            pytest.skip("the turn never ended after session/close -- see ACP-CANCEL-208/CLOSE-202")
+            pytest.skip("the turn never ended after session/close -- see ACP-CANCEL-208/CLOSE-002")
         if turn.held_permission is None:
             pytest.skip("no session/request_permission was pending when session/close was sent")
         close_entry = turn.action_response
@@ -514,11 +515,11 @@ async def _liveness_reply(agent, agent_initialize_result, tmp_path, timeout):
         pytest.fail("the agent stopped answering requests after a $/cancel_request")
 
 
-@pytest.mark.requirement("ACP-CANCEL-210")
+@pytest.mark.requirement("ACP-JSONRPC-006")
 async def test_cancel_request_for_an_unknown_id_is_ignored(
     agent_launch, agent_initialize_result, tmp_path
 ):
-    """ACP-CANCEL-210. A `$/cancel_request` naming an id the TCK never sent
+    """ACP-JSONRPC-006. A `$/cancel_request` naming an id the TCK never sent
     (`_tck_never_sent_request`) gets no response of any kind within `quiet_period`, and the next
     request is still answered."""
     timeout = agent_launch.default_timeout
@@ -554,12 +555,12 @@ async def test_cancel_request_for_an_answered_id_is_ignored(
         await _liveness_reply(agent, agent_initialize_result, tmp_path, timeout)
 
 
-@pytest.mark.requirement("ACP-CANCEL-212")
+@pytest.mark.requirement("ACP-JSONRPC-007")
 @pytest.mark.capability("capabilities.session")
 async def test_withdrawn_prompt_is_still_answered_exactly_once(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
-    """ACP-CANCEL-212. `session/prompt` (the cancel prompt) immediately followed by
+    """ACP-JSONRPC-007. `session/prompt` (the cancel prompt) immediately followed by
     `$/cancel_request` naming it still gets exactly one response (cancellation.mdx:20,24): a
     success, or an error that is `-32800` only if no user-message update was emitted for it
     (prompt-lifecycle.mdx:325,388). Other error codes are recorded only: an agent may decline the
@@ -641,7 +642,7 @@ async def test_cancel_answers_a_held_prompt_request_cancelled(
                 agent, session_id, cancel_prompt_text, timeout=timeout
             )
         except AgentTimeout:
-            pytest.skip("the first prompt's turn never ended -- see ACP-CANCEL-201")
+            pytest.skip("the first prompt's turn never ended -- see ACP-CANCEL-001")
         record_property("acp_tck_second_prompt_outcome", scenario.outcome)
         if scenario.not_exercised is not None:
             pytest.skip(f"held prompt not exercised: {scenario.not_exercised}")

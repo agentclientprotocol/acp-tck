@@ -77,7 +77,7 @@ async def test_concurrent_prompt_behaviour(
                 agent, session_id, cancel_prompt_text, timeout=timeout
             )
         except AgentTimeout:
-            pytest.skip("the first prompt's turn never ended -- see ACP-STATE-202/ACP-CANCEL-201")
+            pytest.skip("the first prompt's turn never ended -- see ACP-STATE-202/ACP-CANCEL-001")
     if scenario.not_exercised is not None:
         pytest.skip(f"prompt during active work not exercised: {scenario.not_exercised}")
     record_property("behaviour", scenario.outcome)

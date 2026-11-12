@@ -4,7 +4,7 @@ entirely from v2 (`fs/*`/`terminal/*`; see `tck.v2.protocol.CLIENT_METHODS`).
 
 FAILs `ACP-CLIENTCAP-202` (agent -> client methods must be a defined v2 method or `_`-prefixed)
 and, as an expected cascade, `ACP-SCHEMA-001` (unknown agent-authored method, same pattern as
-`ACP-INIT-204`). `ACP-CLIENTCAP-201` is unaffected since this isn't `elicitation/create`.
+`ACP-INIT-204`). `ACP-CLIENTCAP-003` is unaffected since this isn't `elicitation/create`.
 Fires-and-forgets via `SendsClientRequestAgent`, so the turn otherwise finishes normally.
 """
 

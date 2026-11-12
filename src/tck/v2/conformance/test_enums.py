@@ -189,7 +189,7 @@ async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_laun
                     )
                 entry = await agent.read_line(timeout=remaining)
                 raw = entry.parsed
-                # A line may be an array (non-conformant, `ACP-TRANSPORT-201`) -- unwrap it like
+                # A line may be an array (non-conformant, `ACP-TRANSPORT-001`) -- unwrap it like
                 # `_helpers.run_prompt`'s `_handle_one` does so a batching agent fails only
                 # that row, not this one.
                 if isinstance(raw, list):

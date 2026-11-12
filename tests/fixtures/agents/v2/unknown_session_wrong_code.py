@@ -2,7 +2,7 @@
 """Non-conforming fixture: answers `session/prompt` for a session that is not active (never
 created, or closed) with `-32602` instead of `-32002` with `data.sessionId`.
 
-FAILs exactly `ACP-ERROR-201`. `ACP-RESUME-211` is unaffected (resume still answers `-32002`).
+FAILs exactly `ACP-ERROR-003`. `ACP-ERROR-004` is unaffected (resume still answers `-32002`).
 """
 
 import sys

@@ -3,7 +3,7 @@
 unconditionally, even when `replayFrom` is omitted/`null` (which MUST NOT replay history before
 responding).
 
-FAILs exactly `ACP-RESUME-203`. `ACP-RESUME-201` (the resume itself still succeeds) and
+FAILs exactly `ACP-RESUME-002`. `ACP-RESUME-001` (the resume itself still succeeds) and
 `ACP-RESUME-202`/`204`/`205`/`206`/`209` (the replay-`{"type": "start"}` scenarios and the
 state snapshot, which this fixture answers identically to `ConformingAgent`) are unaffected.
 """

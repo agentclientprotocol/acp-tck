@@ -1,13 +1,14 @@
 """Error codes the agent returns for the cases `error.mdx` names:
 
-- ACP-ERROR-201 (CAPABILITY, `capabilities.session`): a session-scoped request naming a session
-  that is not active gets `-32002` with `data.sessionId` set to the requested id. Probes
-  `session/prompt` for a never-created and for a closed session, and `session/set_config_option`
-  for a never-created one. (`session/resume` of an unknown id is `ACP-RESUME-211`, judged by the
-  same `_helpers.assert_unknown_session_error`.)
-- ACP-ERROR-202 (MANDATORY): a standard method gated on a capability the agent did not advertise
+- ACP-ERROR-003 / ACP-ERROR-004 (CAPABILITY, `capabilities.session`): a session-scoped request
+  naming a session that is not active gets `-32002` with `data.sessionId` set to the requested
+  id. ACP-ERROR-003 probes `session/prompt` for a never-created and for a closed session;
+  ACP-ERROR-004 probes `session/set_config_option` for a never-created one here, and
+  `session/resume` of an unknown id in `test_session_capabilities.py`. All are judged by
+  `_helpers.assert_unknown_session_error`.
+- ACP-ERROR-006 (MANDATORY): a standard method gated on a capability the agent did not advertise
   gets `-32601`.
-- ACP-ERROR-203 (ADVISORY): codes in the reserved ranges are ACP-defined ones.
+- ACP-ERROR-008 (ADVISORY): codes in the reserved ranges are ACP-defined ones.
 - ACP-ERROR-204 (ADVISORY): if a non-JSON line is answered, the answer is `-32700` with `id: null`.
 
 The MUSTs name their codes, so they are asserted. A `-32000` reply to an unknown-session probe is
@@ -69,13 +70,13 @@ def _error_object(entry: TranscriptEntry) -> dict[str, Any] | None:
     return error if isinstance(error, dict) else None
 
 
-# --- ACP-ERROR-201: unknown session ---
+# --- ACP-ERROR-003/004: unknown session ---
 
 
-@pytest.mark.requirement("ACP-ERROR-201")
+@pytest.mark.requirement("ACP-ERROR-003")
 @pytest.mark.capability("capabilities.session")
 async def test_prompt_never_created_session_gets_resource_not_found(agent_launch, tmp_path):
-    """ACP-ERROR-201. `session/prompt` for a `sessionId` the agent never created."""
+    """ACP-ERROR-003. `session/prompt` for a `sessionId` the agent never created."""
     async with connected_agent(agent_launch) as agent:
         await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         entry = await _request(
@@ -87,12 +88,12 @@ async def test_prompt_never_created_session_gets_resource_not_found(agent_launch
         assert_unknown_session_error(entry, "session/prompt", _UNKNOWN_SESSION_ID)
 
 
-@pytest.mark.requirement("ACP-ERROR-201")
+@pytest.mark.requirement("ACP-ERROR-003")
 @pytest.mark.capability("capabilities.session")
 async def test_prompt_closed_session_gets_resource_not_found(agent_launch, tmp_path):
-    """ACP-ERROR-201. A session is active only until it is closed, so `session/prompt` naming a
+    """ACP-ERROR-003. A session is active only until it is closed, so `session/prompt` naming a
     session this connection already closed gets the same error. A `session/close` that fails
-    SKIPs (ACP-CLOSE-201 judges close itself)."""
+    SKIPs (ACP-CLOSE-001 judges close itself)."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         close_entry = await close_session(agent, session_id, timeout=agent_launch.default_timeout)
@@ -108,10 +109,10 @@ async def test_prompt_closed_session_gets_resource_not_found(agent_launch, tmp_p
         assert_unknown_session_error(entry, "session/prompt", session_id)
 
 
-@pytest.mark.requirement("ACP-ERROR-201")
+@pytest.mark.requirement("ACP-ERROR-004")
 @pytest.mark.capability("capabilities.session")
 async def test_set_config_option_unknown_session_gets_resource_not_found(agent_launch, tmp_path):
-    """ACP-ERROR-201. `session/set_config_option` for a never-created session, setting an
+    """ACP-ERROR-004. `session/set_config_option` for a never-created session, setting an
     advertised option to its current value so the session is the only thing wrong. Gated on
     `session/new` returning `configOptions`."""
     async with connected_agent(agent_launch) as agent:
@@ -145,7 +146,7 @@ async def test_set_config_option_unknown_session_gets_resource_not_found(agent_l
         assert_unknown_session_error(entry, "session/set_config_option", _UNKNOWN_SESSION_ID)
 
 
-# --- ACP-ERROR-202: unadvertised capability-gated methods ---
+# --- ACP-ERROR-006: unadvertised capability-gated methods ---
 
 # The baseline methods all hang on `capabilities.session`; the others each have their own marker.
 _SESSION_BASELINE = ("session/new", "session/list", "session/resume", "session/close", "session/prompt")
@@ -170,11 +171,11 @@ def _gated_params(method: str, session_id: str, cwd) -> dict[str, Any]:
     return {"sessionId": session_id}
 
 
-@pytest.mark.requirement("ACP-ERROR-202")
+@pytest.mark.requirement("ACP-ERROR-006")
 async def test_unadvertised_gated_methods_get_method_not_found(
     agent_launch, agent_initialize_result, tmp_path
 ):
-    """ACP-ERROR-202. Every standard method gated on a capability the agent did not advertise
+    """ACP-ERROR-006. Every standard method gated on a capability the agent did not advertise
     gets `-32601`: the `session/*` baseline without `capabilities.session`, `session/delete`
     without `session.delete`, `session/archive`/`session/unarchive` without `session.archive`,
     `session/fork` without `session.fork`, `providers/list` without
@@ -219,16 +220,16 @@ async def test_unadvertised_gated_methods_get_method_not_found(
     assert not problems, "unadvertised methods should get -32601 -- " + "; ".join(problems)
 
 
-# --- ACP-ERROR-203: reserved-range codes are ACP-defined ---
+# --- ACP-ERROR-008: reserved-range codes are ACP-defined ---
 
 
 def _in_reserved_range(code: int) -> bool:
     return any(low <= code <= high for low, high in _RESERVED_RANGES)
 
 
-@pytest.mark.requirement("ACP-ERROR-203")
+@pytest.mark.requirement("ACP-ERROR-008")
 async def test_reserved_range_codes_are_acp_defined(agent_launch, agent_initialize_result):
-    """ACP-ERROR-203. Samples the error replies to an unrecognised method and, when
+    """ACP-ERROR-008. Samples the error replies to an unrecognised method and, when
     `capabilities.session` is advertised, a `session/new` missing `cwd` and a `session/prompt`
     for an unknown session; every code in `-32768..-32000` or `-32899..-32800` must be one of
     `ErrorCode`'s named members. A probe the agent leaves unanswered contributes no sample

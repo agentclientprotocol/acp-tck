@@ -1,10 +1,10 @@
 """Extensibility conformance: `ACP-EXT-001`, `ACP-META-001`, `ACP-SCHEMA-002` (re-cited from v1,
-unchanged) plus new hygiene rows `ACP-META-201`/`202`/`203`/`204`, `ACP-EXT-201`, `ACP-EXT-202`,
+unchanged) plus new hygiene rows `ACP-META-201`/`202`/`203`/`204`, `ACP-EXT-002`, `ACP-EXT-202`,
 `ACP-EXT-203`, and the receiver rule `ACP-EXT-204` (unknown `initialize` fields are ignored).
 
 `ACP-EXT-001`/`ACP-META-001` are connection-level rows with `capability=None`, matching their v1
 registry entries; `ACP-META-001`'s test still carries the `capabilities.session` marker since it
-drives an actual `session/prompt` turn. `ACP-EXT-201`/`ACP-EXT-203` need only one notification
+drives an actual `session/prompt` turn. `ACP-EXT-002`/`ACP-EXT-203` need only one notification
 exchange to probe, and `ACP-EXT-202` only `initialize`'s own result -- none of the three drive a
 turn, so none carries a capability marker.
 
@@ -265,9 +265,9 @@ async def test_agent_authored_meta_keys_are_namespaced(agent_launch, tmp_path):
     )
 
 
-@pytest.mark.requirement("ACP-EXT-201")
+@pytest.mark.requirement("ACP-EXT-002")
 async def test_unrecognized_custom_notification_produces_no_response(agent_launch):
-    """ACP-EXT-201 (ADVISORY). An unrecognized `_`-prefixed *notification* sent to the agent
+    """ACP-EXT-002 (ADVISORY). An unrecognized `_`-prefixed *notification* sent to the agent
     produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:231`)
     -- the v2 analogue of v1's `answers_notifications.py` defect pattern, generalised to any
     custom notification rather than specifically `session/cancel`. Only a reply fails this
@@ -359,7 +359,7 @@ async def test_unrecognized_protocol_level_notification_produces_no_response(age
     `$/` names are reserved for protocol-level messages, so `$/does_not_exist` stands in for one
     from a later ACP version. The schema's `ProtocolLevel` description ("free to ignore") agrees.
     The probe uses a name no ACP version defines, which a client would never send. Like
-    `ACP-EXT-201`, only a reply fails this (`_helpers.is_response_line`), not the agent's own
+    `ACP-EXT-002`, only a reply fails this (`_helpers.is_response_line`), not the agent's own
     notifications or requests."""
     async with connected_agent(agent_launch) as agent:
         await agent.send_notification("$/does_not_exist", {})
@@ -387,7 +387,7 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
     test: derive `method_by_id` from the SENT transcript to resolve each response's own method.
     Unwraps every transcript line via `iter_messages` rather than requiring
     `isinstance(entry.parsed, dict)`: a message delivered inside an array line (itself an
-    `ACP-TRANSPORT-201` violation) must not silently escape this scan."""
+    `ACP-TRANSPORT-001` violation) must not silently escape this scan."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         await run_prompt(

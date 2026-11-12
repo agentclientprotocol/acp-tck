@@ -4,7 +4,7 @@ code `-32050`, inside the `-32768..-32000` range reserved for JSON-RPC and ACP (
 defined there are JSON-RPC's `-32700` and `-32600..-32603` and ACP's `-32000`, `-32002` and
 `-32022`).
 
-FAILs exactly `ACP-ERROR-203` (ADVISORY). The unknown-method and unknown-session replies stay
+FAILs exactly `ACP-ERROR-008` (ADVISORY). The unknown-method and unknown-session replies stay
 conforming, so no other row is affected.
 """
 

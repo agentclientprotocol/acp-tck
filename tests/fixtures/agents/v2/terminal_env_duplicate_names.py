@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""A defect fixture for ACP-AUTH-207 (MANDATORY): advertises a `type: "terminal"` auth method
+"""A defect fixture for ACP-AUTH-006 (MANDATORY): advertises a `type: "terminal"` auth method
 whose `env` array has two entries sharing the same `name` -- violating "Names MUST be unique"
-(`schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal`). No v1 analogue: v1's terminal auth
-descriptor had no `args`/`env` fields at all.
+(`schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal`). v1's `env` is a string map, so the
+duplicate-name defect has no v1 counterpart.
 
 The terminal method is advertised *only* when the connecting client itself advertised
 `capabilities.auth.terminal: {}` -- otherwise this fixture would also (correctly) trip
-ACP-AUTH-202 on every other connection, muddying the "exactly ACP-AUTH-207" self-test. This
-mirrors how ACP-AUTH-202/207 are tested against two different connections in
+ACP-AUTH-002 on every other connection, muddying the "exactly ACP-AUTH-006" self-test. This
+mirrors how ACP-AUTH-002/006 are tested against two different connections in
 `test_authentication.py`: the default connection (no terminal capability) sees no `authMethods`
 at all from this fixture and is unaffected; the dedicated second connection that does advertise
 `capabilities.auth.terminal` is the only one that ever sees the malformed descriptor.

@@ -103,7 +103,7 @@ async def test_notification_receives_no_response(agent_launch, agent_initialize_
     agent that does not advertise `capabilities.session` gets a `_tck/notify` notification
     instead. Checks every message inside an array line too, not just a bare object line: an
     agent that folds a spurious response into an array alongside something else would otherwise
-    pass this MANDATORY check by accident (the array itself is `ACP-TRANSPORT-201`'s concern).
+    pass this MANDATORY check by accident (the array itself is `ACP-TRANSPORT-001`'s concern).
     Only a reply fails this (`_helpers.is_response_line`),
     not the agent's own notifications or requests."""
     async with connected_agent(agent_launch) as agent:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `session.additionalDirectories` but accepts a relative entry
 instead of rejecting it with `-32602` (session-setup.mdx:443). FAILs exactly `ACP-ADDDIRS-203`;
-`ACP-ADDDIRS-201/202` still PASS.
+`ACP-ADDDIRS-001/202` still PASS.
 """
 
 import sys

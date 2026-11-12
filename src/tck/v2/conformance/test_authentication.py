@@ -1,10 +1,10 @@
 """The v2 authentication surface: `authMethods` shape, the terminal-method client-capability
 gate, the `auth/login`/`auth/logout`/`session/new` flow, and the open-enum `type` rule
-(ACP-AUTH-201..210), plus the unstable `auth/status` query (ACP-AUTH-209).
+(ACP-AUTH-001..006/206/208/210), plus the unstable `auth/status` query (ACP-AUTH-007/008).
 
 v2 renames v1's `authenticate`/`logout` to `auth/login`/`auth/logout` and drops the separate
-`agentCapabilities.auth.logout` marker -- see `tck.v2.requirements`'s "Authentication" section
-for the id-namespacing rationale (which ids are re-cited from v1, which are genuinely new).
+`agentCapabilities.auth.logout` marker. Ids shared with v1 name the same rule; the `2xx` ids are
+v2-only rules.
 
 Deliberately not asserted: that non-empty `authMethods` implies `session/new` fails with
 `-32000` before authentication (a MAY, not a MUST); session state after `auth/logout`; that
@@ -64,10 +64,10 @@ async def _initialized_agent(agent_launch, *, capabilities=None):
         yield agent, msg["result"]
 
 
-@pytest.mark.requirement("ACP-AUTH-201")
+@pytest.mark.requirement("ACP-AUTH-001")
 async def test_auth_methods_have_unique_method_ids(agent_initialize_result):
-    """ACP-AUTH-201 (MANDATORY: "Each `methodId` MUST be unique within the list",
-    `authentication.mdx:51`; v1's counterpart ACP-AUTH-001 is separate). Schema-shape
+    """ACP-AUTH-001 (MANDATORY: "Each `methodId` MUST be unique within the list",
+    `authentication.mdx:51`). Schema-shape
     validation of `authMethods` is already covered by ACP-SCHEMA-001; this adds the
     id-uniqueness check schema validation alone can't express. Uses the cached
     `agent_initialize_result` rather than a second connection -- the handshake result is already on
@@ -107,12 +107,12 @@ async def test_auth_method_type_is_a_defined_or_prefixed_value(agent_initialize_
         )
 
 
-@pytest.mark.requirement("ACP-AUTH-202")
+@pytest.mark.requirement("ACP-AUTH-002")
 async def test_no_terminal_auth_method_without_client_capability(agent_launch):
-    """ACP-AUTH-202 (MANDATORY: "Agents MUST NOT advertise a `terminal` method unless this
-    capability is present", `authentication.mdx:149-151`; not a reuse of v1's `ACP-AUTH-002`, see
-    the module docstring). Connects with no `capabilities.auth.terminal` (the default v2 handshake omits
-    it entirely) and asserts no `authMethods[*].type == "terminal"` is advertised."""
+    """ACP-AUTH-002 (MANDATORY: "Agents MUST NOT advertise a `terminal` method unless this
+    capability is present", `authentication.mdx:149-151`). Connects with no
+    `capabilities.auth.terminal` (the default v2 handshake omits it entirely) and asserts no
+    `authMethods[*].type == "terminal"` is advertised."""
     async with _initialized_agent(agent_launch) as (agent, init_result):
         auth_methods = init_result.get("authMethods") or []
         terminal_methods = [
@@ -124,9 +124,9 @@ async def test_no_terminal_auth_method_without_client_capability(agent_launch):
         )
 
 
-@pytest.mark.requirement("ACP-AUTH-207")
+@pytest.mark.requirement("ACP-AUTH-006")
 async def test_terminal_auth_method_descriptor_shape(agent_launch):
-    """ACP-AUTH-207 (MANDATORY, new in v2 -- no v1 analogue). On a dedicated connection that
+    """ACP-AUTH-006 (MANDATORY). On a dedicated connection that
     *does* advertise `capabilities.auth.terminal: {}`, every `type: "terminal"` entry's `args`
     (if present) is an array of strings, `env` (if present) is an array of well-formed
     `EnvVariable` objects, and `env` names are unique within that descriptor ("Names MUST be
@@ -159,10 +159,10 @@ async def test_terminal_auth_method_descriptor_shape(agent_launch):
                 assert len(names) == len(set(names)), f"terminal authMethods entry's env names are not unique: {names!r}"
 
 
-@pytest.mark.requirement("ACP-AUTH-204")
+@pytest.mark.requirement("ACP-AUTH-003")
 async def test_login_then_session_new_succeeds(agent_launch, tmp_path):
-    """ACP-AUTH-204 (CAPABILITY, `capability="inferred:authMethods"` -- mirrors v1's
-    `ACP-AUTH-003`, method renamed `authenticate` -> `auth/login`). SKIPs unless `authMethods`
+    """ACP-AUTH-003 (CAPABILITY, `capability="inferred:authMethods"`; v1's `authenticate` is
+    renamed `auth/login`). SKIPs unless `authMethods`
     is non-empty and `--tck-auth-method` was given (the TCK cannot guess a `methodId`), or if
     `validate_login_method_id` rejects an unadvertised/terminal id.
 
@@ -211,16 +211,16 @@ async def test_login_then_session_new_succeeds(agent_launch, tmp_path):
         assert isinstance(session_id, str) and session_id
 
 
-@pytest.mark.requirement("ACP-AUTH-205")
+@pytest.mark.requirement("ACP-AUTH-005")
 async def test_session_new_not_gated_when_no_auth_methods_advertised(agent_launch, tmp_path):
-    """ACP-AUTH-205 (ADVISORY; re-cites v1's ACP-AUTH-005/AUTH-A1; `schema.mdx:954` is a MAY). If `initialize` advertises
-    no `authMethods` at all, `session/new` must not fail with `-32000` -- there would be no
+    """ACP-AUTH-005 (ADVISORY; `schema.mdx:954` is a MAY). If `initialize` advertises no
+    `authMethods` at all, `session/new` must not fail with `-32000` -- there would be no
     defined remedy. SKIPs when the agent does advertise auth methods (that case is
-    ACP-AUTH-204's territory), or does not advertise `capabilities.session`."""
+    ACP-AUTH-003's territory), or does not advertise `capabilities.session`."""
     async with _initialized_agent(agent_launch) as (agent, init_result):
         auth_methods = init_result.get("authMethods") or []
         if auth_methods:
-            pytest.skip("agent advertises authMethods; AUTH-205 only concerns the empty case")
+            pytest.skip("agent advertises authMethods; AUTH-005 only concerns the empty case")
         if not advertises_session(init_result):
             pytest.skip("capability 'capabilities.session' not advertised by the agent under test")
 
@@ -287,15 +287,14 @@ async def _fresh_auth_status(agent_launch) -> tuple[dict | None, str]:
         return (msg if isinstance(msg, dict) else None), entry.text
 
 
-@pytest.mark.requirement("ACP-AUTH-209")
+@pytest.mark.requirement("ACP-AUTH-007")
 @pytest.mark.capability("capabilities.auth.status")
 async def test_auth_status_succeeds_before_login(agent_launch, agent_initialize_result):
-    """ACP-AUTH-209 (CAPABILITY, `capability="capabilities.auth.status"`; unstable). `auth/status`
+    """ACP-AUTH-007 (CAPABILITY, `capability="capabilities.auth.status"`; unstable). `auth/status`
     right after `initialize`, with no `auth/login`, returns a result that validates as
     `AuthStatusResponse`. An error is a FAIL, `-32000` (auth-gated) and `-32601` (advertised, yet
-    not found) above all. Its `state` is a defined `AuthState` value or `_`-prefixed (other
-    strings are reserved for future ACP variants). Not run through `skip_if_auth_gated`: the
-    method exists to be answerable while unauthenticated."""
+    not found) above all. Not run through `skip_if_auth_gated`: the method exists to be
+    answerable while unauthenticated."""
     assert agent_initialize_result.result is not None, (
         f"initialize did not succeed: {agent_initialize_result.error_message}"
     )
@@ -315,23 +314,42 @@ async def test_auth_status_succeeds_before_login(agent_launch, agent_initialize_
     assert msg is not None and "result" in msg, f"auth/status returned no result: {text!r}"
     issues = validate_agent_response("auth/status", msg)
     assert not issues, f"auth/status result failed AuthStatusResponse validation: {issues!r}"
-    state = msg["result"].get("state")
+
+
+@pytest.mark.requirement("ACP-AUTH-008")
+@pytest.mark.capability("capabilities.auth.status")
+async def test_auth_status_state_is_defined_or_underscore_prefixed(
+    agent_launch, agent_initialize_result
+):
+    """ACP-AUTH-008 (CAPABILITY, `capability="capabilities.auth.status"`; unstable). The `state`
+    of an unauthenticated `auth/status` result is a defined `AuthState` value or `_`-prefixed
+    (other strings are reserved for future ACP variants). SKIPs when the call yields no string
+    `state`: that is ACP-AUTH-007's failure, not a second one."""
+    assert agent_initialize_result.result is not None, (
+        f"initialize did not succeed: {agent_initialize_result.error_message}"
+    )
+    skip_if_version_mismatch(agent_initialize_result.result)
+    msg, text = await _fresh_auth_status(agent_launch)
+    result = msg.get("result") if msg is not None else None
+    state = result.get("state") if isinstance(result, dict) else None
+    if not isinstance(state, str):
+        pytest.skip(f"auth/status returned no string state to judge: {text!r}")
     assert is_valid_open_enum_value(state, AUTH_STATES), (
         f"auth/status state {state!r} is neither a defined value ({sorted(AUTH_STATES)}) nor "
         f"`_`-prefixed; other strings are reserved for future ACP variants: {text!r}"
     )
 
 
-@pytest.mark.requirement("ACP-AUTH-203")
+@pytest.mark.requirement("ACP-AUTH-004")
 @pytest.mark.revokes("auth", reason="auth/logout may drop credentials other tests rely on")
 async def test_logout_succeeds(agent_launch):
-    """ACP-AUTH-203 (CAPABILITY, `capability="inferred:authMethods"` -- replaces v1's
-    `ACP-AUTH-004` outright, since v2 has no `agentCapabilities.auth.logout` marker). SKIPs when
+    """ACP-AUTH-004 (CAPABILITY, `capability="inferred:authMethods"`, since v2 has no
+    `agentCapabilities.auth.logout` marker). SKIPs when
     the agent advertises no `authMethods`, or unless `--allow-logout`/`--tck-allow-logout` was
     given, since a real `auth/logout` may revoke the operator's own credentials.
 
     If `--tck-auth-method` was given, logs in first (gated by the same `validate_login_method_id`
-    check as ACP-AUTH-204, so an unadvertised/terminal id SKIPs rather than sending a
+    check as ACP-AUTH-003, so an unadvertised/terminal id SKIPs rather than sending a
     spec-forbidden `auth/login`). Only `auth/logout`'s own success (a schema-valid object
     result) is checked -- nothing about session state after logout."""
     async with _initialized_agent(agent_launch) as (agent, init_result):

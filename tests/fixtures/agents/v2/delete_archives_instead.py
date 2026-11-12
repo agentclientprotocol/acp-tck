@@ -2,7 +2,7 @@
 """Non-conforming fixture: advertises `capabilities.session.archive` and `.delete`, but implements
 `session/delete` as an archive: the session can no longer be resumed and leaves the default
 `session/list` view, yet still shows under `archived: "include"` and `"only"`. FAILs exactly
-`ACP-ARCHIVE-006`; `ACP-DELETE-202` (default view) and `-205` (resume) still PASS.
+`ACP-ARCHIVE-006`; `ACP-DELETE-003` (default view) and `-205` (resume) still PASS.
 """
 
 import sys

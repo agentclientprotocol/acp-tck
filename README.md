@@ -113,9 +113,9 @@ requirements were never actually exercised.
 
 ### `--allow-logout`
 
-Opts in to actually calling logout against the agent under test: `logout` on v1 (`ACP-AUTH-004`) and `auth/logout` on
-v2 (`ACP-AUTH-203`). Off by default because it may revoke the operator's own credentials for whatever account the agent
-is authenticated as; without it, the logout requirement reports `SKIPPED` instead of exercising the method. A
+Opts in to actually calling logout against the agent under test (`ACP-AUTH-004`): `logout` on v1 and `auth/logout`
+on v2. Off by default because it may revoke the operator's own credentials for whatever account the agent is
+authenticated as; without it, the logout requirement reports `SKIPPED` instead of exercising the method. A
 `SKIPPED` `CAPABILITY`-tier requirement doesn't affect conformance - only a *failed* one does - so omitting
 `--allow-logout` never by itself makes a run `NOT CONFORMANT`.
 

@@ -5,7 +5,7 @@ in `_handle_prompt`'s prologue, `agent_message_chunk`+the terminating idle in `_
 delivered as one JSON-RPC batch array line instead of two. ACP v2 has no batches: senders MUST
 NOT send a JSON array (`transports.mdx:67`).
 
-FAILs only `ACP-TRANSPORT-201`: the TCK still unpacks an array line like separate lines
+FAILs only `ACP-TRANSPORT-001`: the TCK still unpacks an array line like separate lines
 (`tck.v2.conformance._helpers.run_prompt`'s `_handle_one`), so every other requirement
 `conforming_full.py` PASSes (under `--cancel-prompt __hang__`) is judged as before.
 """

@@ -210,7 +210,7 @@ class ConformingAgent:
         # A `type: "terminal"` descriptor to append to `authMethods`, but only
         # for a connection whose `initialize` request actually advertised
         # `capabilities.auth.terminal` (see `_initialize_result`/`_client_wants_terminal_auth`
-        # below) -- `ACP-AUTH-202`'s own gate, so this never leaks onto the default connection.
+        # below) -- `ACP-AUTH-002`'s own gate, so this never leaks onto the default connection.
         self._terminal_auth_method = terminal_auth_method
         # Initialization completes with the first successful `initialize` response (`_reply`);
         # it stays in effect when a later `initialize` fails. `_request_seen` closes the repeat
@@ -391,7 +391,7 @@ class ConformingAgent:
 
     @staticmethod
     def _client_wants_terminal_auth(params: dict[str, Any]) -> bool:
-        """`ACP-AUTH-202`'s own object-marker gate, mirrored here: `True` iff
+        """`ACP-AUTH-002`'s own object-marker gate, mirrored here: `True` iff
         the `initialize` request's `capabilities.auth.terminal` path resolves to a present,
         non-`null` value (an empty object still counts)."""
         capabilities = params.get("capabilities")
@@ -503,7 +503,7 @@ class ConformingAgent:
 
     def _launch_mcp_servers(self, servers: list[Any]) -> None:
         """Launch every stdio MCP server entry and send it an MCP `initialize` request, so the
-        TCK's stub server can observe the connection (`ACP-MCP-205`). The reply is discarded; the
+        TCK's stub server can observe the connection (`ACP-SESSION-006`). The reply is discarded; the
         child exits on its own once this process's end of its stdin closes."""
         for server in servers:
             if not isinstance(server, dict) or server.get("type") != "stdio":
@@ -660,7 +660,7 @@ class ConformingAgent:
     @staticmethod
     def _list_cursor_rejection(cursor: Any) -> str | None:
         """Hook: this agent never issues a cursor, so any supplied one is invalid and `-32602`
-        (`ACP-LIST-206`)."""
+        (`ACP-LIST-003`)."""
         if cursor is None:
             return None
         return f"invalid cursor {cursor!r}"
@@ -806,8 +806,8 @@ class ConformingAgent:
     def _handle_delete_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # ACP-DELETE-204: deleting an active session cancels its work as if `session/close` had
         # been called -- a still-hanging `__hang__` prompt ends `cancelled` before the response.
-        # ACP-DELETE-201/202/205: the session leaves `session/list` and can no longer be resumed.
-        # ACP-DELETE-203: an unknown/already-deleted sessionId still succeeds silently.
+        # ACP-DELETE-001/003/205: the session leaves `session/list` and can no longer be resumed.
+        # ACP-DELETE-002: an unknown/already-deleted sessionId still succeeds silently.
         session_id = params.get("sessionId")
         if self._hanging_sessions.pop(session_id, None) is not None:
             self._finish_turn(session_id, "cancelled")
@@ -825,7 +825,7 @@ class ConformingAgent:
         return [dict(option) for option in self._config_options]
 
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
-        # ACP-CONFIG-202: replies with the *complete*, updated `configOptions` list, not just
+        # ACP-CONFIG-002: replies with the *complete*, updated `configOptions` list, not just
         # the entry that changed. ACP-CONFIG-207/208/209: an unknown `configId`, or a value that
         # is invalid for the option (undeclared select value, mismatched or unsupported `type`),
         # gets `-32602` with the configuration untouched (session-config-options.mdx:234).

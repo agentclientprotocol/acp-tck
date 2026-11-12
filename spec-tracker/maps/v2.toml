@@ -201,12 +201,12 @@ reason = "Out of scope: it needs a child session, which only exists with the uns
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/initialization.mdx:88,90 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "A request other than `initialize` that is sent while `initialize` is in flight (sent, not yet answered) is rejected with `-32600`."
-reason = "Unobservable: whether a pipelined request \"arrives before initialization completes\" depends on the agent's scheduling, so a client cannot provoke it deterministically. ACP-INIT-209 covers the requests sent before or after a failed `initialize`."
+reason = "Unobservable: whether a pipelined request \"arrives before initialization completes\" depends on the agent's scheduling, so a client cannot provoke it deterministically. ACP-ERROR-005 covers the requests sent before or after a failed `initialize`."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/initialization.mdx:147 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD support all possible combinations of their peer's capabilities."
-reason = "Out of scope: the combinations are combinatorial. The TCK exercises the empty set (`{}`) and targeted single-capability connections such as `auth.terminal: {}` (the object marker; ACP-AUTH-207's dedicated connection)."
+reason = "Out of scope: the combinations are combinatorial. The TCK exercises the empty set (`{}`) and targeted single-capability connections such as `auth.terminal: {}` (the object marker; ACP-AUTH-006's dedicated connection)."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/initialization.mdx:200 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -240,7 +240,7 @@ reason = "Out of scope: the TCK only launches agents over stdio, so the first ru
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/extensibility.mdx:16-19,26 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Implementations MUST NOT infer peer support from their own schema selection, generated types or local feature flags, and senders of informational additions MUST NOT depend on feature-specific presentation, acknowledgement or action."
-reason = "Not observable: both rules concern the implementation's internal reasoning. The concrete instances that show on the wire are tested per feature, for example ACP-CLIENTCAP-201."
+reason = "Not observable: both rules concern the implementation's internal reasoning. The concrete instances that show on the wire are tested per feature, for example ACP-CLIENTCAP-003."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/extensibility.mdx:57-60,159 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -277,12 +277,12 @@ reason = "Not observable at the agent-received sites: the baseline ones (`Conten
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/overview.mdx:235 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "For an optional field whose schema allows `null`, omitting it and setting it to `null` are equivalent, unless the field says otherwise."
-reason = "Out of scope as a generic probe: receiver-side equivalence is checked field by field (ACP-SESSION-203, ACP-RESUME-203), and the sender-side rule is enforced by schema validation of the agent's own output."
+reason = "Out of scope as a generic probe: receiver-side equivalence is checked field by field (ACP-SESSION-203, ACP-RESUME-002), and the sender-side rule is enforced by schema validation of the agent's own output."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/error.mdx:38 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Receivers MUST treat an unrecognized error code as a generic failure."
-reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes. ACP-ERROR-203 covers the error codes the agent itself sends."
+reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes. ACP-ERROR-008 covers the error codes the agent itself sends."
 
 # --- authentication.mdx ---
 
@@ -319,7 +319,7 @@ reason = "Out of scope: seeing it needs the destructive `--allow-logout`, which 
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:297; docs/protocol/v2/draft/schema.mdx:144 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Calling `auth/status` MUST NOT modify any agent state."
-reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-209 only checks the answer."
+reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007/008 only check the answer."
 
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:291 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -356,7 +356,7 @@ reason = "Out of scope: it concerns the agent-to-MCP-server side and needs a TCK
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:56-57 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents MUST NOT request an elicitation mode the Client has not advertised, and SHOULD provide a graceful fallback when the required mode is unavailable."
-reason = "Deferred (elicitation coverage): the TCK only checks the zero-modes case (ACP-CLIENTCAP-201). A partial-mode check needs a client advertising one mode and an agent that elicits, which no prompt can force."
+reason = "Deferred (elicitation coverage): the TCK only checks the zero-modes case (ACP-CLIENTCAP-003). A partial-mode check needs a client advertising one mode and an agent that elicits, which no prompt can force."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:67-74,76-77 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -413,7 +413,7 @@ reason = "Out of scope: it needs a connection loss and a reconnect, and the TCK'
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:391; docs/protocol/v2/draft/session-delete.mdx:95; docs/protocol/v2/draft/session-list.mdx:247 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Closing, deleting or archiving an active session frees its resources, and closing also stops the session's background work."
-reason = "Not observable: freeing resources is internal to the agent, and background work needs an agent that reports it. The cancellation of foreground work is covered by ACP-CLOSE-202, ACP-DELETE-204 and ACP-ARCHIVE-201."
+reason = "Not observable: freeing resources is internal to the agent, and background work needs an agent that reports it. The cancellation of foreground work is covered by ACP-CLOSE-002, ACP-DELETE-204 and ACP-ARCHIVE-201."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:443 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -438,7 +438,7 @@ reason = "Out of scope: absence of a restored server is only negative evidence, 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:607,626 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD launch stdio MCP servers in the session's `cwd`, with `env` entries added to the inherited environment (the last of duplicate names winning), and use the transport's own values for the headers it owns."
-reason = "Not tested: the TCK's MCP stub records only the `argv` it was launched with (ACP-MCP-205), not its working directory, environment or the headers it received."
+reason = "Not tested: the TCK's MCP stub records only the `argv` it was launched with (ACP-SESSION-006), not its working directory, environment or the headers it received."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:693 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -448,7 +448,7 @@ reason = "Indistinguishable from correct behavior: a shell launch with correct q
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:695 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD NOT include `env` or `headers` values in model context or command lines, and SHOULD NOT log or persist them."
-reason = "Unobservable from a client (model context, disk persistence, logs other than stderr); ACP-MCP-205 covers only the client-visible part of the same bullet, and does not probe the model context."
+reason = "Unobservable from a client (model context, disk persistence, logs other than stderr); ACP-SESSION-006 covers only the client-visible part of the same bullet, and does not probe the model context."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:696 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -620,7 +620,7 @@ reason = "Not observable: the TCK cannot know the agent's full internal plan, so
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/cancellation.mdx:12 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Receivers match a `$/cancel_request` only against requests they received from that sender."
-reason = "Not observable beyond ACP-CANCEL-210/211: misapplying a client's `requestId` to the agent's own outgoing request of the same id has no reliable wire symptom."
+reason = "Not observable beyond ACP-JSONRPC-006 and ACP-CANCEL-211: misapplying a client's `requestId` to the agent's own outgoing request of the same id has no reliable wire symptom."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/cancellation.mdx:31 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -672,4 +672,4 @@ reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediar
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/security.mdx:81; schema/v2/schema.unstable.json#/$defs/ProviderInfo @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD NOT return provider `headers` from `providers/list`."
-reason = "Deferred unstable method: the TCK never obtains a populated `providers/list` result, and `ProviderInfo` has no `headers` field, so only an off-schema extra key could violate the rule. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-202's."
+reason = "Deferred unstable method: the TCK never obtains a populated `providers/list` result, and `ProviderInfo` has no `headers` field, so only an off-schema extra key could violate the rule. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-006's."

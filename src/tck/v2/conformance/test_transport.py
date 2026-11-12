@@ -1,11 +1,11 @@
-"""Transport hygiene: ACP-TRANSPORT-002, ACP-TRANSPORT-201, ACP-TRANSPORT-203.
+"""Transport hygiene: ACP-TRANSPORT-002, ACP-TRANSPORT-001, ACP-TRANSPORT-203.
 
 v2 counterpart of `tck.v1.conformance.test_transport` (honest duplication, not shared
 machinery). v1 and v2 share the rule "every stdout line is exactly one JSON-RPC 2.0 object";
-v2 also states that an array is non-conformant (`ACP-TRANSPORT-201`, `transports.mdx:20,67`),
+v2 also states that an array is non-conformant (`ACP-TRANSPORT-001`, `transports.mdx:20,67`),
 so its id stays a `2xx` one. `ACP-TRANSPORT-002` (UTF-8) is judged identically to v1.
 `ACP-TRANSPORT-203` (no embedded newlines) is new to v2. `test_batch.py` holds the other
-`ACP-TRANSPORT-201` evidence: the replies to its probe arrays.
+`ACP-TRANSPORT-001` evidence: the replies to its probe arrays.
 
 `_drive_full_exchange` does its own manual `initialize` (mirroring
 `test_initialize.py`/`test_batch.py`) and calls `skip_if_version_mismatch` before touching
@@ -46,9 +46,9 @@ async def _drive_full_exchange(agent_launch, tmp_path):
     return [entry for entry in agent.transcript if entry.direction is Direction.RECEIVED]
 
 
-@pytest.mark.requirement("ACP-TRANSPORT-201")
+@pytest.mark.requirement("ACP-TRANSPORT-001")
 async def test_stdout_is_clean_ndjson_jsonrpc(agent_launch, tmp_path):
-    """ACP-TRANSPORT-201: every line on stdout is exactly one valid JSON-RPC 2.0 object. A JSON
+    """ACP-TRANSPORT-001: every line on stdout is exactly one valid JSON-RPC 2.0 object. A JSON
     array, empty or not, is non-conformant: ACP has no batches (`transports.mdx:20,67`)."""
     received = await _drive_full_exchange(agent_launch, tmp_path)
 

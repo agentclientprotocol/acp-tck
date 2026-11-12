@@ -3,7 +3,7 @@
 `-32601` (Method not found). Advertising `authMethods` means the agent MUST implement
 `auth/login` and `auth/logout` (authentication.mdx:51-53). An unadvertised id is still rejected
 with `-32602`, so ACP-AUTH-208/210 PASS. Run with `--auth-method tck`, it FAILs exactly
-`ACP-AUTH-204`.
+`ACP-AUTH-003`.
 """
 
 import sys

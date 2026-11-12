@@ -8,7 +8,7 @@ A TCK that resumed the first listed entry would "succeed" on the operator's sess
 prompt into it. The correct TCK skips any entry not under its own `cwd`, so no route succeeds and
 every resume-dependent test SKIPs, never touching `operator-sess`.
 
-Ignoring the `cwd` filter is itself non-conforming, so `ACP-LIST-202`/`203` FAIL here.
+Ignoring the `cwd` filter is itself non-conforming, so `ACP-LIST-002`/`203` FAIL here.
 """
 
 import sys
@@ -28,7 +28,7 @@ class ResumeListsForeignSessionAgent(ConformingAgent):
         rejection = self._list_cwd_rejection(params.get("cwd")) or self._list_cursor_rejection(
             params.get("cursor")
         )
-        if rejection is not None:  # only the cwd filter is ignored, so only LIST-202/203 trip
+        if rejection is not None:  # only the cwd filter is ignored, so only LIST-002/203 trip
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
         self._reply(msg_id, {"sessions": [{"sessionId": FOREIGN_SESSION_ID, "cwd": FOREIGN_CWD}]})

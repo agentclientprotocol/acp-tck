@@ -6,7 +6,7 @@ permission on every turn: `capabilities.session.prompt.{image,audio,embeddedCont
 `boolean`-type `configOptions` entry (`_base.ConformingAgent`'s `config_options` param; the second
 lets `ACP-CONFIG-208`/`209` probe both option types), one `availableCommands`
 entry (so `ACP-RESUME-210` checks both lists), one `type: "agent"`
-auth method (`methodId: "tck"`), `capabilities.auth.status` (`ACP-AUTH-209`), `emit_rich_turn_updates=True`, and `persist_sessions=True` (so
+auth method (`methodId: "tck"`), `capabilities.auth.status` (`ACP-AUTH-007`/`008`), `emit_rich_turn_updates=True`, and `persist_sessions=True` (so
 `ACP-SYSPROMPT-002`/`003`'s resume probes can restore a session on a fresh process). Built on
 `AsksPermissionAgent` with `permission_tool_call=True`, so every turn also exercises the
 permission-request shape and a `tool_call` subject that ends `completed` only when approved
@@ -17,7 +17,7 @@ exact set).
 The `tck` auth method correctly implements `auth/login`/`auth/logout` via
 `_base.ConformingAgent`, but does not set `require_auth`, so `session/new` never actually gates
 on it -- the `--auth-method`/`--allow-logout`-gated AUTH ids SKIP rather than FAIL when those
-flags are omitted. ACP-AUTH-207 SKIPs regardless of flags: this fixture advertises no
+flags are omitted. ACP-AUTH-006 SKIPs regardless of flags: this fixture advertises no
 `type: "terminal"` method at all.
 
 `emit_rich_turn_updates=True` makes every turn also emit a two-chunk agent message, a
@@ -26,8 +26,8 @@ flags are omitted. ACP-AUTH-207 SKIPs regardless of flags: this fixture advertis
 `capabilities.cancel` until they finish (see `_base.ConformingAgent._send_rich_turn_updates`) -- this is what
 lets the update-shape/enum tests PASS here instead of SKIPping "no <variant> observed".
 
-`terminal_auth_method` gives ACP-AUTH-207's dedicated `capabilities.auth.terminal: {}`
-connection a well-formed `type: "terminal"` descriptor to see (ACP-AUTH-202 still PASSes: the
+`terminal_auth_method` gives ACP-AUTH-006's dedicated `capabilities.auth.terminal: {}`
+connection a well-formed `type: "terminal"` descriptor to see (ACP-AUTH-002 still PASSes: the
 default connection this fixture also answers under advertises no `auth.terminal` capability, so
 the descriptor never appears there).
 """

@@ -1,4 +1,4 @@
-"""Session `configOptions` (ACP-CONFIG-201..204, ACP-CONFIG-206..212).
+"""Session `configOptions` (ACP-CONFIG-001/002/201/203, ACP-CONFIG-206..212).
 
 `configOptions` has no `capabilities` marker of its own -- support is *inferred* from whether
 `session/new`'s response carries a non-empty `configOptions` list at all. `Requirement.capability`
@@ -155,9 +155,9 @@ def _pick_settable_option(config_options: list[Any]) -> tuple[dict[str, Any], st
     raise AssertionError("unreachable")  # pytest.skip always raises
 
 
-@pytest.mark.requirement("ACP-CONFIG-202")
+@pytest.mark.requirement("ACP-CONFIG-002")
 async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_path, record_property):
-    """ACP-CONFIG-202. SKIPs rather than ever speculatively calling `session/set_config_option`
+    """ACP-CONFIG-002. SKIPs rather than ever speculatively calling `session/set_config_option`
     when `session/new` advertised no `configOptions` at all -- there would be nothing legitimate
     to set.
 
@@ -218,7 +218,7 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
     The first connection only establishes that `configOptions` are offered at all (and keeps the
     `VERSION-MISMATCH:` skip). The resume itself goes through `obtain_resumable_session`, whose
     successful probe response is the one validated -- so a resume error SKIPs exactly as it
-    does for `ACP-RESUME-201`. Shape only: a resume that omits `configOptions` SKIPs here and is
+    does for `ACP-RESUME-001`. Shape only: a resume that omits `configOptions` SKIPs here and is
     `ACP-RESUME-210`'s to FAIL."""
     async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -234,9 +234,9 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
         _assert_config_options_shape_valid(config_options)
 
 
-@pytest.mark.requirement("ACP-CONFIG-204")
+@pytest.mark.requirement("ACP-CONFIG-001")
 async def test_select_config_option_current_value_is_declared(agent_launch, tmp_path):
-    """ACP-CONFIG-204."""
+    """ACP-CONFIG-001."""
     async with v2_only_agent(agent_launch, require_session=True) as agent:
         result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
         config_options = result.get("configOptions")
@@ -478,8 +478,8 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
             result = msg.get("result") if isinstance(msg, dict) else None
             returned = result.get("configOptions") if isinstance(result, dict) else None
             if not isinstance(returned, list):
-                pytest.skip(f"the follow-up no-op set did not return a list (ACP-CONFIG-202): {entry.text!r}")
-            # An option the reply omits is `ACP-CONFIG-202`'s concern, not a state change.
+                pytest.skip(f"the follow-up no-op set did not return a list (ACP-CONFIG-002): {entry.text!r}")
+            # An option the reply omits is `ACP-CONFIG-002`'s concern, not a state change.
             after = _config_state(returned)
             if _is_error(probe):
                 rejected += 1

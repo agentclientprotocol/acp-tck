@@ -2,7 +2,7 @@
 """Non-conforming fixture: answers an unsupported version with a well-formed `-32022`, but keeps
 serving the connection afterwards -- a later `session/new` succeeds, although "A version-mismatch
 error does not initialize the connection" (initialization.mdx:129). FAILs exactly
-`ACP-INIT-207` (it started session work) and `ACP-INIT-209` (the request after `-32022` did not
+`ACP-INIT-207` (it started session work) and `ACP-ERROR-005` (the request after `-32022` did not
 get `-32600`).
 """
 

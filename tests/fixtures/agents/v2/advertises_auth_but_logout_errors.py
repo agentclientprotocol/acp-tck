@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""A defect fixture for ACP-AUTH-203 (CAPABILITY, `inferred:authMethods`): otherwise conforming,
+"""A defect fixture for ACP-AUTH-004 (CAPABILITY, `inferred:authMethods`): otherwise conforming,
 advertises a `type: "agent"` auth method and implements `auth/login` normally, but `auth/logout`
 always errors. No v1 analogue (v1's logout test had no `--allow-logout` opt-in gate at all).
 
-Must FAIL ACP-AUTH-203 only when run with `--allow-logout` (the flag that actually exercises
-`auth/logout`); without it, ACP-AUTH-203 SKIPs like it does for any other agent, since the TCK
+Must FAIL ACP-AUTH-004 only when run with `--allow-logout` (the flag that actually exercises
+`auth/logout`); without it, ACP-AUTH-004 SKIPs like it does for any other agent, since the TCK
 never calls the destructive method at all.
 """
 

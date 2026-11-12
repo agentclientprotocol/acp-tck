@@ -1,4 +1,4 @@
-"""Prompt-turn conformance: ACP-PROMPT-201/203/205..207/209/211 and ACP-STATE-201..205.
+"""Prompt-turn conformance: ACP-PROMPT-002/003/201/203/207/209/211 and ACP-STATE-201..205.
 
 All are `capabilities.session`-gated. `ACP-STATE-204` is ADVISORY on the registry
 (`capability=None`); its test still carries the marker for the SKIP gate.
@@ -190,10 +190,10 @@ async def test_running_is_reported_before_progress_resumes(agent_launch, tmp_pat
             )
 
 
-@pytest.mark.requirement("ACP-PROMPT-205")
+@pytest.mark.requirement("ACP-PROMPT-002")
 @pytest.mark.capability("capabilities.session")
 async def test_updates_validate_and_carry_a_known_session_id(agent_launch, tmp_path):
-    """ACP-PROMPT-205. Every `session/update` during the turn validates against the v2 schema
+    """ACP-PROMPT-002. Every `session/update` during the turn validates against the v2 schema
     and carries the prompted `sessionId` or that of a child session already announced, in wire
     order, by a `subagent_update` on a known session (nested children included). Child traffic
     before its announcement FAILs. Vacuous pass when the turn emits no updates."""
@@ -233,10 +233,10 @@ async def test_updates_validate_and_carry_a_known_session_id(agent_launch, tmp_p
                     known.add(update["sessionId"])
 
 
-@pytest.mark.requirement("ACP-PROMPT-206")
+@pytest.mark.requirement("ACP-PROMPT-003")
 @pytest.mark.capability("capabilities.session")
 async def test_resource_link_content_block_is_accepted(agent_launch, tmp_path):
-    """ACP-PROMPT-206. A `text` + `resource_link` prompt is accepted and the turn ends -- both
+    """ACP-PROMPT-003. A `text` + `resource_link` prompt is accepted and the turn ends -- both
     block types are baseline for an agent advertising `session`."""
     turn = await _drive_one_turn(
         agent_launch,
@@ -303,7 +303,7 @@ async def test_prompt_during_active_work_is_not_rejected(
                 agent, session_id, cancel_prompt_text, timeout=timeout
             )
         except AgentTimeout:
-            pytest.skip("the first prompt's turn never ended -- see ACP-STATE-202/ACP-CANCEL-201")
+            pytest.skip("the first prompt's turn never ended -- see ACP-STATE-202/ACP-CANCEL-001")
     record_property("acp_tck_second_prompt_outcome", scenario.outcome)
     if scenario.outcome == "rejected":
         assert scenario.second_response is not None

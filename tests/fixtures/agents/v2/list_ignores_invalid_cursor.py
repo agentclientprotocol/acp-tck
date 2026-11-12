@@ -2,7 +2,7 @@
 """Non-conforming fixture: `session/list` ignores a `cursor` it never issued and returns the first
 page instead of rejecting it with `-32602`.
 
-FAILs exactly `ACP-LIST-206`. No other row sends a cursor: this agent never issues a
+FAILs exactly `ACP-LIST-003`. No other row sends a cursor: this agent never issues a
 `nextCursor` for the TCK to forward.
 """
 

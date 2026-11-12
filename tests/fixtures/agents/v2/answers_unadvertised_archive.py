@@ -3,7 +3,7 @@
 `session/archive`/`session/unarchive` instead of answering `-32601`, since
 `capabilities.session.archive` was not advertised.
 
-FAILs exactly `ACP-ERROR-202` (MANDATORY). The `ACP-ARCHIVE-*` rows SKIP as usual: they are gated
+FAILs exactly `ACP-ERROR-006` (MANDATORY). The `ACP-ARCHIVE-*` rows SKIP as usual: they are gated
 on the marker this fixture does not advertise.
 """
 

@@ -5,10 +5,10 @@ message (so ahead of every reply, and in the quiet period after every notificati
 ahead of the rejection of a JSON array. It never pushes while the connection is uninitialized
 ("Agents MUST NOT send requests or notifications", initialization.mdx:91), even after a failed
 `initialize`. Otherwise identical to `ConformingAgent`; every push is a single object, never an
-array (`ACP-TRANSPORT-201`).
+array (`ACP-TRANSPORT-001`).
 
 These pushes are notifications, not replies: they must neither fail a "no reply" check
-(`ACP-JSONRPC-003`, `ACP-EXT-201`) nor be mistaken for the reply a check is waiting for
+(`ACP-JSONRPC-003`, `ACP-EXT-002`) nor be mistaken for the reply a check is waiting for
 (`ACP-BATCH-209`, the `ACP-INFO-*` probes' recorded behaviour).
 """
 

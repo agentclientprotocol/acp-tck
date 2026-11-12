@@ -4,9 +4,9 @@
 `verbosity` option as `conforming_full.py` plus a second, unrelated `boolean` option
 (`debug_mode`), so the reply is still a non-empty array.
 
-FAILs exactly `ACP-CONFIG-202`: the post-change list must contain the changed `configId`. A reply
+FAILs exactly `ACP-CONFIG-002`: the post-change list must contain the changed `configId`. A reply
 that merely drops *other* options is not a defect -- a change may remove dependent options.
-`ACP-CONFIG-201`/`203`/`204` (shape validity on `session/new`/`session/resume`, and the select
+`ACP-CONFIG-001`/`201`/`203` (shape validity on `session/new`/`session/resume`, and the select
 `currentValue` membership check), `ACP-CONFIG-206` and `ACP-CONFIG-211`/`212` are unaffected: the
 `config_option_update` it sends before the response carries the same (partial) list.
 """

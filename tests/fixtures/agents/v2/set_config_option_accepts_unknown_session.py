@@ -3,8 +3,8 @@
 `session/set_config_option` to a session that does not exist, instead of `-32002` with
 `data.sessionId`.
 
-FAILs exactly `ACP-ERROR-201` (its `set_config_option` probe only runs when `session/new`
-returns `configOptions`); the `session/prompt` probes still PASS.
+FAILs exactly `ACP-ERROR-004` (its `set_config_option` probe only runs when `session/new`
+returns `configOptions`); `ACP-ERROR-003`'s `session/prompt` probes still PASS.
 """
 
 import sys

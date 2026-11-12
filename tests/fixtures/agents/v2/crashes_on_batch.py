@@ -2,7 +2,7 @@
 """Non-conforming fixture: exits the moment it sees any batch-shaped (top-level JSON array) line
 on stdin -- otherwise fully conforming. FAILs the advisory `ACP-BATCH-209` and `ACP-JSONRPC-005`
 (whose tests send an array) via `AgentExited`; nothing it wrote was an array, so the MANDATORY
-`ACP-TRANSPORT-201` is unaffected and the run stays CONFORMANT.
+`ACP-TRANSPORT-001` is unaffected and the run stays CONFORMANT.
 """
 
 import sys

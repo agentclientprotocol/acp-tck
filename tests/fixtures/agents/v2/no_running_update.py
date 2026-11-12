@@ -5,7 +5,7 @@ to a turn-ending idle carrying `stopReason: "end_turn"`.
 FAILs exactly `ACP-STATE-201`: `run_prompt` can only end the turn through its confirmed
 fallback (a stopReason-bearing idle with no active state before it). `ACP-STATE-202` SKIPs ("no
 foreground work observed"); `ACP-STATE-203` still judges the idle's `end_turn` and PASSes.
-`ACP-PROMPT-201`/`ACP-PROMPT-203`/`ACP-PROMPT-205` are unaffected.
+`ACP-PROMPT-201`/`ACP-PROMPT-203`/`ACP-PROMPT-002` are unaffected.
 """
 
 import sys

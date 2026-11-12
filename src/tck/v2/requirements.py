@@ -39,7 +39,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "`initialize` succeeds with a non-error JSON-RPC result. Judged the same "
-            "regardless of the negotiated `protocolVersion` -- unlike `ACP-INIT-203`/"
+            "regardless of the negotiated `protocolVersion` -- unlike `ACP-INIT-004`/"
             "`ACP-INIT-204`/`ACP-SCHEMA-001`, this row does not SKIP when the agent negotiates "
             "down to a version other than 2. It does SKIP with `VERSION-MISMATCH` when the "
             "request of 2 is rejected with `-32022` (the agent has no version <= 2). "
@@ -150,7 +150,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/initialization.mdx:110"),
     ),
     Requirement(
-        id="ACP-INIT-209",
+        id="ACP-ERROR-005",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -255,7 +255,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-INIT-203",
+        id="ACP-INIT-004",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -330,7 +330,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-205",
+        id="ACP-PROMPT-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -338,14 +338,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "turn validates against the v2 schema and carries the prompted `sessionId`, or that "
             "of a child session already announced (in wire order) by a `subagent_update` on a "
             "known session -- child traffic before its announcement FAILs. "
-            "Vacuous pass if the agent emits no updates during the turn. NOT a reuse of v1's "
-            "`ACP-PROMPT-002`: the requirement text is the same schema/sessionId "
-            "check, but the *tier* differs -- v1 registers it `Tier.MANDATORY` (v1's whole "
-            "session surface is unconditional), whereas v2's `session/prompt` only exists once "
-            "the agent has advertised the optional `capabilities.session` at all, exactly like "
-            "`ACP-SESSION-001`/`002` above, so this row is `Tier.CAPABILITY`. A changed tier is "
-            "a changed requirement under the id-reuse convention, so this gets a fresh 2xx id "
-            "(`ACP-PROMPT-205`) instead of reusing `ACP-PROMPT-002`."
+            "Vacuous pass if the agent emits no updates during the turn."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/required; "
@@ -515,15 +508,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-206",
+        id="ACP-PROMPT-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "A prompt of `text` + `resource_link` content blocks is accepted (a non-error "
             "`session/prompt` result), and the turn ends: agents advertising `session` MUST "
             "support both block types, and `content.mdx` states the `resource_link` MUST for all "
-            "agents. The v2 counterpart of v1's MANDATORY `ACP-PROMPT-003`: gated on `session` "
-            "because without it there is no `session/prompt`."
+            "agents. Gated on `session` (v1 has it MANDATORY) because without it there is no "
+            "`session/prompt`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/initialization.mdx:308; "
@@ -741,7 +734,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CLIENTCAP-201",
+        id="ACP-CLIENTCAP-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -786,7 +779,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CANCEL-201",
+        id="ACP-CANCEL-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -802,7 +795,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CANCEL-202",
+        id="ACP-CANCEL-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -902,7 +895,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/close` on a session with foreground work in flight MUST cancel that work "
             "as if `session/cancel` had been sent (same idle `cancelled` state_update), then "
             "free resources; a prompt the close kept from being inserted is answered `-32800`. "
-            "Shares its test and citation with `ACP-CLOSE-202` (the same wire evidence, bound "
+            "Shares its test and citation with `ACP-CLOSE-002` (the same wire evidence, bound "
             "to both ids via a second `@pytest.mark.requirement(...)` marker) -- deliberately "
             "counted twice, once under each id."
         ),
@@ -932,7 +925,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CANCEL-210",
+        id="ACP-JSONRPC-006",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -960,7 +953,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CANCEL-212",
+        id="ACP-JSONRPC-007",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1028,7 +1021,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-TRANSPORT-201",
+        id="ACP-TRANSPORT-001",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -1155,7 +1148,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(`-32600`) error object whose `id` is `null`; no element is processed (no "
             "response carries an element's `id`). ADVISORY: the receiver clause carries no "
             "RFC-2119 keyword (only the sender's does). An agent that answers with an array "
-            "also fails `ACP-TRANSPORT-201` (MANDATORY)."
+            "also fails `ACP-TRANSPORT-001` (MANDATORY)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/transports.mdx:65-67; "
@@ -1251,7 +1244,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-RESUME-201",
+        id="ACP-RESUME-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1289,7 +1282,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-RESUME-203",
+        id="ACP-RESUME-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1411,21 +1404,6 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-RESUME-211",
-        tier=Tier.CAPABILITY,
-        capability="capabilities.session",
-        text=(
-            "`session/resume` of a `sessionId` the agent never created (a `_tck`-prefixed id "
-            "with the TCK's own `cwd`) is rejected with `-32002` and `data.sessionId` set to "
-            "the requested id, never silently accepted. Judged with the same assertion as "
-            "`ACP-ERROR-201`."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47; "
-            "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
-        ),
-    ),
-    Requirement(
         id="ACP-RESUME-212",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -1483,13 +1461,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/resume` of a session this connection created and has not closed succeeds: "
             "the session is active, agents SHOULD NOT discard an active session, and resuming "
-            "it again just synchronizes it. SHOULD. Any error FAILs here, where `ACP-RESUME-201` "
+            "it again just synchronizes it. SHOULD. Any error FAILs here, where `ACP-RESUME-001` "
             "SKIPs on one. The test is gated on `capabilities.session`."
         ),
         citation=_cite("docs/protocol/v2/draft/session-setup.mdx:49,53"),
     ),
     Requirement(
-        id="ACP-LIST-201",
+        id="ACP-LIST-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1502,7 +1480,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-LIST-202",
+        id="ACP-LIST-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1557,7 +1535,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-LIST-206",
+        id="ACP-LIST-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1589,13 +1567,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CLOSE-201",
+        id="ACP-CLOSE-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "`session/close` of a live, idle session succeeds with a schema-valid empty-object "
             "result -- `session/close`'s own baseline contract, distinct from the cancellation "
-            "side effect `ACP-CLOSE-202`/`ACP-CANCEL-208` covers."
+            "side effect `ACP-CLOSE-002`/`ACP-CANCEL-208` covers."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:367-369,389-405; "
@@ -1604,7 +1582,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CLOSE-202",
+        id="ACP-CLOSE-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1628,7 +1606,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "When `session/close` cancels in-flight foreground work, the idle `state_update` "
             "with `stopReason: \"cancelled\"` for that session arrives before the successful "
             "`session/close` response. SKIPs when the turn did not end `cancelled` (that is "
-            "`ACP-CLOSE-202`'s finding) or the close lost the race."
+            "`ACP-CLOSE-002`'s finding) or the close lost the race."
         ),
         citation=_cite("docs/protocol/v2/draft/session-setup.mdx:393"),
     ),
@@ -1684,7 +1662,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CLOSE-207",
+        id="ACP-CLOSE-003",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
@@ -1700,7 +1678,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-DELETE-201",
+        id="ACP-DELETE-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
@@ -1716,7 +1694,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-DELETE-202",
+        id="ACP-DELETE-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
@@ -1731,7 +1709,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,92"),
     ),
     Requirement(
-        id="ACP-DELETE-203",
+        id="ACP-DELETE-002",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
@@ -1883,7 +1861,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-ADDDIRS-201",
+        id="ACP-ADDDIRS-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.additionalDirectories",
         text="`session/new` with an absolute `additionalDirectories` entry is accepted.",
@@ -2001,7 +1979,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-SYSPROMPT-201",
+        id="ACP-SYSPROMPT-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.systemPrompt",
         text=(
@@ -2131,7 +2109,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-MCP-205",
+        id="ACP-SESSION-006",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
@@ -2183,7 +2161,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CONFIG-202",
+        id="ACP-CONFIG-002",
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
@@ -2213,7 +2191,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`ACP-CONFIG-201` (including its non-empty `select` options) -- a new carrier in v2 (v1's `session/load` had no analogous "
             "field). Shape only: whether the resume carries the list at all is "
             "`ACP-RESUME-210`'s concern, and an absent list SKIPs. The session is obtained the "
-            "same way as `ACP-RESUME-201`, so a resume error other than `-32601` SKIPs."
+            "same way as `ACP-RESUME-001`, so a resume error other than `-32601` SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:136,333-335; "
@@ -2221,7 +2199,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-CONFIG-204",
+        id="ACP-CONFIG-001",
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
@@ -2373,7 +2351,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-201",
+        id="ACP-AUTH-001",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -2387,7 +2365,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-202",
+        id="ACP-AUTH-002",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -2405,16 +2383,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-203",
+        id="ACP-AUTH-004",
         tier=Tier.CAPABILITY,
         capability="inferred:authMethods",
         text=(
             "`auth/logout` returns a non-error, schema-valid result. Support is inferred from "
             "a non-empty `authMethods` -- v2 has no `agentCapabilities.auth.logout` marker at "
             "all (unlike v1); `capability=\"inferred:authMethods\"` is documentation-only. "
-            "Replaces v1's `ACP-AUTH-004` outright. Only actually exercised when "
-            "`--allow-logout`/`--tck-allow-logout` is given (destructive: may revoke the "
-            "operator's own credentials); SKIPs otherwise."
+            "Only actually exercised when `--allow-logout`/`--tck-allow-logout` is given "
+            "(destructive: may revoke the operator's own credentials); SKIPs otherwise."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthRequest; "
@@ -2424,7 +2401,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-204",
+        id="ACP-AUTH-003",
         tier=Tier.CAPABILITY,
         capability="inferred:authMethods",
         text=(
@@ -2434,10 +2411,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "advertised entry is `type: \"agent\"` (the one standard type that uses "
             "`auth/login`; `-32602` is for an id that is not an advertised login method). "
             "When `capabilities.session` is advertised, a subsequent `session/new` does not "
-            "fail with `-32000`. Mirrors v1's `ACP-AUTH-003`, method renamed `authenticate` -> "
-            "`auth/login`. SKIPs when `--auth-method` was not given, the agent advertises no "
-            "`authMethods`, or `auth/login` fails with any other error (`-32602` for a custom "
-            "`_`-prefixed type included, since that type may not use `auth/login`)."
+            "fail with `-32000`. v1's `authenticate` is renamed `auth/login`. SKIPs when "
+            "`--auth-method` was not given, the agent advertises no `authMethods`, or "
+            "`auth/login` fails with any other error (`-32602` for a custom `_`-prefixed type "
+            "included, since that type may not use `auth/login`)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/authentication.mdx:51-53,87-88,191; "
@@ -2446,13 +2423,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-205",
+        id="ACP-AUTH-005",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
             "`session/new` does not fail with `-32000` (AUTHENTICATION_REQUIRED) when "
-            "`authMethods` is empty or absent. Re-cites v1's `ACP-AUTH-005`/AUTH-A1; not "
-            "promoted. SKIPs unless `capabilities.session` is advertised."
+            "`authMethods` is empty or absent. SKIPs unless `capabilities.session` is advertised."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/schema.mdx:954 (-32000 is a MAY, not a MUST); "
@@ -2476,7 +2452,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-207",
+        id="ACP-AUTH-006",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -2485,7 +2461,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "of strings, `env` (if present; `null` counts as omitted) is an array of well-formed "
             "`EnvVariable` objects (`name`/`value` both required strings), and `env` entries' `name`s are unique within that "
             "descriptor. Conditional on at least one terminal entry actually appearing; SKIPs "
-            "otherwise. New in v2 -- v1's terminal auth descriptor had no `args`/`env` fields."
+            "otherwise. v1's `env` is a string map, unique by construction; v2's is an array, so "
+            "name uniqueness is checked by hand."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal/properties/env (\"Names MUST be "
@@ -2513,7 +2490,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-AUTH-209",
+        id="ACP-AUTH-007",
         tier=Tier.CAPABILITY,
         capability="capabilities.auth.status",
         text=(
@@ -2522,19 +2499,34 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "connection, returns a result that validates as `AuthStatusResponse`. It is never "
             "an error: not `-32000` (the agent MUST NOT auth-gate it, since clients call it to "
             "learn whether authentication is needed) and not `-32601` (the agent advertised "
-            "it). The result's `state` is one of the defined `AuthState` values or begins "
-            "with `_`; other strings are reserved for future ACP variants. The test skips the "
-            "`--auth-method` login so the agent is observed unauthenticated. Unstable method."
+            "it). The test skips the `--auth-method` login so the agent is observed "
+            "unauthenticated. Unstable method."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthStatusRequest; "
             "schema/v2/schema.unstable.json#/$defs/AuthStatusResponse; "
-            "schema/v2/schema.unstable.json#/$defs/AuthState; "
             "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities/properties/status; "
             "docs/protocol/v2/draft/schema.mdx:143-144; "
             "docs/protocol/v2/draft/initialization.mdx:215-219; "
             "docs/protocol/v2/draft/authentication.mdx:193; "
             "docs/rfds/get-auth-state.mdx:293,297"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-008",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.auth.status",
+        text=(
+            "When `capabilities.auth.status` is advertised, the `state` in the `auth/status` "
+            "result is one of the defined `AuthState` values or begins with `_`: `AuthState` has "
+            "a fallback branch, and extensions MUST NOT define custom non-underscore values "
+            "there (other strings are reserved for future ACP variants). The schema accepts any "
+            "string, so `ACP-AUTH-007` cannot catch this. Only the result is judged: SKIPs when "
+            "the call returns no string `state` (`ACP-AUTH-007`'s concern)."
+        ),
+        citation=_cite(
+            "schema/v2/schema.unstable.json#/$defs/AuthState; "
+            "docs/protocol/v2/draft/extensibility.mdx:235-240"
         ),
     ),
     Requirement(
@@ -2860,7 +2852,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/extensibility.mdx:102,259"),
     ),
     Requirement(
-        id="ACP-EXT-201",
+        id="ACP-EXT-002",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
@@ -2926,16 +2918,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-ERROR-201",
+        id="ACP-ERROR-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "A session-scoped request naming a session that does not exist or is not active on "
-            "the connection gets error `-32002` with `data.sessionId` set to the requested id. "
-            "Probes: `session/prompt` for a never-created id and for a session this connection "
-            "already closed; `session/set_config_option` for a never-created id, when "
-            "`session/new` returned `configOptions`. The schema's `Other` error-data branch "
-            "accepts anything, so `data.sessionId` is checked by hand."
+            "`session/prompt` naming a session that does not exist, or that this connection "
+            "already closed, gets error `-32002` with `data.sessionId` set to the requested id. "
+            "The schema's `Other` error-data branch accepts anything, so `data.sessionId` is "
+            "checked by hand."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47-51; "
@@ -2943,7 +2933,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-ERROR-202",
+        id="ACP-ERROR-004",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/set_config_option` naming a never-created session (probed when "
+            "`session/new` returned `configOptions`), and `session/resume` of a `sessionId` the "
+            "agent never created (a nonce id with the TCK's own `cwd`), get error `-32002` with "
+            "`data.sessionId` set to the requested id, never a silent create-and-succeed. "
+            "Judged with the same assertion as `ACP-ERROR-003`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47-51; "
+            "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-006",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -2959,7 +2965,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-ERROR-203",
+        id="ACP-ERROR-008",
         tier=Tier.ADVISORY,
         capability=None,
         text=(

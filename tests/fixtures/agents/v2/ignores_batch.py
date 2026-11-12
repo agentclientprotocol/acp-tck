@@ -2,7 +2,7 @@
 """Non-conforming fixture: answers `[]` with the single `-32600`/`id: null` object but silently
 drops every non-empty array -- otherwise fully conforming (the shape of the Python SDK 1.0.0's
 array handling). FAILs only `ACP-BATCH-209`; the connection survives (`ACP-JSONRPC-005` PASSes)
-and nothing it wrote is an array (`ACP-TRANSPORT-201` PASSes), so the run stays CONFORMANT.
+and nothing it wrote is an array (`ACP-TRANSPORT-001` PASSes), so the run stays CONFORMANT.
 """
 
 import sys

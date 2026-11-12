@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Defect fixture for ACP-AUTH-209: advertises `auth.status`, but answers `auth/status` with
+"""Defect fixture for ACP-AUTH-007: advertises `auth.status`, but answers `auth/status` with
 `-32000` (authentication required), the one rejection the method must never give since clients
-call it to learn whether authentication is needed.
+call it to learn whether authentication is needed. ACP-AUTH-008 SKIPs: there is no `state`
+to judge.
 """
 
 import sys

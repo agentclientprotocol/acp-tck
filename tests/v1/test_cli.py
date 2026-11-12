@@ -839,7 +839,7 @@ def test_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     `--allow-logout`, must SKIP ONLY `ACP-AUTH-004` in addition to the baseline's own SKIP
     (`ACP-AUTH-005`/`ACP-ERROR-006`, per
     `test_conforming_full_agent_passes_everything_with_cancel_prompt_hang` above) -- every other id keeps the exact same status. Calling `logout` for real is opt-in
-    (mirrors v2's `ACP-AUTH-203` gating); a SKIPPED CAPABILITY does not affect the verdict."""
+    (v2's `ACP-AUTH-004` gates `auth/logout` the same way); a SKIPPED CAPABILITY does not affect the verdict."""
     result = _run_cli(
         "conforming_full.py", cancel_prompt="__hang__", auth_method="tck", allow_logout=False
     )

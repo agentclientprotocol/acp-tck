@@ -1,17 +1,18 @@
-"""`initialize` handshake conformance: ACP-INIT-001, ACP-INIT-003, ACP-INIT-201..215,
-ACP-SCHEMA-001 (see `tck.v2.requirements`'s module docstring for the id-namespacing decisions).
+"""`initialize` handshake conformance: ACP-INIT-001/003/004/201/202/204..208/210..215,
+ACP-ERROR-005, ACP-SCHEMA-001 (see `tck.v2.requirements`'s module docstring for the id
+convention).
 
 Version negotiation (initialization.mdx:108-112): the agent selects the highest version it
 supports that is <= the requested one, rejects with `-32022` when there is none, and answers a
 malformed `protocolVersion` with `-32602`. A failed `initialize` leaves the connection
 uninitialized and can be retried, and `initialize` may be repeated before any other request
 (initialization.mdx:90-92,135-141); the probes that do not depend on such state still run in
-their own process, and the ones that do (`ACP-INIT-209`..`215`) deliberately reuse a connection
-after a failed or repeated `initialize`.
+their own process, and the ones that do (`ACP-ERROR-005`, `ACP-INIT-210`..`215`) deliberately
+reuse a connection after a failed or repeated `initialize`.
 
 `ACP-INIT-201`/`003`/`202`/`208` judge the negotiation outcome only, so they hold for a legacy
 v1-only agent too and carry the `negotiation` marker (they still run if the main handshake is
-rejected with `-32022`). `ACP-INIT-205`/`206`/`207` and `209`..`215` are obligations of agents
+rejected with `-32022`). `ACP-INIT-205`..`207`/`210`..`215` and `ACP-ERROR-005` are obligations of agents
 that implement v2 (a v1-only agent "may not accept a repeated `initialize`",
 initialization.mdx:141), so they SKIP with `VERSION-MISMATCH:` unless the main handshake
 selected 2 and carry no `negotiation` marker.
@@ -118,7 +119,7 @@ async def test_initialize_succeeds(agent_launch):
     even for an agent that negotiates down to a version other than 2, so unlike the v2-only
     shape checks below, this test never SKIPs on such a downgrade. (A `-32022` rejection of the
     main handshake SKIPs it via `tck.common.plugin`'s version-rejection gate.) Shape validation of
-    the result lives in `ACP-SCHEMA-001`/`ACP-INIT-203`/`ACP-INIT-204` instead.
+    the result lives in `ACP-SCHEMA-001`/`ACP-INIT-004`/`ACP-INIT-204` instead.
     """
     async with connected_agent(agent_launch, handshake=False) as agent:
         req_id = await agent.send_request("initialize", SPEC.initialize_params())
@@ -370,9 +371,9 @@ async def test_v1_selection_uses_the_v1_response_shape(agent_launch):
     )
 
 
-@pytest.mark.requirement("ACP-INIT-203")
+@pytest.mark.requirement("ACP-INIT-004")
 async def test_info_is_required_and_well_formed(agent_launch):
-    """ACP-INIT-203. `info` is REQUIRED in the v2 `initialize` result (unlike v1's optional
+    """ACP-INIT-004. `info` is REQUIRED in the v2 `initialize` result (unlike v1's optional
     `agentInfo`), and its `name`/`version` are strings.
 
     This is a v2-only shape requirement: an agent that honestly negotiates down to a version
@@ -405,7 +406,7 @@ async def test_capabilities_markers_are_objects_not_booleans(agent_launch):
 
     Also a v2-only shape requirement, so `skip_if_version_mismatch` SKIPs it with the
     `VERSION-MISMATCH:` marker whenever the agent negotiated down to a version other than 2 --
-    see `test_info_is_required_and_well_formed` (`ACP-INIT-203`) above for the rationale.
+    see `test_info_is_required_and_well_formed` (`ACP-INIT-004`) above for the rationale.
     """
     async with connected_agent(agent_launch, handshake=False) as agent:
         req_id = await agent.send_request("initialize", SPEC.initialize_params())
@@ -478,7 +479,7 @@ async def test_initialize_exchange_validates_against_schema(agent_launch, tmp_pa
 
     received = [entry for entry in agent.transcript if entry.direction is Direction.RECEIVED]
 
-    # A received line may itself be an array (non-conformant, `ACP-TRANSPORT-201` judges it,
+    # A received line may itself be an array (non-conformant, `ACP-TRANSPORT-001` judges it,
     # e.g. `emits_batch_updates.py`) -- flatten to individual message dicts before validating,
     # rather than hard-failing on the first list-shaped line.
     messages: list[dict[str, Any]] = []
@@ -534,11 +535,11 @@ def _is_error(entry) -> bool:
     return isinstance(entry.parsed, dict) and "error" in entry.parsed
 
 
-@pytest.mark.requirement("ACP-INIT-209")
+@pytest.mark.requirement("ACP-ERROR-005")
 async def test_request_before_initialize_gets_invalid_request(
     agent_launch, agent_initialize_result, tmp_path
 ):
-    """ACP-INIT-209 (error.mdx:29,60; initialization.mdx:90). `session/new` -- a standard
+    """ACP-ERROR-005 (error.mdx:29,60; initialization.mdx:90). `session/new` -- a standard
     method, so the only thing wrong with it is the connection state -- is sent on three
     connections: a fresh one, one after an `initialize` without `protocolVersion`, and one after
     `initialize(0)`. Each MUST answer `-32600`. A leg whose `initialize` is not rejected has no

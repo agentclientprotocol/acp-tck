@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming (ADVISORY-only) fixture: `leaks_mcp_env.py` with the `meta` leak channel. Trips
-only `ACP-MCP-205`.
+only `ACP-SESSION-006`.
 """
 
 import sys

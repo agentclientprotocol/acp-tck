@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: a grouped `select` declares the value `normal` in two groups
 (session-config-options.mdx:128-130: each `value` MUST be unique within the option, including
-across groups). `currentValue` is `normal`, so `ACP-CONFIG-204` still PASSes. FAILs exactly
+across groups). `currentValue` is `normal`, so `ACP-CONFIG-001` still PASSes. FAILs exactly
 `ACP-CONFIG-210`; the shape is schema-valid.
 """
 

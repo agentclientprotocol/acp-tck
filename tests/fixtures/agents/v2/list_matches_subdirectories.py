@@ -3,7 +3,7 @@
 subdirectory of the filter is returned too, though only sessions in that same directory match.
 
 FAILs exactly `ACP-LIST-203` (its subdirectory session comes back under the parent filter).
-`ACP-LIST-202` is unaffected: the filter it uses names a directory nothing lives under.
+`ACP-LIST-002` is unaffected: the filter it uses names a directory nothing lives under.
 """
 
 import sys

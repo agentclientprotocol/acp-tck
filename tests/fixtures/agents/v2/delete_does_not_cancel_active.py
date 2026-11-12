@@ -3,8 +3,8 @@
 leaves a still-hanging `__hang__` turn running instead of cancelling it as `session/close` would.
 
 Only observable with `--cancel-prompt __hang__`; every other prompt finishes normally. FAILs
-exactly `ACP-DELETE-204` (the turn never ends, so the TCK's wait times out). `ACP-DELETE-201`
-(idle session), `ACP-DELETE-202` and `ACP-DELETE-205` PASS.
+exactly `ACP-DELETE-204` (the turn never ends, so the TCK's wait times out). `ACP-DELETE-001`
+(idle session), `ACP-DELETE-003` and `ACP-DELETE-205` PASS.
 """
 
 import sys

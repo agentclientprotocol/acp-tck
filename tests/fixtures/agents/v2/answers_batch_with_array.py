@@ -5,7 +5,7 @@ with one array of the responses (nothing at all if every element was a notificat
 malformed element getting its own `-32600`/`id: null` entry.
 
 FAILs `ACP-BATCH-209` (elements processed, array reply) and, because it wrote an array,
-`ACP-TRANSPORT-201` (MANDATORY) -- so the run is NOT CONFORMANT.
+`ACP-TRANSPORT-001` (MANDATORY) -- so the run is NOT CONFORMANT.
 """
 
 import sys

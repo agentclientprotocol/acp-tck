@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: behaves like a conforming agent for the whole exchange, then --
 after stdin closes (i.e. strictly after the last response any test ever awaits) -- writes one
-line of plain-text garbage to stdout before exiting. Violates ACP-TRANSPORT-201 ("every line
+line of plain-text garbage to stdout before exiting. Violates ACP-TRANSPORT-001 ("every line
 the agent writes to stdout is a single valid JSON-RPC 2.0 message, or a non-empty array of
 them"). Mirrors v1's `garbage_after_response.py` on top of v2's `_base.py`.
 

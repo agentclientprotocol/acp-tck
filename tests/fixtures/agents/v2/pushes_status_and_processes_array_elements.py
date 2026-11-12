@@ -5,7 +5,7 @@ with a status notification pushed between them.
 
 Proves skipping the agent's own notifications does not hide element processing: FAILs exactly
 `ACP-BATCH-209` (a reply carries an element's `id`). Nothing it writes is an array, so
-`ACP-TRANSPORT-201` PASSes.
+`ACP-TRANSPORT-001` PASSes.
 """
 
 import sys

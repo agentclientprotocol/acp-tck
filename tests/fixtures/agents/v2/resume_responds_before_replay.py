@@ -3,8 +3,8 @@
 `session/resume` request *before* replaying the session's retained history, instead of after.
 The current-state snapshot still precedes the response.
 
-FAILs exactly `ACP-RESUME-202` (the replay-before-response ordering check). `ACP-RESUME-201`
-and `ACP-RESUME-203` are unaffected -- this fixture only reorders the `{"type": "start"}` case.
+FAILs exactly `ACP-RESUME-202` (the replay-before-response ordering check). `ACP-RESUME-001`
+and `ACP-RESUME-002` are unaffected -- this fixture only reorders the `{"type": "start"}` case.
 `ACP-RESUME-204` legitimately SKIPs rather than FAILs: `_helpers.resume_session`'s
 single-response-tracking read loop returns as soon as it sees the response, before ever reading
 the trailing replay notifications still queued in the pipe -- so `updates` comes back empty and
