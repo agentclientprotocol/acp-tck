@@ -21,14 +21,14 @@ string, same as v1."""
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "beac4ba96190018e9f6d82e148ff275084c5aa3e"
+SCHEMA_REVISION = "3961af94fa62d2386d993cadf1afc8b146fc799a"
 """The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every
 requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VENDORED.md`). v2 is
-Draft (schema version `2.0.0-alpha.9` at this commit); expect this to change more often than
+Draft (schema version `2.0.0-alpha.14` at this commit); expect this to change more often than
 v1's pin."""
 
-# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode). Unchanged from v1,
-# plus `UNSUPPORTED_PROTOCOL_VERSION`.
+# JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode; `error.mdx:26-36`).
+# Unchanged from v1, plus `UNSUPPORTED_PROTOCOL_VERSION`.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
@@ -73,7 +73,9 @@ STOP_REASONS = frozenset(
 TOOL_KIND = frozenset(
     {"read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other"}
 )
-TOOL_CALL_STATUS = frozenset({"pending", "in_progress", "completed", "failed", "cancelled"})
+TOOL_CALL_STATUS = frozenset(
+    {"pending", "in_progress", "paused", "completed", "failed", "cancelled"}
+)
 PLAN_ENTRY_PRIORITY = frozenset({"high", "medium", "low"})
 PLAN_ENTRY_STATUS = frozenset({"pending", "in_progress", "completed", "cancelled"})
 SESSION_UPDATE_KIND = frozenset(
@@ -104,8 +106,15 @@ SESSION_UPDATE_KIND = frozenset(
     }
 )
 STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"})
-TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal"})
+TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal", "session"})
 PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
+# More `ACP-ENUM-201` sites: `PlanUpdateContent.type`, the diff-content enums, and
+# `AvailableCommand.type`. Cross-checked against the schema the same way as the sets above.
+PLAN_CONTENT_TYPE = frozenset({"items", "file", "markdown"})
+DIFF_OPERATION = frozenset({"add", "delete", "modify", "move", "copy"})
+DIFF_FILE_TYPE = frozenset({"text", "binary", "directory", "symlink"})
+DIFF_PATCH_FORMAT = frozenset({"git_patch"})
+AVAILABLE_COMMAND_TYPE = frozenset({"command"})
 
 
 def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
@@ -124,12 +133,75 @@ def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
     return value in defined or value.startswith("_")
 
 
+_HEX_LOWER = frozenset("0123456789abcdef")
+
+
+def _is_lower_hex(text: str, length: int) -> bool:
+    return len(text) == length and all(ch in _HEX_LOWER for ch in text)
+
+
+def is_valid_traceparent(value: Any) -> bool:
+    """W3C Trace Context `traceparent`: `version-trace_id-parent_id-trace_flags`, lowercase hex
+    (2, 32, 16 and 2 digits), version `ff` invalid, trace id and parent id not all zeros. Version
+    `00` is exactly those four fields; a later version may append `-<more>` after them
+    (https://www.w3.org/TR/trace-context/#traceparent-header-field-values)."""
+    if not isinstance(value, str) or len(value) < 55:
+        return False
+    version, trace_id, parent_id, flags = value[0:2], value[3:35], value[36:52], value[53:55]
+    if not (value[2] == value[35] == value[52] == "-"):
+        return False
+    if not (
+        _is_lower_hex(version, 2)
+        and _is_lower_hex(trace_id, 32)
+        and _is_lower_hex(parent_id, 16)
+        and _is_lower_hex(flags, 2)
+    ):
+        return False
+    if version == "ff" or trace_id == "0" * 32 or parent_id == "0" * 16:
+        return False
+    if len(value) == 55:
+        return True
+    return version != "00" and value[55] == "-"
+
+
+W3C_META_KEYS = frozenset({"traceparent", "tracestate", "baggage"})
+
+
+def judge_w3c_meta(meta: dict[str, Any]) -> tuple[int, list[str]]:
+    """`(keys judged, problems)` for the root W3C keys of one `_meta` object. A `null` value is
+    skipped: on updates `_meta` is a patch where `null` removes the key
+    (`extensibility.mdx:108-115`), so it carries no value to judge."""
+    judged = 0
+    problems: list[str] = []
+    for key in sorted(W3C_META_KEYS):
+        value = meta.get(key)
+        if value is None:
+            continue
+        judged += 1
+        valid = is_valid_traceparent(value) if key == "traceparent" else isinstance(value, str)
+        if not valid:
+            problems.append(f"{key}={value!r}")
+    return judged, problems
+
+
+def is_namespaced_meta_key(key: str) -> bool:
+    """`<reverse-dns>/<name>`: a prefix of two or more dot-separated labels ending in `/`, then a
+    name, whose second label is not `agentclientprotocol` (that namespace is reserved for ACP;
+    `extensibility.mdx:102,259`)."""
+    prefix, slash, name = key.partition("/")
+    labels = prefix.split(".")
+    return bool(
+        slash and name and len(labels) >= 2 and all(labels) and labels[1] != "agentclientprotocol"
+    )
+
+
 @lru_cache(maxsize=1)
 def load_meta() -> dict[str, Any]:
-    """Parse `schema/meta.unstable.json`: a `version` int, plus three flat `{internal_name: "wire/
+    """Parse `schema/meta.unstable.json`: a `version` int, plus four flat `{internal_name: "wire/
     method"}` dicts -- `agentMethods`, `clientMethods`, `protocolMethods` (just
-    `cancel_request` -> `$/cancel_request`, same as v1). Does not itself distinguish requests
-    from notifications -- that split is derived from the schema below."""
+    `cancel_request` -> `$/cancel_request`, same as v1), and `proxyMethods` (proxy-chain
+    methods, not used here). Does not itself distinguish requests from notifications -- that
+    split is derived from the schema below."""
     return json.loads((SCHEMA_DIR / "meta.unstable.json").read_text())
 
 
@@ -137,6 +209,12 @@ def load_meta() -> dict[str, Any]:
 def load_schema() -> dict[str, Any]:
     """Parse `schema/schema.unstable.json`."""
     return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
+
+
+def _const_members(def_name: str) -> frozenset[Any]:
+    """The `const` values of a schema `anyOf` enum `$def`, ignoring its open "other" variant."""
+    variants = load_schema()["$defs"][def_name]["anyOf"]
+    return frozenset(v["const"] for v in variants if "const" in v)
 
 
 def _collect_ref_names(node: Any) -> list[str]:
@@ -191,4 +269,12 @@ CLIENT_NOTIFICATIONS: frozenset[str] = _notification_methods("AgentNotification"
 `elicitation/complete`)."""
 
 KNOWN_METHODS: frozenset[str] = AGENT_METHODS | CLIENT_METHODS | PROTOCOL_METHODS
-"""The full "known method" union across all three inventories."""
+"""The full "known method" union across the agent, client, and protocol inventories (not
+`proxyMethods`)."""
+
+
+ERROR_CODES: frozenset[int] = _const_members("ErrorCode")
+"""The named `ErrorCode` values (`error.mdx`'s codes plus `-32800`); any other code is "other"."""
+
+AUTH_STATES: frozenset[str] = _const_members("AuthState")
+"""The defined `AuthState` values; any other string must start with `_`."""

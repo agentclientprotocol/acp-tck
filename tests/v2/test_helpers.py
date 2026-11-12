@@ -1,20 +1,25 @@
-"""Unit tests for the line classifiers and the `session/list` resume route in
-`tck.v2.conformance._helpers`."""
+"""Unit tests for the line classifiers, the `session/list` resume route and the tool-call patch
+tracker in `tck.v2.conformance._helpers`."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
     _LIST_ROUTE_MAX_PAGES,
+    PatchTracker,
     _route_from_list,
+    agent_requests,
+    assert_unknown_session_error,
     is_agent_initiated,
     is_response_line,
+    tool_call_report,
 )
 
 _NOTE = '{"jsonrpc":"2.0","method":"_x/status"}'
@@ -31,9 +36,9 @@ def _entry(raw: str) -> TranscriptEntry:
     [
         (_NOTE, True, False),
         (_REQUEST, True, False),
-        (f"[{_NOTE},{_NOTE}]", True, False),  # an agent's own notification batch
+        (f"[{_NOTE},{_NOTE}]", False, False),  # an array is never agent-initiated (no batches)
         (_REPLY, False, True),
-        (f"[{_REPLY},{_REPLY}]", False, True),  # a batch reply array
+        (f"[{_REPLY},{_REPLY}]", False, True),  # a reply array: flattened for is_response_line
         (f"[{_NOTE},{_REPLY}]", False, True),  # mixed: judged as a reply, never skipped
         ("[]", False, False),
         (f"[{_NOTE},17]", False, False),
@@ -45,6 +50,20 @@ def test_line_classification(raw: str, agent_initiated: bool, response: bool) ->
     entry = _entry(raw)
     assert is_agent_initiated(entry) is agent_initiated
     assert is_response_line(entry) is response
+
+
+def test_agent_requests_are_received_objects_with_method_and_id():
+    sent = TranscriptEntry.build(Direction.SENT, _REQUEST.encode(), 0.0)
+    null_id = '{"jsonrpc":"2.0","id":null,"method":"session/request_permission"}'
+    transcript = [
+        sent,  # a client request is never an agent request
+        _entry(_NOTE),
+        _entry(_REPLY),
+        _entry(_REQUEST),
+        _entry(null_id),  # still a request: the caller judges its id
+        _entry(f"[{_REQUEST}]"),  # an array is non-conformant but its elements are still read
+    ]
+    assert [m["id"] for m in agent_requests(transcript)] == [7, None, 7]
 
 
 class _ListAgent:
@@ -116,3 +135,139 @@ def test_list_route_gives_up_after_page_bound(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError):
         _from_list(agent, tmp_path)
     assert len(agent.list_params) == _LIST_ROUTE_MAX_PAGES
+
+
+def _error_entry(code: int | None, data: object = None, *, session_id: str = "s1") -> TranscriptEntry:
+    error: dict = {"code": code, "message": "Resource not found"}
+    if data is not None:
+        error["data"] = data
+    return _entry(json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}))
+
+
+def test_unknown_session_error_accepts_the_conforming_shape() -> None:
+    assert_unknown_session_error(_error_entry(-32002, {"sessionId": "s1"}), "session/prompt", "s1")
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        (_error_entry(-32602, {"sessionId": "s1"}), "expected code -32002, got -32602"),
+        (_error_entry(-32002), "expected error.data to be an object"),
+        (_error_entry(-32002, {"sessionId": "other"}), "expected data.sessionId='s1', got 'other'"),
+        (_error_entry(-32002, {}), "expected data.sessionId='s1', got None"),
+        (_entry(_REPLY), "did not return an error"),
+    ],
+)
+def test_unknown_session_error_rejects_every_deviation(entry: TranscriptEntry, expected: str) -> None:
+    with pytest.raises(AssertionError, match=expected):
+        assert_unknown_session_error(entry, "session/prompt", "s1")
+
+
+def test_unknown_session_error_reports_code_and_data_problems_together() -> None:
+    with pytest.raises(AssertionError) as excinfo:
+        assert_unknown_session_error(_error_entry(-32602), "session/resume", "s1")
+    message = str(excinfo.value)
+    assert "expected code -32002" in message and "expected error.data" in message
+
+
+def _tool_call(tool_call_id: str = "t1", **fields: Any) -> tuple[str, dict[str, Any]]:
+    return "update", {"sessionUpdate": "tool_call_update", "toolCallId": tool_call_id, **fields}
+
+
+def _tracked(*events: tuple[str, dict[str, Any]]) -> PatchTracker:
+    tracker = PatchTracker()
+    for kind, payload in events:
+        tracker.apply(kind, payload)
+    return tracker
+
+
+def test_tool_call_report_covers_updates_chunks_and_tool_call_subjects() -> None:
+    chunk = {"sessionUpdate": "tool_call_content_chunk", "toolCallId": "t1", "content": {"type": "content"}}
+    assert tool_call_report("update", chunk) == ("t1", "tool_call_content_chunk", {})
+    subject = {"subject": {"type": "tool_call", "toolCall": {"toolCallId": "t2", "title": "x"}}}
+    assert tool_call_report("permission", subject) == (
+        "t2", "permission subject", {"toolCallId": "t2", "title": "x"}
+    )
+    assert tool_call_report("permission", {"subject": {"type": "command", "toolCallId": "t3"}}) is None
+    assert tool_call_report(*_tool_call("")) is None
+    assert tool_call_report("update", {"sessionUpdate": "plan_update"}) is None
+
+
+def test_status_moving_forward_is_not_a_violation() -> None:
+    tracker = _tracked(
+        _tool_call(status="pending"),
+        _tool_call(status="in_progress"),
+        _tool_call(status="paused"),
+        _tool_call(status="in_progress"),
+        _tool_call(title="unchanged status"),
+        _tool_call(status="completed"),
+        _tool_call(status="completed"),  # a repeat is not a change
+    )
+    assert tracker.status_violations == []
+    assert tracker.tool_calls["t1"].status == "completed"
+
+
+@pytest.mark.parametrize(
+    ("events", "expected"),
+    [
+        ([_tool_call(status="in_progress"), _tool_call(status="pending")], "went back"),
+        ([_tool_call(status="in_progress"), _tool_call(status=None)], "went back"),  # null = pending
+        ([_tool_call(status="completed"), _tool_call(status="in_progress")], "changed from final"),
+        ([_tool_call(status="cancelled"), _tool_call(status="completed")], "changed from final"),
+        (
+            [
+                _tool_call(status="failed"),
+                (
+                    "permission",
+                    {"subject": {"type": "tool_call", "toolCall": {"toolCallId": "t1", "status": "in_progress"}}},
+                ),
+            ],
+            "permission subject",
+        ),
+    ],
+)
+def test_status_regressions_are_collected(events, expected: str) -> None:
+    tracker = _tracked(*events)
+    assert len(tracker.status_violations) == 1 and expected in tracker.status_violations[0]
+
+
+def test_a_chunk_creates_a_pending_tool_call() -> None:
+    chunk = {"sessionUpdate": "tool_call_content_chunk", "toolCallId": "t1", "content": {}}
+    tracker = _tracked(("update", chunk))
+    assert tracker.tool_calls["t1"].status == "pending"
+
+
+def test_cancel_cleared_with_the_final_status_is_not_a_violation() -> None:
+    tracker = _tracked(
+        _tool_call(status="in_progress", capabilities={"cancel": {}}),
+        _tool_call(status="completed", capabilities=None),
+        ("update", {"sessionUpdate": "terminal_update", "terminalId": "x", "capabilities": {"cancel": {}}}),
+        ("update", {"sessionUpdate": "terminal_update", "terminalId": "x", "exitStatus": {}, "capabilities": {}}),
+    )
+    assert tracker.cancel_seen
+    assert tracker.cancel_violations == []
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        [_tool_call(status="in_progress", capabilities={"cancel": {}}), _tool_call(status="failed")],
+        [_tool_call(status="completed", capabilities={"cancel": {}})],
+        [
+            ("update", {"sessionUpdate": "terminal_update", "terminalId": "x", "capabilities": {"cancel": {}}}),
+            ("update", {"sessionUpdate": "terminal_output_chunk", "terminalId": "x", "data": ""}),
+            ("update", {"sessionUpdate": "terminal_update", "terminalId": "x", "exitStatus": {"exitCode": 1}}),
+        ],
+    ],
+)
+def test_cancel_kept_after_final_is_a_violation(events) -> None:
+    tracker = _tracked(*events)
+    assert tracker.cancel_violations
+
+
+def test_a_malformed_or_null_cancel_advertises_nothing() -> None:
+    tracker = _tracked(
+        _tool_call(status="completed", capabilities={"cancel": None}),
+        _tool_call("t2", status="completed", capabilities="bogus"),
+    )
+    assert not tracker.cancel_seen and tracker.cancel_violations == []

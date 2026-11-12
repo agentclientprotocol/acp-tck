@@ -27,8 +27,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=(1, 2),
         default=1,
         metavar="{1,2}",
-        help="ACP protocol version to run the conformance suite for (default: 1). 2 is Draft "
-        "and covers only a skeleton subset of requirements so far -- see AGENTS.md.",
+        help="ACP protocol version to run the conformance suite for (default: 1). 2 is the Draft "
+        "protocol version.",
     )
     parser.add_argument("--agent-cwd", default=None, metavar="DIR", help="Working directory for the agent.")
     parser.add_argument(
@@ -73,10 +73,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-logout",
         action="store_true",
-        help="Opt in to actually calling logout against the agent under test (v1's ACP-AUTH-004, "
-        "v2's ACP-AUTH-203), passed through as --tck-allow-logout. Off by default because it may "
-        "revoke the operator's own credentials for whatever account the agent is authenticated "
-        "as -- without it, both requirements SKIP instead of exercising the method.",
+        help="Opt in to actually calling logout against the agent under test (ACP-AUTH-004: "
+        "`logout` in v1, `auth/logout` in v2), passed through as --tck-allow-logout. Off by "
+        "default because it may revoke the operator's own credentials for whatever account the "
+        "agent is authenticated as -- without it, the requirement SKIPs instead of exercising "
+        "the method. The logout "
+        "test (marked `revokes`) runs last, after every other test.",
     )
     parser.add_argument(
         "--close-grace",

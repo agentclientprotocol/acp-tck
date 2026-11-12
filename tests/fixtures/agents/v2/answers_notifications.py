@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Non-conforming fixture: replies to the `session/cancel` notification with a bogus response
-(`{"id": null, "result": null}`). Violates ACP-JSONRPC-003 -- notifications never receive a
+"""Non-conforming fixture: replies to the `session/cancel` notification with a bogus error
+response (`{"id": null, "error": ...}`; the null id is legal on an error, so only the reply
+itself is non-conforming). Violates ACP-JSONRPC-003 -- notifications never receive a
 response. Mirrors v1's `answers_notifications.py` on top of v2's `_base.py`.
 
 v2's `_base.py` has no generic `_handle_notification` hook -- `session/cancel` is the only
@@ -20,7 +21,7 @@ from _base import ConformingAgent  # noqa: E402
 
 class AnswersNotificationsAgent(ConformingAgent):
     def _handle_cancel(self, params: dict[str, Any]) -> None:
-        self._write({"jsonrpc": "2.0", "id": None, "result": None})
+        self._write({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
 
 
 def main() -> None:

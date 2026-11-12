@@ -1,24 +1,24 @@
-"""JSON-RPC envelope conformance: ACP-JSONRPC-001..005.
+"""JSON-RPC envelope conformance: ACP-JSONRPC-001..005 and ACP-JSONRPC-202.
 
 v2 counterpart of `tck.v1.conformance.test_jsonrpc` (honest duplication, not shared machinery).
-Per `tck.v2.requirements`, all five ids reuse their v1 wire assertions unchanged, widened only to
-also cover a batch-delivered response/notification/erroneous-request -- but this file's own
-probes are single-message only. That batch half of the evidence lives entirely in
-`test_batch.py` (`@pytest.mark.requirement(...)` markers in both files jointly satisfy each id);
-see its `test_batch_responses_echo_request_ids`,
-`test_notification_only_batch_gets_no_reply`, and
-`test_invalid_batch_entries_get_per_entry_invalid_request`.
+`ACP-JSONRPC-005`'s second test lives in `test_batch.py` (the connection must survive a rejected
+JSON array); the other ids are judged here on single messages.
 
-No row here needs `skip_if_version_mismatch`: a v1-only agent never receives a batch-shaped probe
+Rows 001..005 need no `skip_if_version_mismatch`: a v1-only agent never receives an array probe
 in this file, and its single-message replies are judged by the same rule v1 already holds it to.
+`ACP-JSONRPC-202` judges the v2 `RequestId` rule against agent-authored requests, so it SKIPs
+with `VERSION-MISMATCH:` for an agent that negotiated down.
 
 Only `initialize` is unconditional in v2, so a probe uses a `session/*` method only when the agent
 advertises `capabilities.session` (`_helpers.advertises_session`), and otherwise the `_`-prefixed
-`_tck/does_not_exist` (every request gets a response; extensibility.mdx:178, overview.mdx:193).
+`_tck/does_not_exist` (every request gets a response; `extensibility.mdx:187`,
+`overview.mdx:223`). `ACP-JSONRPC-202` needs a prompt turn to elicit requests, so it SKIPs when
+`capabilities.session` is not advertised.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 
 import pytest
@@ -26,17 +26,28 @@ import pytest
 from tck.common.harness import AgentTimeout
 from tck.v2 import SPEC
 from tck.v2.protocol import METHOD_NOT_FOUND
-from tck.v2.validation import validate_response_envelope
+from tck.v2.validation import is_valid_request_id, validate_response_envelope
 
-from ._helpers import advertises_session, connected_agent, first_response_within, new_session, quiet_period
+from ._helpers import (
+    advertises_session,
+    agent_requests,
+    connected_agent,
+    first_response_within,
+    iter_messages,
+    new_session,
+    quiet_period,
+    run_prompt,
+    session_state_update,
+    skip_if_version_mismatch,
+)
 
 _UNKNOWN_METHOD = "_tck/does_not_exist"
 
 
 @pytest.mark.requirement("ACP-JSONRPC-001")
 async def test_id_is_echoed_for_integer_and_string_ids(agent_launch, tmp_path):
-    """ACP-JSONRPC-001. Only ever sends one `initialize` per connection (a second `initialize` on
-    an already-initialized connection is unspecified). The integer-id half uses `initialize`
+    """ACP-JSONRPC-001. Sends one `initialize` per connection (a repeat is only specified before
+    any other request, `ACP-INIT-212`). The integer-id half uses `initialize`
     itself (a request every agent MUST answer); the string-id half sends `session/new` when the
     agent advertises `capabilities.session`, else `_tck/does_not_exist` -- id echo holds even for
     an error reply, so there is nothing here for an auth-gated or otherwise erroring agent to
@@ -66,7 +77,10 @@ async def test_response_envelope_is_result_xor_error_with_valid_shape(agent_laun
     """ACP-JSONRPC-002. Evidence: `initialize`'s own response, plus the error response to a
     deliberately invalid-params `session/new` (missing the required `cwd`) when the agent
     advertises `capabilities.session`, or to `_tck/does_not_exist` otherwise. Does not assert
-    which error code either response uses, only that the envelope is well-formed."""
+    which error code either response uses, only that the envelope is well-formed (exactly one
+    of `result`/`error`, an integer or string `id` -- `null` only on an error -- and a valid
+    error object). Both replies must also match the request's `id`, so a `null`-id result is
+    seen as no reply at all, which fails the test."""
     async with connected_agent(agent_launch, handshake=False) as agent:
         init_id = await agent.send_request("initialize", SPEC.initialize_params())
         init_entry = await agent.wait_for_response(init_id, timeout=agent_launch.default_timeout)
@@ -87,9 +101,10 @@ async def test_response_envelope_is_result_xor_error_with_valid_shape(agent_laun
 async def test_notification_receives_no_response(agent_launch, agent_initialize_result, tmp_path):
     """ACP-JSONRPC-003. `session/cancel` with no prompt in flight is a pure notification; an
     agent that does not advertise `capabilities.session` gets a `_tck/notify` notification
-    instead. Checks every message inside a batch-array line too, not just a bare object line: an
-    agent that folds a spurious response into a batch alongside something else would otherwise
-    pass this MANDATORY check by accident. Only a reply fails this (`_helpers.is_response_line`),
+    instead. Checks every message inside an array line too, not just a bare object line: an
+    agent that folds a spurious response into an array alongside something else would otherwise
+    pass this MANDATORY check by accident (the array itself is `ACP-TRANSPORT-001`'s concern).
+    Only a reply fails this (`_helpers.is_response_line`),
     not the agent's own notifications or requests."""
     async with connected_agent(agent_launch) as agent:
         if advertises_session(agent_initialize_result.result):
@@ -104,9 +119,10 @@ async def test_notification_receives_no_response(agent_launch, agent_initialize_
 
 @pytest.mark.requirement("ACP-JSONRPC-004")
 async def test_unknown_method_yields_method_not_found(agent_launch):
-    """ACP-JSONRPC-004 (ADVISORY -- only the `-32601` code is "should"; replying at all is
-    `ACP-EXT-001`'s MUST). An agent that never replies therefore SKIPs here rather than failing
-    an ADVISORY row for a MANDATORY defect."""
+    """ACP-JSONRPC-004 (MANDATORY, `extensibility.mdx:202`, `error.mdx:44`). An unknown
+    `_`-prefixed method gets `-32601`; the code is asserted because the MUST names it. Replying
+    at all is `ACP-EXT-001`'s concern, so an agent that never replies SKIPs here rather than
+    failing two rows for one defect."""
     async with connected_agent(agent_launch) as agent:
         req_id = await agent.send_request(_UNKNOWN_METHOD)
         try:
@@ -138,3 +154,92 @@ async def test_connection_survives_an_erroneous_request(agent_launch, agent_init
         assert isinstance(follow_up.parsed, dict) and (
             "result" in follow_up.parsed or "error" in follow_up.parsed
         ), f"connection did not survive the erroneous request: {follow_up.raw!r}"
+
+
+_PROMPT_TEXT = "hi"
+
+
+@pytest.mark.requirement("ACP-JSONRPC-202")
+async def test_agent_request_ids_are_strings_or_integers(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-JSONRPC-202 (id type; `overview.mdx:15-17`). Every request the agent sends during a
+    prompt turn has an `id` that is a string or an integer, never `null`. SKIPs when the agent
+    sends no request during the turn -- sending one is the agent's choice, so a quiet agent is
+    not evidence of conformance."""
+    _skip_unless_v2_session_agent(agent_initialize_result)
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+        await run_prompt(
+            agent,
+            session_id,
+            [{"type": "text", "text": _PROMPT_TEXT}],
+            timeout=agent_launch.default_timeout,
+        )
+        requests = agent_requests(agent.transcript)
+    if not requests:
+        pytest.skip("the agent sent no request during the prompt turn, so no request id was observed")
+    bad = [msg for msg in requests if not is_valid_request_id(msg["id"])]
+    assert not bad, f"agent request ids must be a string or an integer, never null: {bad!r}"
+
+
+@pytest.mark.requirement("ACP-JSONRPC-202")
+async def test_agent_does_not_reuse_a_pending_request_id(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-JSONRPC-202 (no reuse while pending; `overview.mdx:19`). The TCK leaves every agent
+    request unanswered for a quiet period (so each stays pending), then checks that no two share
+    an `id`; it finally cancels the turn and answers them `cancelled`/`-32601` before closing.
+    An agent that waits for the first answer before asking again never has two requests pending,
+    so reuse is not observable and the test SKIPs, saying so."""
+    _skip_unless_v2_session_agent(agent_initialize_result)
+    timeout = agent_launch.default_timeout
+    quiet = quiet_period(timeout)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    held: list[dict] = []
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        prompt_id = await agent.send_request(
+            "session/prompt", {"sessionId": session_id, "prompt": [{"type": "text", "text": _PROMPT_TEXT}]}
+        )
+        turn_ended = False
+        while not turn_ended:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            try:
+                entry = await agent.read_line(timeout=min(remaining, quiet) if held else remaining)
+            except AgentTimeout:
+                break
+            for msg in iter_messages(entry):
+                if "method" in msg and "id" in msg:
+                    held.append(msg)
+                    continue
+                update = session_state_update(msg, session_id)
+                idle = update is not None and update.get("state") == "idle"
+                rejected = entry.matches_id(prompt_id) and "error" in msg
+                turn_ended = turn_ended or ((idle or rejected) and not held)
+
+        if held:
+            await agent.send_notification("session/cancel", {"sessionId": session_id})
+            for msg in held:
+                if msg["method"] == "session/request_permission":
+                    reply = {"result": {"outcome": {"outcome": "cancelled"}}}
+                else:
+                    reply = {"error": {"code": METHOD_NOT_FOUND, "message": "Method not found"}}
+                await agent.send_message({"jsonrpc": "2.0", "id": msg["id"], **reply})
+
+    ids = [msg["id"] for msg in held if isinstance(msg["id"], (str, int)) and not isinstance(msg["id"], bool)]
+    reused = sorted({repr(i) for i in ids if ids.count(i) > 1})
+    assert not reused, f"agent reused request ids while they were still awaiting a response: {reused}"
+    if len(held) < 2:
+        pytest.skip(
+            "the agent never had two requests pending at once during the prompt turn, so reuse of "
+            "a pending id was not observable"
+        )
+
+
+def _skip_unless_v2_session_agent(outcome) -> None:
+    """The `ACP-JSONRPC-202` tests elicit agent requests with a prompt turn, so they SKIP unless
+    the agent speaks v2 (the rule is v2's `RequestId`) and advertises `capabilities.session`."""
+    assert outcome.result is not None, f"initialize did not succeed: {outcome.error_message}"
+    skip_if_version_mismatch(outcome.result)
+    if not advertises_session(outcome.result):
+        pytest.skip("capabilities.session not advertised, so no prompt turn can elicit requests")

@@ -19,9 +19,12 @@ _KNOWN_INFO_FIELDS = {"name", "title", "version", "_meta"}
 
 class RejectsUnknownCapabilityFieldsAgent(ConformingAgent):
     def _handle_initialize(self, msg_id: Any, params: dict[str, Any]) -> None:
-        capabilities = params.get("capabilities") or {}
-        auth = capabilities.get("auth") or {}
-        info = params.get("info") or {}
+        capabilities = params.get("capabilities")
+        capabilities = capabilities if isinstance(capabilities, dict) else {}
+        auth = capabilities.get("auth")
+        auth = auth if isinstance(auth, dict) else {}
+        info = params.get("info")
+        info = info if isinstance(info, dict) else {}
         if (
             set(capabilities) - _KNOWN_CLIENT_CAPABILITIES
             or set(auth) - _KNOWN_AUTH_CAPABILITIES

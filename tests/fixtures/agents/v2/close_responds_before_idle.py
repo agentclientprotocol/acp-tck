@@ -3,7 +3,7 @@
 answers the close first and only then sends the cancelled idle for the work it cancelled.
 
 Only observable with `--cancel-prompt __hang__`. FAILs exactly `ACP-CLOSE-203`: the turn still
-ends `cancelled`, so `ACP-CLOSE-202`/`ACP-CANCEL-208` PASS.
+ends `cancelled`, so `ACP-CLOSE-002`/`ACP-CANCEL-208` PASS.
 """
 
 import sys

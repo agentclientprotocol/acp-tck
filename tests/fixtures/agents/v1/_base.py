@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 PROTOCOL_VERSION = 1
@@ -20,6 +21,20 @@ PROTOCOL_VERSION = 1
 # used by `_content_block_error` below to give `session/prompt` schema-shape strictness
 # equivalent to `_handle_authenticate`'s `methodId` check.
 _VALID_CONTENT_BLOCK_TYPES = {"text", "image", "audio", "resource", "resource_link"}
+
+# Capability-gated methods keyed under `agentCapabilities.sessionCapabilities`.
+_SESSION_CAPABILITY_KEYS = {
+    "session/list": "list",
+    "session/resume": "resume",
+    "session/close": "close",
+    "session/delete": "delete",
+    "session/archive": "archive",
+    "session/unarchive": "archive",
+}
+
+# `schema/v1/schema.unstable.json#/$defs/SessionArchiveFilter`: the values every agent
+# advertising `archive` supports (omitted/`null` means `exclude`).
+_ARCHIVE_FILTERS = {"exclude", "include", "only"}
 
 
 def _content_block_error(block: Any) -> str | None:
@@ -65,7 +80,36 @@ class ConformingAgent:
     behind a `@pytest.mark.capability(...)` marker that already SKIPs when unadvertised --
     keeping the logic ungated here just means it's available to any fixture that wants it via
     subclassing (see the `ACP-LOAD-*`/`ACP-RESUME-*` defect fixtures).
+
+    A session-scoped request naming a session this connection never created, loaded, or
+    resumed (or already closed) is answered by `_unknown_session`: `-32002` with
+    `data.sessionId` (`error.mdx` "Unknown sessions"). `session/load` and `session/resume`
+    behave the same; defect fixtures override `_unknown_session` or the handlers to break it.
+    `session/close` and `session/delete` of an unknown id succeed silently; `session/archive`
+    and `session/unarchive` of one get `-32002`. An archived session stays in `_sessions` (so it
+    can still be listed, unarchived and deleted) with an `archived` flag; `session/list` honors
+    the `archived` filter and reports the flag only when `archive` is advertised.
+
+    Three further `error.mdx` behaviors are on by default, each switchable off by a defect
+    fixture's class attribute: `_require_initialize` (any request but `initialize` before
+    initialization gets `-32600`; the harness-only `_tck/*` probes are exempt),
+    `_gate_unadvertised` (`session/load` without `loadSession`, and `session/list`/`resume`/
+    `close`/`delete`/`archive`/`unarchive` without the matching `sessionCapabilities` key, and
+    `auth/status` without `auth.status`, get `-32601`), and
+    `_validate_set_params` (an unknown `modeId`, `configId` or select value on a known session
+    gets `-32602`).
+
+    `session/load` and `session/resume` validate a supplied `systemPrompt` like `session/new`
+    does and answer `-32602` without loading the session (`session-setup.mdx:422`). With
+    `_persist_sessions` on, sessions are also kept in `<cwd>/.tck-fixture-sessions.json`, so a
+    later connection to a fresh process can load or resume one (off by default: it writes a
+    file into the session's `cwd`).
     """
+
+    _require_initialize = True
+    _gate_unadvertised = True
+    _validate_set_params = True
+    _persist_sessions = False
 
     def __init__(
         self,
@@ -98,6 +142,7 @@ class ConformingAgent:
         self._mode_update_field = mode_update_field
         self._ignore_boolean_gating = ignore_boolean_gating
         self._client_capabilities: dict[str, Any] = {}
+        self._initialized = False
         self._mcp_processes: list[subprocess.Popen] = []
 
     def run(self) -> None:
@@ -122,9 +167,68 @@ class ConformingAgent:
             return  # a response, or otherwise not a request/notification -- ignore
         params = message.get("params") or {}
         if "id" in message:
-            self._handle_request(method, message["id"], params)
+            if not self._reject_request(method, message["id"], params):
+                self._handle_request(method, message["id"], params)
         else:
             self._handle_notification(method, params)
+
+    def _method_advertised(self, method: str) -> bool:
+        """Whether `method`'s capability gate (if it has one) is advertised."""
+        if method == "session/load":
+            return self._capabilities.get("loadSession") is True
+        if method == "auth/status":
+            return (self._capabilities.get("auth") or {}).get("status") is not None
+        key = _SESSION_CAPABILITY_KEYS.get(method)
+        if key is None:
+            return True
+        return (self._capabilities.get("sessionCapabilities") or {}).get(key) is not None
+
+    def _set_params_error(self, method: str, params: dict[str, Any]) -> str | None:
+        """Why a `session/set_mode`/`session/set_config_option` on a known session names a mode,
+        config option or select value this agent does not offer, else `None`."""
+        if method == "session/set_mode":
+            available = (self._modes or {}).get("availableModes") or []
+            if params.get("modeId") not in {m.get("id") for m in available}:
+                return f"unknown modeId {params.get('modeId')!r}"
+            return None
+        option = next(
+            (o for o in self._visible_config_options() or [] if o.get("id") == params.get("configId")),
+            None,
+        )
+        if option is None:
+            return f"unknown configId {params.get('configId')!r}"
+        if option.get("type") in (None, "select"):
+            values = set()
+            for entry in option.get("options") or []:
+                # flat `{value, name}` entries, or `{group, name, options: [...]}` groups
+                for choice in entry.get("options") or [entry]:
+                    values.add(choice.get("value"))
+            if params.get("value") not in values:
+                return f"unsupported value {params.get('value')!r} for {option['id']!r}"
+        return None
+
+    def _reject_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> bool:
+        """The `error.mdx` checks that sit in front of every handler (so a fixture overriding
+        `_handle_request` keeps them). Answers the request and returns `True` if it is rejected."""
+        if method == "initialize":
+            self._initialized = True
+            return False
+        if self._require_initialize and not self._initialized and not method.startswith("_tck/"):
+            self._error(msg_id, -32600, "Invalid request: initialize must come first")
+            return True
+        if self._gate_unadvertised and not self._method_advertised(method):
+            self._error(msg_id, -32601, "Method not found")
+            return True
+        if (
+            self._validate_set_params
+            and method in ("session/set_mode", "session/set_config_option")
+            and params.get("sessionId") in self._sessions
+        ):
+            problem = self._set_params_error(method, params)
+            if problem is not None:
+                self._error(msg_id, -32602, f"Invalid params: {problem}")
+                return True
+        return False
 
     def _handle_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
         if method == "initialize":
@@ -144,6 +248,10 @@ class ConformingAgent:
             self._handle_delete(msg_id, params)
         elif method == "session/close":
             self._handle_close(msg_id, params)
+        elif method == "session/archive":
+            self._handle_archive(msg_id, params, archived=True)
+        elif method == "session/unarchive":
+            self._handle_archive(msg_id, params, archived=False)
         elif method == "session/set_mode":
             self._handle_set_mode(msg_id, params)
         elif method == "session/set_config_option":
@@ -152,6 +260,8 @@ class ConformingAgent:
             self._handle_authenticate(msg_id, params)
         elif method == "logout":
             self._handle_logout(msg_id, params)
+        elif method == "auth/status":
+            self._handle_auth_status(msg_id, params)
         elif method == "_tck/env":
             self._reply(msg_id, {"value": os.environ.get(params.get("name", ""))})
         elif method == "_tck/big":
@@ -221,6 +331,7 @@ class ConformingAgent:
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
+        self._persist(session_id)
         result: dict[str, Any] = {"sessionId": session_id}
         if self._modes is not None:
             result["modes"] = self._modes
@@ -228,6 +339,44 @@ class ConformingAgent:
         if visible_config is not None:
             result["configOptions"] = visible_config
         self._reply(msg_id, result)
+
+    @staticmethod
+    def _store_path(cwd: Any) -> Path | None:
+        return Path(cwd) / ".tck-fixture-sessions.json" if isinstance(cwd, str) else None
+
+    def _persist(self, session_id: str) -> None:
+        session = self._sessions.get(session_id)
+        path = self._store_path(session["cwd"]) if session is not None else None
+        if not self._persist_sessions or path is None:
+            return
+        stored = self._read_store(path)
+        stored[session_id] = {"cwd": session["cwd"], "history": session["history"]}
+        path.write_text(json.dumps(stored))
+
+    @staticmethod
+    def _read_store(path: Path) -> dict[str, Any]:
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def _restore(self, session_id: Any, cwd: Any) -> None:
+        """Bring a session persisted by an earlier process into `_sessions`, if there is one."""
+        path = self._store_path(cwd)
+        if not self._persist_sessions or path is None or session_id in self._sessions:
+            return
+        stored = self._read_store(path).get(session_id)
+        if isinstance(stored, dict):
+            self._sessions[session_id] = {"cwd": stored["cwd"], "history": stored["history"]}
+
+    def _refuses_system_prompt(self, msg_id: Any, params: dict[str, Any]) -> bool:
+        """Answer `-32602` and return `True` if `params` carries a `systemPrompt` this agent
+        cannot apply, before the session is loaded or resumed."""
+        error = self._system_prompt_error(params.get("systemPrompt"))
+        if error is None:
+            return False
+        self._error(msg_id, -32602, f"Invalid params: {error}")
+        return True
 
     def _system_prompt_error(self, system_prompt: Any) -> str | None:
         """`None` if `system_prompt` is absent/null or one this agent can apply: `append` mode
@@ -288,6 +437,9 @@ class ConformingAgent:
     def _handle_set_mode(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
         mode_id = params.get("modeId")
+        if session_id not in self._sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         if self._modes is not None:
             self._modes["currentModeId"] = mode_id
         self._reply(msg_id, {})
@@ -304,6 +456,10 @@ class ConformingAgent:
             )
 
     def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         config_id = params.get("configId")
         value = params.get("value")
         if self._config_options is not None:
@@ -331,17 +487,22 @@ class ConformingAgent:
         self._authenticated = False
         self._reply(msg_id, {})
 
+    def _handle_auth_status(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # A pure query, answered whether or not the connection is authenticated
+        # (`schema/v1/schema.unstable.json#/$defs/AuthStatusRequest`).
+        if self._authenticated:
+            self._reply(
+                msg_id, {"state": "authenticated", "accounts": [{"label": "TCK", "active": True}]}
+            )
+        else:
+            self._reply(msg_id, {"state": "unauthenticated" if self._require_auth else "not_required"})
+
     def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
-        # Fixture strictness: reject a `sessionId` this agent never created, and validate every
-        # content block's shape, instead of silently accepting anything -- this is the
-        # fixture's own outgoing-request-shape policy, scoped to
-        # `session/prompt` only (not `session/load`/`resume`/`list`/`delete`/`close`, whose
-        # existing upsert/silent-success semantics are deliberately exercised elsewhere and are
-        # not something the TCK asserts an error code for -- see
-        # `test_informational.py::test_unknown_session_id_behaviour`, which never asserts).
+        # Fixture strictness: validate every content block's shape, instead of silently
+        # accepting anything -- this is the fixture's own outgoing-request-shape policy.
         if session_id not in self._sessions:
-            self._error(msg_id, -32602, f"Invalid params: unknown sessionId {session_id!r}")
+            self._unknown_session(msg_id, session_id)
             return
         prompt = params.get("prompt")
         if not isinstance(prompt, list) or not prompt:
@@ -381,55 +542,110 @@ class ConformingAgent:
         session = self._sessions.get(session_id)
         if session is not None:
             session["history"].append(update_params)
+            self._persist(session_id)
         self._notify("session/update", update_params)
 
     def _handle_load(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if self._refuses_system_prompt(msg_id, params):
+            return
         session_id = params.get("sessionId")
+        self._restore(session_id, params.get("cwd"))
         session = self._sessions.get(session_id)
         if session is None:
-            session = {"cwd": params.get("cwd"), "history": []}
-            self._sessions[session_id] = session
+            self._unknown_session(msg_id, session_id)
+            return
         for update_params in session["history"]:
             self._notify("session/update", update_params)
         self._reply(msg_id, {})
 
     def _handle_resume(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if self._refuses_system_prompt(msg_id, params):
+            return
         session_id = params.get("sessionId")
+        self._restore(session_id, params.get("cwd"))
         if session_id not in self._sessions:
-            self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
+            self._unknown_session(msg_id, session_id)
+            return
         # Deliberately no replay -- ACP-RESUME-002 requires history-kind updates not be sent
         # before this response.
         self._reply(msg_id, {})
 
     def _handle_list(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # The fixture never paginates, so it never issues a cursor and every one is invalid.
+        if params.get("cursor") is not None:
+            self._error(msg_id, -32602, "Invalid params: unknown cursor")
+            return
+        archive_filter = params.get("archived")
+        archive_advertised = self._method_advertised("session/archive")
+        if archive_advertised and archive_filter is not None and archive_filter not in _ARCHIVE_FILTERS:
+            self._error(msg_id, -32602, f"Invalid params: unsupported archived filter {archive_filter!r}")
+            return
         cwd_filter = params.get("cwd")
         sessions = []
         for session_id, session in self._sessions.items():
             if cwd_filter is not None and session.get("cwd") != cwd_filter:
                 continue
-            sessions.append({"sessionId": session_id, "cwd": session.get("cwd")})
+            archived = session.get("archived", False)
+            if archive_advertised and not self._archive_filter_matches(archive_filter, archived):
+                continue
+            info: dict[str, Any] = {"sessionId": session_id, "cwd": session.get("cwd")}
+            if archive_advertised:
+                info["archived"] = archived
+            sessions.append(info)
         self._reply(msg_id, {"sessions": sessions})
+
+    @staticmethod
+    def _archive_filter_matches(archive_filter: str | None, archived: bool) -> bool:
+        if archive_filter == "include":
+            return True
+        return archived if archive_filter == "only" else not archived
+
+    def _handle_archive(self, msg_id: Any, params: dict[str, Any], *, archived: bool) -> None:
+        session_id = params.get("sessionId")
+        session = self._sessions.get(session_id)
+        if session is None:
+            self._unknown_session(msg_id, session_id)
+            return
+        if archived:
+            self._cancel_pending_prompt(session_id)  # archiving frees the session as if closed
+        session["archived"] = archived  # idempotent in both directions
+        self._reply(msg_id, {})
 
     def _handle_delete(self, msg_id: Any, params: dict[str, Any]) -> None:
         # SHOULD succeed silently even for an unknown sessionId -- `dict.pop` with a default
         # already gives us that for free.
-        self._sessions.pop(params.get("sessionId"), None)
+        session_id = params.get("sessionId")
+        session = self._sessions.pop(session_id, None)
+        path = self._store_path(session["cwd"]) if session is not None else None
+        if self._persist_sessions and path is not None:
+            stored = self._read_store(path)
+            if stored.pop(session_id, None) is not None:
+                path.write_text(json.dumps(stored))
         self._reply(msg_id, {})
 
     def _handle_close(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")
+        self._cancel_pending_prompt(session_id)
+        self._sessions.pop(session_id, None)
+        self._reply(msg_id, {})
+
+    def _cancel_pending_prompt(self, session_id: Any) -> None:
         if self._pending_prompt is not None and self._pending_prompt["session_id"] == session_id:
             pending = self._pending_prompt
             self._pending_prompt = None
             self._reply(pending["id"], {"stopReason": "cancelled"})
-        self._sessions.pop(session_id, None)
-        self._reply(msg_id, {})
 
     def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "id": msg_id, "result": result})
 
-    def _error(self, msg_id: Any, code: int, message: str) -> None:
-        self._write({"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}})
+    def _error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
+        error: dict[str, Any] = {"code": code, "message": message}
+        if data is not None:
+            error["data"] = data
+        self._write({"jsonrpc": "2.0", "id": msg_id, "error": error})
+
+    def _unknown_session(self, msg_id: Any, session_id: Any) -> None:
+        self._error(msg_id, -32002, "Resource not found", {"sessionId": session_id})
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})

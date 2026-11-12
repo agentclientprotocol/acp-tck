@@ -2,7 +2,7 @@
 """Non-conforming fixture: advertises `capabilities.session.systemPrompt` (append only) but
 rejects every `systemPrompt`, including the `append` mode every advertising agent must support.
 
-FAILs exactly `ACP-SYSPROMPT-201`. `ACP-SYSPROMPT-202` SKIPs: `override` is not advertised.
+FAILs exactly `ACP-SYSPROMPT-001`. `ACP-SYSPROMPT-202` SKIPs: `override` is not advertised.
 """
 
 import sys

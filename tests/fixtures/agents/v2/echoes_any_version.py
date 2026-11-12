@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: echoes back any requested `protocolVersion` above 2 instead of
-selecting its own highest supported version (initialization.mdx:98). Requests of 2 or below go
+selecting its own highest supported version (initialization.mdx:110). Requests of 2 or below go
 through the base negotiation unchanged. Mirrors `tests/fixtures/agents/v1/echoes_any_version.py`.
 
 FAILs exactly `ACP-INIT-003`, whose `65535` probe must not be echoed. `ACP-INIT-201` does not

@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable, Literal
 
 import pytest
 
 from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, TranscriptEntry
-from tck.common.plugin import current_auth_method_id, current_initialize_auth_methods, register_active_process
+from tck.common.plugin import (
+    current_auth_method_id,
+    current_initialize_auth_methods,
+    record_test_property,
+    register_active_process,
+    skip_if_login_times_out,
+)
 from tck.v1.protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
 
 
@@ -20,6 +27,7 @@ async def connected_agent(
     launch: AgentLaunch,
     *,
     handshake: bool = True,
+    authenticate: bool = True,
     client_capabilities: dict[str, Any] | None = None,
 ) -> AsyncIterator[AgentProcess]:
     """Spawn a fresh `AgentProcess` for `launch`, optionally perform an `initialize` handshake,
@@ -29,16 +37,20 @@ async def connected_agent(
     test failure attaches its transcript and stderr to the pytest report, regardless of which
     requirement(s) the test is checking.
 
-    When `handshake` is true and `--tck-auth-method` was given (`current_auth_method_id()`),
-    an `authenticate` call for that method id is sent right after `initialize` (or the test
-    SKIPs, see `unusable_auth_method_reason`, if that id is not advertised or is a `terminal`
-    method) -- this lets
-    every existing/new test that calls `new_session()` afterwards just work against an agent
-    that requires authentication before `session/new`, without each test having to know about
-    auth at all. Note: this auto-authenticate step only fires for `handshake=True` callers --
+    When `handshake` and `authenticate` are true and `--tck-auth-method` was given
+    (`current_auth_method_id()`), an `authenticate` call for that method id is sent right after
+    `initialize` (or the test SKIPs, see `unusable_auth_method_reason`, if that id is not
+    advertised or is a `terminal` method) -- this lets every existing/new test that calls
+    `new_session()` afterwards just work against an agent that requires authentication before
+    `session/new`, without each test having to know about auth at all. Note: this auto-authenticate step only fires for `handshake=True` callers --
     `test_initialize.py::test_full_exchange_validates_against_schema` deliberately drives its
     own `initialize` with `handshake=False` and is out of scope for auth-gating (it never
-    exercises an auth-gated fixture).
+    exercises an auth-gated fixture). A caller that must observe the agent unauthenticated
+    (`auth/status`, ACP-AUTH-007) passes `authenticate=False` to keep the handshake but skip
+    this step.
+
+    A login that never answers (it may be interactive and pending) SKIPs with `AUTH-GATED:`
+    rather than failing, see `skip_if_login_times_out`.
     """
     async with AgentProcess(launch) as agent:
         register_active_process(agent)
@@ -53,7 +65,7 @@ async def connected_agent(
                 },
             )
             init_entry = await agent.wait_for_response(req_id, timeout=launch.startup_timeout)
-            method_id = current_auth_method_id()
+            method_id = current_auth_method_id() if authenticate else None
             if method_id is not None:
                 init_msg = init_entry.parsed if isinstance(init_entry.parsed, dict) else {}
                 init_result = init_msg.get("result")
@@ -62,7 +74,8 @@ async def connected_agent(
                 if reason is not None:
                     pytest.skip(f"AUTH-GATED: {reason} -- check --tck-auth-method")
                 auth_id = await agent.send_request("authenticate", {"methodId": method_id})
-                auth_entry = await agent.wait_for_response(auth_id, timeout=launch.startup_timeout)
+                with skip_if_login_times_out("authenticate", method_id, launch.startup_timeout):
+                    auth_entry = await agent.wait_for_response(auth_id, timeout=launch.startup_timeout)
                 auth_msg = auth_entry.parsed
                 # `authenticate` succeeding is never a MANDATORY assertion -- a real agent may
                 # legitimately reject bad/expired/cancelled credentials. An error response here
@@ -172,6 +185,27 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
         )
 
 
+# RFC 3986 scheme (two or more characters, so a Windows drive path `C:\x` is not read as a
+# URI); `file:` further needs an RFC 8089 absolute path (`file:///p`, `file://host/p`, `file:/p`,
+# `file:c:/p`).
+_URI_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]+):")
+_FILE_ABSOLUTE_PATH_RE = re.compile(r"^file:(//[^/]*/|/(?!/)|[A-Za-z]:/)", re.IGNORECASE)
+
+
+def is_absolute_uri(uri: Any) -> bool:
+    """Whether `uri` is absolute for ACP-PLAN-001: an RFC 3986 URI with a scheme, and for the
+    `file` scheme an RFC 8089 absolute path. The spec leaves "absolute" undefined; this is the
+    TCK's reading."""
+    if not isinstance(uri, str):
+        return False
+    match = _URI_SCHEME_RE.match(uri)
+    if match is None:
+        return False
+    if match.group(1).lower() == "file":
+        return _FILE_ABSOLUTE_PATH_RE.match(uri) is not None
+    return True
+
+
 def quiet_period(timeout: float) -> float:
     """The heuristic "nothing more is coming" wait used by tests that conclude absence (e.g. "no
     response to a notification"). Derived from `--tck-timeout` rather than a hard-coded
@@ -253,6 +287,62 @@ def cancel_race_peek(timeout: float) -> float:
     return max(0.05, min(0.5, timeout / 50))
 
 
+PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "cancelled"]
+"""How `run_prompt` answers `session/request_permission` (until `session/cancel` is sent):
+`allow` (the default) selects `allow_once`, else `allow_always`, else `reject_once`;
+`reject_once` selects `reject_once`. When the policy's kinds are not offered it never picks
+another option (a `*_always` would persist an approval or a standing deny in the operator's
+agent): it sends `session/cancel` and answers `cancelled`. `unknown_option` selects an
+`optionId` the agent never offered; `cancelled` answers the `cancelled` outcome without sending
+`session/cancel`."""
+
+UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
+"""The `optionId` the `unknown_option` policy selects (`_`-prefixed per the extensibility rule)."""
+
+
+def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
+    """The `RequestPermissionOutcome` for `policy`, plus a note when the preferred option kind
+    was not offered (else `None`). Options are picked by `kind`, never by position.
+
+    `allow`: `allow_once`, else `allow_always` (noted), else `reject_once` (noted).
+    `reject_once`: `reject_once` only. Neither ever selects a `*_always` it was not asked for:
+    with none of its kinds offered it answers `cancelled` *with a note*, and the caller must
+    then send `session/cancel` first, as a conforming client does before answering a pending
+    permission request `cancelled`. Tolerates malformed options."""
+    if policy == "cancelled":
+        return {"outcome": "cancelled"}, None
+    if policy == "unknown_option":
+        return {"outcome": "selected", "optionId": UNKNOWN_PERMISSION_OPTION_ID}, None
+    candidates = [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
+
+    def first_of_kind(kind: str) -> dict[str, Any] | None:
+        return next((o for o in candidates if o.get("kind") == kind), None)
+
+    if policy == "reject_once":
+        preferences = [("reject_once", None)]
+        missing = "agent offered no reject_once option"
+    else:
+        preferences = [
+            ("allow_once", None),
+            ("allow_always", "allow_always selected (allow_once not offered)"),
+            ("reject_once", "reject_once selected (no allow option offered)"),
+        ]
+        missing = "agent offered no allow_once, allow_always or reject_once option"
+    for kind, note in preferences:
+        chosen = first_of_kind(kind)
+        if chosen is not None:
+            return {"outcome": "selected", "optionId": chosen.get("optionId")}, note
+    return {"outcome": "cancelled"}, missing
+
+
+def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
+    """`permission_outcome`, recording any fallback note on the current test's report entry."""
+    outcome, note = permission_outcome(options, policy)
+    if note is not None:
+        record_test_property("acp_tck_permission_fallback", note)
+    return outcome, note
+
+
 @dataclass(frozen=True)
 class PromptTurn:
     """The outcome of one `session/prompt` turn driven by `run_prompt`."""
@@ -270,9 +360,10 @@ class PromptTurn:
     `clientCapabilities: {}` -- `test_client_capabilities.py` turns "the agent called an
     unadvertised method" into its own negative tests using this list."""
     cancelled_at_index: int | None = None
-    """The transcript index at which `run_prompt` sent `session/cancel`, or `None` if
-    `on_cancel` was false or the prompt resolved before a cancel was ever sent (a race the TCK
-    cannot always avoid -- see `test_cancel.py`)."""
+    """The transcript index at which `run_prompt` sent `session/cancel` (for `on_cancel`, or by
+    an unsatisfiable permission policy -- see `permission_cancels`), or `None` if `on_cancel` was false or
+    the prompt resolved before a cancel was ever sent (a race the TCK cannot always avoid -- see
+    `test_cancel.py`)."""
     action_response: TranscriptEntry | None = None
     """The response to `on_action`'s request, if `on_action` was given and fired (see
     `run_prompt`'s docstring) -- `None` if `on_action` was not given, or was given but the
@@ -280,6 +371,13 @@ class PromptTurn:
     action_sent_at_index: int | None = None
     """The transcript index at which `on_action`'s request was sent, mirroring
     `cancelled_at_index` -- `None` if `on_action` was not given or never fired."""
+    permission_fallbacks: list[str] = field(default_factory=list)
+    """A note per `session/request_permission` answered with other than the preferred option
+    kind (`permission_outcome`); also recorded as the `acp_tck_permission_fallback` property."""
+    permission_cancels: list[str] = field(default_factory=list)
+    """A note per `session/request_permission` the policy could not satisfy (none of its option
+    kinds offered): the mock client sent `session/cancel` and answered `cancelled` instead. Also
+    recorded as the `acp_tck_permission_fallback` property."""
 
 
 async def run_prompt(
@@ -290,6 +388,7 @@ async def run_prompt(
     on_cancel: bool = False,
     on_action: Callable[[], Awaitable[Any]] | None = None,
     cancel_wait: float = 0.5,
+    permission: PermissionPolicy = "allow",
     extra_params: dict[str, Any] | None = None,
     timeout: float,
 ) -> PromptTurn:
@@ -297,9 +396,10 @@ async def run_prompt(
     agent sends meanwhile, until the prompt's own response arrives.
 
     While waiting:
-    - `session/request_permission` is answered `{"outcome": {"outcome": "selected",
-      "optionId": <first option's optionId>}}`, or `{"outcome": {"outcome": "cancelled"}}` once
-      `session/cancel` has been sent for this turn (`docs/protocol/v1/draft/prompt-turn.mdx:614`).
+    - `session/request_permission` is answered per `permission` (see `PermissionPolicy`;
+      options are picked by `kind`, never by position), or `{"outcome": {"outcome":
+      "cancelled"}}` once `session/cancel` has been sent for this turn
+      (`docs/protocol/v1/draft/prompt-turn.mdx:641`).
     - any other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) gets
       `-32601`, since the mock client advertised `clientCapabilities: {}`; the request is also
       recorded on `PromptTurn.client_requests_seen`.
@@ -336,6 +436,8 @@ async def run_prompt(
     prompt_id = await agent.send_request("session/prompt", params)
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
+    permission_fallbacks: list[str] = []
+    permission_cancels: list[str] = []
     cancelled_at_index: int | None = None
     action_response: TranscriptEntry | None = None
     action_sent_at_index: int | None = None
@@ -353,7 +455,7 @@ async def run_prompt(
         if trigger_sent:
             return
         trigger_sent = True
-        if on_cancel:
+        if on_cancel and cancelled_at_index is None:
             await agent.send_notification("session/cancel", {"sessionId": session_id})
             cancelled_at_index = len(agent.transcript) - 1
         if on_action is not None:
@@ -365,7 +467,7 @@ async def run_prompt(
         prompt's own response, else `None` after doing whatever mock-client bookkeeping it
         implies (recording an update, answering a permission/other request, or recording the
         `on_action` request's own response)."""
-        nonlocal action_response
+        nonlocal action_response, cancelled_at_index
         msg = entry.parsed
         if not isinstance(msg, dict):
             return None
@@ -388,6 +490,8 @@ async def run_prompt(
                 cancelled_at_index,
                 action_response,
                 action_sent_at_index,
+                permission_fallbacks,
+                permission_cancels,
             )
         if action_id is not None and entry.matches_id(action_id):
             action_response = entry
@@ -401,14 +505,21 @@ async def run_prompt(
 
         if method == "session/request_permission" and "id" in msg:
             options = (msg.get("params") or {}).get("options") or []
-            if trigger_sent:
+            if trigger_sent or cancelled_at_index is not None:
                 # Once `session/cancel` or the `on_action` request (e.g. `session/close`) has
                 # fired, a real client would resolve an in-flight permission prompt as
                 # cancelled rather than picking an option on the user's behalf.
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
-                first_option_id = options[0].get("optionId") if options else None
-                outcome = {"outcome": "selected", "optionId": first_option_id}
+                outcome, note = _answer_permission(options, permission)
+                if note is not None and outcome["outcome"] == "cancelled":
+                    # The policy's option kinds were not offered: cancel the turn first, then
+                    # answer `cancelled` (`prompt-turn.mdx:641`).
+                    await agent.send_notification("session/cancel", {"sessionId": session_id})
+                    cancelled_at_index = len(agent.transcript) - 1
+                    permission_cancels.append(note)
+                elif note is not None:
+                    permission_fallbacks.append(note)
             await agent.send_message(
                 {"jsonrpc": "2.0", "id": msg["id"], "result": {"outcome": outcome}}
             )

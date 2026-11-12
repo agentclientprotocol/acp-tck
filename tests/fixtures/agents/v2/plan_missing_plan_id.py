@@ -11,7 +11,7 @@ observed", but `ACP-ENUM-201` still PASSes via the plan entry's correctly-shaped
 
 `_base.ConformingAgent._reply_to_prompt` calls `_send_rich_turn_updates` on every turn, so this
 malformed `plan_update` is emitted on every `run_prompt` call any other test makes against this
-fixture too -- `ACP-PROMPT-205` (CAPABILITY, affects the verdict) then also FAILs whenever this
+fixture too -- `ACP-PROMPT-002` (CAPABILITY, affects the verdict) then also FAILs whenever this
 fixture is run unscoped (see `tests/v2/test_cli.py`'s corresponding self-test, `-k` widened to
 catch this).
 """

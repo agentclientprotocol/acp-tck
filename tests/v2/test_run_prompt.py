@@ -2,9 +2,10 @@
 handling, driven against a tiny scripted stdio agent.
 
 The script replays a JSON plan once it reads `session/prompt`: each step is a message to write
-(`"$ID"` stands for the prompt's request id), `{"sleep": s}`, `{"wait_method": m}` (read until
-a message with that method arrives) or `{"wait_id": i}` (read until the response to `i`).
-`"pre"` steps are written at startup, before any prompt.
+(`"$ID"` stands for the prompt's request id, `"$ID2"` for the id of a later `session/prompt`
+read by `wait_method`), `{"sleep": s}`, `{"wait_method": m}` (read until a message with that
+method arrives) or `{"wait_id": i}` (read until the response to `i`). `"pre"` steps are written
+at startup, before any prompt.
 """
 
 from __future__ import annotations
@@ -14,8 +15,20 @@ import json
 import sys
 from typing import Any
 
-from tck.common.harness import AgentLaunch, AgentProcess, Direction
-from tck.v2.conformance._helpers import run_prompt
+import pytest
+
+from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction
+from tck.common.plugin import _TEST_PROPERTIES
+from tck.v2.conformance._helpers import (
+    UNKNOWN_PERMISSION_OPTION_ID,
+    UNKNOWN_PERMISSION_OUTCOME,
+    background_keys,
+    permission_outcome,
+    prompt_during_active_work,
+    run_prompt,
+    session_events,
+    tool_call_report,
+)
 
 _SCRIPT = r"""
 import json, sys, time
@@ -31,15 +44,21 @@ def read_until(pred):
 for step in plan.get("pre", []):
     out(step)
 prompt = read_until(lambda m: m.get("method") == "session/prompt")
+second = None
 for step in plan["steps"]:
     if "sleep" in step:
         time.sleep(step["sleep"])
     elif "wait_method" in step:
-        read_until(lambda m, w=step["wait_method"]: m.get("method") == w)
+        m = read_until(lambda m, w=step["wait_method"]: m.get("method") == w)
+        if m.get("method") == "session/prompt":
+            second = m
     elif "wait_id" in step:
         read_until(lambda m, w=step["wait_id"]: "method" not in m and m.get("id") == w)
     else:
-        out(json.loads(json.dumps(step).replace('"$ID"', json.dumps(prompt["id"]))))
+        text = json.dumps(step).replace('"$ID"', json.dumps(prompt["id"]))
+        if second is not None:
+            text = text.replace('"$ID2"', json.dumps(second["id"]))
+        out(json.loads(text))
 for line in sys.stdin:
     pass
 """
@@ -138,6 +157,199 @@ def test_last_known_active_state_seeds_the_turn():
     assert turn.active_seen
 
 
+def test_idle_before_the_response_still_ends_the_turn():
+    _, turn = _drive([_state("running"), _state("idle", stopReason="end_turn"), _RESPONSE])
+    assert turn.terminated_by == "idle"
+    assert turn.stop_reason == "end_turn"
+    assert turn.idle_index < turn.response_index
+
+
+def test_active_state_after_the_response_voids_an_idle_read_before_it():
+    """The first idle may end earlier work (a held prompt waits for it), so it is only a
+    candidate until `quiet_period` passes after the response."""
+    _, turn = _drive(
+        [_state("running"), _state("idle", stopReason="end_turn"), _RESPONSE, {"sleep": 0.1},
+         _state("running"), _state("idle", stopReason="max_tokens")]
+    )
+    assert turn.terminated_by == "idle"
+    assert turn.stop_reason == "max_tokens"
+    assert turn.idle_index > turn.response_index
+
+
+def test_repeated_idle_snapshot_keeps_the_early_idle_candidate():
+    _, turn = _drive(
+        [_state("running"), _state("idle", stopReason="end_turn"), _RESPONSE,
+         _state("idle", stopReason="max_tokens")]
+    )
+    assert turn.stop_reason == "end_turn"
+    assert turn.idle_index < turn.response_index
+
+
+def test_error_response_after_an_early_idle_ends_the_turn_with_that_idle():
+    _, turn = _drive([_state("running"), _state("idle", stopReason="error"), _ERROR])
+    assert turn.terminated_by == "idle"
+    assert turn.stop_reason == "error"
+
+
+def _drive_with_action(steps: list[dict[str, Any]], **kwargs: Any):
+    """`_drive`, with `on_action` sending a `_tck/second` request with id `"b1"`."""
+
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+
+            async def _action():
+                return await agent.send_request("_tck/second", id="b1")
+
+            turn = await run_prompt(
+                agent, _SESSION, [{"type": "text", "text": "hi"}], timeout=3.0,
+                on_action=_action, **kwargs,
+            )
+            return agent, turn
+
+    return asyncio.run(go())
+
+
+_ACTION_RESPONSE = {"jsonrpc": "2.0", "id": "b1", "result": {}}
+
+
+def _sent_at(agent, index: int | None) -> float:
+    assert index is not None
+    return agent.transcript[index].timestamp
+
+
+def test_delayed_cancel_follows_the_action_response_without_waiting_out_the_delay():
+    agent, turn = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"}, _ACTION_RESPONSE,
+         {"wait_method": "session/cancel"}, _state("idle", stopReason="cancelled")],
+        on_cancel=True,
+        cancel_after_action=2.0,
+    )
+    action_index = agent.transcript.index(turn.action_response)
+    assert turn.action_sent_at_index < action_index < turn.cancelled_at_index < turn.idle_index
+    assert _sent_at(agent, turn.cancelled_at_index) - _sent_at(agent, turn.action_sent_at_index) < 1.0
+    assert turn.state_at_cancel == "running"
+    assert turn.stop_reason == "cancelled"
+
+
+def test_delayed_cancel_is_sent_once_the_delay_passes_without_an_action_response():
+    agent, turn = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"},
+         {"wait_method": "session/cancel"}, _state("idle", stopReason="cancelled")],
+        on_cancel=True,
+        cancel_after_action=0.3,
+    )
+    assert turn.action_response is None
+    elapsed = _sent_at(agent, turn.cancelled_at_index) - _sent_at(agent, turn.action_sent_at_index)
+    assert elapsed >= 0.3
+    assert turn.stop_reason == "cancelled"
+
+
+def test_delayed_cancel_is_not_sent_when_the_turn_ends_first():
+    agent, turn = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"},
+         _state("idle", stopReason="end_turn")],
+        on_cancel=True,
+        cancel_after_action=1.0,
+    )
+    assert turn.cancelled_at_index is None
+    assert turn.stop_reason == "end_turn"
+    assert not any(
+        entry.direction is Direction.SENT and entry.parsed.get("method") == "session/cancel"
+        for entry in agent.transcript
+    )
+
+
+def test_permission_before_the_delayed_cancel_is_answered_per_policy():
+    agent, _ = _drive_with_action(
+        [_RESPONSE, _state("running"), {"wait_method": "_tck/second"},
+         _permission_request([{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]),
+         {"wait_id": "perm-1"}, _state("idle", stopReason="end_turn")],
+        on_cancel=True,
+        cancel_after_action=2.0,
+    )
+    _, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "selected", "optionId": "yes"}
+
+
+def _scenario(steps: list[dict[str, Any]]):
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            return await prompt_during_active_work(agent, _SESSION, "work", timeout=3.0)
+
+    return asyncio.run(go())
+
+
+_SECOND_OK = {"jsonrpc": "2.0", "id": "$ID2", "result": {"messageId": "m2"}}
+_SECOND_CANCELLED = {"jsonrpc": "2.0", "id": "$ID2", "error": {"code": -32800, "message": "x"}}
+_SECOND_BUSY = {"jsonrpc": "2.0", "id": "$ID2", "error": {"code": -32603, "message": "busy"}}
+_UNTIL_SECOND = [_RESPONSE, _state("running"), {"wait_method": "session/prompt"}]
+_CANCELLED_IDLE = _state("idle", stopReason="cancelled")
+
+
+def test_second_prompt_answered_during_active_work_is_inserted():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, _SECOND_OK, {"wait_method": "session/cancel"}, _CANCELLED_IDLE]
+    )
+    assert (scenario.outcome, scenario.not_exercised) == ("inserted", None)
+
+
+def test_second_prompt_errored_during_active_work_is_rejected():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, _SECOND_BUSY, {"wait_method": "session/cancel"}, _CANCELLED_IDLE]
+    )
+    assert (scenario.outcome, scenario.not_exercised) == ("rejected", None)
+    assert scenario.second_error["code"] == -32603
+
+
+def test_second_prompt_unanswered_at_the_cancel_is_held():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, {"wait_method": "session/cancel"}, _SECOND_CANCELLED, _CANCELLED_IDLE]
+    )
+    assert (scenario.outcome, scenario.not_exercised) == ("held", None)
+    assert scenario.second_response_index > scenario.turn.cancelled_at_index
+
+
+def test_held_prompt_answered_after_the_cancelled_idle_is_still_captured():
+    scenario = _scenario(
+        [*_UNTIL_SECOND, {"wait_method": "session/cancel"}, _CANCELLED_IDLE, {"sleep": 0.3},
+         _SECOND_CANCELLED]
+    )
+    assert scenario.outcome == "held"
+    assert scenario.second_error["code"] == -32800
+
+
+def test_first_turn_ending_on_its_own_before_the_second_answer_is_not_exercised():
+    """The idle may already have been in the pipe when the second prompt was sent."""
+    chunk = _update(
+        {"sessionUpdate": "agent_message_chunk", "messageId": "a1",
+         "content": {"type": "text", "text": "ok"}}
+    )
+    scenario = _scenario(
+        [_RESPONSE, _state("running"), chunk, _state("idle", stopReason="end_turn"),
+         {"wait_method": "session/prompt"}, _SECOND_OK]
+    )
+    assert scenario.outcome is None
+    assert scenario.turn.cancelled_at_index is None
+    assert "ended on its own" in scenario.not_exercised
+
+
+def test_second_prompt_sent_without_an_active_state_is_not_exercised():
+    scenario = _scenario(
+        [_RESPONSE, {"wait_method": "session/prompt"}, _SECOND_OK,
+         {"wait_method": "session/cancel"}, _state("idle", stopReason="end_turn")]
+    )
+    assert scenario.outcome is None
+    assert "not running/requires_action" in scenario.not_exercised
+
+
 def _sent_answer(agent, request_id: str) -> tuple[int, dict[str, Any]]:
     for index, entry in enumerate(agent.transcript):
         msg = entry.parsed
@@ -155,7 +367,7 @@ def _permission_request(options: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def test_permission_answer_prefers_an_allow_option():
+def test_permission_answer_falls_back_to_allow_always_when_no_allow_once():
     options = [
         {"optionId": "no", "name": "No", "kind": "reject_once"},
         {"optionId": "yes", "name": "Yes", "kind": "allow_always"},
@@ -168,18 +380,429 @@ def test_permission_answer_prefers_an_allow_option():
     assert answer["result"]["outcome"] == {"outcome": "selected", "optionId": "yes"}
 
 
-def test_hold_permission_cancels_before_answering_cancelled():
-    options = [{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]
+_HELD_PREFIX = [_RESPONSE, _state("running"), _state("requires_action")]
+_CANCEL_REQUEST = {"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": "perm-1"}}
+_ALLOW_ONCE = [{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]
+
+
+def _hold(steps: list[dict[str, Any]]):
+    return _drive(
+        [*_HELD_PREFIX, _permission_request(_ALLOW_ONCE), {"wait_method": "session/cancel"}, *steps],
+        on_cancel=True,
+        hold_permission=True,
+    )
+
+
+def test_hold_permission_leaves_the_request_unanswered_until_the_turn_ends():
+    agent, turn = _hold([_state("idle", stopReason="cancelled")])
+    assert turn.held_permission is not None
+    assert turn.state_at_cancel == "requires_action"
+    assert turn.stop_reason == "cancelled"
+    assert turn.held_answered_on == "turn_end"
+    assert turn.held_cancel_request_index is None
+    answer_index, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    assert turn.cancelled_at_index < turn.idle_index < answer_index
+
+
+def test_hold_permission_answers_a_withdrawn_request_cancelled():
+    agent, turn = _hold(
+        [_CANCEL_REQUEST, {"wait_id": "perm-1"}, _state("idle", stopReason="cancelled")]
+    )
+    assert turn.held_answered_on == "cancel_request"
+    answer_index, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    assert turn.cancelled_at_index < turn.held_cancel_request_index < answer_index < turn.idle_index
+
+
+def test_hold_permission_sees_a_withdrawal_that_follows_the_idle():
+    _, turn = _hold([_state("idle", stopReason="cancelled"), {"sleep": 0.1}, _CANCEL_REQUEST])
+    assert turn.held_answered_on == "cancel_request"
+    assert turn.held_cancel_request_index > turn.idle_index
+
+
+def test_hold_permission_answers_at_the_deadline_and_records_it():
+    agent, turn = _hold([{"wait_id": "perm-1"}, _state("idle", stopReason="cancelled")])
+    assert turn.held_answered_on == "timeout"
+    assert turn.stop_reason == "cancelled"
+    answer_index, _ = _sent_answer(agent, "perm-1")
+    assert answer_index < turn.idle_index
+
+
+def test_hold_permission_ignores_a_withdrawal_after_answering_at_the_deadline():
+    _, turn = _hold([{"wait_id": "perm-1"}, _CANCEL_REQUEST, _state("idle", stopReason="cancelled")])
+    assert turn.held_answered_on == "timeout"
+    assert turn.held_cancel_request_index is None
+
+
+def test_hold_permission_holds_a_request_sent_before_requires_action():
+    """The diagram order (prompt-lifecycle.mdx:246-247): the request is held while the session
+    is still `running`."""
     agent, turn = _drive(
-        [_RESPONSE, _state("running"), _state("requires_action"), _permission_request(options),
-         {"wait_method": "session/cancel"}, {"wait_id": "perm-1"},
+        [_RESPONSE, _state("running"), _permission_request(_ALLOW_ONCE), _state("requires_action"),
+         {"wait_method": "session/cancel"}, _CANCEL_REQUEST, {"wait_id": "perm-1"},
          _state("idle", stopReason="cancelled")],
         on_cancel=True,
         hold_permission=True,
     )
     assert turn.held_permission is not None
-    assert turn.state_at_cancel == "requires_action"
+    assert turn.state_at_cancel == "running"
+    assert turn.held_answered_on == "cancel_request"
     assert turn.stop_reason == "cancelled"
+
+
+def test_hold_permission_times_out_when_the_turn_never_ends_even_once_answered():
+    with pytest.raises(AgentTimeout, match="not even after its held session/request_permission"):
+        _hold([{"wait_id": "perm-1"}])
+
+
+def _opts(*kinds: str) -> list[dict[str, Any]]:
+    return [{"optionId": f"id-{i}-{kind}", "name": kind, "kind": kind} for i, kind in enumerate(kinds)]
+
+
+def _selected(option_id: Any) -> dict[str, Any]:
+    return {"outcome": "selected", "optionId": option_id}
+
+
+def test_allow_picks_allow_once_regardless_of_position():
+    outcome, note = permission_outcome(
+        _opts("allow_always", "reject_once", "allow_once"), "allow"
+    )
+    assert outcome == _selected("id-2-allow_once")
+    assert note is None
+
+
+def test_allow_falls_back_to_allow_always_and_says_so():
+    outcome, note = permission_outcome(_opts("reject_once", "allow_always"), "allow")
+    assert outcome == _selected("id-1-allow_always")
+    assert note == "allow_always selected (allow_once not offered)"
+
+
+_NO_ALLOW_NOTE = "agent offered no allow_once, allow_always or reject_once option"
+
+
+def test_allow_without_any_allow_option_falls_back_to_reject_once_never_reject_always():
+    outcome, note = permission_outcome(_opts("reject_always", "reject_once"), "allow")
+    assert outcome == _selected("id-1-reject_once")
+    assert note == "reject_once selected (no allow option offered)"
+
+
+def test_allow_never_selects_reject_always_or_an_unknown_kind():
+    for kinds in (("reject_always",), ("reject_always", "_tck_custom_kind"), ()):
+        outcome, note = permission_outcome(_opts(*kinds), "allow")
+        assert outcome == {"outcome": "cancelled"}
+        assert note == _NO_ALLOW_NOTE
+
+
+def test_unknown_outcome_answers_an_underscore_prefixed_custom_outcome():
+    outcome, note = permission_outcome(_opts("allow_once"), "unknown_outcome")
+    assert outcome == {"outcome": UNKNOWN_PERMISSION_OUTCOME}
+    assert UNKNOWN_PERMISSION_OUTCOME.startswith("_")
+    assert UNKNOWN_PERMISSION_OUTCOME not in {"selected", "cancelled"}
+    assert note is None
+
+
+def test_reject_once_picks_reject_once_regardless_of_position():
+    outcome, note = permission_outcome(_opts("allow_once", "reject_always", "reject_once"), "reject_once")
+    assert outcome == _selected("id-2-reject_once")
+    assert note is None
+
+
+def test_reject_once_never_falls_back_to_another_option_kind():
+    for kinds in (("allow_once", "reject_always"), ("allow_once", "allow_always"), ()):
+        outcome, note = permission_outcome(_opts(*kinds), "reject_once")
+        assert outcome == {"outcome": "cancelled"}
+        assert note == "agent offered no reject_once option"
+
+
+def test_unknown_option_selects_an_unoffered_underscore_prefixed_id():
+    options = _opts("allow_once", "reject_once")
+    outcome, note = permission_outcome(options, "unknown_option")
+    assert outcome == _selected(UNKNOWN_PERMISSION_OPTION_ID)
+    assert UNKNOWN_PERMISSION_OPTION_ID.startswith("_")
+    assert UNKNOWN_PERMISSION_OPTION_ID not in {o["optionId"] for o in options}
+    assert note is None
+
+
+def test_cancelled_policy_answers_cancelled():
+    assert permission_outcome(_opts("allow_once"), "cancelled") == ({"outcome": "cancelled"}, None)
+
+
+def test_malformed_or_missing_options_do_not_crash():
+    assert permission_outcome(None, "allow")[0] == {"outcome": "cancelled"}
+    assert permission_outcome(["junk", {"kind": "allow_once", "optionId": "x"}], "allow") == (
+        _selected("x"),
+        None,
+    )
+    assert permission_outcome([], "reject_once")[0] == {"outcome": "cancelled"}
+
+
+def _assert_answered(agent, request_id: str, outcome: dict[str, Any]) -> None:
+    _, answer = _sent_answer(agent, request_id)
+    assert answer["result"]["outcome"] == outcome
+
+
+def _recording(**kwargs: Any):
+    """Run `_drive` with a per-test property list in scope; returns (agent, turn, properties)."""
+    props: list[tuple[str, object]] = []
+    token = _TEST_PROPERTIES.set(props)
+    try:
+        agent, turn = _drive(**kwargs)
+    finally:
+        _TEST_PROPERTIES.reset(token)
+    return agent, turn, props
+
+
+def test_default_policy_selects_allow_once_not_the_first_option():
+    options = [
+        {"optionId": "always", "name": "Always", "kind": "allow_always"},
+        {"optionId": "once", "name": "Once", "kind": "allow_once"},
+    ]
+    agent, turn, props = _recording(steps=_permission_steps(options))
+    _assert_answered(agent, "perm-1", {"outcome": "selected", "optionId": "once"})
+    assert turn.permission_fallbacks == []
+    assert props == []
+
+
+def test_allow_always_fallback_is_recorded_on_the_turn_and_the_report_property():
+    options = [
+        {"optionId": "no", "name": "No", "kind": "reject_once"},
+        {"optionId": "always", "name": "Always", "kind": "allow_always"},
+    ]
+    agent, turn, props = _recording(steps=_permission_steps(options))
+    _assert_answered(agent, "perm-1", {"outcome": "selected", "optionId": "always"})
+    note = "allow_always selected (allow_once not offered)"
+    assert turn.permission_fallbacks == [note]
+    assert props == [("acp_tck_permission_fallback", note)]
+
+
+def test_reject_once_policy_selects_the_reject_option():
+    options = [
+        {"optionId": "yes", "name": "Yes", "kind": "allow_once"},
+        {"optionId": "no", "name": "No", "kind": "reject_once"},
+    ]
+    agent, _, _ = _recording(steps=_permission_steps(options), permission="reject_once")
+    _assert_answered(agent, "perm-1", {"outcome": "selected", "optionId": "no"})
+
+
+def test_reject_once_without_a_reject_option_cancels_the_turn_instead_of_selecting_any_option():
+    options = [
+        {"optionId": "always", "name": "Always", "kind": "allow_always"},
+        {"optionId": "once", "name": "Once", "kind": "allow_once"},
+    ]
+    agent, turn, props = _recording(
+        steps=[_RESPONSE, _state("running"), _permission_request(options),
+               {"wait_method": "session/cancel"}, {"wait_id": "perm-1"},
+               _state("idle", stopReason="cancelled")],
+        permission="reject_once",
+    )
     answer_index, answer = _sent_answer(agent, "perm-1")
     assert answer["result"]["outcome"] == {"outcome": "cancelled"}
-    assert turn.cancelled_at_index is not None and turn.cancelled_at_index < answer_index
+    cancels = [
+        i for i, e in enumerate(agent.transcript)
+        if e.direction is Direction.SENT and (e.parsed or {}).get("method") == "session/cancel"
+    ]
+    assert len(cancels) == 1 and cancels[0] < answer_index
+    assert agent.transcript[cancels[0]].parsed["params"] == {"sessionId": _SESSION}
+    assert turn.cancelled_at_index == cancels[0]
+    assert turn.terminated_by == "idle" and turn.stop_reason == "cancelled"
+    note = "agent offered no reject_once option"
+    assert turn.permission_cancels == [note]
+    assert turn.permission_fallbacks == []
+    assert props == [("acp_tck_permission_fallback", note)]
+
+
+def _sent_cancels(agent) -> list[int]:
+    return [
+        i for i, e in enumerate(agent.transcript)
+        if e.direction is Direction.SENT and (e.parsed or {}).get("method") == "session/cancel"
+    ]
+
+
+def test_allow_with_only_reject_always_cancels_the_turn_instead_of_selecting_it():
+    options = [{"optionId": "never", "name": "Never", "kind": "reject_always"}]
+    agent, turn, props = _recording(
+        steps=[_RESPONSE, _state("running"), _permission_request(options),
+               {"wait_method": "session/cancel"}, {"wait_id": "perm-1"},
+               _state("idle", stopReason="cancelled")],
+    )
+    answer_index, answer = _sent_answer(agent, "perm-1")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    cancels = _sent_cancels(agent)
+    assert len(cancels) == 1 and cancels[0] < answer_index
+    assert turn.cancelled_at_index == cancels[0]
+    assert turn.stop_reason == "cancelled"
+    assert turn.permission_cancels == [_NO_ALLOW_NOTE]
+    assert props == [("acp_tck_permission_fallback", _NO_ALLOW_NOTE)]
+
+
+def test_background_request_the_policy_cannot_satisfy_is_declined_without_session_cancel():
+    """`session/cancel` does not cover listed background work, so an unsatisfiable background
+    request is only answered `cancelled`; the foreground turn goes on."""
+    never = [{"optionId": "never", "name": "Never", "kind": "reject_always"}]
+    request = _background_permission("bg-perm", _BG_TOOL_SUBJECT)
+    request["params"]["options"] = never
+    agent, turn, _ = _recording(
+        steps=[_RESPONSE, _BG_RUNNING, request, {"wait_id": "bg-perm"},
+               _state("idle", stopReason="end_turn", background=[])],
+    )
+    _assert_answered(agent, "bg-perm", {"outcome": "cancelled"})
+    assert _sent_cancels(agent) == []
+    assert turn.cancelled_at_index is None
+    assert turn.stop_reason == "end_turn"
+    assert turn.permission_cancels == []
+    assert turn.permission_fallbacks == [_NO_ALLOW_NOTE]
+
+
+def test_unknown_outcome_policy_answers_the_custom_outcome():
+    agent, turn, _ = _recording(steps=_permission_steps(_ALLOW_ONCE), permission="unknown_outcome")
+    _assert_answered(agent, "perm-1", {"outcome": UNKNOWN_PERMISSION_OUTCOME})
+    assert _sent_cancels(agent) == []
+    assert turn.permission_fallbacks == [] and turn.permission_cancels == []
+
+
+def test_unhashable_background_type_or_state_does_not_crash_run_prompt():
+    """Agent input never crashes the driver: a list-valued `type` or `state` is just not a
+    known item or active state."""
+    assert background_keys({"background": [{"type": ["tool_call"], "toolCallId": "x"}]}) == set()
+    _, turn = _drive(
+        [_RESPONSE, _state("running", background=[{"type": ["tool_call"], "toolCallId": "x"}]),
+         _update({"sessionUpdate": "state_update", "state": ["running"]}),
+         _state("idle", stopReason="end_turn")]
+    )
+    assert turn.terminated_by == "idle" and turn.stop_reason == "end_turn"
+
+
+def test_unknown_option_policy_selects_an_unoffered_id():
+    options = [{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]
+    agent, _, _ = _recording(steps=_permission_steps(options), permission="unknown_option")
+    _assert_answered(
+        agent, "perm-1", {"outcome": "selected", "optionId": UNKNOWN_PERMISSION_OPTION_ID}
+    )
+
+
+def test_cancelled_policy_answers_cancelled_without_sending_session_cancel():
+    options = [{"optionId": "yes", "name": "Yes", "kind": "allow_once"}]
+    agent, turn, _ = _recording(steps=_permission_steps(options), permission="cancelled")
+    _assert_answered(agent, "perm-1", {"outcome": "cancelled"})
+    assert turn.cancelled_at_index is None
+    assert not [
+        e for e in agent.transcript
+        if e.direction is Direction.SENT and (e.parsed or {}).get("method") == "session/cancel"
+    ]
+
+
+def _permission_steps(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_RESPONSE, _state("running"), _permission_request(options), {"wait_id": "perm-1"},
+            _state("idle", stopReason="end_turn")]
+
+
+def _background_permission(request_id: str, subject: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "session/request_permission",
+        "params": {"sessionId": _SESSION, "title": "ok?", "options": _ALLOW_ONCE, "subject": subject},
+    }
+
+
+_BG_TOOL_SUBJECT = {"type": "tool_call", "toolCall": {"toolCallId": "bg-1"}}
+_BG_RUNNING = _state("running", background=[{"type": "tool_call", "toolCallId": "bg-1"}])
+
+
+def test_permission_for_listed_background_work_is_answered_normally_after_the_cancel():
+    """`session/cancel` does not cover listed background work, so its permission request is
+    answered per policy, while the foreground one is still answered `cancelled`."""
+    agent, turn = _drive(
+        [_RESPONSE, _BG_RUNNING, {"wait_method": "session/cancel"},
+         _background_permission("bg-perm", _BG_TOOL_SUBJECT), {"wait_id": "bg-perm"},
+         _permission_request(_ALLOW_ONCE), {"wait_id": "perm-1"},
+         _state("idle", stopReason="cancelled", background=[])],
+        on_cancel=True,
+    )
+    assert turn.cancelled_at_index is not None
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+    _assert_answered(agent, "perm-1", {"outcome": "cancelled"})
+
+
+def test_command_subject_naming_a_listed_terminal_counts_as_background_work():
+    subject = {"type": "command", "command": "ls", "cwd": "/tmp", "terminalId": "term-1"}
+    agent, _ = _drive(
+        [_RESPONSE, _state("running", background=[{"type": "terminal", "terminalId": "term-1"}]),
+         {"wait_method": "session/cancel"}, _background_permission("bg-perm", subject),
+         {"wait_id": "bg-perm"}, _state("idle", stopReason="cancelled", background=[])],
+        on_cancel=True,
+    )
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+
+
+def test_subject_naming_an_unlisted_item_is_still_foreground_after_the_cancel():
+    """Only the latest list counts: once a snapshot drops the item (or omits the list), a
+    request naming it is answered `cancelled` like any other after the cancel."""
+    for later in (_state("running", background=[]), _state("running")):
+        agent, _ = _drive(
+            [_RESPONSE, _BG_RUNNING, later, {"wait_method": "session/cancel"},
+             _background_permission("bg-perm", _BG_TOOL_SUBJECT), {"wait_id": "bg-perm"},
+             _state("idle", stopReason="cancelled")],
+            on_cancel=True,
+        )
+        _assert_answered(agent, "bg-perm", {"outcome": "cancelled"})
+
+
+def test_background_permission_is_not_held_and_the_foreground_one_is():
+    agent, turn = _drive(
+        [_RESPONSE, _BG_RUNNING, _background_permission("bg-perm", _BG_TOOL_SUBJECT),
+         {"wait_id": "bg-perm"}, _state("requires_action", background=[
+             {"type": "tool_call", "toolCallId": "bg-1"}]),
+         _permission_request(_ALLOW_ONCE), {"wait_method": "session/cancel"},
+         _state("idle", stopReason="cancelled", background=[])],
+        on_cancel=True,
+        hold_permission=True,
+    )
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+    assert turn.held_permission is not None and turn.held_permission.parsed["id"] == "perm-1"
+    _assert_answered(agent, "perm-1", {"outcome": "cancelled"})
+
+
+def test_background_list_read_before_the_prompt_counts():
+    """The latest list may come from a snapshot read before the prompt was sent."""
+    agent, _ = _drive(
+        [_RESPONSE, {"wait_method": "session/cancel"},
+         _background_permission("bg-perm", _BG_TOOL_SUBJECT), {"wait_id": "bg-perm"},
+         _state("idle", stopReason="cancelled", background=[])],
+        pre=[_BG_RUNNING],
+        on_cancel=True,
+    )
+    _assert_answered(agent, "bg-perm", _selected("yes"))
+
+
+def test_session_events_merge_permission_subjects_with_updates_in_wire_order():
+    """A permission request is recorded with its line index, so `session_events` can place its
+    `tool_call` subject between the updates around it (tool-calls.mdx:270-273). Another
+    session's traffic is left out."""
+    subject = {"type": "tool_call", "toolCall": {"toolCallId": "t1", "title": "Edit"}}
+    _, turn, _ = _recording(
+        steps=[
+            _RESPONSE,
+            _state("running"),
+            _update({"sessionUpdate": "tool_call_update", "toolCallId": "t0", "title": "Read"}),
+            _background_permission("perm-1", subject),
+            {"wait_id": "perm-1"},
+            _update({"sessionUpdate": "tool_call_update", "toolCallId": "t9"}, session_id="other"),
+            _update({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed"}),
+            _state("idle", stopReason="end_turn"),
+        ]
+    )
+    assert [index for index, _ in turn.permission_requests] == sorted(
+        index for index, _ in turn.permission_requests
+    )
+    reports = [
+        tool_call_report(kind, payload)
+        for _, kind, payload in session_events(turn)
+        if tool_call_report(kind, payload) is not None
+    ]
+    assert [(tool_call_id, source) for tool_call_id, source, _ in reports] == [
+        ("t0", "tool_call_update"),
+        ("t1", "permission subject"),
+        ("t1", "tool_call_update"),
+    ]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: a v2-only agent that answers `protocolVersion: 1` with `-32602`
 (Invalid params) instead of `-32022` (Unsupported protocol version). 1 is a well-formed, in-range
-version, so `-32602` is reserved for malformed values (initialization.mdx:100,117) -- the same
+version, so `-32602` is reserved for malformed values (initialization.mdx:108,112) -- the same
 shortcut the Python SDK's v2 endpoint takes.
 
 FAILs exactly `ACP-INIT-202`. Every other probe (`0`, `2`, `65535`, malformed values) still goes

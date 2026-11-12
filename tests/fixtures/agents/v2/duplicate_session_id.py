@@ -19,6 +19,10 @@ from _base import ConformingAgent  # noqa: E402
 
 class DuplicateSessionIdAgent(ConformingAgent):
     def _handle_new_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        rejection = self._setup_rejection(params)
+        if rejection is not None:
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
         self._sessions["sess-0001"] = params.get("cwd", "")
         self._reply(msg_id, {"sessionId": "sess-0001"})
 

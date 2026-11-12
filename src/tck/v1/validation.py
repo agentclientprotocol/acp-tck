@@ -2,8 +2,8 @@
 
 Backed by the vendored `tck/v1/schema/schema.unstable.json` (see `tck/v1/schema/VENDORED.md`):
 the draft superset of the stable schema, so RFD-gated fields and methods an agent uses are
-validated against their draft shapes. The schema's top-level shape is `anyOf` of three
-side-annotated envelopes -- `Agent`, `Client`, `ProtocolLevel`
+validated against their draft shapes. The schema's top-level shape is `anyOf` of four
+side-annotated envelopes -- `Agent`, `Client`, `ProtocolLevel`, `Proxy`
 (`schema/v1/schema.unstable.json#/anyOf`) -- each further split into `Request` /
 `Response` / `Notification` branches. Every method-specific params/response `$def` carries
 `x-side` (which side implements the method) and `x-method` (its wire name); those annotations
@@ -17,6 +17,18 @@ handles (`x-side: "agent"`, e.g. `initialize`), plus the bidirectional `$/cancel
 notification. It never validates a message the *client* authored (e.g. a `fs/write_text_file`
 *response*, which the TCK's own mock client writes) -- there is no `validate_client_message`;
 add one only if a future requirement needs to assert on the harness's own outgoing traffic.
+
+Hand-written carve-outs from a literal schema reading:
+
+- `result: null` for a method response whose schema is an all-optional object is tolerated
+  (see `_response_schema_permits_null`).
+- `x-deserialize-default-on-null: true` (a property schema such as `AuthMethodTerminal`'s
+  `args`/`env`, or `NewSessionRequest`'s `mcpServers`): `null` there means "use the default /
+  treat as omitted", and the reference receivers accept it, so a `type` error on `null` is
+  dropped where the node itself carries the hint. A non-`null` wrong type, and `null` at a node
+  without the hint, still fail. The hint is read from the schema, so a refresh self-updates.
+- `x-deserialize-skip-invalid-items` is deliberately *not* honored: receivers silently drop an
+  invalid array item, but the agent authored it, so it stays a violation.
 """
 
 from __future__ import annotations
@@ -27,11 +39,27 @@ from typing import Any
 
 import jsonschema
 from jsonschema import Draft202012Validator
+from jsonschema.validators import extend
 
 from .protocol import load_schema
 
+_DEFAULT_ON_NULL_HINT = "x-deserialize-default-on-null"
+
+
+def _type_keyword(validator: Any, types: Any, instance: Any, schema: dict[str, Any]) -> Any:
+    """Draft 2020-12 `type`, except that `null` is accepted where the node itself carries
+    `x-deserialize-default-on-null: true` (see the module docstring)."""
+    if instance is None and schema.get(_DEFAULT_ON_NULL_HINT) is True:
+        return
+    yield from Draft202012Validator.VALIDATORS["type"](validator, types, instance, schema)
+
+
+# Overriding `type` on the validator class (not filtering top-level errors afterwards) keeps the
+# carve-out working inside `anyOf`/`oneOf` branches, where jsonschema only reports one wrapper error.
+_HintAwareDraft202012Validator = extend(Draft202012Validator, {"type": _type_keyword})
+
 _DRAFT_VALIDATORS: dict[str, type[jsonschema.protocols.Validator]] = {
-    "https://json-schema.org/draft/2020-12/schema": Draft202012Validator,
+    "https://json-schema.org/draft/2020-12/schema": _HintAwareDraft202012Validator,
 }
 
 

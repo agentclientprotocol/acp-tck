@@ -19,15 +19,29 @@ open `cross-check/` as its own editor root.
 ./cross-check/run.sh
 ```
 
-Works from any directory. It needs a Rust toolchain and local checkouts of both SDKs:
+Works from any directory. It needs a Rust toolchain and network access: both SDKs are
+shallow-fetched at the SHAs pinned in `sdk-pins.sh` into `scratch/cross-check/sdks/{rust,python}-sdk`
+(a checkout already at the pinned SHA is reused, which keeps its cargo `target/` warm).
 
-- `ACP_RUST_SDK`, `ACP_PYTHON_SDK`: SDK checkout paths (default: the `check-rust-sdk`/
-  `check-python-sdk` skills' `.repo` files).
+- `ACP_RUST_SDK`, `ACP_PYTHON_SDK`: opt-in overrides pointing at your own SDK checkouts. `run.sh`
+  warns when they are set, since the expected baseline below is defined for the pinned SHAs only.
 - `OUT_DIR`: where the JSON reports go (default `scratch/cross-check/`).
 - `ACP_CROSS_CHECK_V2=0`: skip both v2 legs.
 
 `run.sh` exits 0 once every agent ran and its report was written; the agents' verdicts are data,
 checked by `summary.py` below.
+
+## SDK pins
+
+`sdk-pins.sh` is the single source of truth: repo URL, release tag, and full commit SHA for each
+SDK. `run.sh` sources it and CI keys its cargo cache on it. A test in `tests/` fails if the Python
+tag differs from the `agent-client-protocol==` pin in `pyproject.toml`.
+
+To bump an SDK: edit `sdk-pins.sh` (the SHA must be what the release tag points at, see
+`git ls-remote --tags <url> <tag>^{}`); for Python also run
+`uv add --project cross-check agent-client-protocol==<tag>`; re-run `run.sh`; then update the
+`--expect` / `--expect-flaky` lines at the end of `run.sh` and in `.github/workflows/ci.yml` from the
+observed results.
 
 ## Expected baseline
 
@@ -38,9 +52,12 @@ run to run out of one report's check. The baseline is the `--expect` lines at th
 
 - v1 `testy`: fully conformant.
 - `echo_agent`: only `ACP-INIT-003` (it echoes an unsupported requested version).
-- v2 `testy`: none, with `ACP-INIT-205`/`206` passed to `--expect-flaky` (it often exits before
-  flushing its `initialize` error reply, a known upstream race, so they PASS or FAIL run to run).
+- v2 `testy`: `ACP-INIT-205` and `ACP-INIT-211` (its protocol router hands a below-v1 request
+  and a first `initialize` without a valid version to its v1 implementation, which keeps the
+  connection).
 - `python_v2_agent`: a small set of known SDK limitations, explained above the `--expect` lines.
+- `--expect-flaky` is available for ids that PASS or FAIL run to run (an upstream race); none
+  are flaky today.
 
 ## Tests and CI
 

@@ -312,3 +312,41 @@ def test_conforming_fixture_initialize_response_validates_clean() -> None:
             assert validate_agent_response("initialize", entry.parsed) == []
 
     asyncio.run(scenario())
+
+
+# --- x-deserialize-default-on-null carve-out ---
+
+_TERMINAL = {"id": "t", "name": "Terminal", "type": "terminal"}
+
+
+def test_null_accepted_at_default_on_null_nodes() -> None:
+    """`AuthMethodTerminal`'s `args`/`env` carry the hint, so `null` counts as omitted."""
+    method = {**_TERMINAL, "args": None, "env": None}
+    assert validation.validate_against_def("AuthMethodTerminal", method) == []
+
+
+def test_null_accepted_for_hinted_agent_request_field() -> None:
+    params = {"sessionId": "s", "command": "ls", "args": None, "env": None}
+    msg = {"jsonrpc": "2.0", "id": 1, "method": "terminal/create", "params": params}
+    assert validate_agent_message(msg) == []
+
+
+def test_null_still_rejected_at_node_without_the_hint() -> None:
+    # Same `type: array` and `type: string` as the hinted nodes, but no hint.
+    assert validation.validate_against_def("InitializeResponse", {"protocolVersion": 1, "authMethods": None})
+    assert validation.validate_against_def("AuthMethodTerminal", {**_TERMINAL, "name": None})
+    params = {"sessionId": "s", "command": None}
+    msg = {"jsonrpc": "2.0", "id": 1, "method": "terminal/create", "params": params}
+    assert validate_agent_message(msg)
+
+
+def test_wrong_non_null_type_still_rejected_at_hinted_node() -> None:
+    assert validation.validate_against_def("AuthMethodTerminal", {**_TERMINAL, "args": "--flag"})
+    assert validation.validate_against_def("AuthMethodTerminal", {**_TERMINAL, "env": ["A=B"]})
+    assert validation.validate_against_def("AuthMethodTerminal", {**_TERMINAL, "args": [None]})
+
+
+def test_skip_invalid_items_hint_is_not_honored() -> None:
+    """`authMethods` carries `x-deserialize-skip-invalid-items`; an invalid item stays a violation."""
+    result = {"protocolVersion": 1, "authMethods": ["not-an-auth-method"]}
+    assert validation.validate_against_def("InitializeResponse", result)

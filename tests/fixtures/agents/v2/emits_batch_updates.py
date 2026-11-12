@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Positive control: `conforming_full.py`'s capabilities/permission behavior, but each pair of
-`session/update` notifications a turn naturally sends back-to-back (`user_message`+`running` in
-`_handle_prompt`'s prologue, `agent_message_chunk`+the terminating idle in `_finish_turn`) is
-delivered as one JSON-RPC batch array line instead of two. `ACP-BATCH-207` and `ACP-TRANSPORT-201`
-permit this; nothing requires an agent to keep every notification on its own line.
+"""Non-conforming fixture: `conforming_full.py`'s capabilities/permission behavior, but each pair
+of `session/update` notifications a turn naturally sends back-to-back (`user_message`+`running`
+in `_handle_prompt`'s prologue, `agent_message_chunk`+the terminating idle in `_finish_turn`) is
+delivered as one JSON-RPC batch array line instead of two. ACP v2 has no batches: senders MUST
+NOT send a JSON array (`transports.mdx:67`).
 
-Must PASS every requirement `conforming_full.py` itself PASSes (under `--cancel-prompt
-__hang__`): proves batching an agent's own spontaneous notifications doesn't break anything the
-TCK checks (see `tck.v2.conformance._helpers.run_prompt`'s `_handle_one`, which unpacks a
-batch-shaped line the same way as separate lines).
+FAILs only `ACP-TRANSPORT-001`: the TCK still unpacks an array line like separate lines
+(`tck.v2.conformance._helpers.run_prompt`'s `_handle_one`), so every other requirement
+`conforming_full.py` PASSes (under `--cancel-prompt __hang__`) is judged as before.
 """
 
 import sys

@@ -1,16 +1,25 @@
-"""Tests for `tck.v2.validation` -- the three v2-specific behaviors called out in its module
-docstring: batch root dispatch, no `null` special case for responses, and the open-fallback
-carve-out in `find_unknown_root_keys`. Fixtures here are hand-built JSON-RPC messages, not
+"""Tests for `tck.v2.validation` -- the v2-specific behaviors called out in its module
+docstring: no batching (any array is one issue), no `null` special case for responses, `RequestId`
+never `null` (except on an error response), and the open-fallback carve-out in
+`find_unknown_root_keys`. Fixtures here are hand-built JSON-RPC messages, not
 fixture agents -- unit tests of the validator itself.
 """
 
 from __future__ import annotations
 
-from tck.v2 import protocol
-from tck.v2.validation import find_unknown_root_keys, validate_agent_message, validate_agent_response
+from tck.v2 import protocol, validation
+import pytest
+
+from tck.v2.validation import (
+    find_unknown_root_keys,
+    is_valid_request_id,
+    validate_agent_message,
+    validate_agent_response,
+    validate_response_envelope,
+)
 
 
-# --- root dispatch: object / non-empty batch / empty batch ---
+# --- root dispatch: object / any array ---
 
 
 def test_valid_initialize_response_passes():
@@ -26,12 +35,7 @@ def test_valid_initialize_response_passes():
     assert validate_agent_response("initialize", msg) == []
 
 
-def test_empty_batch_array_is_an_issue():
-    assert len(validate_agent_message([])) == 1
-    assert len(validate_agent_response("initialize", [])) == 1
-
-
-def test_non_empty_batch_validates_each_element_and_prefixes_the_path():
+def test_any_array_is_exactly_one_issue_and_is_not_looked_into():
     good = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -41,10 +45,12 @@ def test_non_empty_batch_validates_each_element_and_prefixes_the_path():
             "info": {"name": "fixture", "version": "0.0.0"},
         },
     }
-    bad = {"jsonrpc": "2.0", "id": 2, "result": {"capabilities": {}}}  # missing protocolVersion, info
-    issues = validate_agent_response("initialize", [good, bad])
-    assert len(issues) == 2  # missing protocolVersion, missing info
-    assert all(issue.path.startswith("/1") for issue in issues)
+    for arr in ([], [good], [good, good], [17, True, None]):
+        for issues in (validate_agent_message(arr), validate_agent_response("initialize", arr)):
+            assert len(issues) == 1, arr
+            assert issues[0].path == ""
+            assert "array" in issues[0].message
+            assert issues[0].schema_path == "#/anyOf"
 
 
 # --- no null special case (unlike v1's session/load) ---
@@ -54,6 +60,62 @@ def test_null_result_fails_for_an_object_response_schema():
     msg = {"jsonrpc": "2.0", "id": 1, "result": None}
     issues = validate_agent_response("initialize", msg)
     assert issues, "a null result must fail validation against InitializeResponse's object schema"
+
+
+# --- RequestId is never null, except on an error response (overview.mdx:15-17) ---
+
+_ERROR = {"code": -32600, "message": "Invalid Request"}
+
+
+@pytest.mark.parametrize("value", [1, 0, -7, "abc", ""])
+def test_string_and_integer_ids_are_valid(value):
+    assert is_valid_request_id(value)
+    assert is_valid_request_id(value, allow_null=True)
+
+
+@pytest.mark.parametrize("value", [True, 1.5, [], {}])
+def test_other_id_types_are_never_valid(value):
+    assert not is_valid_request_id(value)
+    assert not is_valid_request_id(value, allow_null=True)
+
+
+def test_null_id_is_valid_only_when_null_is_allowed():
+    assert not is_valid_request_id(None)
+    assert is_valid_request_id(None, allow_null=True)
+
+
+def test_result_response_with_null_id_is_an_issue():
+    issues = validate_response_envelope({"jsonrpc": "2.0", "id": None, "result": {}})
+    assert [i.path for i in issues] == ["/id"]
+    assert issues[0].schema_path == "#/$defs/RequestId"
+    assert validate_response_envelope({"jsonrpc": "2.0", "id": 3, "result": {}}) == []
+
+
+def test_error_response_with_null_id_is_valid():
+    assert validate_response_envelope({"jsonrpc": "2.0", "id": None, "error": _ERROR}) == []
+    assert validate_agent_message({"jsonrpc": "2.0", "id": None, "error": _ERROR}) == []
+
+
+def test_response_with_both_result_and_error_and_null_id_reports_the_id_too():
+    issues = validate_response_envelope({"jsonrpc": "2.0", "id": None, "result": {}, "error": _ERROR})
+    assert {i.path for i in issues} == {"/id", ""}
+
+
+def test_agent_request_with_null_id_is_an_issue_for_standard_and_custom_methods():
+    for method in ("session/request_permission", "_tck/custom"):
+        msg = {"jsonrpc": "2.0", "id": None, "method": method, "params": {}}
+        paths = [i.path for i in validate_agent_message(msg) if i.schema_path == "#/$defs/RequestId"]
+        assert paths == ["/id"], method
+
+
+def test_agent_request_with_string_or_integer_id_has_no_id_issue():
+    for req_id in (1, "perm-1"):
+        msg = {"jsonrpc": "2.0", "id": req_id, "method": "_tck/custom", "params": {}}
+        assert validate_agent_message(msg) == []
+
+
+def test_notification_has_no_id_to_check():
+    assert validate_agent_message({"jsonrpc": "2.0", "method": "_tck/note"}) == []
 
 
 # --- open-enum discriminator: is_valid_open_enum_value ---
@@ -176,7 +238,8 @@ def _consts_from_schema(def_name: str, *, discriminator: str | None = None) -> f
 def test_enum_sets_match_the_schema():
     """`tck.v2.protocol`'s hand-copied `TOOL_KIND`/`TOOL_CALL_STATUS`/`PLAN_ENTRY_PRIORITY`/
     `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE`/
-    `PERMISSION_OPTION_KIND`/`STOP_REASONS` sets must exactly match the defined `const` branches `schema.unstable.json`
+    `PERMISSION_OPTION_KIND`/`STOP_REASONS`/`PLAN_CONTENT_TYPE`/`DIFF_OPERATION`/
+    `DIFF_FILE_TYPE`/`DIFF_PATCH_FORMAT`/`AVAILABLE_COMMAND_TYPE` sets must exactly match the defined `const` branches `schema.unstable.json`
     itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/`PlanEntryStatus`/
     `SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type`/
     `PermissionOptionKind`/`IdleStateUpdate.stopReason` -- so a schema refresh that adds, removes, or renames a branch fails this test instead of
@@ -194,6 +257,21 @@ def test_enum_sets_match_the_schema():
     )
     assert protocol.PERMISSION_OPTION_KIND == _consts_from_schema("PermissionOptionKind")
     assert protocol.STOP_REASONS == _consts_from_schema("IdleStateUpdate", discriminator="stopReason")
+    assert protocol.PLAN_CONTENT_TYPE == _consts_from_schema("PlanUpdateContent", discriminator="type")
+    assert protocol.DIFF_OPERATION == _consts_from_schema("DiffChange", discriminator="operation")
+    assert protocol.DIFF_FILE_TYPE == _consts_from_schema("DiffFileType")
+    assert protocol.DIFF_PATCH_FORMAT == _consts_from_schema("DiffPatchFormat")
+    assert protocol.AVAILABLE_COMMAND_TYPE == _consts_from_schema(
+        "AvailableCommand", discriminator="type"
+    )
+
+
+def test_error_codes_are_the_ones_error_mdx_lists():
+    """`ERROR_CODES` is derived from the schema's `ErrorCode` members; pin it to the codes
+    `error.mdx:26-36` lists so a schema refresh that adds or drops one is noticed."""
+    assert protocol.ERROR_CODES == {
+        -32700, -32600, -32601, -32602, -32603, -32800, -32000, -32002, -32022
+    }
 
 
 def test_wrong_kind_known_method_is_a_schema_violation_not_unknown():
@@ -228,3 +306,43 @@ def test_non_object_markers_accepts_draft_fields_and_ignores_unknown_ones():
     assert find_non_object_markers("AgentCapabilities", {"providers": False}) == ["providers"]
     # `nes`/`positionEncoding` left the draft schema; unknown fields are never judged.
     assert find_non_object_markers("AgentCapabilities", {"nes": False}) == []
+
+
+# --- x-deserialize-default-on-null carve-out ---
+
+_TERMINAL = {"methodId": "t", "name": "Terminal", "type": "terminal"}
+
+
+def validate_against_def(def_name: str, value: object) -> list:
+    return validation._issues_from_errors(validation._def_validator(def_name).iter_errors(value))
+
+
+def test_null_accepted_at_default_on_null_nodes() -> None:
+    """`AuthMethodTerminal`'s `args`/`env` carry the hint, so `null` counts as omitted."""
+    method = {**_TERMINAL, "args": None, "env": None}
+    assert validate_against_def("AuthMethodTerminal", method) == []
+
+
+def test_null_accepted_at_hinted_node_nested_in_a_union() -> None:
+    """The `AuthMethod` union wraps the terminal branch; the hint still applies inside it."""
+    method = {**_TERMINAL, "args": None, "env": None}
+    assert validate_against_def("AuthMethod", method) == []
+
+
+def test_null_still_rejected_at_node_without_the_hint() -> None:
+    # Same `type: string` as the hinted nodes' siblings, but no hint.
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "name": None})
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "methodId": None})
+
+
+def test_wrong_non_null_type_still_rejected_at_hinted_node() -> None:
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "args": "--flag"})
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "env": {"A": "B"}})
+    assert validate_against_def("AuthMethodTerminal", {**_TERMINAL, "args": [None]})
+
+
+def test_skip_invalid_items_hint_is_not_honored() -> None:
+    """`InitializeResponse.authMethods` carries `x-deserialize-skip-invalid-items`; an invalid
+    item stays a violation."""
+    result = {"protocolVersion": 2, "authMethods": [{**_TERMINAL, "args": "--flag"}]}
+    assert validate_against_def("InitializeResponse", result)

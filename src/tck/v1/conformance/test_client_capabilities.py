@@ -19,14 +19,17 @@ refused.
 ACP-CLIENTCAP-004..007 cover client-gated `session/update` kinds rather than requests (notices,
 compaction, plan operations, subagent updates). These may be sent outside a prompt turn too, and
 compaction also during `session/load` replay, so each test scans the whole connection's
-transcript (see `_session_update_kinds_with_no_client_capabilities`), again one id per test.
+transcript (see `_received_with_no_client_capabilities`), again one id per test. ACP-CLIENTCAP-007
+also scans tool-call content for `session` items.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-from tck.common.harness import AgentExited, AgentTimeout, Direction
+from tck.common.harness import AgentExited, AgentTimeout, Direction, TranscriptEntry
 from tck.common.plugin import capability_is_supported
 
 from ._helpers import connected_agent, new_session, quiet_period, run_prompt, session_update_kind
@@ -87,11 +90,11 @@ async def test_no_unadvertised_clientcap_elicitation_call(agent_launch, tmp_path
     )
 
 
-async def _session_update_kinds_with_no_client_capabilities(
+async def _received_with_no_client_capabilities(
     agent_launch, agent_initialize_result, tmp_path
-) -> list[str]:
-    """Every `sessionUpdate` kind the agent sent over one connection with `clientCapabilities:
-    {}`: `session/new`, one prompt turn, `session/load` of that session when `loadSession` is
+) -> list[TranscriptEntry]:
+    """Every line the agent sent over one connection with `clientCapabilities: {}`:
+    `session/new`, one prompt turn, `session/load` of that session when `loadSession` is
     advertised (to cover replay), then a quiet period for anything sent outside a turn."""
     init_result = agent_initialize_result.result
     async with connected_agent(agent_launch, client_capabilities={}) as agent:
@@ -116,11 +119,34 @@ async def _session_update_kinds_with_no_client_capabilities(
             )
         except (AgentTimeout, AgentExited):
             pass
-    return [
-        kind
-        for entry in agent.transcript
-        if entry.direction is Direction.RECEIVED and (kind := session_update_kind(entry)) is not None
-    ]
+    return [entry for entry in agent.transcript if entry.direction is Direction.RECEIVED]
+
+
+async def _session_update_kinds_with_no_client_capabilities(
+    agent_launch, agent_initialize_result, tmp_path
+) -> list[str]:
+    """The `sessionUpdate` kind of every `session/update` in `_received_with_no_client_capabilities`."""
+    entries = await _received_with_no_client_capabilities(agent_launch, agent_initialize_result, tmp_path)
+    return [kind for entry in entries if (kind := session_update_kind(entry)) is not None]
+
+
+def _tool_call_content_items(entry: TranscriptEntry) -> list[Any]:
+    """The `content` items of a `tool_call`/`tool_call_update` update, or of a
+    `session/request_permission` request's `toolCall`."""
+    msg = entry.parsed
+    if not isinstance(msg, dict):
+        return []
+    params = msg.get("params")
+    if not isinstance(params, dict):
+        return []
+    if msg.get("method") == "session/request_permission":
+        container = params.get("toolCall")
+    elif session_update_kind(entry) in ("tool_call", "tool_call_update"):
+        container = params.get("update")
+    else:
+        return []
+    content = container.get("content") if isinstance(container, dict) else None
+    return content if isinstance(content, list) else []
 
 
 @pytest.mark.requirement("ACP-CLIENTCAP-004")
@@ -165,12 +191,15 @@ async def test_no_subagent_update_without_client_capability(
     agent_launch, agent_initialize_result, tmp_path
 ):
     """ACP-CLIENTCAP-007. See module docstring."""
-    kinds = await _session_update_kinds_with_no_client_capabilities(
-        agent_launch, agent_initialize_result, tmp_path
-    )
-    sent = sorted(
-        {k for k in kinds if k in ("subagent_update", "session_message", "session_message_chunk")}
-    )
+    entries = await _received_with_no_client_capabilities(agent_launch, agent_initialize_result, tmp_path)
+    kinds = {kind for entry in entries if (kind := session_update_kind(entry)) is not None}
+    sent = sorted(k for k in kinds if k in ("subagent_update", "session_message", "session_message_chunk"))
+    if any(
+        isinstance(item, dict) and item.get("type") == "session"
+        for entry in entries
+        for item in _tool_call_content_items(entry)
+    ):
+        sent.append("session tool-call content")
     assert not sent, (
         f"ACP-CLIENTCAP-007: {sent!r} sent without clientCapabilities.subagents advertised"
     )

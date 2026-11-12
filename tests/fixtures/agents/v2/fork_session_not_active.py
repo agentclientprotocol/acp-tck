@@ -17,6 +17,10 @@ from _base import ConformingAgent  # noqa: E402
 
 class ForkSessionNotActiveAgent(ConformingAgent):
     def _handle_fork_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        source_id = params.get("sessionId")
+        if source_id not in self._sessions and source_id not in self._closed_sessions:
+            self._unknown_session(msg_id, source_id)
+            return
         self._session_count += 1
         self._reply(msg_id, {"sessionId": f"sess-{self._session_count:04d}"})
 

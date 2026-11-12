@@ -3,8 +3,8 @@
 whenever the (possibly `cwd`-filtered) result set would be empty -- an empty result MUST be a
 normal, empty array, never an error.
 
-FAILs exactly `ACP-LIST-202` (the only test that filters to a guaranteed-empty result).
-`ACP-LIST-201`/`203`/`204` all list with at least one session present in the result, so they
+FAILs exactly `ACP-LIST-002` (the only test that filters to a guaranteed-empty result).
+`ACP-LIST-001`/`003`/`203`/`204` all list with at least one session present in the result, so they
 never hit the empty branch and PASS unaffected.
 """
 
@@ -19,6 +19,12 @@ from _base import ConformingAgent  # noqa: E402
 
 class ListErrorsWhenEmptyAgent(ConformingAgent):
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
+        rejection = self._list_cwd_rejection(params.get("cwd")) or self._list_cursor_rejection(
+            params.get("cursor")
+        )
+        if rejection is not None:  # ACP-LIST-003/205 stay conforming
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
         cwd_filter = params.get("cwd")
         sessions = [
             {"sessionId": session_id, "cwd": cwd}

@@ -1,10 +1,11 @@
-"""Transport hygiene: ACP-TRANSPORT-002, ACP-TRANSPORT-201, ACP-TRANSPORT-203.
+"""Transport hygiene: ACP-TRANSPORT-002, ACP-TRANSPORT-001, ACP-TRANSPORT-203.
 
-Batch-aware v2 counterpart of `tck.v1.conformance.test_transport` (honest duplication, not
-shared machinery). v1's rule "every stdout line is exactly one JSON-RPC 2.0 object" widens in
-v2 to "...or a non-empty array of them" (`ACP-TRANSPORT-201`, a fresh id since the wording
-changed). `ACP-TRANSPORT-002` (UTF-8) is judged identically to v1. `ACP-TRANSPORT-203` (no
-embedded newlines) is new to v2.
+v2 counterpart of `tck.v1.conformance.test_transport` (honest duplication, not shared
+machinery). v1 and v2 share the rule "every stdout line is exactly one JSON-RPC 2.0 object";
+v2 also states that an array is non-conformant (`ACP-TRANSPORT-001`, `transports.mdx:20,67`),
+so its id stays a `2xx` one. `ACP-TRANSPORT-002` (UTF-8) is judged identically to v1.
+`ACP-TRANSPORT-203` (no embedded newlines) is new to v2. `test_batch.py` holds the other
+`ACP-TRANSPORT-001` evidence: the replies to its probe arrays.
 
 `_drive_full_exchange` does its own manual `initialize` (mirroring
 `test_initialize.py`/`test_batch.py`) and calls `skip_if_version_mismatch` before touching
@@ -45,12 +46,10 @@ async def _drive_full_exchange(agent_launch, tmp_path):
     return [entry for entry in agent.transcript if entry.direction is Direction.RECEIVED]
 
 
-@pytest.mark.requirement("ACP-TRANSPORT-201")
-async def test_stdout_is_clean_ndjson_jsonrpc_or_batch(agent_launch, tmp_path):
-    """ACP-TRANSPORT-201: every line on stdout is exactly one valid JSON-RPC 2.0 object, or a
-    non-empty array whose every element is a JSON-RPC 2.0 message object -- an empty array is
-    itself non-conformant (`ACP-BATCH-201` owns that specific wire evidence; this row only
-    checks the general framing shape)."""
+@pytest.mark.requirement("ACP-TRANSPORT-001")
+async def test_stdout_is_clean_ndjson_jsonrpc(agent_launch, tmp_path):
+    """ACP-TRANSPORT-001: every line on stdout is exactly one valid JSON-RPC 2.0 object. A JSON
+    array, empty or not, is non-conformant: ACP has no batches (`transports.mdx:20,67`)."""
     received = await _drive_full_exchange(agent_launch, tmp_path)
 
     assert received, "the agent never wrote anything to stdout"
@@ -60,14 +59,9 @@ async def test_stdout_is_clean_ndjson_jsonrpc_or_batch(agent_launch, tmp_path):
         if isinstance(parsed, dict):
             assert parsed.get("jsonrpc") == "2.0", f'object line is missing jsonrpc == "2.0": {parsed!r}'
         elif isinstance(parsed, list):
-            assert parsed, f"batch array line must not be empty: {entry.raw!r}"
-            for item in parsed:
-                assert isinstance(item, dict), f"batch element is not a JSON object: {item!r}"
-                assert item.get("jsonrpc") == "2.0", (
-                    f'batch element is missing jsonrpc == "2.0": {item!r}'
-                )
+            pytest.fail(f"line is a JSON array; ACP has no batches: {entry.raw!r}")
         else:
-            pytest.fail(f"line did not parse to a JSON object or array: {entry.raw!r}")
+            pytest.fail(f"line did not parse to a JSON object: {entry.raw!r}")
 
 
 @pytest.mark.requirement("ACP-TRANSPORT-002")
@@ -85,7 +79,7 @@ async def test_stdout_is_valid_utf8(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-TRANSPORT-203")
 async def test_no_embedded_newlines(agent_launch, tmp_path):
     """ACP-TRANSPORT-203: messages are newline-delimited and MUST NOT contain an embedded literal
-    newline -- a batch array is therefore serialised on one line too.
+    newline.
 
     The harness's `readuntil(b"\\n")` reader makes an embedded newline unobservable within one
     entry -- any literal `\\n` the agent writes ends that read right there. The real signal is
@@ -98,7 +92,7 @@ async def test_no_embedded_newlines(agent_launch, tmp_path):
     assert received, "the agent never wrote anything to stdout"
     for index, entry in enumerate(received):
         if entry.parse_error is None:
-            continue  # already a complete, valid message (or batch) on its own line
+            continue  # already a complete, valid message on its own line
         combined = bytearray(entry.raw)
         for following in received[index + 1 :]:
             combined.extend(b"\n")

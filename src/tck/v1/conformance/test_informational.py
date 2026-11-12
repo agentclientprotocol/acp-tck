@@ -1,13 +1,13 @@
-"""INFORMATIONAL-tier probes: ACP-INFO-PARSE-001, ACP-INFO-INVALIDREQ-001,
-ACP-INFO-UNKNOWNSESSION-001.
+"""INFORMATIONAL-tier probes: ACP-INFO-PARSE-001, ACP-INFO-INVALIDREQ-001.
 
-The spec is silent on all three behaviours and real SDKs disagree in practice, so none of these
-ever assert on the probed behaviour itself -- they exist purely to record what the agent under
-test actually does, via `record_property`, for a human reading the report. (They can still FAIL
-if the prerequisite handshake -- `initialize`, or `session/new` for
-ACP-INFO-UNKNOWNSESSION-001 -- itself fails; that is a real conformance problem the probe
-correctly surfaces, not a probe bug.) Each uses its own throwaway `connected_agent` so a bad
-reaction (if any) cannot contaminate a later test's connection.
+`error.mdx` assigns `-32700` to non-JSON input and `-32600` to a message that is not a valid
+request object, but requires no reply -- and `transports.mdx` forbids a client from sending
+either. Real SDKs disagree in practice, so neither probe asserts on the probed behaviour: each
+deliberately breaks that client rule only to record what the agent actually does, via
+`record_property`, for a human reading the report. (They can still FAIL if the prerequisite
+`initialize` handshake itself fails; that is a real conformance problem the probe correctly
+surfaces, not a probe bug.) Each uses its own throwaway `connected_agent` so a bad reaction (if
+any) cannot contaminate a later test's connection.
 
 Concluding "the agent stayed silent" uses `quiet_period()`, not the full `--tck-timeout` -- a
 v1 TCK must not fail an agent for skipping malformed/non-envelope input (the reference SDK does
@@ -23,7 +23,7 @@ import pytest
 from tck.common.harness import AgentExited, AgentTimeout
 from tck.v1.protocol import PROTOCOL_VERSION
 
-from ._helpers import connected_agent, new_session, next_reply_line, quiet_period, skip_if_auth_gated
+from ._helpers import connected_agent, new_session, next_reply_line, quiet_period
 
 
 async def _probe_connection_usable_after(agent, tmp_path, timeout: float) -> str:
@@ -118,49 +118,3 @@ async def test_structurally_invalid_request_behaviour(agent_launch, tmp_path, re
 
     record_property("behaviour", behaviour)
     record_property("connection_usable_after", connection_usable_after)
-
-
-@pytest.mark.requirement("ACP-INFO-UNKNOWNSESSION-001")
-async def test_unknown_session_id_behaviour(agent_launch, tmp_path, record_property):
-    """ACP-INFO-UNKNOWNSESSION-001 (INFORMATIONAL). `session/prompt` for a `sessionId` the agent
-    never created. Records the error code, if any (spec is silent on what, if anything, an
-    agent should reply with here). Never asserts."""
-    async with connected_agent(agent_launch) as agent:
-        new_id = await agent.send_request(
-            "session/new", {"cwd": str(tmp_path), "mcpServers": []}
-        )
-        new_entry = await agent.wait_for_response(new_id, timeout=agent_launch.default_timeout)
-        skip_if_auth_gated(new_entry)
-
-        prompt_id = await agent.send_request(
-            "session/prompt",
-            {"sessionId": "tck-does-not-exist", "prompt": [{"type": "text", "text": "hi"}]},
-        )
-        try:
-            entry = await agent.wait_for_response(prompt_id, timeout=agent_launch.default_timeout)
-        except AgentTimeout:
-            # A bare `wait_for_response` has no mock client, so an agent -> client request (e.g.
-            # `session/request_permission`) issued mid-handling would go unanswered and look like
-            # plain silence -- note any outstanding request instead.
-            outstanding = [
-                entry.parsed.get("method")
-                for entry in agent.pending()
-                if isinstance(entry.parsed, dict) and entry.parsed.get("method") and "id" in entry.parsed
-            ]
-            if outstanding:
-                behaviour = f"silent (agent had {len(outstanding)} outstanding client request(s): {outstanding})"
-            else:
-                behaviour = "silent"
-        except AgentExited as exc:
-            behaviour = f"agent exited (exit_code={exc.exit_code!r})"
-        else:
-            msg = entry.parsed
-            error = msg.get("error") if isinstance(msg, dict) else None
-            if isinstance(error, dict):
-                behaviour = f"replied with error code {error.get('code')!r}"
-            elif isinstance(msg, dict) and "result" in msg:
-                behaviour = "replied with a result (no error)"
-            else:
-                behaviour = f"replied: {entry.text!r}"
-
-    record_property("behaviour", behaviour)

@@ -88,10 +88,10 @@ def test_spec_map_prompt_lifecycle_covers_everything_but_the_standalone_features
     left_out = set()
     for title in (
         "Session-directed messages (unstable)",
-        "Session Notices",
-        "Session Compaction",
-        "Session Usage Updates",
-        "End-Turn Token Usage (Unstable)",
+        "Session notices",
+        "Session compaction",
+        "Session usage updates",
+        "End-turn token usage (unstable)",
     ):
         start, end = resolve_section(text, title)
         left_out.update(range(start, end + 1))

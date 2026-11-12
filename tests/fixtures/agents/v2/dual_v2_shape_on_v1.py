@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: a dual-stack agent that selects v1 for `initialize(1)` but still answers
 with a v2-shaped result (`info`/`capabilities`) -- "MUST use the selected version's
-initialization response shape" (initialization.mdx:98). FAILs exactly `ACP-INIT-208`.
+initialization response shape" (initialization.mdx:110). FAILs exactly `ACP-INIT-208`.
 """
 
 import sys

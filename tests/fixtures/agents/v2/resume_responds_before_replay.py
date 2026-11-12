@@ -3,8 +3,8 @@
 `session/resume` request *before* replaying the session's retained history, instead of after.
 The current-state snapshot still precedes the response.
 
-FAILs exactly `ACP-RESUME-202` (the replay-before-response ordering check). `ACP-RESUME-201`
-and `ACP-RESUME-203` are unaffected -- this fixture only reorders the `{"type": "start"}` case.
+FAILs exactly `ACP-RESUME-202` (the replay-before-response ordering check). `ACP-RESUME-001`
+and `ACP-RESUME-002` are unaffected -- this fixture only reorders the `{"type": "start"}` case.
 `ACP-RESUME-204` legitimately SKIPs rather than FAILs: `_helpers.resume_session`'s
 single-response-tracking read loop returns as soon as it sees the response, before ever reading
 the trailing replay notifications still queued in the pipe -- so `updates` comes back empty and
@@ -24,13 +24,17 @@ from _base import ConformingAgent  # noqa: E402
 
 class ResumeRespondsBeforeReplayAgent(ConformingAgent):
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions and session_id not in self._closed_sessions:
+            self._unknown_session(msg_id, session_id)
+            return
         rejection = self._replay_from_rejection(params.get("replayFrom"))
         if rejection is not None:
             self._error(msg_id, -32602, f"Invalid params: {rejection}")
             return
-        session_id = params.get("sessionId")
-        if session_id not in self._sessions:
-            self._sessions[session_id] = params.get("cwd", "")
+        if session_id in self._closed_sessions:
+            self._sessions[session_id] = self._closed_sessions.pop(session_id)
+        self._send_resume_session_info(session_id)
         self._send_resume_snapshot(session_id)
         self._reply(msg_id, self._resume_result())
         if self._should_replay(params.get("replayFrom")):

@@ -5,7 +5,7 @@ Mirrors v1's `invalid_utf8.py` on top of v2's `_base.py`.
 
 The only real negative control for ACP-TRANSPORT-002 in the v2 self-test suite --
 `banner_on_stdout.py`'s banner is plain ASCII, so it is valid UTF-8 and must still PASS this
-requirement even though it FAILs ACP-TRANSPORT-201.
+requirement even though it FAILs ACP-TRANSPORT-001.
 """
 
 import sys

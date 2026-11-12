@@ -28,7 +28,7 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable, Literal
 
 import pytest
 
@@ -40,10 +40,22 @@ from tck.common.harness import (
     Direction,
     TranscriptEntry,
 )
-from tck.common.plugin import current_auth_method_id, current_initialize_auth_methods, register_active_process
+from tck.common.plugin import (
+    current_auth_method_id,
+    current_initialize_auth_methods,
+    record_test_property,
+    register_active_process,
+    skip_if_login_times_out,
+)
 
 from .. import SPEC
-from ..protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
+from ..protocol import (
+    AUTHENTICATION_REQUIRED,
+    INVALID_PARAMS,
+    METHOD_NOT_FOUND,
+    PROTOCOL_VERSION,
+    RESOURCE_NOT_FOUND,
+)
 
 
 @contextlib.asynccontextmanager
@@ -65,7 +77,8 @@ async def connected_agent(
     `schema/v2/schema.unstable.json#/$defs/LoginAuthRequest`). As in v1, a failing `auth/login` here is
     not itself a conformance assertion -- it means the TCK cannot exercise anything
     session-dependent against this agent with the given `--auth-method`, so the test SKIPs with
-    a clear reason instead of raising.
+    a clear reason instead of raising. A login that never answers (it may be interactive and
+    pending) SKIPs with `AUTH-GATED:` too, see `skip_if_login_times_out`.
     """
     async with AgentProcess(launch) as agent:
         register_active_process(agent)
@@ -145,7 +158,8 @@ async def login_if_needed(agent: AgentProcess, *, timeout: float | None = None) 
         return
     validate_login_method_id(auth_methods, method_id)
     auth_id = await agent.send_request("auth/login", {"methodId": method_id})
-    auth_entry = await agent.wait_for_response(auth_id, timeout=timeout)
+    with skip_if_login_times_out("auth/login", method_id, timeout):
+        auth_entry = await agent.wait_for_response(auth_id, timeout=timeout)
     auth_msg = auth_entry.parsed
     if not (isinstance(auth_msg, dict) and isinstance(auth_msg.get("result"), dict)):
         detail = (auth_msg.get("error") if isinstance(auth_msg, dict) else None) or auth_entry.text
@@ -159,8 +173,8 @@ def skip_if_auth_gated_msg(msg: Any) -> None:
     """Message-shaped core of `skip_if_auth_gated()` below -- operates on an already-parsed
     JSON-RPC response object (`{"error": {...}}` or `{"result": {...}}`) rather than a
     `TranscriptEntry`, so a caller that pulls a `session/new` reply out of something other than a
-    single top-level response -- e.g. `test_batch.py`, matching one entry out of a batch response
-    array by id -- can still route it through the same auth-gate check `new_session()` uses.
+    single top-level response can still route it through the same auth-gate check
+    `new_session()` uses.
 
     Skips the current test, with a message pointing at `--auth-method`, if `msg` is the
     `AUTHENTICATION_REQUIRED` (`-32000`) error. v2 twin of
@@ -175,7 +189,7 @@ def skip_if_auth_gated_msg(msg: Any) -> None:
     capability-not-advertised skip) and set `Verdict.blocked_by_auth`.
 
     Only excuses the `-32000` when the cached `initialize` result actually advertised at least
-    one `authMethods` entry (mirrors v1's AUTH-A1 rule, re-cited as `ACP-AUTH-205`) -- an agent
+    one `authMethods` entry (the `ACP-AUTH-005` rule) -- an agent
     that advertises none and still returns `-32000` has no defined remedy; this is left as an
     ordinary, un-excused failure of whatever the caller was asserting, not something the TCK can
     route around.
@@ -204,8 +218,11 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     skip_if_auth_gated_msg(entry.parsed)
 
 
-async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = None) -> str:
-    """Send `session/new` for `cwd` and return the resulting `sessionId`.
+async def new_session_result(
+    agent: AgentProcess, cwd: Any, *, timeout: float | None = None
+) -> dict[str, Any]:
+    """Send `session/new` for `cwd` and return the whole result object (`sessionId` plus any
+    `configOptions`/`availableCommands`).
 
     Unlike v1's `new_session`, `mcpServers` is omitted entirely rather than sent as an empty
     list -- v2's `session/new` params require only `cwd` (`schema/v2/schema.unstable.json#/$defs/NewSessionRequest/required`,
@@ -225,7 +242,12 @@ async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = 
     assert isinstance(session_id, str) and session_id, (
         f"session/new result.sessionId must be a non-empty string, got {session_id!r}"
     )
-    return session_id
+    return msg["result"]
+
+
+async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = None) -> str:
+    """`new_session_result`'s `sessionId`."""
+    return (await new_session_result(agent, cwd, timeout=timeout))["sessionId"]
 
 
 async def resume_session(
@@ -236,11 +258,12 @@ async def resume_session(
     replay_from: Any = None,
     additional_directories: list[str] | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
+    system_prompt: dict[str, Any] | None = None,
     timeout: float | None = None,
 ) -> tuple[TranscriptEntry, list[tuple[int, TranscriptEntry]]]:
     """Send `session/resume` and collect every `session/update` notification observed on the
     wire before its response arrives, in wire order -- this *is* the replay stream
-    `ACP-RESUME-202..209` need to inspect. `session/resume`'s response is not an acceptance
+    `ACP-RESUME-002/202/204..209` need to inspect. `session/resume`'s response is not an acceptance
     receipt (unlike `session/prompt`'s): it carries the actual result directly, so unlike
     `run_prompt` there is no separate turn-end predicate to wait for, just the matching response.
 
@@ -258,6 +281,8 @@ async def resume_session(
         params["additionalDirectories"] = additional_directories
     if mcp_servers is not None:
         params["mcpServers"] = mcp_servers
+    if system_prompt is not None:
+        params["systemPrompt"] = system_prompt
     req_id = await agent.send_request("session/resume", params)
 
     updates: list[tuple[int, TranscriptEntry]] = []
@@ -307,14 +332,18 @@ async def list_sessions(
     *,
     cwd: Any = None,
     cursor: str | None = None,
+    archived: Any = None,
     timeout: float | None = None,
 ) -> TranscriptEntry:
     """Send `session/list` and return its response entry (the caller inspects `.parsed` itself --
     unlike `new_session`, several tests need to see a raw error response too, e.g. a cursor round
-    trip is out of scope but an empty-list-vs-error check is not)."""
+    trip is out of scope but an empty-list-vs-error check is not). `archived` is the unstable
+    archive filter; omitted from the request when `None`."""
     params: dict[str, Any] = {}
     if cwd is not None:
         params["cwd"] = str(cwd)
+    if archived is not None:
+        params["archived"] = archived
     if cursor is not None:
         params["cursor"] = cursor
     req_id = await agent.send_request("session/list", params)
@@ -355,6 +384,29 @@ async def set_config_option(
     return await agent.wait_for_response(req_id, timeout=timeout)
 
 
+def assert_unknown_session_error(entry: TranscriptEntry, method: str, session_id: str) -> None:
+    """Assert `entry` is the `error.mdx:54-56` answer to a session-scoped request naming a
+    session that is not active: error `-32002` with `data.sessionId` equal to `session_id`. A
+    success, a wrong code and a missing or wrong `data.sessionId` are reported together. Shared
+    by `ACP-ERROR-003` and `ACP-ERROR-004`; the schema's `Other` error-data branch accepts any
+    `data`, so the shape is checked here."""
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    assert isinstance(error, dict), (
+        f"{method} for session {session_id!r}, which is not active, should fail with -32002 and "
+        f"data.sessionId={session_id!r}, but did not return an error: {entry.text!r}"
+    )
+    problems = []
+    if error.get("code") != RESOURCE_NOT_FOUND:
+        problems.append(f"expected code -32002, got {error.get('code')!r}")
+    data = error.get("data")
+    if not isinstance(data, dict):
+        problems.append(f"expected error.data to be an object with sessionId, got {data!r}")
+    elif data.get("sessionId") != session_id:
+        problems.append(f"expected data.sessionId={session_id!r}, got {data.get('sessionId')!r}")
+    assert not problems, f"{method} for an inactive session: {'; '.join(problems)} ({entry.text!r})"
+
+
 async def _route_just_created(
     agent: AgentProcess, cwd: Any, timeout: float | None
 ) -> str:
@@ -374,7 +426,7 @@ async def _route_after_close(
 _LIST_ROUTE_MAX_PAGES = 5
 
 
-def _same_dir(listed: Any, cwd: Any) -> bool:
+def same_dir(listed: Any, cwd: Any) -> bool:
     """True if `listed` is an absolute path naming the same directory as `cwd` (resolved, so
     e.g. macOS `/var` vs `/private/var` compare equal)."""
     if not isinstance(listed, str) or not Path(listed).is_absolute():
@@ -387,7 +439,7 @@ async def _route_from_list(
 ) -> str:
     """Route (3), tried last: a `session/list` entry whose `cwd` is the TCK's own `cwd`, resumed
     with that same `cwd` (resume is only defined when the request `cwd` matches the session's,
-    session-setup.mdx:409).
+    session-setup.mdx:439).
 
     Safety: `cwd` is a per-test temporary directory, so a session listed under it was created by
     the TCK. Entries with any other `cwd` -- possibly the operator's own saved sessions -- are
@@ -407,13 +459,15 @@ async def _route_from_list(
         if not isinstance(sessions, list):
             raise RuntimeError(f"session/list returned no usable sessions array: {entry.text!r}")
         for listed in sessions:
-            if not isinstance(listed, dict) or not _same_dir(listed.get("cwd"), cwd):
+            if not isinstance(listed, dict) or not same_dir(listed.get("cwd"), cwd):
                 continue
             session_id = listed.get("sessionId")
             if isinstance(session_id, str) and session_id:
                 return session_id
+        # Only an omitted or `null` `nextCursor` ends the results; `""` is a valid cursor
+        # (session-list.mdx:154).
         cursor = result.get("nextCursor")
-        if not isinstance(cursor, str) or not cursor:
+        if not isinstance(cursor, str):
             break
     raise RuntimeError(f"session/list has no session created in the TCK's own cwd {str(cwd)!r}")
 
@@ -431,10 +485,10 @@ async def _attempt_resumable_route(
     open; `None` on any failure, with the connection already closed and the failure appended to
     `errors`.
 
-    A `-32601` from `session/resume` itself is not a route failure to record and move past: `B3`
-    makes `session/resume` baseline-mandatory once `capabilities.session` is advertised at all,
-    so this is unconditionally a conformance failure and is raised via `pytest.fail(...)`
-    immediately, regardless of which route surfaced it.
+    A `-32601` from `session/resume` itself is not a route failure to record and move past:
+    `session/resume` is part of the baseline once `capabilities.session` is advertised at all
+    (session-setup.mdx:144-145), so this is unconditionally a conformance failure and is
+    raised via `pytest.fail(...)` immediately, regardless of which route surfaced it.
     """
     attempt_stack = contextlib.AsyncExitStack()
     try:
@@ -462,8 +516,8 @@ async def _attempt_resumable_route(
         if code == METHOD_NOT_FOUND:
             pytest.fail(
                 "session/resume answered -32601 Method not found -- session/resume is "
-                "baseline-mandatory once capabilities.session is advertised at all (B3), so "
-                "this is a hard failure of ACP-RESUME-201, not a route-specific SKIP"
+                "part of the baseline once capabilities.session is advertised at all, so "
+                "this is a hard failure of ACP-RESUME-001, not a route-specific SKIP"
             )
         errors.append(f"session/resume error: {msg['error']!r}")
         return None
@@ -479,7 +533,7 @@ async def obtain_resumable_session(
 ) -> AsyncIterator[tuple[AgentProcess, str, TranscriptEntry, Any]]:
     """Yield `(agent, session_id, resume_response_entry, resume_cwd)` for a connected,
     initialized agent, a session id this helper found `session/resume` accepts, the response
-    entry from the successful probe call that proved it (`ACP-RESUME-201` uses this directly
+    entry from the successful probe call that proved it (`ACP-RESUME-001` uses this directly
     rather than issuing a second, redundant `session/resume` for the same id), and the `cwd`
     that probe used -- always `cwd` itself, since resume requires the session's own `cwd` and
     every route only ever resumes a session the TCK created in `cwd`.
@@ -557,17 +611,13 @@ async def v2_only_agent(
 
 def iter_messages(entry: TranscriptEntry) -> list[dict[str, Any]]:
     """Flatten one transcript entry into the list of dict-shaped JSON-RPC messages it carries:
-    `[entry.parsed]` for an ordinary object line, every dict element of a batch array line (a
-    non-dict element, e.g. a stray scalar in a malformed batch, is dropped -- nothing meaningful
-    to dispatch), or `[]` for anything else (a parse failure, a bare scalar line, ...).
+    `[entry.parsed]` for an ordinary object line, every dict element of an array line, or `[]`
+    for anything else (a parse failure, a bare scalar line, ...).
 
-    Several transcript scans matched only `isinstance(entry.parsed, dict)` and so were blind to
-    a message delivered inside a JSON-RPC batch array (`emits_batch_updates.py` proves this is a
-    real scenario an agent may choose) --
-    `run_prompt`/`test_transport.py`/`test_enums.py`/`test_initialize.py`/parts of `test_cancel.py`
-    already unwrapped a batch line by hand; this is the one shared helper every such site (and
-    `ACP-JSONRPC-003`, `ACP-CANCEL-202`, `ACP-SCHEMA-002`, `resume_session`, which did not) should
-    use instead of re-deriving the same six-line flattening."""
+    ACP v2 has no batches, so an array line is itself non-conformant -- `ACP-TRANSPORT-001`
+    judges that. It is flattened here only so every other row can still read what it carries
+    (an agent that batches fails the TRANSPORT row, not every prompt row). A non-dict element
+    is dropped: there is nothing meaningful to dispatch."""
     parsed = entry.parsed
     if isinstance(parsed, dict):
         return [parsed]
@@ -576,9 +626,21 @@ def iter_messages(entry: TranscriptEntry) -> list[dict[str, Any]]:
     return []
 
 
+def agent_requests(transcript: list[TranscriptEntry]) -> list[dict[str, Any]]:
+    """Every request the agent sent (a received object with `method` and `id`), in wire order.
+    An `id: null` or non-scalar id still counts as a request, so the caller can judge it."""
+    return [
+        msg
+        for entry in transcript
+        if entry.direction is Direction.RECEIVED
+        for msg in iter_messages(entry)
+        if "method" in msg and "id" in msg
+    ]
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
-    """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside a
-    batch array, even a malformed one missing `id`/`result`/`error`.
+    """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
+    array line, even a malformed one missing `id`/`result`/`error`.
 
     The one rule every "a notification gets no response" check uses. ACP and JSON-RPC 2.0
     §4.1/§6 forbid only *replies* to a notification. The agent's own notifications and agent ->
@@ -600,55 +662,43 @@ async def first_response_within(agent: AgentProcess, quiet: float) -> Transcript
 
 
 def is_agent_initiated(entry: TranscriptEntry) -> bool:
-    """True if `entry` is made only of messages the agent initiated on its own: a JSON-RPC
-    object carrying `method` (a notification or an agent -> client request), or a non-empty
-    batch array whose every element is one (`ACP-BATCH-207` lets an agent batch its own
-    notifications). Such a line may arrive at any time after `initialize`, so it is never the
-    reply a check is waiting for.
+    """True if `entry` is a single JSON-RPC object carrying `method` -- a notification or an
+    agent -> client request the agent initiated on its own. Such a line may arrive at any time
+    after `initialize`, so it is never the reply a check is waiting for.
 
-    An array with even one other element (a response, a scalar) is not agent-initiated: it is
-    left for the caller to judge as a reply, malformed or not. Neither is `[]`."""
+    Always False for an array: ACP v2 has no batches, so an array is never an agent-initiated
+    message, and a probe waiting for its reply must see it instead of skipping past it."""
     parsed = entry.parsed
-    if isinstance(parsed, dict):
-        return "method" in parsed
-    if isinstance(parsed, list) and parsed:
-        return all(isinstance(item, dict) and "method" in item for item in parsed)
-    return False
+    return isinstance(parsed, dict) and "method" in parsed
 
 
 async def next_reply_line(agent: AgentProcess, timeout: float) -> TranscriptEntry:
     """Return the first line within `timeout` that is not agent-initiated
     (`is_agent_initiated`), for the caller to judge as the reply it waits for. Anything else --
-    a response object or array, but also a non-JSON or otherwise malformed line -- is returned
-    as-is, so the caller still judges the reply's shape (one array or separate objects, one line
-    or several). Skipped lines stay in `agent.pending()`, and an agent -> client request among
-    them is left unanswered. `AgentTimeout`/`AgentExited` propagate."""
+    a response object, but also an array or a non-JSON or otherwise malformed line -- is
+    returned as-is, so the caller still judges the reply's shape. Skipped lines stay in
+    `agent.pending()`, and an agent -> client request among them is left unanswered. `AgentTimeout`/`AgentExited` propagate."""
     return await agent.wait_for_message(lambda entry: not is_agent_initiated(entry), timeout=timeout)
 
 
 async def probe_behaviour(
     read: Awaitable[TranscriptEntry],
     on_reply: Callable[[TranscriptEntry], str],
-    *,
-    on_silent: Callable[[], str] | None = None,
 ) -> str:
     """Run one already-started read `read` and classify the outcome as "silent" / "agent exited
     (exit_code=...)" / whatever `on_reply` returns for a reply that did arrive.
 
-    Shared by the seven near-identical "did the agent stay silent, exit, or reply" INFORMATIONAL
-    probes across `test_informational.py`, `test_batch.py`, and `test_cancel.py` -- only the
-    common `AgentTimeout`/`AgentExited` ladder is identical between all seven; each site still
+    Shared by the near-identical "did the agent stay silent, exit, or reply" INFORMATIONAL
+    probes across `test_informational.py` and `test_cancel.py` -- only the
+    common `AgentTimeout`/`AgentExited` ladder is identical between them; each site still
     supplies its own read call (a specific
     `wait_for_response`/`wait_for_message`/`read_line`, each with its own predicate/timeout) and
     its own `on_reply` classifier, since what counts as "a reply" differs (a JSON-RPC
-    error/result split vs. a raw-text dump). `on_silent`, if given, overrides the default
-    `"silent"` string for the `AgentTimeout` branch -- used by
-    `test_informational.test_unknown_session_id_behaviour`, whose silent case additionally
-    reports any outstanding agent->client requests."""
+    error/result split vs. a raw-text dump)."""
     try:
         entry = await read
     except AgentTimeout:
-        return on_silent() if on_silent is not None else "silent"
+        return "silent"
     except AgentExited as exc:
         return f"agent exited (exit_code={exc.exit_code!r})"
     else:
@@ -678,7 +728,7 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
     "broken": the negotiation itself is judged normally by `ACP-INIT-001`/`003`/`201`/`202`/`208`, which
     only ever assert on the negotiation outcome, never on the *shape* of the result payload. But
     a test that goes on to assert v2-only shape requirements against that same result -- `info`
-    being REQUIRED (`ACP-INIT-203`), capability markers being objects (`ACP-INIT-204`), or the
+    being REQUIRED (`ACP-INIT-004`), capability markers being objects (`ACP-INIT-204`), or the
     exchange validating against the v2 schema (`ACP-SCHEMA-001`) -- cannot honestly judge a
     result the agent never claimed was v2-shaped; call this right after such a test has its own
     `init_result` in hand, before evaluating any v2-shape assertion.
@@ -686,9 +736,9 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
     Unlike `tck.common.plugin`'s `_tck_capability_gate`, which only runs for
     `@pytest.mark.capability(...)`-marked tests sharing the session-scoped
     `agent_initialize_result` fixture, every test in `test_initialize.py` spawns its own fresh
-    process and sends its own `initialize` (mirroring v1's "never send a second `initialize` on
-    one connection" rule) -- so this has to be called explicitly rather than picked up by an
-    autouse fixture.
+    process and sends its own `initialize` (so a probe's connection state is never inherited
+    from the cached handshake) -- so this has to be called explicitly rather than picked up by
+    an autouse fixture.
     """
     negotiated = init_result.get("protocolVersion")
     if negotiated != PROTOCOL_VERSION:
@@ -719,16 +769,76 @@ def cancel_race_peek(timeout: float) -> float:
 def quiet_period(timeout: float) -> float:
     """v2 twin of v1's `quiet_period` (identical formula, deliberately re-implemented rather than
     imported -- honest duplication, not shared machinery): the heuristic "nothing more is
-    coming" wait used by INFORMATIONAL probes that conclude absence
-    (e.g. `ACP-INFO-CONCURRENT-201`'s "did a second, concurrent `session/prompt` get a
-    response at all") -- derived from `--tck-timeout` rather than a hard-coded sub-second
+    coming" wait used by probes that conclude absence (e.g. `ACP-INFO-PARSE-001`'s "did the
+    agent reply at all") -- derived from `--tck-timeout` rather than a hard-coded sub-second
     constant, clamped to a sane range."""
     return max(0.5, min(2.0, timeout / 10))
 
 
+# Stop reasons an agent may have reached on its own just before reading the trigger.
+_RACE_PLAUSIBLE_STOP_REASONS = frozenset({"end_turn", "max_tokens", "max_turn_requests", "refusal"})
+
+
+def race_plausible(stop_reason) -> bool:
+    return (
+        stop_reason is None
+        or stop_reason in _RACE_PLAUSIBLE_STOP_REASONS
+        or (isinstance(stop_reason, str) and stop_reason.startswith("_"))
+    )
+
+
+def response_error(turn) -> dict | None:
+    msg = turn.response_entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    return error if isinstance(error, dict) else None
+
+
+def skip_if_turn_end_race_not_exercised(
+    agent,
+    turn,
+    record_property,
+    *,
+    race_window: float,
+    trigger_at_index: int | None,
+    trigger_method: str,
+    verb: str,
+    property_prefix: str,
+) -> None:
+    """Shared race gate for the rows triggered by `session/cancel`, `session/close` or
+    `session/delete` mid-turn; see `test_cancel.py`'s module docstring for the rules. Only ever
+    SKIPs or returns; never asserts."""
+    if trigger_at_index is None:
+        pytest.skip(f"{verb} not exercised: the turn ended before {trigger_method} could be sent")
+    record_property(f"acp_tck_{property_prefix}_state_at_trigger", turn.state_at_cancel)
+    if response_error(turn) is not None and turn.response_index < trigger_at_index:
+        pytest.skip(
+            f"{verb} not exercised: session/prompt was rejected before {trigger_method} was sent"
+        )
+    if turn.idle_update is None:
+        return  # error response with no foreground work: judged by the caller
+    stop_reason = turn.stop_reason
+    if stop_reason == "cancelled" or not race_plausible(stop_reason):
+        return
+    trigger_timestamp = agent.transcript[trigger_at_index].timestamp
+    elapsed_ms = (turn.idle_update.timestamp - trigger_timestamp) * 1000
+    record_property(f"acp_tck_{property_prefix}_race_window_ms", f"{race_window * 1000:.0f}")
+    if elapsed_ms < race_window * 1000:
+        record_property(f"acp_tck_{property_prefix}_race_ms", f"{elapsed_ms:.0f}")
+        pytest.skip(
+            f"{verb} not exercised: idle arrived {elapsed_ms:.0f} ms after {trigger_method} "
+            f"(within the race window) with stopReason {stop_reason!r} -- the agent may simply "
+            "have finished before reading it"
+        )
+
+
 ACTIVE_STATES = frozenset({"running", "requires_action"})
-"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:124,993). Work may
-start directly in `requires_action` (:1000-1002), so both count as "active"."""
+"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:152,1073). Work may
+start directly in `requires_action` (:1080-1082), so both count as "active"."""
+
+
+def is_active_state(state: Any) -> bool:
+    """Whether `state` is in `ACTIVE_STATES`; a non-string (even unhashable) value never is."""
+    return isinstance(state, str) and state in ACTIVE_STATES
 
 
 def session_state_update(msg: dict[str, Any], session_id: str) -> dict[str, Any] | None:
@@ -743,6 +853,62 @@ def session_state_update(msg: dict[str, Any], session_id: str) -> dict[str, Any]
     if isinstance(update, dict) and update.get("sessionUpdate") == "state_update":
         return update
     return None
+
+
+BACKGROUND_ID_FIELDS = {"terminal": "terminalId", "tool_call": "toolCallId", "subagent": "sessionId"}
+"""The id field of each defined `background` item type (`#/$defs/BackgroundWork`)."""
+
+
+def background_keys(update: dict[str, Any]) -> set[tuple[str, str]] | None:
+    """`(type, id)` of every defined-type item in a `state_update`'s `background` list, or
+    `None` when the list is omitted, `null` or not an array: not reported
+    (prompt-lifecycle.mdx:203-204). Items of other types, or without a string id, are left out."""
+    items = update.get("background")
+    if not isinstance(items, list):
+        return None
+    keys = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        field_name = BACKGROUND_ID_FIELDS.get(item_type) if isinstance(item_type, str) else None
+        if field_name is not None and isinstance(item.get(field_name), str):
+            keys.add((item["type"], item[field_name]))
+    return keys
+
+
+def last_known_background(agent: AgentProcess, session_id: str) -> set[tuple[str, str]] | None:
+    """`background_keys` of the last `state_update` for `session_id` already read on this
+    connection, or `None` if there is none or it did not report a list."""
+    keys = None
+    for entry in agent.transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            update = session_state_update(msg, session_id)
+            if update is not None:
+                keys = background_keys(update)
+    return keys
+
+
+def permission_subject_keys(params: dict[str, Any]) -> set[tuple[str, str]]:
+    """The `background` keys a `session/request_permission`'s `subject` references: a
+    `tool_call` subject's `toolCall.toolCallId`, or a `command` subject's `toolCallId`/
+    `terminalId` (tool-calls.mdx:268)."""
+    subject = params.get("subject")
+    if not isinstance(subject, dict):
+        return set()
+    keys = set()
+    if subject.get("type") == "tool_call":
+        tool_call = subject.get("toolCall")
+        if isinstance(tool_call, dict) and isinstance(tool_call.get("toolCallId"), str):
+            keys.add(("tool_call", tool_call["toolCallId"]))
+    elif subject.get("type") == "command":
+        if isinstance(subject.get("toolCallId"), str):
+            keys.add(("tool_call", subject["toolCallId"]))
+        if isinstance(subject.get("terminalId"), str):
+            keys.add(("terminal", subject["terminalId"]))
+    return keys
 
 
 def last_known_state(agent: AgentProcess, session_id: str) -> Any:
@@ -760,18 +926,67 @@ def last_known_state(agent: AgentProcess, session_id: str) -> Any:
     return state
 
 
-def _pick_permission_option(options: Any) -> Any:
-    """The `optionId` the mock client selects: the first option whose `kind` starts with
-    `allow_`, else the first option. Picking a reject option would legitimately let the agent end
-    the turn without resuming, starving the resumed-path checks. Tolerates malformed options."""
-    if not isinstance(options, list):
-        return None
-    candidates = [option for option in options if isinstance(option, dict)]
-    for option in candidates:
-        kind = option.get("kind")
-        if isinstance(kind, str) and kind.startswith("allow_"):
-            return option.get("optionId")
-    return candidates[0].get("optionId") if candidates else None
+PermissionPolicy = Literal["allow", "reject_once", "unknown_option", "unknown_outcome", "cancelled"]
+"""How `run_prompt` answers `session/request_permission` (until `session/cancel` is sent):
+`allow` (the default) selects `allow_once`, else `allow_always`, else `reject_once`;
+`reject_once` selects `reject_once`. When the policy's kinds are not offered it never picks
+another option (a `*_always` would persist an approval or a standing deny in the operator's
+agent): it sends `session/cancel` and answers `cancelled`. `unknown_option` selects an
+`optionId` the agent never offered; `unknown_outcome` answers a `_`-prefixed custom outcome
+(`UNKNOWN_PERMISSION_OUTCOME`); `cancelled` answers the `cancelled` outcome without sending
+`session/cancel`."""
+
+UNKNOWN_PERMISSION_OPTION_ID = "_tck_unoffered_option"
+"""The `optionId` the `unknown_option` policy selects (`_`-prefixed per the extensibility rule)."""
+
+UNKNOWN_PERMISSION_OUTCOME = "_tck_unknown"
+"""The `outcome` the `unknown_outcome` policy answers. A legal custom value: the outcome is an
+open enum (`#/$defs/RequestPermissionOutcome`, `other` branch) and `_` marks an extension."""
+
+
+def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
+    """The `RequestPermissionOutcome` for `policy`, plus a note when the preferred option kind
+    was not offered (else `None`). Options are picked by `kind`, never by position.
+
+    `allow`: `allow_once`, else `allow_always` (noted), else `reject_once` (noted).
+    `reject_once`: `reject_once` only. Neither ever selects a `*_always` it was not asked for:
+    with none of its kinds offered it answers `cancelled` *with a note*, and the caller must
+    then send `session/cancel` first, as a conforming client does before answering a pending
+    permission request `cancelled`. Tolerates malformed options."""
+    if policy == "cancelled":
+        return {"outcome": "cancelled"}, None
+    if policy == "unknown_option":
+        return {"outcome": "selected", "optionId": UNKNOWN_PERMISSION_OPTION_ID}, None
+    if policy == "unknown_outcome":
+        return {"outcome": UNKNOWN_PERMISSION_OUTCOME}, None
+    candidates = [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
+
+    def first_of_kind(kind: str) -> dict[str, Any] | None:
+        return next((o for o in candidates if o.get("kind") == kind), None)
+
+    if policy == "reject_once":
+        preferences = [("reject_once", None)]
+        missing = "agent offered no reject_once option"
+    else:
+        preferences = [
+            ("allow_once", None),
+            ("allow_always", "allow_always selected (allow_once not offered)"),
+            ("reject_once", "reject_once selected (no allow option offered)"),
+        ]
+        missing = "agent offered no allow_once, allow_always or reject_once option"
+    for kind, note in preferences:
+        chosen = first_of_kind(kind)
+        if chosen is not None:
+            return {"outcome": "selected", "optionId": chosen.get("optionId")}, note
+    return {"outcome": "cancelled"}, missing
+
+
+def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
+    """`permission_outcome`, recording any fallback note on the current test's report entry."""
+    outcome, note = permission_outcome(options, policy)
+    if note is not None:
+        record_test_property("acp_tck_permission_fallback", note)
+    return outcome, note
 
 
 @dataclass(frozen=True)
@@ -793,7 +1008,7 @@ class PromptTurn:
     """The `session/update` carrying the turn-ending idle, or `None` when the turn ended with an
     error response and no foreground work (`terminated_by == "error"`)."""
     idle_index: int | None = None
-    """Transcript line index of `idle_update` (a batch line's own index)."""
+    """Transcript line index of `idle_update` (an array line's own index)."""
     stop_reason: Any = None
     """The turn-ending idle's `stopReason` exactly as sent (missing and `null` both read as
     `None`); validity is the caller's job."""
@@ -808,22 +1023,43 @@ class PromptTurn:
     """`(transcript_index, update)` for every `state_update` of `session_id` during the turn."""
     updates: list[tuple[int, TranscriptEntry]] = field(default_factory=list)
     """`(transcript_index, entry)` for every `session/update` observed during the turn, in wire
-    order, whatever `sessionId` it carried (`ACP-PROMPT-205` judges attribution)."""
+    order, whatever `sessionId` it carried (`ACP-PROMPT-002` judges attribution)."""
     client_requests_seen: list[TranscriptEntry] = field(default_factory=list)
     """Every agent -> client request (answered by the mock client) and every agent -> client
     notification other than `session/update` (e.g. `$/cancel_request`, or an undefined method,
     for `ACP-CLIENTCAP-202`) observed during the turn."""
+    permission_requests: list[tuple[int, TranscriptEntry]] = field(default_factory=list)
+    """`(transcript_index, entry)` for every `session/request_permission` observed during the
+    turn, whatever `sessionId` it carried, so it can be merged with `updates` in wire order."""
     cancelled_at_index: int | None = None
     """Transcript index of the `session/cancel` sent for this turn, or `None` if none was."""
     state_at_cancel: Any = None
-    """The session's last known `state` when the trigger (cancel or `on_action`) fired."""
+    """The session's last known `state` when the trigger (cancel or `on_action`) fired. With
+    `cancel_after_action`, the state when `on_action` fired, before the delayed cancel."""
     held_permission: TranscriptEntry | None = None
-    """In `hold_permission` mode, the `session/request_permission` that was pending when
-    `session/cancel` was sent."""
+    """In `hold_permission` mode, the `session/request_permission` that was pending, unanswered,
+    when the trigger fired."""
+    held_cancel_request_index: int | None = None
+    """Transcript index of the first agent `$/cancel_request` naming `held_permission` that
+    `run_prompt` read while the request was still unanswered, before or after the turn-ending
+    idle."""
+    held_answered_on: str | None = None
+    """What made `run_prompt` answer `held_permission` `cancelled`: `"cancel_request"` (the agent
+    withdrew it), `"turn_end"` (the turn ended with it still pending), `"timeout"` (the turn had
+    not ended by the deadline), or `None` if it was never answered."""
     action_response: TranscriptEntry | None = None
     """The response to `on_action`'s request, if it fired and was answered within the turn."""
     action_sent_at_index: int | None = None
     """Transcript index at which `on_action`'s request was sent."""
+    permission_fallbacks: list[str] = field(default_factory=list)
+    """A note per `session/request_permission` answered with other than the preferred option
+    kind (`permission_outcome`), including one for listed background work that the policy could
+    not satisfy (answered `cancelled`, no `session/cancel`); also recorded as the
+    `acp_tck_permission_fallback` property."""
+    permission_cancels: list[str] = field(default_factory=list)
+    """A note per other `session/request_permission` the policy could not satisfy: the mock
+    client sent `session/cancel` and answered `cancelled` instead. Also recorded as the
+    `acp_tck_permission_fallback` property."""
 
 
 async def run_prompt(
@@ -836,6 +1072,8 @@ async def run_prompt(
     cancel_wait: float = 0.5,
     cancel_meta: dict[str, Any] | None = None,
     hold_permission: bool = False,
+    cancel_after_action: float | None = None,
+    permission: PermissionPolicy = "allow",
     extra_params: dict[str, Any] | None = None,
     timeout: float,
 ) -> PromptTurn:
@@ -849,30 +1087,56 @@ async def run_prompt(
     `requires_action`" and becomes true on either state during the turn. Then, once the response
     has been read:
     - the first `idle` after an active state ends the turn, whatever its `stopReason` (it is
-      SHOULD, and may be omitted; prompt-lifecycle.mdx:864) -- `terminated_by="idle"`;
+      SHOULD, and may be omitted; prompt-lifecycle.mdx:936) -- `terminated_by="idle"`. The idle
+      may arrive before or after the response (:372). One read before the response is only a
+      candidate: it ends the turn once `quiet_period(timeout)` passes after the response with no
+      active state, and an active state voids it, because it may end earlier work rather than
+      this prompt's (a prompt sent during active work may be held until that work ends,
+      :382-384);
     - an error response with no active state ends the turn after a short peek finds none
-      (a rejection with no foreground work needs no state transition, :314) --
+      (a rejection with no foreground work needs no state transition, :390) --
       `terminated_by="error"`. If work is active, the driver keeps waiting for the idle the
-      agent still owes (:314,891);
+      agent still owes (:390,969);
     - fallback for agents that never report an active state: an `idle` carrying a `stopReason`
       ends the turn once `quiet_period(timeout)` passes with no active state after it and after
       the response -- `terminated_by="idle_without_active"`. An active state inside that window
-      voids it, since repeated idle snapshots may carry the previous stopReason (:1004-1007).
+      voids it, since repeated idle snapshots may carry the previous stopReason (:1084-1087).
     `unknown` and custom states are recorded but neither start nor end a turn.
 
     The trigger (`on_cancel`/`on_action`) fires on the first transition to an active state, after
-    a short race-aware peek, or once `cancel_wait` elapses. With `hold_permission=True` (needs
-    `on_cancel`), it instead fires when the first `session/request_permission` for `session_id`
-    arrives: that request is held, `session/cancel` is sent, and only then is it answered
-    `cancelled` (prompt-lifecycle.mdx:1098-1100). `cancel_wait` remains the fallback.
+    a short race-aware peek, or once `cancel_wait` elapses. With `hold_permission=True` (needs a
+    trigger), it instead fires when the first `session/request_permission` for `session_id`
+    arrives, and that request is held: left unanswered, because after `session/cancel` the agent
+    must stop waiting for it (prompt-lifecycle.mdx:1177,1188-1189). It is answered `cancelled`
+    only when the agent withdraws it with `$/cancel_request` (the client then answers it,
+    cancellation.mdx:20; tool-calls.mdx:326), when the turn ends (after `quiet_period(timeout)`
+    for a late `$/cancel_request`), or when `timeout` expires with the turn still open: then the
+    driver answers it and waits `quiet_period(timeout)` more, so a caller can tell "ended only
+    once answered" (`held_answered_on == "timeout"`) from "never ended" (`AgentTimeout`).
+    `cancel_wait` remains the fallback trigger.
 
-    While waiting, `session/request_permission` is answered with an `allow_*` option (else the
-    first), or `cancelled` for the prompted session once the trigger has fired; any other
+    With `on_cancel`, `on_action` and `cancel_after_action` all set, the trigger fires only
+    `on_action`. `session/cancel` follows once the action's response arrives or
+    `cancel_after_action` seconds pass, unless the turn has ended by then (`cancelled_at_index`
+    then stays `None`). Until it is sent, permission requests are answered per `permission`.
+
+    While waiting, `session/request_permission` is answered per `permission` (see
+    `PermissionPolicy`; options are picked by `kind`, never by position), or `cancelled` for the
+    prompted session once the trigger has fired; any other
     agent -> client request gets `-32601` (the mock client advertises no capabilities).
+    A request whose `subject` names an item in the session's latest `background` list is
+    background work, which `session/cancel` does not cover (prompt-lifecycle.mdx:1173,1177;
+    tool-calls.mdx:268): it is never held and is always answered per `permission`, and if the
+    policy's kinds are not offered it is answered `cancelled` without `session/cancel`. A
+    `state_update` that omits the list leaves none known (:204).
 
-    Callers must serialize prompts per session; v2 leaves concurrent prompts unspecified.
+    v2 lets a client prompt in any state (prompt-lifecycle.mdx:382), but `run_prompt` cannot
+    attribute an idle to one of several outstanding prompts, so callers serialize prompts per
+    session. A second prompt during the turn is sent raw, as `on_action` (see
+    `prompt_during_active_work`).
     """
     seed_state = last_known_state(agent, session_id)
+    latest_background = last_known_background(agent, session_id)
     params = {"sessionId": session_id, "prompt": blocks}
     if extra_params:
         params.update(extra_params)
@@ -888,7 +1152,7 @@ async def run_prompt(
     response_at: float | None = None
     response_error = False
     message_id: str | None = None
-    active = seed_state in ACTIVE_STATES
+    active = is_active_state(seed_state)
     active_seen = active
     requires_action_seen = False
     last_state = seed_state
@@ -900,12 +1164,20 @@ async def run_prompt(
     # (entry, line_index, stopReason, arrival time) of a stopReason-bearing idle with no active
     # state before it -- see the fallback in the docstring.
     provisional: tuple[TranscriptEntry, int, Any, float] | None = None
+    # (entry, line_index, stopReason) of an idle after an active state read before the response:
+    # the candidate turn end (see the docstring).
+    early_idle: tuple[TranscriptEntry, int, Any] | None = None
     error_end_deadline: float | None = None
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
+    permission_requests: list[tuple[int, TranscriptEntry]] = []
+    permission_fallbacks: list[str] = []
+    permission_cancels: list[str] = []
     cancelled_at_index: int | None = None
     state_at_cancel: Any = None
     held_permission: TranscriptEntry | None = None
+    held_cancel_request_index: int | None = None
+    held_answered_on: str | None = None
     action_response: TranscriptEntry | None = None
     action_sent_at_index: int | None = None
     action_id: Any = None
@@ -914,26 +1186,76 @@ async def run_prompt(
     trigger_on_active = trigger_armed and not hold_permission
     trigger_sent = False
     trigger_deadline = loop.time() + cancel_wait
+    delay_cancel = on_cancel and on_action is not None and cancel_after_action is not None
+    # When the delayed `session/cancel` is due (set once `on_action` fired).
+    cancel_due: float | None = None
+
+    async def _send_cancel() -> None:
+        nonlocal cancelled_at_index
+        cancel_params: dict[str, Any] = {"sessionId": session_id}
+        if cancel_meta is not None:
+            cancel_params["_meta"] = cancel_meta
+        await agent.send_notification("session/cancel", cancel_params)
+        cancelled_at_index = len(agent.transcript) - 1
 
     async def _fire_trigger() -> None:
-        nonlocal trigger_sent, cancelled_at_index, state_at_cancel, action_id, action_sent_at_index
+        nonlocal trigger_sent, state_at_cancel, action_id, action_sent_at_index, cancel_due
         if trigger_sent:
             return
         trigger_sent = True
         state_at_cancel = last_state
-        if on_cancel:
-            cancel_params: dict[str, Any] = {"sessionId": session_id}
-            if cancel_meta is not None:
-                cancel_params["_meta"] = cancel_meta
-            await agent.send_notification("session/cancel", cancel_params)
-            cancelled_at_index = len(agent.transcript) - 1
+        if on_cancel and cancelled_at_index is None and not delay_cancel:
+            await _send_cancel()
         if on_action is not None:
             action_id = await on_action()
             action_sent_at_index = len(agent.transcript) - 1
+            if delay_cancel:
+                assert cancel_after_action is not None
+                cancel_due = loop.time() + cancel_after_action
+
+    async def _send_delayed_cancel_if_due() -> None:
+        if cancel_due is None or cancelled_at_index is not None:
+            return
+        if action_response is not None or loop.time() >= cancel_due:
+            await _send_cancel()
+
+    def _cancel_pending() -> bool:
+        """Whether a delayed `session/cancel` has yet to be sent."""
+        return delay_cancel and cancelled_at_index is None
+
+    async def _send_permission_answer(request_id: Any, outcome: dict[str, Any]) -> None:
+        await agent.send_message(
+            {"jsonrpc": "2.0", "id": request_id, "result": {"outcome": outcome}}
+        )
+
+    async def _answer_held(reason: str) -> None:
+        """Answer the held permission request `cancelled`, once."""
+        nonlocal held_answered_on
+        if held_permission is None or held_answered_on is not None:
+            return
+        held_answered_on = reason
+        await _send_permission_answer(held_permission.parsed["id"], {"outcome": "cancelled"})
+
+    def _names_held(msg: dict[str, Any]) -> bool:
+        """Whether `msg` (a `$/cancel_request`) names the held request's id, type included."""
+        if held_permission is None:
+            return False
+        params = msg.get("params")
+        if not isinstance(params, dict) or "requestId" not in params:
+            return False
+        request_id = params["requestId"]
+        held_id = held_permission.parsed["id"]
+        return type(request_id) is type(held_id) and request_id == held_id
 
     def _pending_end_deadline() -> float | None:
-        """When a not-yet-final turn end (error peek or fallback idle) becomes final."""
-        if response_entry is None or idle_update is not None or active:
+        """When a not-yet-final turn end (early idle, error peek or fallback idle) becomes
+        final."""
+        if response_entry is None or idle_update is not None:
+            return None
+        if early_idle is not None:
+            assert response_at is not None
+            return response_at + confirm_window
+        if active:
             return None
         if response_error:
             return error_end_deadline
@@ -951,7 +1273,10 @@ async def run_prompt(
         deadline = _pending_end_deadline()
         if deadline is None or loop.time() < deadline:
             return False
-        if response_error:
+        if early_idle is not None:
+            idle_update, idle_index, stop_reason = early_idle
+            terminated_by = "idle"
+        elif response_error:
             terminated_by = "error"
         else:
             assert provisional is not None
@@ -960,9 +1285,10 @@ async def run_prompt(
         return True
 
     async def _handle_one(entry: TranscriptEntry) -> None:
-        """Dispatch one line. A batch array (`ACP-BATCH-207` lets an agent batch its own
-        notifications) is dispatched element by element through synthetic per-item entries
-        sharing the line's raw/timestamp; their recorded index is the line's own."""
+        """Dispatch one line. An array line is non-conformant (`ACP-TRANSPORT-001` judges it)
+        but is still dispatched element by element, through synthetic per-item entries sharing
+        the line's raw/timestamp, so the agent fails only that row; their recorded index is the
+        line's own."""
         line_index = agent.transcript.index(entry)
         raw_msg = entry.parsed
         if isinstance(raw_msg, list):
@@ -974,9 +1300,10 @@ async def run_prompt(
 
     async def _handle_message(entry: TranscriptEntry, line_index: int) -> None:
         nonlocal response_entry, response_index, response_at, response_error, message_id
-        nonlocal active, active_seen, requires_action_seen, last_state, provisional
+        nonlocal active, active_seen, requires_action_seen, last_state, provisional, early_idle
         nonlocal idle_update, idle_index, stop_reason, terminated_by, error_end_deadline
-        nonlocal action_response, held_permission
+        nonlocal action_response, held_permission, cancelled_at_index, held_cancel_request_index
+        nonlocal latest_background
         msg = entry.parsed
         if entry.matches_id(prompt_id):
             response_entry, response_index, response_at = entry, line_index, loop.time()
@@ -1001,36 +1328,65 @@ async def run_prompt(
             state = update.get("state")
             states.append((line_index, update))
             last_state = state
-            if state in ACTIVE_STATES:
+            latest_background = background_keys(update)
+            if is_active_state(state):
                 active = active_seen = True
                 requires_action_seen = requires_action_seen or state == "requires_action"
                 provisional = None
+                early_idle = None
             elif state == "idle" and idle_update is None:
                 sr = update.get("stopReason")
                 if active:
-                    idle_update, idle_index, stop_reason = entry, line_index, sr
-                    terminated_by = "idle"
+                    if early_idle is not None:
+                        pass  # a repeated snapshot; the candidate stands
+                    elif response_entry is None:
+                        early_idle = (entry, line_index, sr)
+                    else:
+                        idle_update, idle_index, stop_reason = entry, line_index, sr
+                        terminated_by = "idle"
                 elif sr is not None and provisional is None:
                     provisional = (entry, line_index, sr, loop.time())
             return
 
         if method == "session/request_permission" and "id" in msg:
             client_requests_seen.append(entry)
+            permission_requests.append((line_index, entry))
             req_params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
             for_this_session = req_params.get("sessionId") == session_id
-            if hold_permission and not trigger_sent and for_this_session:
+            for_background = for_this_session and bool(
+                latest_background and permission_subject_keys(req_params) & latest_background
+            )
+            for_foreground = for_this_session and not for_background
+            if hold_permission and not trigger_sent and for_foreground:
                 held_permission = entry
                 await _fire_trigger()
-            if trigger_sent and for_this_session:
+                return  # left unanswered; see `_answer_held`
+            cancelled = (trigger_sent and not _cancel_pending()) or cancelled_at_index is not None
+            if cancelled and for_foreground:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
-                outcome = {
-                    "outcome": "selected",
-                    "optionId": _pick_permission_option(req_params.get("options")),
-                }
-            await agent.send_message(
-                {"jsonrpc": "2.0", "id": msg["id"], "result": {"outcome": outcome}}
-            )
+                outcome, note = _answer_permission(req_params.get("options"), permission)
+                if note is not None and outcome["outcome"] == "cancelled" and for_background:
+                    # `session/cancel` does not cover listed background work
+                    # (prompt-lifecycle.mdx:1173,1177), so only this request is declined
+                    # (tool-calls.mdx:340).
+                    permission_fallbacks.append(note)
+                elif note is not None and outcome["outcome"] == "cancelled":
+                    # The policy's option kinds were not offered: cancel the request's session
+                    # first, then answer `cancelled` without waiting for `$/cancel_request`
+                    # (prompt-lifecycle.mdx:1177). The turn then drains to its `idle` like any
+                    # other cancelled turn.
+                    target = req_params.get("sessionId")
+                    await agent.send_notification(
+                        "session/cancel",
+                        {"sessionId": target if isinstance(target, str) else session_id},
+                    )
+                    if for_this_session:
+                        cancelled_at_index = len(agent.transcript) - 1
+                    permission_cancels.append(note)
+                elif note is not None:
+                    permission_fallbacks.append(note)
+            await _send_permission_answer(msg["id"], outcome)
             return
 
         if method is not None and "id" in msg:
@@ -1046,6 +1402,11 @@ async def run_prompt(
 
         if method is not None:
             client_requests_seen.append(entry)
+            if method == "$/cancel_request" and _names_held(msg):
+                # One read after the TCK already answered the request is not a withdrawal.
+                if held_cancel_request_index is None and held_answered_on is None:
+                    held_cancel_request_index = line_index
+                await _answer_held("cancel_request")
 
     def _clamped(seconds: float) -> float:
         # A non-positive value still resolves: `read_line` forwards it to `asyncio.wait_for`,
@@ -1057,9 +1418,21 @@ async def run_prompt(
         now = loop.time()
         remaining = overall_deadline - now
         if remaining <= 0:
+            if held_permission is not None and held_answered_on is None:
+                # Answer once, then allow a short grace only to tell "ended once answered" from
+                # "never ended".
+                await _answer_held("timeout")
+                overall_deadline = loop.time() + confirm_window
+                continue
+            detail = ""
+            if held_answered_on == "timeout":
+                detail = (
+                    ", not even after its held session/request_permission was answered "
+                    "`cancelled` at the deadline"
+                )
             raise AgentTimeout(
                 f"session/prompt {prompt_id!r} on session {session_id!r} did not reach a "
-                f"turn end within {timeout}s",
+                f"turn end within {timeout}s{detail}",
                 agent.transcript,
                 stderr=agent.stderr_text(),
             )
@@ -1070,6 +1443,8 @@ async def run_prompt(
         end_deadline = _pending_end_deadline()
         if end_deadline is not None:
             read_timeout = min(read_timeout, max(0.0, end_deadline - now))
+        if cancel_due is not None and _cancel_pending():
+            read_timeout = min(read_timeout, max(0.0, cancel_due - now))
 
         try:
             entry = await agent.read_line(timeout=read_timeout)
@@ -1077,11 +1452,15 @@ async def run_prompt(
             if trigger_armed and not trigger_sent and loop.time() >= trigger_deadline:
                 await _fire_trigger()
             ended = _try_end()
+            if not ended:
+                await _send_delayed_cancel_if_due()
             continue
 
         was_active = active
         await _handle_one(entry)
         ended = _try_end()
+        if not ended:
+            await _send_delayed_cancel_if_due()
 
         if not ended and trigger_on_active and not trigger_sent and active and not was_active:
             # Race-aware peek: a turn end already sitting in the pipe is read before acting, so
@@ -1097,6 +1476,18 @@ async def run_prompt(
                     await _fire_trigger()
 
     assert response_entry is not None and response_index is not None and terminated_by is not None
+
+    if held_permission is not None and held_answered_on is None:
+        # The turn ended with the request still pending. A `$/cancel_request` may still follow
+        # the idle (it has no ordering rule); give it `confirm_window`, then answer anyway.
+        grace_end = loop.time() + confirm_window
+        while held_answered_on is None and (left := grace_end - loop.time()) > 0:
+            try:
+                entry = await agent.read_line(timeout=left)
+            except AgentTimeout:
+                break
+            await _handle_one(entry)
+        await _answer_held("turn_end")
 
     if terminated_by != "error" and action_id is not None and action_response is None:
         # One short trailing peek for `on_action`'s response arriving just after the turn ended.
@@ -1121,9 +1512,306 @@ async def run_prompt(
         states=states,
         updates=updates,
         client_requests_seen=client_requests_seen,
+        permission_requests=permission_requests,
         cancelled_at_index=cancelled_at_index,
         state_at_cancel=state_at_cancel,
         held_permission=held_permission,
+        held_cancel_request_index=held_cancel_request_index,
+        held_answered_on=held_answered_on,
         action_response=action_response,
         action_sent_at_index=action_sent_at_index,
+        permission_fallbacks=permission_fallbacks,
+        permission_cancels=permission_cancels,
     )
+
+
+def session_events(turn: PromptTurn) -> list[tuple[int, str, dict[str, Any]]]:
+    """The prompted session's `session/update` payloads (`"update"`) and
+    `session/request_permission` params (`"permission"`) from `turn`, in wire order, as
+    `(transcript_index, kind, payload)`. Clients apply a `tool_call` subject in the order it was
+    received relative to updates (tool-calls.mdx:270-273). A child session's traffic is left
+    out: entity ids are per session."""
+    events: list[tuple[int, str, dict[str, Any]]] = []
+    for index, entry in turn.updates:
+        params = entry.parsed.get("params") if isinstance(entry.parsed, dict) else None
+        if isinstance(params, dict) and params.get("sessionId") == turn.session_id:
+            if isinstance(params.get("update"), dict):
+                events.append((index, "update", params["update"]))
+    for index, entry in turn.permission_requests:
+        params = entry.parsed.get("params") if isinstance(entry.parsed, dict) else None
+        if isinstance(params, dict) and params.get("sessionId") == turn.session_id:
+            events.append((index, "permission", params))
+    events.sort(key=lambda event: event[0])  # stable: one array line keeps its own order
+    return events
+
+
+def tool_call_report(kind: str, payload: dict[str, Any]) -> tuple[str, str, dict[str, Any]] | None:
+    """`(toolCallId, source, fields)` if a `session_events` event reports a tool call, else
+    `None`. Three things report one, and each creates it on a first-seen id: a
+    `tool_call_update` (`fields` is the update), a `tool_call_content_chunk` (no tool-call fields
+    of its own, so `fields` is `{}`; tool-calls.mdx:198-200), and a `tool_call` permission
+    subject (`fields` is its `toolCall`, applied like an update; :270-273). A report without a
+    non-empty string id is `ACP-PATCH-204`'s concern and yields `None`."""
+    if kind == "permission":
+        subject = payload.get("subject")
+        if not isinstance(subject, dict) or subject.get("type") != "tool_call":
+            return None
+        fields = subject.get("toolCall")
+        source = "permission subject"
+    else:
+        source = payload.get("sessionUpdate")
+        if source == "tool_call_update":
+            fields = payload
+        elif source == "tool_call_content_chunk":
+            fields = {"toolCallId": payload.get("toolCallId")}
+        else:
+            return None
+    if not isinstance(fields, dict):
+        return None
+    tool_call_id = fields.get("toolCallId")
+    if not isinstance(tool_call_id, str) or not tool_call_id:
+        return None
+    return tool_call_id, source, {} if source == "tool_call_content_chunk" else fields
+
+
+FINAL_TOOL_CALL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+"""The tool-call statuses that are final (tool-calls.mdx:423)."""
+
+
+def _advertises_cancel(capabilities: Any) -> bool:
+    """Whether a `capabilities` patch value advertises `cancel`: only an object `cancel` does
+    (tool-calls.mdx:440). A malformed value means no controls (`#/$defs/ToolCallCapabilities`)."""
+    return isinstance(capabilities, dict) and isinstance(capabilities.get("cancel"), dict)
+
+
+@dataclass
+class TrackedToolCall:
+    status: Any = "pending"
+    cancel: bool = False
+
+
+@dataclass
+class TrackedTerminal:
+    exited: bool = False
+    cancel: bool = False
+
+
+@dataclass
+class PatchTracker:
+    """The effective tool-call and terminal state of one session, built by `apply`ing its
+    `session_events` in wire order. Patch rules (tool-calls.mdx:102-108,440,587): an omitted field
+    is unchanged, `null` resets it to its default (`status` `pending`, no `capabilities`, no
+    `exitStatus`), and a concrete value replaces it. Violations are collected, not raised."""
+
+    tool_calls: dict[str, TrackedToolCall] = field(default_factory=dict)
+    terminals: dict[str, TrackedTerminal] = field(default_factory=dict)
+    status_violations: list[str] = field(default_factory=list)
+    """A status back to `pending`, or a change after a final status (tool-calls.mdx:421,423)."""
+    cancel_violations: list[str] = field(default_factory=list)
+    """`cancel` still advertised by a final tool call or an exited terminal (:440,600)."""
+    cancel_seen: bool = False
+
+    def apply(self, kind: str, payload: dict[str, Any]) -> None:
+        report = tool_call_report(kind, payload)
+        if report is not None:
+            self._apply_tool_call(*report)
+        elif kind == "update" and payload.get("sessionUpdate") in ("terminal_update", "terminal_output_chunk"):
+            terminal_id = payload.get("terminalId")
+            if isinstance(terminal_id, str) and terminal_id:
+                self._apply_terminal(terminal_id, payload)
+
+    def _apply_tool_call(self, tool_call_id: str, source: str, fields: dict[str, Any]) -> None:
+        tool_call = self.tool_calls.setdefault(tool_call_id, TrackedToolCall())
+        if "status" in fields:
+            old = tool_call.status
+            new = "pending" if fields["status"] is None else fields["status"]
+            if old in FINAL_TOOL_CALL_STATUSES and new != old:
+                self.status_violations.append(
+                    f"tool call {tool_call_id!r} changed from final status {old!r} to {new!r} "
+                    f"(via {source})"
+                )
+            elif new == "pending" and old != "pending":
+                self.status_violations.append(
+                    f"tool call {tool_call_id!r} went back from {old!r} to 'pending' (via {source})"
+                )
+            tool_call.status = new
+        if "capabilities" in fields:
+            tool_call.cancel = _advertises_cancel(fields["capabilities"])
+            self.cancel_seen = self.cancel_seen or tool_call.cancel
+        if tool_call.cancel and tool_call.status in FINAL_TOOL_CALL_STATUSES:
+            self.cancel_violations.append(
+                f"tool call {tool_call_id!r} still advertises capabilities.cancel with final "
+                f"status {tool_call.status!r} (via {source})"
+            )
+
+    def _apply_terminal(self, terminal_id: str, update: dict[str, Any]) -> None:
+        terminal = self.terminals.setdefault(terminal_id, TrackedTerminal())
+        if update.get("sessionUpdate") != "terminal_update":
+            return  # an output chunk patches no field
+        if "exitStatus" in update:
+            terminal.exited = isinstance(update["exitStatus"], dict)
+        if "capabilities" in update:
+            terminal.cancel = _advertises_cancel(update["capabilities"])
+            self.cancel_seen = self.cancel_seen or terminal.cancel
+        if terminal.cancel and terminal.exited:
+            self.cancel_violations.append(
+                f"terminal {terminal_id!r} still advertises capabilities.cancel after reporting "
+                f"exitStatus"
+            )
+
+
+SECOND_PROMPT_TEXT = "hi"
+"""The text of `prompt_during_active_work`'s second prompt."""
+
+
+@dataclass(frozen=True)
+class ActiveWorkPrompt:
+    """The outcome of `prompt_during_active_work`."""
+
+    turn: PromptTurn
+    """The first prompt's turn; its `on_action` sent the second prompt."""
+    second_id: Any
+    second_response: TranscriptEntry | None
+    """The second prompt's response, or `None` if none arrived in time."""
+    second_response_index: int | None
+    outcome: str | None
+    """What the agent did with the second prompt while the first prompt's work was active:
+    `"inserted"` (a success before `session/cancel`), `"rejected"` (an error before it), or
+    `"held"` (still unanswered when `session/cancel` was sent). `None` when not exercised."""
+    not_exercised: str | None
+    """Why the scenario does not show a prompt sent during active work, else `None`."""
+
+    @property
+    def second_error(self) -> dict[str, Any] | None:
+        msg = self.second_response.parsed if self.second_response is not None else None
+        error = msg.get("error") if isinstance(msg, dict) else None
+        return error if isinstance(error, dict) else None
+
+
+async def prompt_during_active_work(
+    agent: AgentProcess, session_id: str, first_text: str, *, timeout: float
+) -> ActiveWorkPrompt:
+    """Send a second `session/prompt` while the first prompt's foreground work is active, then
+    `session/cancel` (prompt-lifecycle.mdx:382-384,1173).
+
+    The first prompt (`first_text`, normally the cancel prompt) runs through `run_prompt`. The
+    second (`SECOND_PROMPT_TEXT`) is its `on_action`, sent raw on the first `running`/
+    `requires_action`. `session/cancel` follows once the second prompt is answered or
+    `quiet_period(timeout)` passes. A second prompt still unanswered when the first turn ends is
+    then awaited for up to `timeout` more.
+
+    The agent reads in order, so a second prompt answered before the first turn ended (and
+    before the cancel) was answered while that work was active. One still unanswered at the
+    cancel is held, provided the first turn ended only after the cancel. Anything else is
+    `not_exercised`: the first work may have ended before the agent read the second prompt.
+    Raises `AgentTimeout` if the first turn never ends."""
+    second_id: Any = None
+
+    async def _send_second() -> Any:
+        nonlocal second_id
+        second_id = await agent.send_request(
+            "session/prompt",
+            {"sessionId": session_id, "prompt": [{"type": "text", "text": SECOND_PROMPT_TEXT}]},
+        )
+        return second_id
+
+    turn = await run_prompt(
+        agent,
+        session_id,
+        [{"type": "text", "text": first_text}],
+        on_cancel=True,
+        on_action=_send_second,
+        cancel_after_action=quiet_period(timeout),
+        cancel_wait=timeout / 4,
+        timeout=timeout,
+    )
+    response = turn.action_response
+    if response is None and second_id is not None:
+        try:
+            response = await agent.wait_for_response(second_id, timeout=timeout)
+        except AgentTimeout:
+            response = None
+    response_index = agent.transcript.index(response) if response is not None else None
+
+    def _result(outcome: str | None, not_exercised: str | None) -> ActiveWorkPrompt:
+        return ActiveWorkPrompt(
+            turn=turn,
+            second_id=second_id,
+            second_response=response,
+            second_response_index=response_index,
+            outcome=outcome,
+            not_exercised=not_exercised,
+        )
+
+    if turn.action_sent_at_index is None:
+        return _result(None, "the first prompt's turn ended before a second prompt could be sent")
+    if not is_active_state(turn.state_at_cancel):
+        return _result(
+            None,
+            f"the session was {turn.state_at_cancel!r}, not running/requires_action, when the "
+            "second prompt was sent",
+        )
+    end_index = turn.idle_index if turn.idle_index is not None else turn.response_index
+    cancel_index = turn.cancelled_at_index
+    if response_index is not None and response_index < end_index and (
+        cancel_index is None or response_index < cancel_index
+    ):
+        rejected = isinstance(response.parsed, dict) and "error" in response.parsed
+        return _result("rejected" if rejected else "inserted", None)
+    if cancel_index is None:
+        return _result(
+            None,
+            "the first prompt's work ended on its own before the second prompt was answered",
+        )
+    if response_index is not None and response_index < cancel_index:
+        return _result(None, "the first prompt's work ended before the second prompt was answered")
+    if end_index < cancel_index:
+        return _result(None, "the first prompt's work ended before session/cancel was sent")
+    return _result("held", None)
+
+
+_USER_MESSAGE_UPDATES = frozenset({"user_message", "user_message_chunk"})
+
+
+async def assert_prompt_rejected_not_inserted(
+    agent: AgentProcess,
+    session_id: str,
+    blocks: list[dict[str, Any]],
+    *,
+    what: str,
+    timeout: float,
+) -> None:
+    """Send a prompt the agent must refuse and assert it was answered `-32602` and not inserted
+    (prompt-lifecycle.mdx:313,388). Shared by `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`.
+
+    The prompt goes through `run_prompt` on a fresh session, so any `user_message`/
+    `user_message_chunk` or `running`/`requires_action` update for that session means it was
+    inserted (an accepted prompt also fails the "error" check; both are reported). A
+    rejection owes no state transition (:390), so a short `quiet_period` after the response
+    catches late updates too. `what` names the probe in the failure message."""
+    turn = await run_prompt(agent, session_id, blocks, timeout=timeout)
+    entry = turn.response_entry
+    skip_if_auth_gated(entry)
+    late = await drain_quiet(agent, quiet_period(timeout))
+    problems = []
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    if not isinstance(error, dict):
+        problems.append("the prompt was accepted instead of answered with an error")
+    elif error.get("code") != INVALID_PARAMS:
+        problems.append(f"expected error code -32602, got {error.get('code')!r}")
+    seen = [e for _, e in turn.updates] + late
+    for observed in seen:
+        for message in iter_messages(observed):
+            params = message.get("params")
+            if message.get("method") != "session/update" or not isinstance(params, dict):
+                continue
+            update = params.get("update")
+            if params.get("sessionId") != session_id or not isinstance(update, dict):
+                continue
+            kind = update.get("sessionUpdate")
+            if kind in _USER_MESSAGE_UPDATES:
+                problems.append(f"a {kind} update was emitted for it (it was inserted)")
+            elif kind == "state_update" and is_active_state(update.get("state")):
+                problems.append(f"state {update.get('state')!r} was reported for it (it was inserted)")
+    assert not problems, f"{what}: {'; '.join(dict.fromkeys(problems))} ({entry.text!r})"

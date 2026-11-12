@@ -5,10 +5,11 @@ unaffected (inherits `ConformingAgent`'s own default `_handle_close_session`, wh
 resolves a hanging session via `_finish_turn(..., "cancelled")`), so this fixture isolates
 `session/cancel`'s own defect from `ACP-CANCEL-208`'s close-triggered path.
 
-FAILs `ACP-CANCEL-201`/`202`/`203`/`205`/`206`/`207` (each times out inside `run_prompt`, since
-the turn never reaches a terminating idle within `--tck-timeout`) and the ADVISORY
-`ACP-CANCEL-204`/INFORMATIONAL `ACP-INFO-CANCEL-202` for the same reason (an uncaught
-`AgentTimeout` is a `FAIL`, not a `SKIP` -- see `AGENTS.md` "Statuses"). `ACP-CANCEL-208` and
+FAILs `ACP-CANCEL-001`/`002`/`203`/`205`..`207`/`209` (each times out inside `run_prompt`,
+since the turn never reaches a terminating idle within `--tck-timeout`) and the INFORMATIONAL
+`ACP-CANCEL-204` for the same reason (an uncaught `AgentTimeout` is a `FAIL`, not a `SKIP` --
+see `docs/requirements.md` "Statuses"). `ACP-CANCEL-213` SKIPs instead: it does not judge a turn that never
+ends. `ACP-CANCEL-208` and
 `ACP-INFO-CANCEL-201` are unaffected: neither one ever calls `session/cancel` on a session this
 fixture is holding hostage.
 """

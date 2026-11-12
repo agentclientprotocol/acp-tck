@@ -1,5 +1,6 @@
 """The authentication surface: `authMethods` shape, the terminal-method client-capability
-gate, the `authenticate`/`session/new` flow, and `logout` (ACP-AUTH-001..006).
+gate, the `authenticate`/`session/new` flow, `logout`, and the unstable `auth/status` query
+(ACP-AUTH-001..008).
 
 Deliberately not asserted here: that a non-empty `authMethods` implies `session/new` fails with
 `-32000` before authentication (v1: MAY, not MUST -- `testy` itself does not enforce it), and
@@ -10,9 +11,9 @@ from __future__ import annotations
 
 import pytest
 
-from tck.common.plugin import current_allow_logout, current_auth_method_id
-from tck.v1.protocol import AUTHENTICATION_REQUIRED
-from tck.v1.validation import validate_against_def
+from tck.common.plugin import current_allow_logout, current_auth_method_id, skip_if_login_times_out
+from tck.v1.protocol import AUTH_STATES, AUTHENTICATION_REQUIRED
+from tck.v1.validation import validate_against_def, validate_agent_response
 
 from ._helpers import connected_agent, skip_if_version_mismatch, unusable_auth_method_reason
 
@@ -69,7 +70,8 @@ async def test_authenticate_then_session_new_succeeds(agent_launch, tmp_path):
     auth flow to exist, and a client must not `authenticate` with a `terminal` method.
 
     `authenticate` succeeding is never asserted -- a real agent may legitimately reject
-    bad/expired/cancelled credentials, so an `authenticate` error SKIPs with a distinct reason.
+    bad/expired/cancelled credentials, so an `authenticate` error SKIPs with a distinct reason,
+    and one that never answers SKIPs with `AUTH-GATED:` (the login may be interactive).
     When it does return a result, the one hard assertion is that a subsequent `session/new` on
     the same connection does not fail with `-32000`."""
     method_id = current_auth_method_id()
@@ -91,7 +93,8 @@ async def test_authenticate_then_session_new_succeeds(agent_launch, tmp_path):
             pytest.skip(f"not calling authenticate: {reason}")
 
         auth_id = await agent.send_request("authenticate", {"methodId": method_id})
-        auth_entry = await agent.wait_for_response(auth_id, timeout=agent_launch.default_timeout)
+        with skip_if_login_times_out("authenticate", method_id, agent_launch.default_timeout):
+            auth_entry = await agent.wait_for_response(auth_id, timeout=agent_launch.default_timeout)
         auth_msg = auth_entry.parsed
         if not (isinstance(auth_msg, dict) and isinstance(auth_msg.get("result"), dict)):
             detail = (auth_msg.get("error") if isinstance(auth_msg, dict) else None) or auth_entry.text
@@ -175,13 +178,15 @@ async def test_terminal_auth_capability_initialize_validates(agent_launch):
 
 @pytest.mark.requirement("ACP-AUTH-004")
 @pytest.mark.capability("agentCapabilities.auth.logout")
+@pytest.mark.revokes("auth", reason="logout may drop credentials other tests rely on")
 async def test_logout_succeeds(agent_launch):
     """ACP-AUTH-004. If `--tck-auth-method` was given, `connected_agent`'s handshake has
     already authenticated, so `logout` runs on that authenticated connection; otherwise it's
     called standalone. Only its own success is checked, nothing about session state after.
 
     SKIPs unless `--allow-logout`/`--tck-allow-logout` was given, since calling `logout` for
-    real may revoke the operator's own credentials -- mirrors v2's `ACP-AUTH-203`."""
+    real may revoke the operator's own credentials -- v2's `ACP-AUTH-004` gates `auth/logout`
+    the same way."""
     if not current_allow_logout():
         pytest.skip(
             "logout not exercised: pass --allow-logout (it may revoke the operator's credentials)"
@@ -193,3 +198,55 @@ async def test_logout_succeeds(agent_launch):
         assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
             f"logout did not succeed with an object result: {entry.text!r}"
         )
+
+
+async def _fresh_auth_status(agent_launch, agent_initialize_result) -> tuple[dict | None, str]:
+    """Send `auth/status` on a fresh connection that has not authenticated (even with
+    `--tck-auth-method`: `authenticate=False`). Returns the parsed response and its raw text.
+    `auth/status` is a pure query, so this never changes the agent's authentication."""
+    if agent_initialize_result.result is not None:
+        skip_if_version_mismatch(agent_initialize_result.result)
+    async with connected_agent(agent_launch, authenticate=False) as agent:
+        req_id = await agent.send_request("auth/status", {})
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+        msg = entry.parsed
+        return (msg if isinstance(msg, dict) else None), entry.text
+
+
+@pytest.mark.requirement("ACP-AUTH-007")
+@pytest.mark.capability("agentCapabilities.auth.status")
+async def test_auth_status_succeeds_before_authenticating(agent_launch, agent_initialize_result):
+    """ACP-AUTH-007. `auth/status` right after `initialize`, with no `authenticate`, returns a
+    schema-valid `AuthStatusResponse`; an error, `-32000` above all, is a FAIL. Does not go
+    through `skip_if_auth_gated`: the method exists to be answerable while unauthenticated."""
+    msg, text = await _fresh_auth_status(agent_launch, agent_initialize_result)
+    error = msg.get("error") if msg is not None else None
+    if isinstance(error, dict):
+        if error.get("code") == AUTHENTICATION_REQUIRED:
+            raise AssertionError(
+                "auth/status was rejected with -32000 (authentication required) before "
+                f"authenticating; it is how a client learns whether authentication is needed: {text!r}"
+            )
+        raise AssertionError(f"auth/status returned an error instead of a result: {text!r}")
+    assert msg is not None and "result" in msg, f"auth/status returned no result: {text!r}"
+    issues = validate_agent_response("auth/status", msg)
+    assert not issues, f"auth/status result failed AuthStatusResponse validation: {issues!r}"
+
+
+@pytest.mark.requirement("ACP-AUTH-008")
+@pytest.mark.capability("agentCapabilities.auth.status")
+async def test_auth_status_state_is_defined_or_underscore_prefixed(
+    agent_launch, agent_initialize_result
+):
+    """ACP-AUTH-008 (ADVISORY). The `state` of an `auth/status` result is one of the four
+    defined values or `_`-prefixed. SKIPs when the call yields no string `state`: that is
+    ACP-AUTH-007's failure, not a second one."""
+    msg, text = await _fresh_auth_status(agent_launch, agent_initialize_result)
+    result = msg.get("result") if msg is not None else None
+    state = result.get("state") if isinstance(result, dict) else None
+    if not isinstance(state, str):
+        pytest.skip(f"auth/status returned no string state to judge: {text!r}")
+    assert state in AUTH_STATES or state.startswith("_"), (
+        f"auth/status state {state!r} is neither a defined value ({sorted(AUTH_STATES)}) nor "
+        f"`_`-prefixed; other strings are reserved for future ACP variants: {text!r}"
+    )

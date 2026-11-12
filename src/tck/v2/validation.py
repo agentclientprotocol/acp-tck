@@ -2,15 +2,14 @@
 vendored ACP v2 (Draft) schema (`tck/v2/schema/schema.unstable.json`, see `VENDORED.md`).
 
 Mirrors `tck.v1.validation`'s API (`validate_agent_message`, `validate_agent_response`,
-`find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in three
-ways this module encodes:
+`find_unknown_root_keys`) but is its own module, not shared code -- v2 differs from v1 in four
+ways this module encodes, and carries one schema-hint carve-out (5):
 
-1. **Batching.** v2's top-level schema adds four batch-call/-response branches alongside the
-   three v1-style single-message branches (`Agent`/`Client`/`ProtocolLevel`) -- a bare JSON
-   array is a valid top-level line, but an *empty* array is not. `validate_agent_message`/
-   `validate_agent_response` dispatch on shape: a `dict` is one message; a non-empty `list` is a
-   batch, validated element-by-element (each issue's `path` prefixed with `/<index>`); an empty
-   `list` is itself one issue.
+1. **No batching.** v2's top-level schema has only the single-message branches (`Agent`/
+   `Client`/`ProtocolLevel`/`Proxy`, all `type: object`), so *any* JSON array -- empty or not --
+   is not an ACP message (`docs/protocol/v2/draft/transports.mdx:67`; `overview.mdx:21`).
+   `validate_agent_message`/`validate_agent_response` report a list as one issue and do not
+   look inside it.
 2. **No `null` response special case.** v1 special-cased `result: null` for method responses
    whose schema is an all-optional object (a documented docs/schema mismatch, Discrepancy 3).
    No v2 `*Response` `$def` is nullable (checked directly against the vendored schema), so this
@@ -25,6 +24,18 @@ ways this module encodes:
    fallback and the check is skipped (`[]`) instead of flagging extra fields. A missing/`null`/
    non-`_`-prefixed discriminator does not count, so a malformed discriminator can't dodge the
    check.
+4. **`RequestId` is never `null`.** v2 request ids are a string or an integer
+   (`docs/protocol/v2/draft/overview.mdx:15-17`; `schema/v2/schema.unstable.json#/$defs/RequestId`),
+   so an agent-authored request or a result response with `id: null` is an issue. Only an error
+   response may carry `id: null` (when the request id could not be determined); v1's `RequestId`
+   allowed `null` everywhere.
+5. **`x-deserialize-default-on-null` hint.** `null` at a property schema carrying
+   `x-deserialize-default-on-null: true` (e.g. `AuthMethodTerminal`'s `args`/`env`) means "use
+   the default / treat as omitted", and the reference receivers accept it, so a `type` error on
+   `null` is dropped where the node itself carries the hint. A non-`null` wrong type, and `null`
+   at a node without the hint, still fail. The hint is read from the schema, so a refresh
+   self-updates. `x-deserialize-skip-invalid-items` is deliberately *not* honored: receivers
+   silently drop an invalid array item, but the agent authored it, so it stays a violation.
 """
 
 from __future__ import annotations
@@ -35,11 +46,27 @@ from typing import Any
 
 import jsonschema
 from jsonschema import Draft202012Validator
+from jsonschema.validators import extend
 
 from .protocol import load_schema
 
+_DEFAULT_ON_NULL_HINT = "x-deserialize-default-on-null"
+
+
+def _type_keyword(validator: Any, types: Any, instance: Any, schema: dict[str, Any]) -> Any:
+    """Draft 2020-12 `type`, except that `null` is accepted where the node itself carries
+    `x-deserialize-default-on-null: true` (see the module docstring)."""
+    if instance is None and schema.get(_DEFAULT_ON_NULL_HINT) is True:
+        return
+    yield from Draft202012Validator.VALIDATORS["type"](validator, types, instance, schema)
+
+
+# Overriding `type` on the validator class (not filtering top-level errors afterwards) keeps the
+# carve-out working inside `anyOf`/`oneOf` branches, where jsonschema only reports one wrapper error.
+_HintAwareDraft202012Validator = extend(Draft202012Validator, {"type": _type_keyword})
+
 _DRAFT_VALIDATORS: dict[str, type[jsonschema.protocols.Validator]] = {
-    "https://json-schema.org/draft/2020-12/schema": Draft202012Validator,
+    "https://json-schema.org/draft/2020-12/schema": _HintAwareDraft202012Validator,
 }
 
 
@@ -49,7 +76,7 @@ class ValidationIssue:
 
     path: str
     """JSON pointer (e.g. `/result/protocolVersion`) to the offending value, `""` for the
-    message root. For a batch element, prefixed with `/<index>`."""
+    message root."""
     message: str
     """Human-readable description of the violation."""
     schema_path: str
@@ -70,13 +97,6 @@ def _validator_class() -> type[jsonschema.protocols.Validator]:
 
 def _pointer(path_parts: Any) -> str:
     return "/" + "/".join(str(p) for p in path_parts) if path_parts else ""
-
-
-def _prefix_issues(prefix: str, issues: list[ValidationIssue]) -> list[ValidationIssue]:
-    return [
-        ValidationIssue(path=f"{prefix}{issue.path}", message=issue.message, schema_path=issue.schema_path)
-        for issue in issues
-    ]
 
 
 @lru_cache(maxsize=None)
@@ -198,11 +218,19 @@ def _validate_error_envelope(error: Any, base_path: list[str]) -> list[Validatio
     return issues
 
 
-def _is_valid_request_id(value: Any) -> bool:
-    """`RequestId` is `null | integer | string`, same as v1."""
-    if value is None or isinstance(value, str):
+def is_valid_request_id(value: Any, *, allow_null: bool = False) -> bool:
+    """`RequestId` is `integer | string` (`overview.mdx:15-17`). `null` is valid only where the
+    schema's error-response `id` allows it (`allow_null=True`)."""
+    if value is None:
+        return allow_null
+    if isinstance(value, str):
         return True
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _request_id_issue(value: Any, *, null_ok: bool) -> ValidationIssue:
+    rule = "a string or an integer (null only on an error response)" if null_ok else "a string or an integer, never null"
+    return ValidationIssue(path="/id", message=f"id must be {rule} (RequestId), got {value!r}", schema_path="#/$defs/RequestId")
 
 
 def _validate_jsonrpc_field(msg: dict[str, Any]) -> list[ValidationIssue]:
@@ -217,22 +245,23 @@ def _validate_jsonrpc_field(msg: dict[str, Any]) -> list[ValidationIssue]:
     return []
 
 
-def _empty_batch_issue() -> ValidationIssue:
+def _array_issue() -> ValidationIssue:
     return ValidationIssue(
         path="",
-        message="a batch array must not be empty",
-        schema_path="#/anyOf (AgentBatchCall/AgentBatchResponse/ClientBatchCall/ClientBatchResponse)",
+        message="a JSON array is not an ACP message (v2 has no batches)",
+        schema_path="#/anyOf",
     )
 
 
 def validate_agent_message(msg: Any) -> list[ValidationIssue]:
-    """Validate one parsed line the agent wrote to stdout -- a single message (`dict`) or a
-    non-empty JSON-RPC batch (`list`); an empty `list` is itself an issue.
+    """Validate one parsed line the agent wrote to stdout: a single message (`dict`). Any
+    `list` is one issue (v2 has no batches).
 
-    For a single message, dispatches on shape, never on caller-supplied context:
+    Dispatches on shape, never on caller-supplied context:
 
-    - has `method` and `id` -> agent -> client (or `$/cancel_request`) *request*: validate
-      `params` against that method's params schema.
+    - has `method` and `id` -> agent -> client (or `$/cancel_request`) *request*: its `id` must
+      be a string or integer (never `null`), and `params` is validated against that method's
+      params schema.
     - has `method`, no `id` -> notification: same, against the notification's params schema.
     - no `method` -> *response*: only the JSON-RPC envelope is checked here (`result` XOR
       `error`, `id` present, error shape) -- validating `result` against a method-specific
@@ -242,18 +271,13 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
     Never raises on malformed input; unrecognized shapes come back as issues.
     """
     if isinstance(msg, list):
-        if not msg:
-            return [_empty_batch_issue()]
-        issues: list[ValidationIssue] = []
-        for index, item in enumerate(msg):
-            issues.extend(_prefix_issues(f"/{index}", validate_agent_message(item)))
-        return issues
+        return [_array_issue()]
 
     if not isinstance(msg, dict):
         return [
             ValidationIssue(
                 path="",
-                message=f"message must be a JSON object or a non-empty batch array, got {type(msg).__name__}",
+                message=f"message must be a JSON object, got {type(msg).__name__}",
                 schema_path="",
             )
         ]
@@ -262,6 +286,9 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
 
     if "method" not in msg:
         return issues + validate_response_envelope(msg)
+
+    if "id" in msg and not is_valid_request_id(msg["id"]):
+        issues.append(_request_id_issue(msg["id"], null_ok=False))
 
     method = msg.get("method")
     if not isinstance(method, str):
@@ -312,22 +339,16 @@ def validate_agent_message(msg: Any) -> list[ValidationIssue]:
 
 
 def validate_response_envelope(msg: dict[str, Any]) -> list[ValidationIssue]:
-    """Validate the JSON-RPC response envelope only: `id` present and a valid `RequestId`,
-    exactly one of `result`/`error`, and (for an error) the shared `Error` shape. Applies to any
-    single response message (not a batch -- see `validate_agent_response` for batch dispatch)."""
+    """Validate the JSON-RPC response envelope only: `id` present and a valid `RequestId`
+    (`null` only on an error response), exactly one of `result`/`error`, and (for an error) the
+    shared `Error` shape. Applies to any single response message."""
     issues: list[ValidationIssue] = []
     if "id" not in msg:
         issues.append(
             ValidationIssue(path="/id", message="response is missing required field 'id'", schema_path="")
         )
-    elif not _is_valid_request_id(msg["id"]):
-        issues.append(
-            ValidationIssue(
-                path="/id",
-                message=f"id must be a string, integer, or null (RequestId), got {msg['id']!r}",
-                schema_path="#/$defs/RequestId",
-            )
-        )
+    elif not is_valid_request_id(msg["id"], allow_null="error" in msg and "result" not in msg):
+        issues.append(_request_id_issue(msg["id"], null_ok=True))
     has_result = "result" in msg
     has_error = "error" in msg
     if has_result and has_error:
@@ -464,8 +485,7 @@ def find_unknown_root_keys(def_name: str, obj: Any) -> list[str]:
 
 
 def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
-    """Validate a response (or non-empty batch of responses) the agent wrote to stdout, in
-    reply to a `method` request it implements (e.g. `"initialize"`, `"session/prompt"`).
+    """Validate a response the agent wrote to stdout, in reply to a `method` request it implements (e.g. `"initialize"`, `"session/prompt"`).
 
     Validates the JSON-RPC envelope (`validate_response_envelope`) plus, for a successful
     response, `result` against `method`'s specific response schema. For an error response,
@@ -477,18 +497,13 @@ def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
     response schema, as it structurally should (module docstring point 2).
     """
     if isinstance(msg, list):
-        if not msg:
-            return [_empty_batch_issue()]
-        issues: list[ValidationIssue] = []
-        for index, item in enumerate(msg):
-            issues.extend(_prefix_issues(f"/{index}", validate_agent_response(method, item)))
-        return issues
+        return [_array_issue()]
 
     if not isinstance(msg, dict):
         return [
             ValidationIssue(
                 path="",
-                message=f"message must be a JSON object or a non-empty batch array, got {type(msg).__name__}",
+                message=f"message must be a JSON object, got {type(msg).__name__}",
                 schema_path="",
             )
         ]
@@ -514,6 +529,13 @@ def validate_agent_response(method: str, msg: Any) -> list[ValidationIssue]:
     validator = _def_validator(def_name)
     issues.extend(_issues_from_errors(validator.iter_errors(result)))
     return issues
+
+
+def validate_def_value(def_name: str, value: Any) -> list[ValidationIssue]:
+    """Validate `value` against `#/$defs/{def_name}` alone (e.g. one `SessionConfigOption` or
+    `AvailableCommand` item), so a row judging one field is not blamed for unrelated schema
+    violations elsewhere in the message that carries it."""
+    return _issues_from_errors(_def_validator(def_name).iter_errors(value))
 
 
 def _resolve_object_schema(defs: dict[str, Any], node: Any) -> dict[str, Any] | None:

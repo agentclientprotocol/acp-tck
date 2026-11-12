@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: exits the moment it sees any batch-shaped (top-level JSON array) line
-on stdin -- otherwise fully conforming. FAILs only the requirements whose tests send a batch
-line (`ACP-BATCH-*`, `ACP-INFO-BATCH-*`) via `AgentExited`; unrelated ids are unaffected since
-their tests never send a batch-shaped line.
+on stdin -- otherwise fully conforming. FAILs the advisory `ACP-BATCH-209` and `ACP-JSONRPC-005`
+(whose tests send an array) via `AgentExited`; nothing it wrote was an array, so the MANDATORY
+`ACP-TRANSPORT-001` is unaffected and the run stays CONFORMANT.
 """
 
 import sys

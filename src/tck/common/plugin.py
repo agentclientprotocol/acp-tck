@@ -17,6 +17,7 @@ errors, and interrupted runs keep pytest's own exit code untouched.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import inspect
 import json
@@ -132,11 +133,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--tck-allow-logout",
         action="store_true",
         default=False,
-        help="Opt in to actually calling v2's `auth/logout` against the agent under test. Off "
-        "by default because it may revoke the operator's own credentials for whatever account "
-        "the agent is authenticated as -- without this flag, the logout test SKIPs instead of "
-        "exercising it. v1 has no equivalent option: its logout test is gated purely by the "
-        "`agentCapabilities.auth.logout` marker and is unaffected by this flag.",
+        help="Opt in to actually calling `logout` (v1) / `auth/logout` (v2) against the agent "
+        "under test. Off by default because it may revoke the operator's own credentials for "
+        "whatever account the agent is authenticated as -- without this flag, the logout test "
+        "SKIPs instead of exercising it. The logout test (marked `revokes`) runs last, after "
+        "every other test.",
     )
     group.addoption(
         "--tck-close-grace",
@@ -206,7 +207,39 @@ def pytest_configure(config: pytest.Config) -> None:
         "negotiation: this test judges version negotiation itself, so it still runs when the "
         "cached `initialize` was rejected with -32022 (every other test SKIPs VERSION-MISMATCH).",
     )
+    config.addinivalue_line(
+        "markers",
+        "revokes(what, reason=...): this test takes away something other tests rely on (e.g. "
+        '`revokes("auth", reason=...)` for logout), so it is moved to the end of the run. At most '
+        "one such test may be collected per run.",
+    )
     config.stash[TEST_STATES_KEY] = {}
+
+
+def _revokes_markers(item: pytest.Item) -> list[pytest.Mark]:
+    return list(item.iter_markers("revokes"))
+
+
+def _order_revokes_last(items: list[pytest.Item]) -> list[str]:
+    """Move `revokes`-marked items to the end (collection order otherwise kept) and return
+    problems. More than one is an error: a second would need dependency ordering among them."""
+    errors: list[str] = []
+    revoking = [item for item in items if _revokes_markers(item)]
+    for item in revoking:
+        for marker in _revokes_markers(item):
+            if len(marker.args) != 1 or not marker.kwargs.get("reason"):
+                errors.append(
+                    f'{item.nodeid}: use @pytest.mark.revokes("<what>", reason="<why>") '
+                    "(one positional argument and a non-empty reason)"
+                )
+    if len(revoking) > 1:
+        errors.append(
+            "at most one @pytest.mark.revokes test may be collected per run (a second would need "
+            "dependency ordering); collected: " + ", ".join(item.nodeid for item in revoking)
+        )
+    if not errors:
+        items[:] = [item for item in items if item not in revoking] + revoking
+    return errors
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -226,6 +259,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                 "it is remapped to PASS/SKIPPED by _phase_status, not reported as-is; use "
                 "pytest.skip with a reason instead"
             )
+    errors.extend(_order_revokes_last(items))
     if errors:
         raise pytest.UsageError(
             "Invalid test(s) in the conformance suite:\n" + "\n".join(errors)
@@ -275,8 +309,9 @@ def agent_launch(request: pytest.FixtureRequest) -> AgentLaunch:
 
 @pytest.fixture
 def cancel_prompt_text(request: pytest.FixtureRequest) -> str:
-    """The `--tck-cancel-prompt` text, used only by the cancellation tests (`test_cancel.py`) --
-    every other prompt test keeps its own short, deterministic text."""
+    """The `--tck-cancel-prompt` text, used by the tests that need a turn still running when
+    they act (cancellation, close mid-turn, a prompt during active work) -- every other prompt
+    test keeps its own short, deterministic text."""
     return request.config.getoption("tck_cancel_prompt")
 
 
@@ -291,6 +326,23 @@ def current_auth_method_id() -> str | None:
     functions with no fixture access of their own -- mirrors the `_ACTIVE_PROCESSES` contextvar
     pattern used for process registration."""
     return _AUTH_METHOD.get()
+
+
+@contextlib.contextmanager
+def skip_if_login_times_out(method: str, method_id: str, timeout: float | None) -> Any:
+    """Wrap the wait for a login response (`authenticate` in v1, `auth/login` in v2) sent for
+    `--auth-method`: an `AgentTimeout` SKIPs with an `AUTH-GATED:` reason instead of failing.
+    A login may stay pending while the user completes an interactive flow
+    (`docs/protocol/v2/draft/authentication.mdx`, "Agent-handled authentication"), which says nothing
+    about the requirement under test. The SKIP blocks the verdict like any other auth gate."""
+    try:
+        yield
+    except AgentTimeout:
+        pytest.skip(
+            f"AUTH-GATED: {method} with methodId={method_id!r} did not answer within "
+            f"{timeout}s -- the login may be interactive and still pending; use a "
+            "non-interactive --auth-method or raise --timeout/--startup-timeout"
+        )
 
 
 _INIT_AUTH_METHODS: contextvars.ContextVar[list[Any] | None] = contextvars.ContextVar(
@@ -313,8 +365,8 @@ _ALLOW_LOGOUT: contextvars.ContextVar[bool] = contextvars.ContextVar("_ALLOW_LOG
 
 def current_allow_logout() -> bool:
     """Whether `--tck-allow-logout` was given for this run. Read by both versions' logout
-    requirements -- v1's `ACP-AUTH-004` (`logout`) and v2's `ACP-AUTH-203` (`auth/logout`) --
-    to decide whether to actually call the destructive logout method; mirrors the
+    requirement, `ACP-AUTH-004` (`logout` in v1, `auth/logout` in v2), to decide whether to
+    actually call the destructive logout method; mirrors the
     `current_auth_method_id()` contextvar pattern above."""
     return _ALLOW_LOGOUT.get()
 
@@ -507,6 +559,29 @@ def _tck_track_processes(request: pytest.FixtureRequest) -> Any:
     token = _ACTIVE_PROCESSES.set(processes)
     yield
     _ACTIVE_PROCESSES.reset(token)
+
+
+# --- per-test property recording, for helpers with no fixture access ---
+
+_TEST_PROPERTIES: contextvars.ContextVar[list[tuple[str, object]] | None] = contextvars.ContextVar(
+    "_TEST_PROPERTIES", default=None
+)
+
+
+def record_test_property(name: str, value: object) -> None:
+    """Like pytest's `record_property` fixture, for plain helper functions (e.g. `run_prompt`):
+    the property lands in the current test's report entry. No-op outside a conformance test's
+    scope (e.g. when a helper is used from a unit test)."""
+    properties = _TEST_PROPERTIES.get()
+    if properties is not None:
+        properties.append((name, value))
+
+
+@pytest.fixture(autouse=True)
+def _tck_record_properties(request: pytest.FixtureRequest) -> Any:
+    token = _TEST_PROPERTIES.set(request.node.user_properties)
+    yield
+    _TEST_PROPERTIES.reset(token)
 
 
 def _format_transcript(transcript: list[TranscriptEntry]) -> str:
@@ -904,9 +979,10 @@ def pytest_terminal_summary(
         if verdict.blocked_by_auth:
             terminalreporter.write_line(
                 "hint: one or more session-dependent tests were SKIPPED because the agent "
-                "requires authentication before session/new and no --auth-method was given -- "
-                "pass --auth-method <id> (an id from initialize's authMethods) to test this "
-                "agent fully; the run cannot be scored CONFORMANT without it.",
+                "requires authentication before session/new and no usable --auth-method was "
+                "given (none, or its login failed or timed out) -- pass --auth-method <id> (an "
+                "id from initialize's authMethods that logs in without user interaction) to "
+                "test this agent fully; the run cannot be scored CONFORMANT without it.",
                 bold=True,
                 yellow=True,
             )

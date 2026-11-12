@@ -94,7 +94,7 @@ async def test_agent_exits_promptly_after_stdin_close(agent_launch, tmp_path):
 
 @pytest.mark.requirement("ACP-STDERR-001")
 async def test_stderr_byte_count_is_recorded(agent_launch, tmp_path, record_property):
-    """ACP-STDERR-001 (INFORMATIONAL -- the agent MAY log UTF-8 to stderr, transports.mdx:25).
+    """ACP-STDERR-001 (INFORMATIONAL -- the agent MAY log UTF-8 to stderr, transports.mdx:22).
     Surfaces how chatty an agent is on stderr during an ordinary exchange, for a human reading
     the report. FAILs only if `initialize`/`session/new` gets no response at all."""
     async with connected_agent(agent_launch) as agent:

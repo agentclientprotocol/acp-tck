@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: answers an unsupported version with a well-formed `-32022`, but keeps
 serving the connection afterwards -- a later `session/new` succeeds, although "A version-mismatch
-error does not initialize the connection" (initialization.mdx:117). FAILs exactly `ACP-INIT-207`.
+error does not initialize the connection" (initialization.mdx:129). FAILs exactly
+`ACP-INIT-207` (it started session work) and `ACP-ERROR-005` (the request after `-32022` did not
+get `-32600`).
 """
 
 import sys
@@ -16,7 +18,7 @@ from _base import ConformingAgent  # noqa: E402
 class StartsSessionAfterMismatchAgent(ConformingAgent):
     def _reject_unsupported_version(self, msg_id: Any, requested: int) -> None:
         super()._reject_unsupported_version(msg_id, requested)
-        self._init_rejected = False
+        self._initialized = True
 
 
 def main() -> None:

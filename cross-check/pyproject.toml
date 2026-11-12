@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "Cross-checks the ACP TCK against independently built upstream agents."
 requires-python = ">=3.14"
 dependencies = [
-    "agent-client-protocol==1.0.0rc2",
+    "agent-client-protocol==1.0.0",
 ]
 
 [tool.uv]

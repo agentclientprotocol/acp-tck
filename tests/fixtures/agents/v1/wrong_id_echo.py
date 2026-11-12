@@ -27,8 +27,8 @@ class WrongIdEchoAgent(ConformingAgent):
     def _reply(self, msg_id: Any, result: dict[str, Any]) -> None:
         super()._reply(_mangle(msg_id), result)
 
-    def _error(self, msg_id: Any, code: int, message: str) -> None:
-        super()._error(_mangle(msg_id), code, message)
+    def _error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
+        super()._error(_mangle(msg_id), code, message, data)
 
 
 def main() -> None:

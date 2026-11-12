@@ -8,8 +8,8 @@ turn are unaffected.
 
 Also FAILs `ACP-ERROR-001`: that requirement's own probe is a `_`-prefixed unknown method and
 gets no reply at all against this fixture (see `tests/v2/test_cli.py`'s widened `-k` scope for
-this fixture). Does NOT cascade into `ACP-BATCH-203/204/205`, since batch requests don't wait
-per-item on a response that never arrives.
+this fixture). Does NOT cascade into `ACP-BATCH-209`: an array is rejected as a whole, never dispatched
+per element.
 """
 
 import sys

@@ -3,7 +3,8 @@
 the user message and reports `running` but withholds the response; on `session/cancel` it sends
 `idle(cancelled)` and then answers the already-inserted prompt with `-32800`. An inserted
 message must get a successful response: FAILs exactly `ACP-PROMPT-207` (its cancelled-turn
-test) and `ACP-CANCEL-203` (`-32800` after insertion). `session/close` instead answers the
+test), `ACP-CANCEL-203` (`-32800` after insertion), and `ACP-JSONRPC-007` (the same `-32800`
+for its withdrawn prompt, once `session/cancel` follows). `session/close` instead answers the
 prompt successfully, so `ACP-CANCEL-208` PASSes.
 """
 

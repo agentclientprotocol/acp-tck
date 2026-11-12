@@ -1,12 +1,14 @@
-"""A minimal stdio MCP server used by ACP-SESSION-003/004, run as a standalone script:
+"""A minimal stdio MCP server used by ACP-SESSION-003/004/006, run as a standalone script:
 
     python _mcp_stub.py <marker-path>
 
 Speaks just enough newline-delimited JSON-RPC to complete an MCP handshake: answers
 `initialize` (echoing the requested `protocolVersion`), `ping`, and `tools/list` (no tools), and
 `-32601` to any other request. Notifications are ignored. On the first `initialize` it writes
-`<marker-path>`, which is how the TCK observes that the agent actually connected. Exits on
-stdin EOF. Pure stdlib, and not imported by the test suite.
+`<marker-path>` as a JSON object holding the `argv` it was launched with, which is how the TCK
+observes that the agent actually connected and what command line it used (ACP-SESSION-006
+checks that no `env` value reached it). Exits on stdin EOF. Pure stdlib, and not imported by the
+test suite.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ def main() -> None:
         params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
         if method == "initialize":
             if marker is not None and not marker.exists():
-                marker.write_text("initialize\n")
+                marker.write_text(json.dumps({"argv": sys.argv[1:]}))
             _reply(
                 msg["id"],
                 {

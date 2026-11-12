@@ -4,11 +4,11 @@
 `verbosity` option as `conforming_full.py` plus a second, unrelated `boolean` option
 (`debug_mode`), so the reply is still a non-empty array.
 
-FAILs exactly `ACP-CONFIG-202`: the post-change list must contain the changed `configId`. A reply
+FAILs exactly `ACP-CONFIG-002`: the post-change list must contain the changed `configId`. A reply
 that merely drops *other* options is not a defect -- a change may remove dependent options.
-`ACP-CONFIG-201`/`203`/`204` (shape validity on `session/new`/`session/resume`, and the select
-`currentValue` membership check) and `ACP-CONFIG-206` (vacuous unless a `config_option_update`
-is observed, which this fixture never sends) are unaffected.
+`ACP-CONFIG-001`/`201`/`203` (shape validity on `session/new`/`session/resume`, and the select
+`currentValue` membership check), `ACP-CONFIG-206` and `ACP-CONFIG-211`/`212` are unaffected: the
+`config_option_update` it sends before the response carries the same (partial) list.
 """
 
 import sys
@@ -40,15 +40,8 @@ _DEBUG_MODE_OPTION = {
 
 
 class ConfigSetOmitsChangedOptionAgent(ConformingAgent):
-    def _handle_set_config_option(self, msg_id: Any, params: dict[str, Any]) -> None:
-        config_id = params.get("configId")
-        for option in self._config_options:
-            if option.get("configId") == config_id:
-                option["currentValue"] = params.get("value")
-                others = [dict(o) for o in self._config_options if o.get("configId") != config_id]
-                self._reply(msg_id, {"configOptions": others})
-                return
-        self._error(msg_id, -32602, "Invalid params: unknown configId")
+    def _config_set_options(self, config_id: Any) -> list[dict[str, Any]]:
+        return [dict(o) for o in self._config_options if o.get("configId") != config_id]
 
 
 def main() -> None:

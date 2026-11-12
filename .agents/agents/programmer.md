@@ -33,7 +33,9 @@ well-specified slices don't need it.
   `uv add --project cross-check <pkg>` for the other projects), never by hand-editing
   `pyproject.toml` and never with bare `pip`.
 - Always pin dependencies to the exact version.
-- Read `AGENTS.md` before starting; read `.agents/state.md` if instructed. They describe current
+- Read `AGENTS.md` before starting, and the [`docs/`](../../docs/README.md) page for what you touch
+  (ids and tiers: `docs/requirements.md`; tests, markers and fixtures: `docs/writing-tests.md`;
+  `run_prompt`: `docs/mock-client.md`). Read `.agents/state.md` if instructed. They describe current
   conventions and decisions.
 
 ## Worker modes
@@ -81,7 +83,7 @@ never edit the orchestrator's checkout.
 3. **Implement.** Match the surrounding code's style, naming, and comment density. Don't refactor
    unrelated code or add speculative abstraction. Cite the upstream sources a report points to,
    never the report itself. If you leave a temporary `.agents/` reference for unfinished work
-   (see Conventions in `AGENTS.md`), list it in your report so it gets removed later.
+   (see "Working files in `.agents/`" in `AGENTS.md`), list it in your report so it gets removed later.
 4. **Test.** Every behavior you add gets a test. Tests must assert real behavior: no tests that
    pass trivially, no assertions weakened to go green, and no `xfail`/`skip` that hides a genuine
    failure. For TCK assertions, cover both a conforming and a non-conforming agent where feasible.

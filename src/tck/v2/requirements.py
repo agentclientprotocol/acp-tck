@@ -4,13 +4,11 @@ Every conformance assertion the TCK makes is backed by exactly one `Requirement`
 by a stable id (`ACP-<AREA>-<NNN>`). `text`/`citation` come from the protocol specification --
 see each entry's `citation` before changing wording, not memory of the spec.
 
-A v1 id is reused bare only when the v2 requirement is truly the *same* one -- same text and
-tier, only the citation moving to v2 sources. A changed tier, a changed capability-gate
-encoding (e.g. v1's boolean `agentCapabilities.*` flags vs. v2's object-marker
-`capabilities.*` paths), or a genuinely different wire shape/rule all count as a different
-requirement and get a fresh `2xx` id instead of reusing the v1 number. v1 and v2 keep fully
-separate `REGISTRY` dicts, so the same id string can (and does, e.g. `ACP-SESSION-001`/`002`)
-carry a different tier per version without conflict.
+A shared id (e.g. `ACP-SESSION-001`) means the same protocol rule in v1 and v2. Tier and
+capability gate are per version (v2's object-marker `capabilities.*` paths differ from v1's
+boolean `agentCapabilities.*` flags), and v1 and v2 keep fully separate `REGISTRY` dicts, so the
+same id can carry a different tier or gate per version without conflict. A `2xx` id is a v2 rule
+with no v1 counterpart.
 
 Every requirement about a method in the `capabilities.session` seven-method baseline
 (`session/new`, `session/list`, `session/resume`, `session/close`, `session/prompt`,
@@ -41,7 +39,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "`initialize` succeeds with a non-error JSON-RPC result. Judged the same "
-            "regardless of the negotiated `protocolVersion` -- unlike `ACP-INIT-203`/"
+            "regardless of the negotiated `protocolVersion` -- unlike `ACP-INIT-004`/"
             "`ACP-INIT-204`/`ACP-SCHEMA-001`, this row does not SKIP when the agent negotiates "
             "down to a version other than 2. It does SKIP with `VERSION-MISMATCH` when the "
             "request of 2 is rejected with `-32022` (the agent has no version <= 2). "
@@ -63,7 +61,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "for the request of 2 is accepted only if the `65535` probe selects nothing <= 2."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:98; "
+            "docs/protocol/v2/draft/initialization.mdx:110; "
             "schema/v2/schema.unstable.json#/$defs/InitializeResponse/properties/protocolVersion"
         ),
     ),
@@ -79,7 +77,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`2`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:98,117; "
+            "docs/protocol/v2/draft/initialization.mdx:108,110; "
             "schema/v2/schema.unstable.json#/$defs/ProtocolVersion"
         ),
     ),
@@ -93,7 +91,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "agent). Selecting 2 or higher FAILs, and so does `-32602`, which is reserved for "
             "a malformed `protocolVersion`."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98,100,117"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:108,110,112"),
     ),
     Requirement(
         id="ACP-INIT-205",
@@ -108,7 +106,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`VERSION-MISMATCH` unless the main handshake selected 2."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:100-115; "
+            "docs/protocol/v2/draft/initialization.mdx:112-127; "
             "schema/v2/schema.unstable.json#/$defs/ErrorCode"
         ),
     ),
@@ -123,7 +121,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "handshake selected 2."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:117; "
+            "docs/protocol/v2/draft/initialization.mdx:108; "
             "schema/v2/schema.unstable.json#/$defs/ProtocolVersion"
         ),
     ),
@@ -138,7 +136,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "SKIPPED when no `-32022` is observed, and with `VERSION-MISMATCH` unless the main "
             "handshake selected 2."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:117"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:129"),
     ),
     Requirement(
         id="ACP-INIT-208",
@@ -149,10 +147,115 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "request selects 1, the result has no v2-only root `info` or `capabilities` key. "
             "SKIPPED when the agent does not select 1."
         ),
-        citation=_cite("docs/protocol/v2/draft/initialization.mdx:98"),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:110"),
     ),
     Requirement(
-        id="ACP-INIT-203",
+        id="ACP-ERROR-005",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A request other than `initialize` that arrives before initialization completes is "
+            "rejected with `-32600`: on a fresh connection, and after an `initialize` that "
+            "failed (`protocolVersion` omitted, or `protocolVersion: 0` rejected with "
+            "`-32022`). The probe is `session/new`; no reply FAILs. The \"ignore "
+            "notifications\" half is not checked (the expected behaviour is silence, which "
+            "`ACP-JSONRPC-003` already covers). Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:29,60; "
+            "docs/protocol/v2/draft/initialization.mdx:90"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-210",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "While the connection is uninitialized the agent sends no JSON-RPC request or "
+            "notification: not at startup before `initialize`, not before the first successful "
+            "`initialize` response, and not after an `initialize` that failed (`protocolVersion` "
+            "omitted, or `protocolVersion: 0` rejected with `-32022`). Binds agents "
+            "implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main handshake "
+            "selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:88,91"),
+    ),
+    Requirement(
+        id="ACP-INIT-211",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "After an `initialize` that failed with `-32602` (`protocolVersion` omitted), a "
+            "corrected `initialize` on the same connection succeeds, and the connection is "
+            "then initialized (a following unknown `_tck/...` request is not answered with "
+            "`-32600`; no reply to it is no evidence, `ACP-EXT-001` judges that). A retry after `-32022` is deliberately not exercised: that error asks "
+            "the client to close the connection. Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:92"),
+    ),
+    Requirement(
+        id="ACP-INIT-212",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "`initialize` repeated before any other request is handled like the first: "
+            "two repeats after a successful `initialize(2)` each get a result selecting 2. A "
+            "repeat that fails (`protocolVersion` omitted) leaves the previous initialization "
+            "in effect: a following unknown `_tck/...` request is not answered with `-32600` "
+            "(no reply to it is no evidence, `ACP-EXT-001` judges that). Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
+            "handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/initialization.mdx:139"),
+    ),
+    Requirement(
+        id="ACP-INIT-213",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "An `initialize` repeated after another request is rejected with an error, not "
+            "answered with a result. The request in between is an unknown `_tck/...` method: "
+            "any request closes the repeat window. The exact code is `ACP-INIT-215`'s concern. "
+            "Binds agents implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main "
+            "handshake selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:29,60; "
+            "docs/protocol/v2/draft/initialization.mdx:139"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-215",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The error that rejects an `initialize` repeated after another request is "
+            "`-32600`. SKIPPED when the repeat is not answered with an error (that is "
+            "`ACP-INIT-213`'s FAIL). Binds agents implementing v2: SKIPPED with "
+            "`VERSION-MISMATCH` unless the main handshake selected 2."
+        ),
+        citation=_cite("docs/protocol/v2/draft/error.mdx:29,60"),
+    ),
+    Requirement(
+        id="ACP-INIT-214",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "An `initialize` requesting a version above the agent's highest "
+            "(`protocolVersion: 65535`) whose `capabilities` cannot be parsed (a non-object, "
+            "`42`) is not rejected: the agent ignores the unparseable parameter and answers "
+            "with a result. Which version it selects is `ACP-INIT-003`'s concern. Binds agents "
+            "implementing v2: SKIPPED with `VERSION-MISMATCH` unless the main handshake "
+            "selected 2."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/initialization.mdx:131; "
+            "schema/v2/schema.unstable.json#/$defs/InitializeRequest/properties/capabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-INIT-004",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
@@ -166,7 +269,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/InitializeResponse/properties/info; "
             "schema/v2/schema.unstable.json#/$defs/InitializeResponse/required; "
             "schema/v2/schema.unstable.json#/$defs/Implementation; "
-            "docs/protocol/v2/draft/initialization.mdx:293"
+            "docs/protocol/v2/draft/initialization.mdx:360"
         ),
     ),
     Requirement(
@@ -211,7 +314,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "non-empty string `sessionId`, and the response validates against the v2 schema."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:72; "
+            "docs/protocol/v2/draft/session-setup.mdx:84; "
             "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/required (`cwd`); "
             "schema/v2/schema.unstable.json#/$defs/NewSessionResponse/required (`sessionId`)"
         ),
@@ -222,12 +325,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text="Two `session/new` calls on one connection return distinct `sessionId`s.",
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:72,478; "
+            "docs/protocol/v2/draft/session-setup.mdx:84,511; "
             "schema/v2/schema.unstable.json#/$defs/SessionId"
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-205",
+        id="ACP-PROMPT-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -235,20 +338,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "turn validates against the v2 schema and carries the prompted `sessionId`, or that "
             "of a child session already announced (in wire order) by a `subagent_update` on a "
             "known session -- child traffic before its announcement FAILs. "
-            "Vacuous pass if the agent emits no updates during the turn. NOT a reuse of v1's "
-            "`ACP-PROMPT-002`: the requirement text is the same schema/sessionId "
-            "check, but the *tier* differs -- v1 registers it `Tier.MANDATORY` (v1's whole "
-            "session surface is unconditional), whereas v2's `session/prompt` only exists once "
-            "the agent has advertised the optional `capabilities.session` at all, exactly like "
-            "`ACP-SESSION-001`/`002` above, so this row is `Tier.CAPABILITY`. A changed tier is "
-            "a changed requirement under the id-reuse convention, so this gets a fresh 2xx id "
-            "(`ACP-PROMPT-205`) instead of reusing `ACP-PROMPT-002`."
+            "Vacuous pass if the agent emits no updates during the turn."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification/required; "
             "schema/v2/schema.unstable.json#/$defs/SessionUpdate; "
-            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
-            "docs/protocol/v2/draft/schema.mdx:8397-8401"
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate"
         ),
     ),
     Requirement(
@@ -262,7 +357,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`MessageId` is a plain string."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:253-255,271-274; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:323-325,341-344; "
             "schema/v2/schema.unstable.json#/$defs/PromptResponse/required; "
             "schema/v2/schema.unstable.json#/$defs/MessageId"
         ),
@@ -278,7 +373,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "response, no later than the turn-ending idle."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:276,731; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:346,803; "
             "schema/v2/schema.unstable.json#/$defs/UserMessage; "
             "schema/v2/schema.unstable.json#/$defs/ContentChunk"
         ),
@@ -294,7 +389,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "period); SKIPPED when the prompt was rejected with no foreground work."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:124,318-321,993,1000-1002,1042-1047; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:152,394-397,1073,1080-1082,1121-1126; "
             "schema/v2/schema.unstable.json#/$defs/StateUpdate"
         ),
     ),
@@ -309,7 +404,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "work observed' when no active state was seen."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:126,314,714,996,1034,1042-1045"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:154,390,786,1076,1114,1121-1124"
         ),
     ),
     Requirement(
@@ -323,10 +418,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "stopReason is SKIPPED here (it is only SHOULD; see `ACP-STATE-204`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:714,733,864,887; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:786,805,936,965; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/stopReason; "
-            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/7; "
-            "docs/protocol/v2/draft/extensibility.mdx:226-231"
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/6; "
+            "docs/protocol/v2/draft/extensibility.mdx:235-240"
         ),
     ),
     Requirement(
@@ -339,7 +434,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`capabilities.session`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:126,714,864,1012; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:154,786,936,1092; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate"
         ),
     ),
@@ -356,23 +451,76 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "SKIPPED when `requires_action` is never observed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:125,773,995,1024-1025; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:153,845,1075,1104-1105; "
             "schema/v2/schema.unstable.json#/$defs/RequiresActionStateUpdate"
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-206",
+        id="ACP-STATE-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Once a `state_update` for the session carries a `background` array (`[]` counts), "
+            "every later `running`/`requires_action`/`idle`/`unknown` `state_update` for that "
+            "session on the connection carries an array too, not an omitted or `null` one. "
+            "Judged over one prompt turn plus a quiet drain after it; custom states are not "
+            "judged. SKIPPED when no background list is reported."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:188,203-204; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background; "
+            "schema/v2/schema.unstable.json#/$defs/RunningStateUpdate/properties/background"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-207",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every `terminal`/`tool_call`/`subagent` item in a session's `background` list was "
+            "announced earlier on the connection, for the same session, by a `terminal_update` "
+            "with its `terminalId`, a `tool_call_update` with its `toolCallId`, or a "
+            "`subagent_update` with its `sessionId`. Items of other types are not judged. "
+            "SKIPPED when no such item is listed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:206,209; "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-208",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When an `idle` `state_update` drops a `terminal`/`tool_call` item from the "
+            "session's previous `background` list, a `terminal_update` with a non-null "
+            "`exitStatus` or a `tool_call_update` with status `completed`/`failed`/`cancelled` "
+            "for it arrived earlier. Removals in a `running`/`requires_action`/`unknown` "
+            "snapshot are not judged (foreground work that waits on an item takes it off the "
+            "list unfinished), nor are subagent removals. SKIPPED when no idle snapshot "
+            "removes such an item."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:206,208; "
+            "schema/v2/schema.unstable.json#/$defs/ToolCallStatus; "
+            "schema/v2/schema.unstable.json#/$defs/TerminalUpdate/properties/exitStatus"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "A prompt of `text` + `resource_link` content blocks is accepted (a non-error "
             "`session/prompt` result), and the turn ends: agents advertising `session` MUST "
-            "support both block types. Replaces v1's ADVISORY `ACP-PROMPT-003`, whose recorded "
-            "doc conflict does not exist in v2 (`content.mdx` is silent on `resource_link`, not "
-            "contradictory)."
+            "support both block types, and `content.mdx` states the `resource_link` MUST for all "
+            "agents. Gated on `session` (v1 has it MANDATORY) because without it there is no "
+            "`session/prompt`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:248; "
+            "docs/protocol/v2/draft/initialization.mdx:308; "
+            "docs/protocol/v2/draft/content.mdx:178; "
             "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/prompt; "
             "schema/v2/schema.unstable.json#/$defs/ResourceLink"
         ),
@@ -389,21 +537,46 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "succeeded."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:255,276,312; "
-            "docs/protocol/v2/draft/cancellation.mdx:53"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,346,388; "
+            "docs/protocol/v2/draft/cancellation.mdx:59"
         ),
     ),
     Requirement(
-        id="ACP-PROMPT-208",
-        tier=Tier.ADVISORY,
-        capability=None,
+        id="ACP-PROMPT-209",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
         text=(
-            "A successful `session/prompt` response arrives no later than the idle that ends "
-            "the turn: the agent responds once the message is inserted, without waiting for "
-            "foreground work to finish. ADVISORY because wire order is only a proxy for "
-            "insertion timing. The test is gated on `capabilities.session`."
+            "A `session/prompt` sent while the session's foreground work is active (on the "
+            "first `running`/`requires_action` of a cancel-prompt turn) is not rejected: until "
+            "the TCK's `session/cancel` it is either answered with a success (inserted right "
+            "away) or left pending (held). An error before the cancel FAILs, `-32800` included, "
+            "since nothing asked for cancellation. SKIPPED when the first prompt's work may "
+            "have ended before the agent read the second prompt."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:255,302"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:382,384; "
+            "docs/rfds/v2/prompt.mdx:88"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-211",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` whose `prompt` contains a content block of a type the agent "
+            "cannot understand (a `_tck_unknown` probe type, not baseline and not advertised) is "
+            "answered with a JSON-RPC error with code `-32602`, and the prompt is not inserted: "
+            "no `user_message`/`user_message_chunk` update and no `running`/`requires_action` "
+            "state follows for it within a short quiet period. A client never sends such a "
+            "block; the probe breaks that rule on purpose because the spec defines the agent's "
+            "answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:313,388; "
+            "docs/protocol/v2/draft/content.mdx:22; "
+            "docs/protocol/v2/draft/extensibility.mdx:62-65; "
+            "schema/v2/schema.unstable.json#/$defs/ContentBlock"
+        ),
     ),
     Requirement(
         id="ACP-PROMPTCAP-001",
@@ -415,7 +588,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "advertises `capabilities.session.prompt.image`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:246-271; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "docs/protocol/v2/draft/content.mdx:62-64; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/ImageContent"
         ),
@@ -430,7 +604,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "advertises `capabilities.session.prompt.audio`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:246-271; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "docs/protocol/v2/draft/content.mdx:95-97; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/AudioContent"
         ),
@@ -445,9 +620,35 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "when the agent advertises `capabilities.session.prompt.embeddedContext`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:246-271; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "docs/protocol/v2/draft/content.mdx:131-133; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/EmbeddedResource"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPTCAP-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "For each of `image`, `audio` and `resource` (embedded context) that the agent does "
+            "NOT advertise under `capabilities.session.prompt`, a well-formed prompt containing "
+            "that block type alongside text is answered with a JSON-RPC error with code "
+            "`-32602`, and the prompt is not inserted (no user-message update and no active "
+            "state follows within a short quiet period). A runtime negative gate: the "
+            "registry capability only says the agent offers sessions; each block type is judged only "
+            "when its own prompt capability is not an object, and SKIPPED when advertised (that "
+            "positive case is `ACP-PROMPTCAP-001..003`); a `true` value deserializes as not "
+            "advertised, so it is probed. A client never sends an unadvertised "
+            "block; the probe breaks that rule on purpose because the spec defines the agent's "
+            "answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:313,388; "
+            "docs/protocol/v2/draft/content.mdx:22,62-64,95-97,131-133; "
+            "docs/protocol/v2/draft/initialization.mdx:306-331; "
+            "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/ContentBlock"
         ),
     ),
     Requirement(
@@ -466,11 +667,74 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionRequest/required; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionRequest/properties/options (minItems: 1); "
             "schema/v2/schema.unstable.json#/$defs/PermissionOption/required; "
-            "docs/protocol/v2/draft/tool-calls.mdx:201,236-263,337-355"
+            "docs/protocol/v2/draft/tool-calls.mdx:209,244-278,356-374"
         ),
     ),
     Requirement(
-        id="ACP-CLIENTCAP-201",
+        id="ACP-PERM-202",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "In every `session/request_permission` the agent sends during a turn, the "
+            "`options[].optionId` values are pairwise distinct, and a `subject` with `type: "
+            "\"command\"` carries an absolute `cwd`. Both are schema-valid when broken "
+            "(`AbsolutePath` is a plain string). SKIPPED when no permission request is observed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:302-303,357; "
+            "schema/v2/schema.unstable.json#/$defs/PermissionOption/properties/optionId; "
+            "schema/v2/schema.unstable.json#/$defs/CommandPermissionSubject"
+        ),
+    ),
+    Requirement(
+        id="ACP-PERM-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After the client declines a `session/request_permission` whose `subject` is a "
+            "`tool_call` X by policy with the `cancelled` outcome (no `session/cancel`), the "
+            "agent never reports X `completed` later in the turn, on a `tool_call_update` or a "
+            "later subject. Which stop reason the turn ends with is not judged. SKIPPED when no "
+            "permission request with a `tool_call` subject is observed."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:340,423"),
+    ),
+    Requirement(
+        id="ACP-PERM-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After the client answers a `session/request_permission` whose `subject` is a "
+            "`tool_call` X with a `selected` outcome naming an `optionId` the agent never "
+            "offered, the agent treats the request as not approved: it never reports X "
+            "`completed` later in the turn. SKIPPED when no permission request with a "
+            "`tool_call` subject is observed. The probe answer breaks the client rule on "
+            "purpose, because the spec defines the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:346-347,423; "
+            "schema/v2/schema.unstable.json#/$defs/SelectedPermissionOutcome"
+        ),
+    ),
+    Requirement(
+        id="ACP-PERM-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After the client answers a `session/request_permission` whose `subject` is a "
+            "`tool_call` X with a `_`-prefixed custom outcome (`_tck_unknown`) the agent does "
+            "not understand, the agent does not treat it as approval: it never reports X "
+            "`completed` later in the turn. SKIPPED when no permission request with a "
+            "`tool_call` subject is observed. The probe is a legal client answer: the outcome "
+            "is an open enum. `ACP-ENUM-203` judges only that the agent survives such a value."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:348-349,423; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome/anyOf/2"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -478,7 +742,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`elicitation/create` request is observed during a prompt turn."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/elicitation.mdx:54,187; "
+            "docs/protocol/v2/draft/elicitation.mdx:56-57,59; "
             "schema/v2/schema.unstable.json#/$defs/CreateElicitationRequest (x-method: elicitation/create)"
         ),
     ),
@@ -494,8 +758,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "separate `ACP-CLIENTCAP-001/002` rows)."
         ),
         citation=_cite(
-            "schema/v2/meta.unstable.json:31-37 (agent->client method inventory); "
-            "docs/protocol/v2/draft/extensibility.mdx:156,165 (only `_`-prefixed custom methods may be called)"
+            "schema/v2/meta.unstable.json:28-38 (agent->client method inventory); "
+            "docs/protocol/v2/draft/extensibility.mdx:165,174 (only `_`-prefixed custom methods may be called)"
         ),
     ),
     Requirement(
@@ -503,30 +767,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Record (never assert) what the agent does when a second `session/prompt` for the "
-            "same session is sent before the first has reached its terminating idle: accepted, "
-            "a JSON-RPC error, or silence. Concurrency is explicitly out of scope of the v2 "
-            "design."
+            "Record (never assert) whether a `session/prompt` sent during active foreground "
+            "work (the `ACP-PROMPT-209` scenario) is inserted right away or held until "
+            "`session/cancel`, and how a held one is then answered. Which of the two an agent "
+            "does, and whether inserting steers the current turn or starts the next, is up to "
+            "the agent. SKIPPED when not exercised."
         ),
         citation=_cite(
-            "docs/rfds/v2/prompt.mdx:88 ('This RFD does not specify queueing, steering, or "
-            "whether agents insert new prompts while busy'); "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1039-1040"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:382-384,1118-1119; "
+            "docs/rfds/v2/prompt.mdx:88"
         ),
     ),
     Requirement(
-        id="ACP-INFO-UNKNOWNSESSION-001",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) the agent's response to `session/prompt` with a "
-            "`sessionId` it never created -- v2's `error.mdx` is still 'Documentation coming "
-            "soon', so the error code (if any) is unspecified."
-        ),
-        citation=_cite("docs/protocol/v2/draft/error.mdx"),
-    ),
-    Requirement(
-        id="ACP-CANCEL-201",
+        id="ACP-CANCEL-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -536,13 +789,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "cancelled before insertion (`-32800`) with no active state owes no idle."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1013,1109-1117,1124; "
-            "docs/protocol/v2/draft/cancellation.mdx:35-38; "
-            "docs/protocol/v2/draft/schema.mdx:461-465"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1093,1185-1192,1199; "
+            "docs/protocol/v2/draft/cancellation.mdx:41-44; "
+            "docs/protocol/v2/draft/schema.mdx:603-607"
         ),
     ),
     Requirement(
-        id="ACP-CANCEL-202",
+        id="ACP-CANCEL-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -552,8 +805,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the cancelled turn. Repeated idle snapshots, `unknown`, and new work are allowed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:731,1004-1007,1128; "
-            "docs/protocol/v2/draft/schema.mdx:473-475"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:803,1084-1087,1203; "
+            "docs/protocol/v2/draft/schema.mdx:615-617"
         ),
     ),
     Requirement(
@@ -568,8 +821,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`error` or `end_turn`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:255,312,926,1094,1119-1126; "
-            "docs/protocol/v2/draft/cancellation.mdx:53; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,388,1004,1173,1194-1201; "
+            "docs/protocol/v2/draft/cancellation.mdx:59; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/4 (`cancelled` branch description)"
         ),
     ),
@@ -579,7 +832,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "On receiving `session/cancel`, the agent SHOULD stop all language model requests "
-            "and abort all in-progress tool call invocations as soon as possible. Unobservable "
+            "and all tool call invocations of the cancelled foreground work as soon as "
+            "possible. Unobservable "
             "from a client-only TCK -- nothing on the wire distinguishes 'stopped as soon as "
             "possible' from 'stopped eventually', so the test "
             "records the observation and always SKIPs, never asserting on timing. INFORMATIONAL, "
@@ -587,7 +841,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "ever SKIPped, belongs in the record-only tier, not the SHOULD tier."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1103; docs/protocol/v2/draft/schema.mdx:458-459"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1179; "
+            "docs/protocol/v2/draft/schema.mdx:595-597"
         ),
     ),
     Requirement(
@@ -599,11 +854,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(result or error) for it."
         ),
         citation=_cite(
-            "schema/v2/schema.unstable.json#/$defs/ClientNotification/properties/params/anyOf/0/anyOf/0 "
-            "(CancelSessionNotification sits under ClientNotification); "
+            "schema/v2/schema.unstable.json#/$defs/ClientNotification/properties/params/anyOf/0/anyOf/0 (CancelSessionNotification sits under ClientNotification); "
             "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification; "
-            "docs/protocol/v2/draft/overview.mdx:197; "
-            "docs/protocol/v2/draft/transports.mdx:78-79"
+            "docs/protocol/v2/draft/overview.mdx:13,151-153,227"
         ),
     ),
     Requirement(
@@ -617,7 +870,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1084-1092"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1163-1171"
         ),
     ),
     Requirement(
@@ -630,7 +883,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "assertion itself: the agent may not substitute e.g. `aborted` for `cancelled`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:887; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:965; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/anyOf/6 (`other` branch description)"
         ),
     ),
@@ -642,11 +895,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/close` on a session with foreground work in flight MUST cancel that work "
             "as if `session/cancel` had been sent (same idle `cancelled` state_update), then "
             "free resources; a prompt the close kept from being inserted is answered `-32800`. "
-            "Shares its test and citation with `ACP-CLOSE-202` (the same wire evidence, bound "
+            "Shares its test and citation with `ACP-CLOSE-002` (the same wire evidence, bound "
             "to both ids via a second `@pytest.mark.requirement(...)` marker) -- deliberately "
             "counted twice, once under each id."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:360-366"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:389-395"),
     ),
     Requirement(
         id="ACP-CANCEL-209",
@@ -654,15 +907,100 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "Cancelling a turn blocked on the agent's own pending `session/request_permission` "
-            "(the session last reported `requires_action`) ends the work with an idle "
-            "`stopReason: \"cancelled\"`; the client answers the pending request `cancelled`. "
-            "SKIPPED when no permission request was pending when cancel was sent, or the session "
-            "was not reported blocked."
+            "for foreground work (not for an item in the latest `background` list; no "
+            "`requires_action` needed) ends the work with an idle "
+            "`stopReason: \"cancelled\"` without the client answering that request: the agent "
+            "MUST stop waiting for it. The TCK leaves it unanswered and answers it `cancelled` "
+            "only once the agent withdraws it with `$/cancel_request` (waiting for that answer "
+            "is allowed) or the turn has ended. A turn that ends only after the TCK answers it "
+            "at the deadline FAILs. SKIPPED when no foreground permission request was pending "
+            "when cancel was sent."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1074,1098-1101,1109-1113; "
-            "docs/protocol/v2/draft/cancellation.mdx:33-37; "
-            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:246-247,1153,1173,1177,1185-1189; "
+            "docs/protocol/v2/draft/cancellation.mdx:20,31,40-43; "
+            "docs/protocol/v2/draft/tool-calls.mdx:326; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome; "
+            "schema/v2/schema.unstable.json#/$defs/CancelledPermissionOutcome"
+        ),
+    ),
+    Requirement(
+        id="ACP-JSONRPC-006",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A `$/cancel_request` naming a request id the client never sent gets no response of "
+            "any kind, and the agent keeps serving the connection: a following request is still "
+            "answered."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/cancellation.mdx:24; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-211",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A `$/cancel_request` naming a request the agent already answered (the connection's "
+            "own `initialize`) gets no response, in particular no second one for that id, and "
+            "the agent keeps serving the connection."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/cancellation.mdx:22,24; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-JSONRPC-007",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` the client withdraws with `$/cancel_request` right after sending "
+            "it still gets exactly one response: a success (inserted) or an error, and `-32800` "
+            "only if no user-message update was emitted for it. Other error codes are recorded, "
+            "not failed: an agent may decline to cancel and send its normal response. A prompt "
+            "still unanswered after `--timeout` is also covered by a `session/cancel` the TCK "
+            "then sends; one unanswered even after that FAILs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/cancellation.mdx:20,22,24,26-29,59; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,384,388"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-213",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When `session/cancel` cancels work blocked on the agent's own pending "
+            "`session/request_permission` (held unanswered, as in `ACP-CANCEL-209`), the agent "
+            "withdraws that request with `$/cancel_request` naming its id, before or shortly "
+            "after the cancelled idle. Same SKIPs as `ACP-CANCEL-209`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1177; "
+            "docs/protocol/v2/draft/cancellation.mdx:40,63; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CANCEL-214",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` held (still unanswered) when `session/cancel` is sent is covered "
+            "by the cancel: it is answered `-32800`, and no user-message update for a new "
+            "message follows within `quiet_period(...)`. A held prompt left unanswered, or "
+            "answered with another error, FAILs; so does a success arriving after the race "
+            "window (inserted after the cancel). A success within it SKIPs (the agent may have "
+            "inserted it just before reading the cancel), as does a prompt answered before the "
+            "cancel. Uses the `ACP-PROMPT-209` scenario."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:384,1173; "
+            "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification"
         ),
     ),
     Requirement(
@@ -670,41 +1008,31 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Record (never assert) the agent's behaviour on `session/cancel` for a session with "
-            "no foreground work: no completion update is required, and nothing beyond "
-            "`ACP-CANCEL-205`'s no-response rule is assertable. Behaviour for an unknown "
-            "`sessionId` is not specified."
+            "Record (never assert) the agent's behaviour on `session/cancel` for an active "
+            "session with no foreground work (no completion update is required) and for a "
+            "session that is not active, one closed on this connection and one never created "
+            "(the agent ignores it). Nothing beyond `ACP-CANCEL-205`'s no-response rule is "
+            "assertable."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1078,1115-1117; "
-            "docs/protocol/v2/draft/cancellation.mdx:37-38"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1157,1191-1192; "
+            "docs/protocol/v2/draft/cancellation.mdx:43-44; "
+            "docs/protocol/v2/draft/session-setup.mdx:51"
         ),
     ),
     Requirement(
-        id="ACP-INFO-CANCEL-202",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) whether the agent sends `$/cancel_request` for its own "
-            "pending `session/request_permission` when active work is cancelled -- the TCK holds "
-            "that request unanswered while sending `session/cancel`. Not required (MAY at best)."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/cancellation.mdx:14,18,57 (non-normative; propagation is explicitly left to the agent)"
-        ),
-    ),
-    Requirement(
-        id="ACP-TRANSPORT-201",
+        id="ACP-TRANSPORT-001",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Every line the agent writes to stdout parses as JSON and is either a single "
-            "JSON-RPC 2.0 message object, or a non-empty array whose every element is a "
-            "JSON-RPC 2.0 message object (an empty array on stdout is itself non-conformant)."
+            "Every line the agent writes to stdout parses as JSON and is a single JSON-RPC "
+            "2.0 message object; a JSON array (empty or not) is non-conformant, since ACP "
+            "does not use batches."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:23-24,27; "
-            "schema/v2/schema.unstable.json#/anyOf/2, schema/v2/schema.unstable.json#/anyOf/3 (AgentBatchCall/AgentBatchResponse, minItems: 1)"
+            "docs/protocol/v2/draft/transports.mdx:20,23,67; "
+            "schema/v2/schema.unstable.json#/anyOf (Agent/Client/ProtocolLevel/Proxy envelopes, "
+            "all `type: object`)"
         ),
     ),
     Requirement(
@@ -719,10 +1047,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Messages are newline-delimited and MUST NOT contain embedded newlines -- a batch "
-            "array is therefore serialised on one line too."
+            "Messages are newline-delimited and MUST NOT contain embedded newlines."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:25"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:21"),
     ),
     Requirement(
         id="ACP-JSONRPC-001",
@@ -730,15 +1057,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A response's `id` echoes the request `id` exactly (integer and string ids), "
-            "including for responses to a batch's requests -- whether the agent returns them "
-            "as one array (`ACP-BATCH-204`'s SHOULD) or as separate lines, and whether they "
-            "are results or errors."
+            "whether it is a result or an error."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:76-81; "
-            "schema/v2/schema.unstable.json#/anyOf/3/items (AgentBatchResponse.items -> Result/Error, both required id); "
-            "docs/protocol/v2/draft/overview.mdx:201 (JSON-RPC envelope fields, including `id`, "
-            "follow the base JSON-RPC 2.0 spec, where id-echo is itself normative)"
+            "docs/protocol/v2/draft/overview.mdx:15-17,233 (JSON-RPC envelope fields, including `id`, follow the base JSON-RPC 2.0 spec, where id-echo is itself normative); "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse (Result/Error, both required id)"
         ),
     ),
     Requirement(
@@ -746,12 +1069,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "A response carries exactly one of `result`/`error`; an error object has an "
-            "integer `code` and a string `message`."
+            "A response carries exactly one of `result`/`error`, and an `id` that is a string "
+            "or an integer; only an error response may carry `id: null` (when the request id "
+            "could not be determined). An error object has an integer `code` and a string "
+            "`message`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:195-196; "
-            "schema/v2/schema.unstable.json#/anyOf/3/items (disjoint Result/Error branches)"
+            "docs/protocol/v2/draft/overview.mdx:15-17,225-226; "
+            "docs/protocol/v2/draft/error.mdx:6-10; "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse (disjoint Result/Error branches; "
+            "only the Error branch's `id` allows null); "
+            "schema/v2/schema.unstable.json#/$defs/RequestId"
         ),
     ),
     Requirement(
@@ -759,158 +1087,72 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Notifications never receive a response, success or error -- including a "
-            "notification inside a batch. Messages the agent itself initiates (they carry "
-            "`method`) are not responses."
+            "Notifications never receive a response, success or error. Messages the agent "
+            "itself initiates (they carry `method`) are not responses."
         ),
-        citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:197; docs/protocol/v2/draft/transports.mdx:76-79"
-        ),
+        citation=_cite("docs/protocol/v2/draft/overview.mdx:10,227"),
     ),
     Requirement(
         id="ACP-JSONRPC-004",
-        tier=Tier.ADVISORY,
+        tier=Tier.MANDATORY,
         capability=None,
-        text="An unknown method yields `-32601`. Spec wording is still 'should'.",
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:193-204"),
+        text=(
+            "A request for a method the agent does not recognize -- probed with an unknown "
+            "`_`-prefixed custom method -- is answered with `-32601` (Method not found). "
+            "Replying at all is `ACP-EXT-001`'s concern; an agent that never replies SKIPs "
+            "here rather than failing both rows."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:202-213; "
+            "docs/protocol/v2/draft/error.mdx:44"
+        ),
+    ),
+    Requirement(
+        id="ACP-JSONRPC-202",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "Every request the agent sends to the client has an `id` that is a string or an "
+            "integer, never `null`, and the agent does not reuse an `id` while an earlier "
+            "request with it is still awaiting the client's response. Passive: judged on "
+            "the requests the agent sends during a prompt turn, and SKIPs when it sends none "
+            "(or, for the reuse half, never has two requests pending at once)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/overview.mdx:15-19; "
+            "schema/v2/schema.unstable.json#/$defs/RequestId; "
+            "schema/v2/schema.unstable.json#/$defs/AgentRequest"
+        ),
     ),
     Requirement(
         id="ACP-JSONRPC-005",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "After an erroneous request -- including an invalid or empty batch -- the "
+            "After an erroneous request -- including a rejected JSON array -- the "
             "connection remains usable."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/overview.mdx:191-197; docs/protocol/v2/draft/extensibility.mdx:193-204"
+            "docs/protocol/v2/draft/overview.mdx:221-227; "
+            "docs/protocol/v2/draft/extensibility.mdx:202-213"
         ),
     ),
     Requirement(
-        id="ACP-BATCH-201",
-        tier=Tier.MANDATORY,
-        capability=None,
-        text=(
-            "An empty array (`[]`) receives a single Invalid Request (`-32600`) response "
-            "object with `id: null` -- never a response array. ACP's own text is MUST ('The "
-            "batch MUST be an array with at least one value. An empty array receives a single "
-            "`Invalid Request` response'), matching JSON-RPC 2.0 §6's single Response object."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:69-71; "
-            "schema/v2/schema.unstable.json#/anyOf/2/minItems, schema/v2/schema.unstable.json#/anyOf/3/minItems, schema/v2/schema.unstable.json#/anyOf/4/minItems, "
-            "schema/v2/schema.unstable.json#/anyOf/5/minItems (minItems: 1 on all four batch envelopes)"
-        ),
-    ),
-    Requirement(
-        id="ACP-BATCH-202",
-        tier=Tier.MANDATORY,
-        capability=None,
-        text=(
-            "The agent MUST NOT reply to a notification, including one inside a batch. A "
-            "notification-only batch gets no reply at all -- never an empty array. Messages "
-            "the agent itself initiates (they carry `method`) are not replies."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:78-79,82-84"),
-    ),
-    Requirement(
-        id="ACP-BATCH-203",
+        id="ACP-BATCH-209",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "A non-empty batch containing invalid entries produces a per-entry `-32600` with "
-            "`id: null`; the batch does not fail wholesale and valid siblings still run. "
-            "Phrased without an RFC-2119 keyword in ACP's own text -- ADVISORY, per the v1 "
-            "ACP-JSONRPC-005 precedent."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:85-87"),
-    ),
-    Requirement(
-        id="ACP-BATCH-204",
-        tier=Tier.ADVISORY,
-        capability=None,
-        text=(
-            "The agent SHOULD reply to a batch containing at least one request with one array "
-            "of the corresponding response objects (results or errors), emitted after all "
-            "batch requests have been processed."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:74-77"),
-    ),
-    Requirement(
-        id="ACP-BATCH-205",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Responses MAY appear in any order in the array; the sender SHOULD match them to "
-            "requests by `id`, never by position. Binds the TCK as sender, not the agent -- "
-            "record-only, always SKIPped (the TCK's own batch checks match by `id`)."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:80-81"),
-    ),
-    Requirement(
-        id="ACP-BATCH-206",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "The receiver MAY process batch entries concurrently, in any order, with any "
-            "parallelism. No ordering assertion is legitimate -- record-only, always SKIPped. "
-            "INFORMATIONAL, not ADVISORY: a row that can never be judged "
-            "belongs in the record-only tier."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:72-73"),
-    ),
-    Requirement(
-        id="ACP-BATCH-207",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "A client or agent MAY send a batch; an agent MAY therefore spontaneously emit a "
-            "batch of `session/update` notifications. Cannot be forced by a client-only TCK -- "
-            "record-only, always SKIPped. INFORMATIONAL, not ADVISORY: a "
-            "row that can never be judged belongs in the record-only tier."
+            "Any JSON array the agent receives on stdin -- empty, request-only, "
+            "notification-only, containing non-object elements, or mixing call- and "
+            "response-shaped elements -- is rejected with exactly one Invalid Request "
+            "(`-32600`) error object whose `id` is `null`; no element is processed (no "
+            "response carries an element's `id`). ADVISORY: the receiver clause carries no "
+            "RFC-2119 keyword (only the sender's does). An agent that answers with an array "
+            "also fails `ACP-TRANSPORT-001` (MANDATORY)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:59-63; "
-            "schema/v2/schema.unstable.json#/anyOf/4/items (ClientBatchCall.items)"
-        ),
-    ),
-    Requirement(
-        id="ACP-BATCH-208",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Clients and agents SHOULD NOT batch lifecycle-sensitive messages (`initialize`, "
-            "`auth/login`, `session/new`, `session/resume`, `session/prompt`). A property of "
-            "the sender, not the agent under test as a receiver -- record-only, always SKIPped. "
-            "INFORMATIONAL, not ADVISORY: a row that can never be judged "
-            "belongs in the record-only tier."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/transports.mdx:94-97"
-        ),
-    ),
-    Requirement(
-        id="ACP-INFO-BATCH-201",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) the agent's response to an invalid-JSON batch line -- spec "
-            "says a single Parse error (`-32700`) with `id: null`, but SDKs disagree (same "
-            "unasserted behaviour as v1's ACP-INFO-PARSE-001)."
-        ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:67-68"),
-    ),
-    Requirement(
-        id="ACP-INFO-BATCH-202",
-        tier=Tier.INFORMATIONAL,
-        capability=None,
-        text=(
-            "Record (never assert) the agent's response to a call batch containing a "
-            "response-shaped entry (or vice versa) -- the schema forbids mixing kinds, but no "
-            "prose states this and JSON-RPC 2.0 itself does not either."
-        ),
-        citation=_cite(
-            "schema/v2/schema.unstable.json#/anyOf/2 vs schema/v2/schema.unstable.json#/anyOf/3"
+            "docs/protocol/v2/draft/transports.mdx:65-67; "
+            "docs/protocol/v2/draft/overview.mdx:21"
         ),
     ),
     Requirement(
@@ -928,18 +1170,93 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-RESUME-201",
+        id="ACP-SESSION-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/new` with a relative `cwd` is rejected with an error, not answered with a "
+            "result (\"Agents reject a request with a relative `cwd`\"). The code is judged "
+            "separately (`ACP-SESSION-209`). The probe breaks the client rule that `cwd` be "
+            "absolute on purpose, because the spec defines the agent's answer to exactly that "
+            "input."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:524; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/cwd"
+        ),
+    ),
+    Requirement(
+        id="ACP-SESSION-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `session/new` with a relative `cwd` (`ACP-SESSION-204`'s probe) "
+            "uses `-32602` (Invalid params). The sentence naming the code carries no RFC "
+            "keyword (the MUST binds the client's path), so the code is ADVISORY while the "
+            "rejection itself is not. SKIPs when the probe was not rejected "
+            "(`ACP-SESSION-204`'s concern). An agent that accepts the relative `cwd` FAILs "
+            "`ACP-SESSION-204` and is not judged here."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:524; docs/protocol/v2/draft/error.mdx:48"
+        ),
+    ),
+    Requirement(
+        id="ACP-SESSION-206",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Before its `session/new` response, the agent sends no session-scoped request "
+            "(for example a permission request or an elicitation) naming the new session -- "
+            "the client cannot yet show it for that session. SHOULD NOT. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:103"),
+    ),
+    Requirement(
+        id="ACP-SESSION-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Before its `session/new` response, the agent sends no `config_option_update` or "
+            "`available_commands_update` for the new session: initial state belongs in the "
+            "response. SHOULD. `state_update` is explicitly allowed before the response and "
+            "is not judged. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:98-99,103"),
+    ),
+    Requirement(
+        id="ACP-SESSION-208",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When the latest `config_option_update`/`available_commands_update` for the new "
+            "session that arrives before the `session/new` response carries a non-empty list, "
+            "the response carries the corresponding list (`configOptions`/`availableCommands`), "
+            "non-empty: a setup response replaces the lists the client holds, so an agent whose "
+            "session has options or commands MUST include them. The premise \"the session has "
+            "them\" is inferred from that notification; a response arriving with no such "
+            "notification before it is recorded, not judged (vacuous)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:108,136,138; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "`session/resume` (no `replayFrom`) of a session obtained via the harness's "
             "three-route strategy (create, create-then-close, then a `session/list` entry created in "
             "the TCK's own `cwd`) succeeds with a schema-valid object result. `-32601` FAILs "
-            "(B3 makes `session/resume` a baseline-mandatory method); any other error from all "
-            "three routes SKIPs -- no route is spec-guaranteed to work."
+            "(`session/resume` is part of the baseline once `capabilities.session` is "
+            "advertised); any other error from all three routes SKIPs -- no route is "
+            "spec-guaranteed to work."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:129-130; "
+            "docs/protocol/v2/draft/session-setup.mdx:144-145; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
         ),
@@ -959,13 +1276,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "hatch) and is recorded, never FAILed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:123,192-193,212-215,301-303,319-322; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:483-493,535-538,966,1004-1007; "
-            "docs/protocol/v2/draft/session-list.mdx:197-198"
+            "docs/protocol/v2/draft/session-setup.mdx:138,207-209,225-229,321-323,339-342; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:561-571,613-616,1044,1084-1087; "
+            "docs/protocol/v2/draft/session-list.mdx:204-205"
         ),
     ),
     Requirement(
-        id="ACP-RESUME-203",
+        id="ACP-RESUME-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -974,8 +1291,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "FAILed on that account -- for an agent that retains no history to replay."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:164-169 (the current-state snapshot is "
-            "live sync, not history)"
+            "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history)"
         ),
     ),
     Requirement(
@@ -989,7 +1305,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "check rather than FAILing it."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:261-266; docs/protocol/v2/draft/prompt-lifecycle.mdx:300; schema/v2/schema.unstable.json#/$defs/PromptResponse/properties/messageId"
+            "docs/protocol/v2/draft/session-setup.mdx:282-287; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:370; "
+            "schema/v2/schema.unstable.json#/$defs/PromptResponse/properties/messageId"
         ),
     ),
     Requirement(
@@ -1004,7 +1322,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "recorded, never FAILed -- for an agent whose replay uses only whole-message "
             "updates."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:279-292"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:299-312"),
     ),
     Requirement(
         id="ACP-RESUME-206",
@@ -1016,8 +1334,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "resumed session, sent after every replayed history update and before the response."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:36-37,301-303,319-324; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:975-981; "
+            "docs/protocol/v2/draft/session-setup.mdx:36-37,321-323,339-344; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1055-1061; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
         ),
     ),
@@ -1032,7 +1350,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "FAILs, as does any other error code."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:197-201; "
+            "docs/protocol/v2/draft/session-setup.mdx:211-215; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/replayFrom; "
             "schema/v2/schema.unstable.json#/$defs/ReplayFrom/anyOf/1"
         ),
@@ -1047,7 +1365,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "omitted -- and is not probed here."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:200-201; "
+            "docs/protocol/v2/draft/session-setup.mdx:214-215; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/replayFrom"
         ),
     ),
@@ -1061,12 +1379,95 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "against the v2 schema and carries the resumed `sessionId`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:192-195,261-263; "
+            "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
     ),
     Requirement(
-        id="ACP-LIST-201",
+        id="ACP-RESUME-210",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A successful `session/resume` of a session carries each list -- `configOptions`, "
+            "`availableCommands` -- that the same session's own `session/new` response carried "
+            "non-empty, and non-empty: a setup response replaces the lists the client holds, so "
+            "an agent whose session has options or commands MUST include them. The session is "
+            "resumed on the connection that created it. SKIPs when `session/new` carried "
+            "neither list, or when that resume errors (`ACP-RESUME-216` judges the error). The "
+            "premise \"the session still has them\" is inferred from `session/new`: an agent "
+            "whose session legitimately lost every option in between answers the same way."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:108,136,333-335; "
+            "docs/protocol/v2/draft/slash-commands.mdx:12; "
+            "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-212",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "With `replayFrom: {\"type\": \"start\"}` on a session whose last turn reached idle, "
+            "no earlier `state_update` with `state` `running` or `requires_action` precedes the "
+            "current-state snapshot (the last `state_update` before the response): replay "
+            "carries no historical `state_update` as current activity. The snapshot itself may "
+            "report any state, and a replayed historical `idle` cannot be told from the idle "
+            "snapshot's optional stop reason, so neither is judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:227,348; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1084-1087"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-213",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every item in the `background` list of a resume's current-state snapshot (a "
+            "`terminal`, `tool_call` or `subagent` item) is announced before that snapshot, "
+            "within the resume exchange, by a `terminal_update` with its `terminalId`, a "
+            "`tool_call_update` with its `toolCallId` or a `subagent_update` with its "
+            "`sessionId`. Checked with `replayFrom` omitted, where nothing is replayed, so every "
+            "listed item needs its own update. SKIPs when the snapshot lists no such item, "
+            "which is the norm for an agent with no live background work, rather than passing "
+            "vacuously. Items of other (custom) types are not judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:346; "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-214",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A successful `session/resume` -- with `replayFrom` omitted or `{\"type\": "
+            "\"start\"}` -- is preceded by a `session_info_update` for the resumed session, sent "
+            "after every replayed history update, so the client can synchronize current session "
+            "info. SHOULD. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:358-361; "
+            "schema/v2/schema.unstable.json#/$defs/SessionInfoUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-216",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/resume` of a session this connection created and has not closed succeeds: "
+            "the session is active, agents SHOULD NOT discard an active session, and resuming "
+            "it again just synchronizes it. SHOULD. Any error FAILs here, where `ACP-RESUME-001` "
+            "SKIPs on one. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:49,53"),
+    ),
+    Requirement(
+        id="ACP-LIST-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1074,19 +1475,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "present as an array, and the response validates against the v2 schema."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-list.mdx:10,73,108; "
+            "docs/protocol/v2/draft/session-list.mdx:10,76,111; "
             "schema/v2/schema.unstable.json#/$defs/ListSessionsResponse"
         ),
     ),
     Requirement(
-        id="ACP-LIST-202",
+        id="ACP-LIST-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "`session/list` filtered by a `cwd` no session plausibly uses returns "
             "`sessions: []` -- never `null`, never an error."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-list.mdx:145"),
+        citation=_cite("docs/protocol/v2/draft/session-list.mdx:148"),
     ),
     Requirement(
         id="ACP-LIST-203",
@@ -1094,11 +1495,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "When `session/list` is filtered by a real `cwd`, every returned `SessionInfo.cwd` "
-            "equals the requested `cwd` (a per-entry check only; the reverse direction -- that a "
-            "session at that `cwd` is returned at all -- is not asserted, since no upstream "
-            "statement guarantees a freshly created session appears in `session/list`)."
+            "names that same directory. Agents MAY normalize paths when comparing, so equality is "
+            "judged after path normalization (for example a trailing separator). A session whose "
+            "`cwd` is a subdirectory of the filter is never returned. A per-entry check only; the "
+            "reverse direction -- that a session at that `cwd` is returned at all -- is not "
+            "asserted, since no upstream statement guarantees a freshly created session appears "
+            "in `session/list`."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-list.mdx:63-66"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:63-69; "
+            "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cwd"
+        ),
     ),
     Requirement(
         id="ACP-LIST-204",
@@ -1106,26 +1513,76 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text="Every returned `SessionInfo.cwd` is an absolute path.",
         citation=_cite(
-            "docs/protocol/v2/draft/session-list.mdx:115-117; docs/protocol/v2/draft/overview.mdx:188"
+            "docs/protocol/v2/draft/session-list.mdx:118-120; "
+            "docs/protocol/v2/draft/overview.mdx:218"
         ),
     ),
     Requirement(
-        id="ACP-CLOSE-201",
+        id="ACP-LIST-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/list` with a relative `cwd` filter is rejected with an error, not answered "
+            "with a result (\"Agents reject a relative path\"; declarative, no RFC keyword). The "
+            "code is judged separately (`ACP-LIST-207`). The probe breaks the client rule that "
+            "the filter be absolute on purpose, because the spec defines the agent's answer to "
+            "exactly that input."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:64-65; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cwd"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/list` with a `cursor` the agent never issued is rejected with `-32602` (a "
+            "MUST that names the code). A success, or another error code, FAILs. The probe is a "
+            "fabricated `_tck`-prefixed token, never the empty string, which is a valid cursor. "
+            "Cursors are opaque, but a token the agent never issued is invalid under every "
+            "encoding."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:157; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cursor"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `session/list` with a relative `cwd` filter (`ACP-LIST-205`'s "
+            "probe) uses `-32602` (Invalid params). The sentence naming the code carries no RFC "
+            "keyword, so the code is ADVISORY while the rejection itself is not. SKIPs when the "
+            "probe was not rejected (`ACP-LIST-205`'s concern). An agent that accepts the "
+            "relative filter FAILs `ACP-LIST-205` and is not judged here."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:64-65; docs/protocol/v2/draft/error.mdx:48"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
             "`session/close` of a live, idle session succeeds with a schema-valid empty-object "
             "result -- `session/close`'s own baseline contract, distinct from the cancellation "
-            "side effect `ACP-CLOSE-202`/`ACP-CANCEL-208` covers."
+            "side effect `ACP-CLOSE-002`/`ACP-CANCEL-208` covers."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:338-340,360-376; "
+            "docs/protocol/v2/draft/session-setup.mdx:367-369,389-405; "
             "schema/v2/schema.unstable.json#/$defs/CloseSessionRequest; "
             "schema/v2/schema.unstable.json#/$defs/CloseSessionResponse"
         ),
     ),
     Requirement(
-        id="ACP-CLOSE-202",
+        id="ACP-CLOSE-002",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
@@ -1137,8 +1594,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "legibility."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:360-364; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:304,1109-1112,1124"
+            "docs/protocol/v2/draft/session-setup.mdx:389-393; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:374,1185-1188,1199"
         ),
     ),
     Requirement(
@@ -1149,9 +1606,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "When `session/close` cancels in-flight foreground work, the idle `state_update` "
             "with `stopReason: \"cancelled\"` for that session arrives before the successful "
             "`session/close` response. SKIPs when the turn did not end `cancelled` (that is "
-            "`ACP-CLOSE-202`'s finding) or the close lost the race."
+            "`ACP-CLOSE-002`'s finding) or the close lost the race."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:364"),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:393"),
     ),
     Requirement(
         id="ACP-CLOSE-204",
@@ -1159,62 +1616,257 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A `session/prompt` sent immediately before `session/close` (without awaiting its "
-            "receipt) is answered either with `-32800` (closing prevented insertion) or with a "
-            "success carrying a string `messageId` (already inserted) -- never another error, "
-            "never left unanswered. ADVISORY rather than CAPABILITY: the outcome depends on how "
-            "the agent schedules two back-to-back requests, so a failure here is reported but "
-            "does not by itself fail the verdict."
+            "receipt) is answered with `-32800` (closing prevented insertion), with a success "
+            "carrying a string `messageId` (already inserted), or with `-32002` (the agent "
+            "processed the close first, so the session was no longer active when it reached the "
+            "prompt) -- never another error, never left unanswered. ADVISORY rather than "
+            "CAPABILITY: the outcome depends on how the agent schedules two back-to-back "
+            "requests, so a failure here is reported but does not by itself fail the verdict."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:366; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:304"
+            "docs/protocol/v2/draft/session-setup.mdx:51,395; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:374; "
+            "docs/protocol/v2/draft/error.mdx:54"
         ),
     ),
     Requirement(
-        id="ACP-DELETE-201",
+        id="ACP-CLOSE-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When `session/close` arrives while the agent's own `session/request_permission` "
+            "for that session is pending (the TCK holds it unanswered), the agent sends "
+            "`$/cancel_request` naming it before its successful `session/close` response. "
+            "SKIPPED when no permission request was pending when close was sent, or the close "
+            "did not succeed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:391; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After its successful `session/close` response, the agent sends no `session/update` "
+            "and no agent -> client request carrying that `sessionId` on the connection. "
+            "Responses to earlier `session/prompt` requests are exempt. Judged for closing an "
+            "idle session and for a close that cancels work mid-turn (that second run SKIPs "
+            "unless the turn ended `cancelled`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:395; "
+            "schema/v2/schema.unstable.json#/$defs/CloseSessionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLOSE-003",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/close` is idempotent: closing a session this connection already closed, "
+            "or one that does not exist, succeeds with the same empty result. SHOULD. A "
+            "`-32002` answer is the behavior clients are told to tolerate as success, but the "
+            "agent SHOULD still return the empty result, so it is an ADVISORY FAIL. The test is "
+            "gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:407-410; "
+            "docs/protocol/v2/draft/error.mdx:56"
+        ),
+    ),
+    Requirement(
+        id="ACP-DELETE-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
-            "`session/delete` of an existing, already-closed session succeeds with a "
-            "schema-valid empty-object result. The session is closed first because deleting an "
-            "active session is implementation-defined."
+            "`session/delete` of a session active and idle on this connection succeeds with a "
+            "schema-valid empty-object result (deleting an active session closes it first). The "
+            "session certainly exists, so a `-32002` answer is not the tolerated \"already gone\" "
+            "case here and FAILs."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-delete.mdx:35,57,74-86,94; "
+            "docs/protocol/v2/draft/session-delete.mdx:35,57,78-86,95; "
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
             "schema/v2/schema.unstable.json#/$defs/DeleteSessionResponse"
         ),
     ),
     Requirement(
-        id="ACP-DELETE-202",
+        id="ACP-DELETE-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.delete",
         text=(
-            "After a successful `session/delete` of a closed session, the session no longer "
-            "appears in `session/list` results. SKIPs when the closed session was never observed "
-            "in `session/list` in the first place (nothing to compare against). :90 is a plain "
-            "declarative, not an RFC keyword, but it is what `session/delete` means (mirrored by "
-            "the sequence diagram), so this stays CAPABILITY."
+            "After a `session/delete` of a closed session, the session no longer appears in "
+            "`session/list` results. A `-32002` answer to the delete counts as a successful "
+            "delete (clients SHOULD treat it as one), so the listing is still judged; any other "
+            "error FAILs. SKIPs when the closed session was never observed in `session/list` in "
+            "the first place (nothing to compare against). :90 is a plain declarative, not an "
+            "RFC keyword, but it is what `session/delete` means (mirrored by the sequence "
+            "diagram), so this stays CAPABILITY."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,94"),
+        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:27-28,90,92"),
     ),
     Requirement(
-        id="ACP-DELETE-203",
+        id="ACP-DELETE-002",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
             "Deleting an already-deleted or never-created `sessionId` SHOULD succeed silently, "
-            "rather than erroring -- verbatim re-cite of v1's `ACP-DELETE-002`, new capability "
-            "path."
+            "rather than erroring. A `-32002` answer is the deviation clients are told to "
+            "tolerate as success, but the agent SHOULD still return the empty result, so it is "
+            "an ADVISORY FAIL; any other error is worse."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-delete.mdx:91"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:91; docs/protocol/v2/draft/error.mdx:56"
+        ),
     ),
     Requirement(
-        id="ACP-ADDDIRS-201",
+        id="ACP-DELETE-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.delete",
+        text=(
+            "`session/delete` of a session with foreground work in flight cancels that work as "
+            "if `session/close` had been called: the idle `state_update` ending the turn carries "
+            "`stopReason: \"cancelled\"` and arrives before the delete response. If the delete "
+            "kept the prompt from being inserted, the prompt is answered `-32800`. A delete "
+            "rejected without cancelling the work FAILs. SKIPs when the turn ended on its own "
+            "before the delete landed (cancellation not exercised)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:95; "
+            "docs/protocol/v2/draft/session-setup.mdx:393,395"
+        ),
+    ),
+    Requirement(
+        id="ACP-DELETE-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.delete",
+        text=(
+            "After `session/delete` of a session, `session/resume` of that `sessionId` (same "
+            "`cwd`) is answered with `-32002` and `data.sessionId` set to the requested id (a "
+            "MUST that names the code). A `-32002` answer to the delete itself counts as a "
+            "successful delete, so the resume is still judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-delete.mdx:92,94; "
+            "docs/protocol/v2/draft/error.mdx:54,56"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "Every `SessionInfo` in a `session/list` result carries a boolean (non-null) "
+            "`archived`: checked on the default view, and on the `only` view once the test's own "
+            "session is archived. SKIPs when the default list is empty. Same rule as v1; "
+            "`session/list` is part of the baseline here, so there is no `list` gate."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:245; "
+            "schema/v2/schema.unstable.json#/$defs/SessionInfo/properties/archived"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "`session/archive` then `session/unarchive` on an existing session both succeed with "
+            "schema-valid empty results. After archive the session is absent from the default "
+            "`session/list` view and present under `archived: \"only\"` and `\"include\"`; after "
+            "unarchive it is present in the default and `include` views and absent from `only`. "
+            "SKIPs when the new session is not listed to begin with. An agent that rejects "
+            "`include` or `only` FAILs, on the Draft RFD's rule that an agent advertising "
+            "`archive` MUST support all three `archived` values."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:222,237-241; "
+            "docs/rfds/session-archive.mdx:112 (Draft RFD); "
+            "schema/v2/schema.unstable.json#/$defs/ArchiveSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/UnarchiveSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/SessionArchiveFilter"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-004",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "`session/list` with an `archived` filter value the agent does not support fails "
+            "with `-32602`, rather than falling back to the default (`exclude`) view. The probe "
+            "value is `_tck_unsupported`, schema-valid through the open `other` branch. A "
+            "success or any other error code is a FAIL; `-32000` (authentication required) "
+            "SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:243; docs/protocol/v2/draft/error.mdx:66; "
+            "schema/v2/schema.unstable.json#/$defs/SessionArchiveFilter"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-005",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "Archiving an already-archived session and unarchiving a not-archived one both "
+            "succeed. `session/archive` and `session/unarchive` of a never-created `sessionId` "
+            "fail with `-32002` and `data.sessionId` set to the requested id, rather than "
+            "succeeding silently the way `session/delete` does. Same rule as v1, which asserts "
+            "only error-vs-success; the v2 docs name the code."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:251; docs/protocol/v2/draft/error.mdx:54,66; "
+            "schema/v2/schema.unstable.json#/$defs/ArchiveSessionRequest; "
+            "schema/v2/schema.unstable.json#/$defs/UnarchiveSessionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-006",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "After a successful `session/delete`, the deleted session appears under no "
+            "`archived` filter value (`exclude`, `include`, `only`). Needs "
+            "`capabilities.session.delete` as well; SKIPs without it. The session must be "
+            "listed (under `include`) before the delete, else the row SKIPs. A `-32002` answer "
+            "to the delete counts as success. An agent that rejects `include` or `only` FAILs, "
+            "on the Draft RFD's rule that an agent advertising `archive` MUST support all three "
+            "`archived` values."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:252; "
+            "docs/rfds/session-archive.mdx:112 (Draft RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-ARCHIVE-201",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.archive",
+        text=(
+            "`session/archive` of a session with foreground work in flight cancels that work as "
+            "if `session/close` had been called: the idle `state_update` ending the turn carries "
+            "`stopReason: \"cancelled\"` and arrives before the archive response. If the archive "
+            "kept the prompt from being inserted, the prompt is answered `-32800`. An archive "
+            "rejected without cancelling the work FAILs (an active session is archivable). "
+            "SKIPs when the turn ended on its own before the archive landed (cancellation not "
+            "exercised)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:247; "
+            "docs/protocol/v2/draft/session-setup.mdx:393,395; "
+            "schema/v2/schema.unstable.json#/$defs/ArchiveSessionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-ADDDIRS-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.additionalDirectories",
         text="`session/new` with an absolute `additionalDirectories` entry is accepted.",
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:383-411; "
+            "docs/protocol/v2/draft/session-setup.mdx:412-441; "
             "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/additionalDirectories"
         ),
     ),
@@ -1228,8 +1880,24 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/resume`/`session/load` analogue to this rule at all."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:385-386,409; "
+            "docs/protocol/v2/draft/session-setup.mdx:416,439; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionRequest/properties/additionalDirectories"
+        ),
+    ),
+    Requirement(
+        id="ACP-ADDDIRS-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.additionalDirectories",
+        text=(
+            "`session/new` with a relative `additionalDirectories` entry is rejected with "
+            "`-32602` when the agent advertises the capability (the code is named by the "
+            "spec). A success, or another error code, FAILs. The probe breaks the client rule "
+            "that each entry be absolute on purpose, because the spec defines the agent's "
+            "answer to exactly that input."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:437,443; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/additionalDirectories"
         ),
     ),
     Requirement(
@@ -1241,8 +1909,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "result whose `sessionId` is a non-empty string distinct from the source session's."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/schema.mdx:614-624; "
+            "docs/protocol/v2/draft/initialization.mdx:269-273; "
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse; "
+            "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse/properties/sessionId; "
             "schema/v2/schema.unstable.json#/$defs/SessionCapabilities/properties/fork"
         ),
     ),
@@ -1253,23 +1923,71 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "The forked session is active once `session/fork` responds: a `session/prompt` on "
             "the forked id, with no `session/resume` first, is accepted with a `messageId` and "
-            "the turn reaches a terminating idle. Definitional prose without an RFC keyword."
+            "the turn reaches a terminating idle. Definitional (the draft docs bold **active**, "
+            "with no RFC keyword), but an unknown or non-active session MUST get `-32002`, so an "
+            "active forked session must be accepted."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/schema.mdx:622-624; docs/rfds/session-fork.mdx:67"
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
+            "docs/protocol/v2/draft/error.mdx:54; "
+            "docs/rfds/session-fork.mdx:67"
         ),
     ),
     Requirement(
-        id="ACP-SYSPROMPT-201",
+        id="ACP-FORK-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "`session/fork` of a `sessionId` the agent never created is answered with `-32002` "
+            "and `data.sessionId` set to the requested id (a MUST that names the code)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/error.mdx:54,64"),
+    ),
+    Requirement(
+        id="ACP-FORK-204",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "`session/fork` of an existing session that is no longer active on the connection "
+            "(created, then closed, and still listed by `session/list`) succeeds with a new "
+            "`sessionId`: the source session only has to exist. SKIPs when the closed session "
+            "is not listed (its existence cannot be established)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:64; docs/protocol/v2/draft/session-setup.mdx:52"
+        ),
+    ),
+    Requirement(
+        id="ACP-FORK-205",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "A successful `session/fork` response carries `configOptions`, non-empty, when the "
+            "source session's own `session/new` response carried it non-empty: a setup response "
+            "replaces the list the client holds, so an agent whose session has configuration "
+            "options MUST include them. The source is forked on the connection that created it. "
+            "Presence and non-emptiness only; shape is `ACP-CONFIG-201`/`203`'s concern. "
+            "`availableCommands` is not judged: a fork's commands are the new session's own, "
+            "not the source's. SKIPs when `session/new` carried no `configOptions`, or when the "
+            "fork errors (`ACP-FORK-201`/`202` judge the error). The premise \"the new session "
+            "has them\" is inferred from the source's `session/new`: an agent whose fork "
+            "legitimately has no options answers the same way."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:108,140; "
+            "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.systemPrompt",
         text=(
             "`session/new` with `systemPrompt: {mode: \"append\", content: [<text block>]}` "
-            "succeeds. Only this positive path is probed: the error paths (unadvertised mode, "
-            "non-text content) would require the TCK to break a client MUST."
+            "succeeds. The error paths are `ACP-SYSPROMPT-002`/`003`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:441-445,450; "
+            "docs/protocol/v2/draft/session-setup.mdx:473-477,483; "
             "schema/v2/schema.unstable.json#/$defs/SystemPromptMode/anyOf/0"
         ),
     ),
@@ -1282,9 +2000,44 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "succeeds when `session.systemPrompt.mode.override` is advertised."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:444-445,450; "
-            "docs/protocol/v2/draft/initialization.mdx:238-244; "
+            "docs/protocol/v2/draft/session-setup.mdx:476-477,483; "
+            "docs/protocol/v2/draft/initialization.mdx:298-304; "
             "schema/v2/schema.unstable.json#/$defs/SessionSystemPromptModeCapabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.systemPrompt",
+        text=(
+            "`session/new`, and `session/resume` of an existing session, with a "
+            "`systemPrompt.mode` the agent cannot support (the implementation-reserved "
+            "`_tck_unsupported`) returns an error rather than creating or resuming the "
+            "session; after a refused resume, `session/prompt` on that id does not succeed. "
+            "The error code is recorded, not asserted (`-32602` is only RECOMMENDED). The probes "
+            "break the client rule to use only an advertised mode on purpose: the spec defines "
+            "the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:474,481; "
+            "schema/v2/schema.unstable.json#/$defs/SystemPromptMode"
+        ),
+    ),
+    Requirement(
+        id="ACP-SYSPROMPT-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.systemPrompt",
+        text=(
+            "`session/new`, and `session/resume` of an existing session, with a non-text "
+            "`systemPrompt.content` block (`resource_link`) returns an error rather than "
+            "creating or resuming the session -- only text blocks are supported for now; "
+            "after a refused resume, `session/prompt` on that id does not succeed. The probes "
+            "break the client rule to send only text blocks on purpose: the spec defines the "
+            "agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:477,481; "
+            "schema/v2/schema.unstable.json#/$defs/SystemPrompt/properties/content"
         ),
     ),
     Requirement(
@@ -1293,14 +2046,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "INFORMATIONAL, not CAPABILITY, despite the underlying `capabilities.session.mcp."
-            "stdio` marker: records whether `session/new` accepts a "
-            "well-formed stdio MCP server entry when the marker is advertised. A connect failure "
-            "against a harmless, possibly-nonexistent command is the agent's own business "
-            "(\"Agents SHOULD connect\" has no client-observable surface in stable v2) and is not "
-            "provably non-conformant, so this never asserts on the outcome."
+            "stdio` marker: records whether `session/new` accepts a well-formed stdio MCP "
+            "server entry when the marker is advertised, and whether a `notice` for the new "
+            "session followed an accepted request. A connect failure against a harmless, "
+            "possibly-nonexistent command is the agent's own business: the spec lets it either "
+            "fail the request or continue without that server, and only says that if it "
+            "continues it SHOULD tell the user (\"for example with a notice\"), which is not "
+            "tied to a wire event. So this never asserts on the outcome."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:508-558,612,637; "
+            "docs/protocol/v2/draft/session-setup.mdx:555-607,656,681-685; "
             "schema/v2/schema.unstable.json#/$defs/McpServerStdio"
         ),
     ),
@@ -1314,8 +2069,64 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "session.mcp.http` is advertised. Never asserts on the outcome."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:560-608; "
+            "docs/protocol/v2/draft/session-setup.mdx:609-652; "
             "schema/v2/schema.unstable.json#/$defs/McpServerHttp"
+        ),
+    ),
+    Requirement(
+        id="ACP-MCP-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/new` with an MCP server of a transport the agent does not support is "
+            "rejected with `-32602` (the code is named by the spec). Two probes: v1's `sse`, "
+            "which the spec names explicitly, and the implementation-reserved "
+            "`_tck_unsupported_transport`, which no agent supports. A success, or another "
+            "error code, on either FAILs. The probes break the client rule to use only "
+            "advertised transports on purpose, because the spec defines the agent's answer to "
+            "exactly those inputs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:545,553; "
+            "schema/v2/schema.unstable.json#/$defs/McpServer"
+        ),
+    ),
+    Requirement(
+        id="ACP-MCP-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/new` with two MCP servers sharing a `name` is rejected with `-32602`. "
+            "ADVISORY rather than CAPABILITY: the sentence carries no keyword for the agent, "
+            "and an agent that launches servers before validating may fail with a launch error "
+            "instead, which the spec allows without naming a code. The probe breaks the "
+            "client MUST that names be unique on purpose. The test is gated on "
+            "`capabilities.session.mcp.stdio`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:547,685; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/mcpServers"
+        ),
+    ),
+    Requirement(
+        id="ACP-SESSION-006",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A random canary the TCK puts in an MCP server's credentials -- a stdio server's "
+            "`env` value, or an http server's `headers` value, sent on `session/new` -- never "
+            "appears on the agent's stdout or stderr after one prompt turn, `session/list` and "
+            "a `session/resume` with the same servers: not in responses, errors, "
+            "`session/update`, `_meta`, listings or replayed history, and not in the stdio "
+            "server's own command line. SHOULD NOT. Only the client-observable part of the "
+            "rule: model context, logging beyond stderr and persistence are not covered. The "
+            "stdio test is gated on `capabilities.session.mcp.stdio`, the http test on "
+            "`capabilities.session.mcp.http`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:691,695; "
+            "schema/v2/schema.unstable.json#/$defs/EnvVariable; "
+            "schema/v2/schema.unstable.json#/$defs/HttpHeader"
         ),
     ),
     Requirement(
@@ -1327,9 +2138,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`name` are present, `type` selects the right shape (`select` requires `currentValue`"
             "+`options`; `boolean` requires `currentValue`), and a `select` entry's `options` is "
             "an array -- either a flat `SessionConfigSelectOption[]` or a grouped "
-            "`SessionConfigSelectGroup[]`, never mixed (the schema sets no minimum length). Inferred support, same encoding as v1's "
-            "`ACP-MODES-001`/`ACP-CONFIG-001` -- `capability=\"inferred:configOptions\"` is "
-            "documentation-only."
+            "`SessionConfigSelectGroup[]`, never mixed. A `select` entry offers at least one value "
+            "and every group holds at least one (`minItems: 1`). An empty `configOptions` list "
+            "itself is valid and means the session has none (a SKIP, not a violation). Only the "
+            "`configOptions` items are judged, not the rest of the carrying message. Inferred "
+            "support, same encoding as v1's `ACP-MODES-001`/`ACP-CONFIG-001` -- "
+            "`capability=\"inferred:configOptions\"` is documentation-only."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/SessionConfigOption; "
@@ -1339,27 +2153,32 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectOptions; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectOption; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectGroup; "
+            "schema/v2/schema.unstable.json#/$defs/SessionConfigSelectGroup/properties/options; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigGroupId; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigBoolean; "
-            "docs/protocol/v2/draft/session-config-options.mdx:93-146"
+            "docs/protocol/v2/draft/session-config-options.mdx:93-154"
         ),
     ),
     Requirement(
-        id="ACP-CONFIG-202",
+        id="ACP-CONFIG-002",
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
-            "`session/set_config_option` responds with the complete post-change `configOptions` "
-            "list: an array, schema-valid, containing the changed `configId`. Whether every "
+            "A well-formed `session/set_config_option` of an advertised option succeeds (agents "
+            "advertising config options MUST support the method) and responds with the complete "
+            "post-change `configOptions` list: an array, schema-valid, containing the changed "
+            "`configId`. Whether every "
             "previously-advertised `configId` is still present is recorded, never asserted -- a "
             "change may legitimately remove dependent options, so a partial reply and a "
             "dependent removal are wire-identical. SKIPs when `session/new` advertised no "
             "`configOptions`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:279,324-329; "
+            "docs/protocol/v2/draft/session-config-options.mdx:234,236,291,367-371; "
+            "docs/protocol/v2/draft/initialization.mdx:239-240; "
             "docs/rfds/session-config-options.mdx:45; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionResponse"
         ),
     ),
@@ -1369,26 +2188,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:configOptions",
         text=(
             "`session/resume`'s `configOptions`, when present, validates the same way as "
-            "`ACP-CONFIG-201` -- a new carrier in v2 (v1's `session/load` had no analogous "
-            "field). The session is obtained the same way as `ACP-RESUME-201`, so a resume "
-            "error other than `-32601` SKIPs."
+            "`ACP-CONFIG-201` (including its non-empty `select` options) -- a new carrier in v2 (v1's `session/load` had no analogous "
+            "field). Shape only: whether the resume carries the list at all is "
+            "`ACP-RESUME-210`'s concern, and an absent list SKIPs. The session is obtained the "
+            "same way as `ACP-RESUME-001`, so a resume error other than `-32601` SKIPs."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:94,313-315; "
+            "docs/protocol/v2/draft/session-setup.mdx:136,333-335; "
             "schema/v2/schema.unstable.json#/$defs/ResumeSessionResponse/properties/configOptions"
         ),
     ),
     Requirement(
-        id="ACP-CONFIG-204",
+        id="ACP-CONFIG-001",
         tier=Tier.CAPABILITY,
         capability="inferred:configOptions",
         text=(
             "A `select`-type option's `currentValue` is one of its declared `options` values "
-            "(flat or grouped) -- derived from C5's always-a-default-value MUST plus the field "
-            "descriptions, not itself schema-enforced."
+            "(flat or grouped). An explicit MUST, not schema-enforced."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:116-125,214; "
+            "docs/protocol/v2/draft/session-config-options.mdx:116-119,125-133; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
         ),
     ),
@@ -1404,121 +2223,324 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "and vacuous (recorded, never FAILed) when no such update is ever observed."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:331-386; "
+            "docs/protocol/v2/draft/session-config-options.mdx:236,373,459; "
             "docs/rfds/session-config-options.mdx:45; "
             "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
         ),
     ),
     Requirement(
-        id="ACP-AUTH-201",
+        id="ACP-CONFIG-207",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "`session/set_config_option` naming a `configId` the session did not advertise is "
+            "rejected with `-32602`. The TCK sends the probe id `_tck_unknown_config` on purpose: "
+            "clients MUST only send advertised ids, but the same sentence fixes the agent's "
+            "answer to one that doesn't. SKIPs when `session/new` advertised no `configOptions`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:234; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-208",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "`session/set_config_option` for an advertised option with an invalid value is "
+            "rejected with `-32602`: a `select` value it does not declare (probe "
+            "`_tck_unknown_value`), a value `type` that does not match the option (`boolean` "
+            "for a `select`, `id` for a `boolean`), or an unsupported value `type` (probe "
+            "`_tck_unsupported`). Probes that need an option type the session lacks are "
+            "skipped. SKIPs when `session/new` advertised no `configOptions`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:234,264-273; "
+            "docs/protocol/v2/draft/error.mdx:48; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-209",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "A rejected `session/set_config_option` leaves the configuration unchanged. After "
+            "each of the unknown-`configId` and invalid-value probes of `ACP-CONFIG-207`/`208` "
+            "is rejected, a no-op set of a different option returns a list whose `(configId, "
+            "currentValue)` pairs equal the previous list. Probes the agent did not reject "
+            "are not judged here (`ACP-CONFIG-207`/`208` FAIL them; the baseline is re-taken "
+            "after them). The invalid-value probe needs a second settable option, and the "
+            "whole row SKIPs when the session has no option besides the one the follow-up sets "
+            "(nothing to observe through). A `config_option_update` arriving meanwhile also "
+            "SKIPs (the agent may change configuration itself)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:234,459-463; "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-210",
+        tier=Tier.CAPABILITY,
+        capability="inferred:configOptions",
+        text=(
+            "Within one `select` option every declared `value` is unique, across groups as "
+            "well. Not schema-enforced."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:125-133; "
+            "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-211",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "`authMethods[*].methodId` values are unique. Re-cites v1's `ACP-AUTH-001`; only "
-            "the field name changed (`id` -> `methodId`)."
+            "When a `session/set_config_option` changes the configuration (the response's "
+            "`(configId, currentValue)` pairs differ from the list before the call), the agent "
+            "also sends a `config_option_update` for the session on the requesting connection, "
+            "before the response or within the quiet drain after it. Only the requesting "
+            "connection is judged. SKIPs when no `configOptions` were advertised or the call "
+            "changed nothing."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:375; "
+            "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CONFIG-212",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The `config_option_update` that duplicates a `session/set_config_option` change "
+            "arrives before that request's response. Judged only when an update carrying the "
+            "response's state is observed (a later update with different state may be a "
+            "legitimate subsequent change); FAILs when every such update arrives after the "
+            "response. SKIPs otherwise."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:377-379; "
+            "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-COMMANDS-201",
+        tier=Tier.CAPABILITY,
+        capability="inferred:availableCommands",
+        text=(
+            "Every command the agent advertises (in a setup response's `availableCommands` or "
+            "an `available_commands_update`) validates as `AvailableCommand` -- it carries a "
+            "`type` discriminator (`command`, or a `_`-prefixed custom type) -- and within each "
+            "list every `name` contains no whitespace and is unique. Only the command items are "
+            "judged, not the rest of the carrying message. No `availableCommands` capability "
+            "marker exists, so support is inferred from the agent advertising any command "
+            "(`capability=\"inferred:availableCommands\"` is documentation-only); SKIPs when "
+            "none is observed. A leading `/` in `name` is not judged: the spec says \"without the "
+            "leading `/`\" with no RFC keyword."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/slash-commands.mdx:12,37-43,89-110; "
+            "schema/v2/schema.unstable.json#/$defs/AvailableCommand; "
+            "schema/v2/schema.unstable.json#/$defs/Command; "
+            "schema/v2/schema.unstable.json#/$defs/AvailableCommandsUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-001",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "`authMethods[*].methodId` values are unique within the list. Schema validation "
+            "alone cannot express this. SKIPs when no `authMethods` are advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/authentication.mdx:51; "
             "schema/v2/schema.unstable.json#/$defs/AuthMethod; "
             "schema/v2/schema.unstable.json#/$defs/AuthMethodId"
         ),
     ),
     Requirement(
-        id="ACP-AUTH-202",
+        id="ACP-AUTH-002",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
             "No `authMethods[*]` entry with `type: \"terminal\"` is advertised unless the "
-            "client advertised `capabilities.auth.terminal: {}` in `initialize`'s params. New "
-            "id, not a reuse of v1's `ACP-AUTH-002` -- the client-capability path and its "
-            "encoding both changed (v1: top-level boolean `clientCapabilities.auth.terminal`; "
-            "v2: nested object marker `capabilities.auth.terminal`)."
+            "client advertised `capabilities.auth.terminal: {}` in `initialize`'s params "
+            "(\"Agents MUST NOT advertise a `terminal` method unless this capability is "
+            "present\"). The capability is a nested object marker in v2 (v1: top-level "
+            "boolean `clientCapabilities.auth.terminal`)."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal; "
-            "schema/v2/schema.unstable.json#/$defs/AuthCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/ClientAuthCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/TerminalAuthCapabilities; "
-            "docs/protocol/v2/draft/authentication.mdx:151-154"
+            "docs/protocol/v2/draft/authentication.mdx:149-151"
         ),
     ),
     Requirement(
-        id="ACP-AUTH-203",
+        id="ACP-AUTH-004",
         tier=Tier.CAPABILITY,
         capability="inferred:authMethods",
         text=(
             "`auth/logout` returns a non-error, schema-valid result. Support is inferred from "
             "a non-empty `authMethods` -- v2 has no `agentCapabilities.auth.logout` marker at "
             "all (unlike v1); `capability=\"inferred:authMethods\"` is documentation-only. "
-            "Replaces v1's `ACP-AUTH-004` outright. Only actually exercised when "
-            "`--allow-logout`/`--tck-allow-logout` is given (destructive: may revoke the "
-            "operator's own credentials); SKIPs otherwise."
+            "Only actually exercised when `--allow-logout`/`--tck-allow-logout` is given "
+            "(destructive: may revoke the operator's own credentials); SKIPs otherwise."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthRequest; "
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthResponse; "
-            "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities"
+            "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities; "
+            "docs/protocol/v2/draft/authentication.mdx:51-52,247-249"
         ),
     ),
     Requirement(
-        id="ACP-AUTH-204",
+        id="ACP-AUTH-003",
         tier=Tier.CAPABILITY,
         capability="inferred:authMethods",
         text=(
             "Given `--auth-method <id>` naming a non-`terminal`, advertised `methodId`, "
             "`auth/login` does not answer `-32601` (Method not found) -- an agent advertising "
-            "`authMethods` MUST implement it -- and, when `capabilities.session` is "
-            "advertised, a subsequent `session/new` does not fail with `-32000`. Mirrors v1's "
-            "`ACP-AUTH-003`, method renamed `authenticate` -> `auth/login`. SKIPs when "
+            "`authMethods` MUST implement it -- nor `-32602` (Invalid params) when the "
+            "advertised entry is `type: \"agent\"` (the one standard type that uses "
+            "`auth/login`; `-32602` is for an id that is not an advertised login method). "
+            "When `capabilities.session` is advertised, a subsequent `session/new` does not "
+            "fail with `-32000`. v1's `authenticate` is renamed `auth/login`. SKIPs when "
             "`--auth-method` was not given, the agent advertises no `authMethods`, or "
-            "`auth/login` fails with any other error."
+            "`auth/login` fails with any other error (`-32602` for a custom `_`-prefixed type "
+            "included, since that type may not use `auth/login`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/authentication.mdx:51-54; "
+            "docs/protocol/v2/draft/authentication.mdx:51-53,87-88,191; "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthRequest/required (`methodId`); "
             "schema/v2/schema.unstable.json#/$defs/LoginAuthResponse"
         ),
     ),
     Requirement(
-        id="ACP-AUTH-205",
+        id="ACP-AUTH-005",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
             "`session/new` does not fail with `-32000` (AUTHENTICATION_REQUIRED) when "
-            "`authMethods` is empty or absent. Re-cites v1's `ACP-AUTH-005`/AUTH-A1; not "
-            "promoted. SKIPs unless `capabilities.session` is advertised."
+            "`authMethods` is empty or absent. SKIPs unless `capabilities.session` is advertised."
         ),
-        citation=_cite("docs/protocol/v2/draft/schema.mdx:785 (-32000 is a MAY, not a MUST)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:954 (-32000 is a MAY, not a MUST); "
+            "docs/protocol/v2/draft/authentication.mdx:193"
+        ),
     ),
     Requirement(
         id="ACP-AUTH-206",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Every `authMethods[*].type` is one of the schema's defined discriminator values "
-            "(`\"agent\"`, `\"terminal\"`) or begins with `_` -- the general open-enum "
+            "Every `authMethods[*]` entry carries a `type` that is one of the schema's defined "
+            "discriminator values (`\"agent\"`, `\"terminal\"`) or begins with `_` -- the general open-enum "
             "extensibility rule applied to this field. New in v2: v1's `type` could default to "
             "\"agent\" when absent and had no enum-closure rule at all."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/authentication.mdx:120-122; docs/protocol/v2/draft/extensibility.mdx:224-234; schema/v2/schema.unstable.json#/$defs/AuthMethod"
+            "docs/protocol/v2/draft/authentication.mdx:87-89,118-120; "
+            "docs/protocol/v2/draft/extensibility.mdx:233-242; "
+            "schema/v2/schema.unstable.json#/$defs/AuthMethod"
         ),
     ),
     Requirement(
-        id="ACP-AUTH-207",
+        id="ACP-AUTH-006",
         tier=Tier.MANDATORY,
         capability=None,
         text=(
             "On a connection that advertised `capabilities.auth.terminal: {}`, every "
-            "`type: \"terminal\"` entry's `args` (if present) is an array of strings, `env` "
-            "(if present) is an array of well-formed `EnvVariable` objects (`name`/`value` "
-            "both required strings), and `env` entries' `name`s are unique within that "
+            "`type: \"terminal\"` entry's `args` (if present; `null` counts as omitted) is an array "
+            "of strings, `env` (if present; `null` counts as omitted) is an array of well-formed "
+            "`EnvVariable` objects (`name`/`value` both required strings), and `env` entries' `name`s are unique within that "
             "descriptor. Conditional on at least one terminal entry actually appearing; SKIPs "
-            "otherwise. New in v2 -- v1's terminal auth descriptor had no `args`/`env` fields."
+            "otherwise. v1's `env` is a string map, unique by construction; v2's is an array, so "
+            "name uniqueness is checked by hand."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/AuthMethodTerminal/properties/env (\"Names MUST be "
             "unique\"); schema/v2/schema.unstable.json#/$defs/EnvVariable; "
-            "docs/protocol/v2/draft/authentication.mdx:201-203"
+            "docs/protocol/v2/draft/authentication.mdx:203-205"
         ),
+    ),
+    Requirement(
+        id="ACP-AUTH-208",
+        tier=Tier.CAPABILITY,
+        capability="inferred:authMethods",
+        text=(
+            "When `initialize` advertised a non-empty `authMethods`, `auth/login` with a "
+            "`methodId` that is not among them (the implementation-reserved "
+            "`_tck_unadvertised_method`) is rejected with an error rather than answered with "
+            "a result. The code is judged separately "
+            "(`ACP-AUTH-210`). The probe breaks the client rule to send only an advertised "
+            "`methodId` on purpose: the spec defines the agent's answer. Sent on a fresh "
+            "connection with no `--auth-method` login, and never for a `terminal` id. SKIPs "
+            "when no `authMethods` are advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/authentication.mdx:191; "
+            "schema/v2/schema.unstable.json#/$defs/LoginAuthRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-007",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.auth.status",
+        text=(
+            "When `capabilities.auth.status` is advertised (object marker), `auth/status` sent "
+            "with `{}` params right after `initialize`, before any `auth/login` on the "
+            "connection, returns a result that validates as `AuthStatusResponse`. It is never "
+            "an error: not `-32000` (the agent MUST NOT auth-gate it, since clients call it to "
+            "learn whether authentication is needed) and not `-32601` (the agent advertised "
+            "it). The test skips the `--auth-method` login so the agent is observed "
+            "unauthenticated. Unstable method."
+        ),
+        citation=_cite(
+            "schema/v2/schema.unstable.json#/$defs/AuthStatusRequest; "
+            "schema/v2/schema.unstable.json#/$defs/AuthStatusResponse; "
+            "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities/properties/status; "
+            "docs/protocol/v2/draft/schema.mdx:143-144; "
+            "docs/protocol/v2/draft/initialization.mdx:215-219; "
+            "docs/protocol/v2/draft/authentication.mdx:193; "
+            "docs/rfds/get-auth-state.mdx:293,297"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-008",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.auth.status",
+        text=(
+            "When `capabilities.auth.status` is advertised, the `state` in the `auth/status` "
+            "result is one of the defined `AuthState` values or begins with `_`: `AuthState` has "
+            "a fallback branch, and extensions MUST NOT define custom non-underscore values "
+            "there (other strings are reserved for future ACP variants). The schema accepts any "
+            "string, so `ACP-AUTH-007` cannot catch this. Only the result is judged: SKIPs when "
+            "the call returns no string `state` (`ACP-AUTH-007`'s concern)."
+        ),
+        citation=_cite(
+            "schema/v2/schema.unstable.json#/$defs/AuthState; "
+            "docs/protocol/v2/draft/extensibility.mdx:235-240"
+        ),
+    ),
+    Requirement(
+        id="ACP-AUTH-210",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `auth/login` for an unadvertised `methodId` (`ACP-AUTH-208`'s "
+            "probe) uses `-32602` (Invalid params). The sentence naming the code carries no "
+            "RFC keyword, so the code is ADVISORY while the rejection itself is not. SKIPs "
+            "when no `authMethods` are advertised or the probe was not rejected "
+            "(`ACP-AUTH-208`'s concern)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/authentication.mdx:191"),
     ),
     Requirement(
         id="ACP-PATCH-201",
@@ -1530,7 +2552,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`agent_thought_chunk`/`agent_thought`) carries a non-empty string `messageId`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:406; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:484; "
             "schema/v2/schema.unstable.json#/$defs/ContentChunk; "
             "schema/v2/schema.unstable.json#/$defs/UserMessage; "
             "schema/v2/schema.unstable.json#/$defs/AgentMessage; "
@@ -1546,7 +2568,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "values -- the v2 analogue of v1's `duplicate_session_id.py` defect pattern, "
             "applied to message ids instead of session ids."
         ),
-        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:298"),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:368"),
     ),
     Requirement(
         id="ACP-PATCH-204",
@@ -1578,7 +2600,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "observed, else SKIP."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/agent-plan.mdx:143; "
+            "docs/protocol/v2/draft/agent-plan.mdx:147; "
             "schema/v2/schema.unstable.json#/$defs/PlanUpdateContent; "
             "schema/v2/schema.unstable.json#/$defs/PlanId"
         ),
@@ -1593,7 +2615,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "earlier one. Conditional on at least one `terminal_update` being observed, else "
             "SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:413-419,439-447"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:493-499,523-531"),
     ),
     Requirement(
         id="ACP-PATCH-207",
@@ -1604,21 +2626,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "standalone, valid RFC 4648 base64 -- independent of any other chunk. Conditional "
             "on at least one such field being observed, else SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:448-449,478-482"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:536-537,566-570"),
     ),
     Requirement(
         id="ACP-PATCH-208",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The first `tool_call_update` observed for a given `toolCallId` includes a "
-            "non-empty `title`; `name`, if ever set, does not change across subsequent "
-            "updates for the same id. Kept ADVISORY, not promoted to CAPABILITY under the "
+            "The first report of a given `toolCallId` includes a non-empty `title`; `name`, if "
+            "ever set, does not change across later reports of the same id. A first report is "
+            "a `tool_call_update`, a permission request's `tool_call` subject, or a "
+            "`tool_call_content_chunk`; a chunk carries no title, so a tool call a chunk "
+            "creates misses the SHOULD. Kept ADVISORY, not promoted to CAPABILITY under the "
             "session-baseline tiering rule -- the "
             "corresponding test is still `@pytest.mark.capability(\"capabilities.session\")`-"
             "gated for its own SKIP."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:42-55"),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:41-54,198-200,270-273"),
     ),
     Requirement(
         id="ACP-PATCH-209",
@@ -1626,13 +2650,62 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "When the agent sends `session/request_permission` for the prompted session during "
-            "a turn, it reports `state_update.state == \"requires_action\"` for that session "
-            "at some point in the turn (SHOULD). What follows it is `ACP-STATE-205`'s MUST. "
-            "The test is gated on `capabilities.session`."
+            "a turn, other than one whose `subject` references an item in the latest reported "
+            "`background` list (background work may leave the session `idle`), it reports "
+            "`state_update.state == \"requires_action\"` for that session at some point in the "
+            "turn (SHOULD). What follows it is `ACP-STATE-205`'s MUST. The test is gated on "
+            "`capabilities.session`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:125,773,994; "
-            "docs/protocol/v2/draft/tool-calls.mdx:201"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:153,174,845,1074; "
+            "docs/protocol/v2/draft/tool-calls.mdx:209,268"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-210",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Per `toolCallId`, the effective `status` (applying every `tool_call_update` and "
+            "`tool_call` permission subject in wire order; `null` resets it to `pending`) never "
+            "goes back to `pending` and never changes once `completed`, `failed` or "
+            "`cancelled`: a final tool call is not reopened. SKIPPED when no tool call is "
+            "reported during the turn."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:102-108,421,423; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:184"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-211",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When the turn's idle arrives, every tool call reported for the prompted session "
+            "during the turn has a final status (`completed`, `failed` or `cancelled`), unless "
+            "a `background` list reported during the turn names it. SKIPPED when no tool call "
+            "is reported, or the turn ends with an error response. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:423"),
+    ),
+    Requirement(
+        id="ACP-PATCH-212",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Once a tool call's effective status is final, or a terminal's effective "
+            "`exitStatus` is an object, its effective `capabilities.cancel` is absent or "
+            "`null`. `capabilities` is a nullable patch, so a final status sent without "
+            "clearing it keeps advertising `cancel`. Passive: the TCK sends no "
+            "`tool_call/cancel` or `terminal/cancel`. SKIPPED when no tool call or terminal "
+            "advertises `cancel` during the turn. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,600; "
+            "schema/v2/schema.unstable.json#/$defs/ToolCallCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/TerminalCapabilities"
         ),
     ),
     Requirement(
@@ -1644,16 +2717,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "with `_`: extensions MUST NOT define custom non-underscore values wherever the "
             "schema has a fallback branch (which accepts any string, so schema validation can't "
             "catch it). Sites checked: `session/update`'s `sessionUpdate` discriminator, "
-            "`tool_call_update.kind`/`.status` (`ToolKind`/`ToolCallStatus`), plan entries' "
-            "`priority`/`status` (`PlanEntryPriority`/`PlanEntryStatus`), `state_update.state`, "
-            "tool-call content blocks' `type`, and `session/request_permission` options' `kind` "
-            "(`PermissionOptionKind`, only observable if the agent asks for permission). A "
-            "curated, non-exhaustive subset of the schema's roughly 30 open-enum sites."
+            "`state_update.state`, `tool_call_update` (and a permission request's "
+            "`subject.toolCall`) `kind`/`status`, tool-call content `type` (on "
+            "`tool_call_update`, on a chunk's single `content` object, and on a `subject.toolCall`), "
+            "`diff` content's `changes[].operation`/`changes[].fileType`/`patch.format`, "
+            "`plan_update`'s `plan.type` and plan entries' `priority`/`status`, "
+            "`available_commands_update` commands' `type`, and `session/request_permission` "
+            "options' `kind` (the permission sites are only observable if the agent asks for "
+            "permission). A curated, non-exhaustive subset of the schema's open-enum sites; "
+            "`subject.type` is not checked."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:226-231; "
-            "docs/protocol/v2/draft/tool-calls.mdx:77,353,380; "
-            "docs/protocol/v2/draft/agent-plan.mdx:160,172; "
+            "docs/protocol/v2/draft/extensibility.mdx:235-240; "
+            "docs/protocol/v2/draft/tool-calls.mdx:76,372,419,662,685-686,700-701; "
+            "docs/protocol/v2/draft/agent-plan.mdx:145,164,176; "
+            "docs/protocol/v2/draft/slash-commands.mdx:110; "
             "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),
@@ -1665,12 +2743,28 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "A `_`-prefixed value at an open-enum site the client sends (here: "
             "`session/request_permission`'s answered `outcome`, whose schema has an `other` "
             "fallback) is accepted by the agent -- no crash, the prompt is not answered with "
-            "`-32602`, and the turn still reaches idle. Untestable how the agent treats the "
-            "value internally; only survival is checked."
+            "`-32602`, and the turn still reaches idle. Only survival is checked; that it is "
+            "not treated as approval is `ACP-PERM-204`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:49-53,228,235; "
+            "docs/protocol/v2/draft/extensibility.mdx:51-55,237,249; "
             "schema/v2/schema.unstable.json#/$defs/RequestPermissionOutcome/anyOf/2"
+        ),
+    ),
+    Requirement(
+        id="ACP-ENUM-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A prompt `resource` (embedded context) block whose `resource` carries neither "
+            "`text` nor `blob` falls outside a closed site and is rejected with `-32602`, not "
+            "accepted. ADVISORY because the rule has no RFC keyword. The test is gated on "
+            "`capabilities.session.prompt.embeddedContext`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:242-245; "
+            "docs/protocol/v2/draft/error.mdx:31; "
+            "schema/v2/schema.unstable.json#/$defs/EmbeddedResourceResource"
         ),
     ),
     Requirement(
@@ -1679,13 +2773,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A `_`-prefixed custom method request receives *some* response -- a result, or "
-            "an error with any code. Re-cited from v1 unchanged: same requirement, only "
-            "the citation moves to v2's extensibility docs. The `-32601` code specifically "
-            "remains `ACP-JSONRPC-004`'s separate ADVISORY concern."
+            "an error with any code. The `-32601` code specifically is `ACP-JSONRPC-004`'s "
+            "separate concern."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/extensibility.mdx:156,165,178,222; "
-            "docs/protocol/v2/draft/overview.mdx:193 (JSON-RPC 2.0 §4: every request gets a response)"
+            "docs/protocol/v2/draft/extensibility.mdx:165,174,187,231; "
+            "docs/protocol/v2/draft/overview.mdx:223 (JSON-RPC 2.0 §4: every request gets a response)"
         ),
     ),
     Requirement(
@@ -1697,7 +2790,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "still proceeds normally. Re-cited from v1 unchanged: `PromptRequest._meta` "
             "still exists in v2."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:66,89-93,95"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:72,74,97-102,104"),
     ),
     Requirement(
         id="ACP-META-201",
@@ -1713,7 +2806,53 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
-        id="ACP-EXT-201",
+        id="ACP-META-202",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A `session/prompt` whose `_meta` is not an object (probed with a string) is "
+            "treated as if `_meta` were omitted: it is accepted and the turn reaches idle, "
+            "not rejected. ADVISORY because the rule has no RFC keyword. The test is gated "
+            "on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:74; "
+            "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/_meta"
+        ),
+    ),
+    Requirement(
+        id="ACP-META-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Wherever the agent emits a `_meta` object with a root `traceparent`, `tracestate` "
+            "or `baggage` key during an ordinary `session/new` + `session/prompt` exchange, "
+            "the value is in the corresponding W3C format. `traceparent` is checked against "
+            "the Trace Context grammar; `tracestate` and `baggage` are only checked to be "
+            "strings. A `null` value is a metadata-patch removal (`:108-115`), not a value, and "
+            "is not judged. SKIPs when the agent emits none of these keys."
+        ),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:97-100,108-115"),
+    ),
+    Requirement(
+        id="ACP-META-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every key of a `_meta` object the agent authors on an ACP-defined object (the "
+            "`initialize` result's `capabilities` tree, response results, request/notification "
+            "params, and a `session/update`'s `update`) is `traceparent`/`tracestate`/"
+            "`baggage` or carries a reverse-DNS prefix ending in `/` whose second label is not "
+            "`agentclientprotocol`: unprefixed keys and those prefixes are reserved for ACP "
+            "(extension keys SHOULD be namespaced). `_meta` inside content blocks and tool "
+            "output is not checked, since forwarded MCP content keeps MCP's own keys. SKIPs "
+            "when the agent emits no `_meta` at those positions. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:102,259"),
+    ),
+    Requirement(
+        id="ACP-EXT-002",
         tier=Tier.ADVISORY,
         capability=None,
         text=(
@@ -1722,7 +2861,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`answers_notifications.py` defect pattern, generalised from `session/cancel` "
             "specifically to any custom notification."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:222"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:231"),
     ),
     Requirement(
         id="ACP-EXT-202",
@@ -1733,7 +2872,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`result.capabilities._meta`, not as an unrecognized root key of `capabilities` "
             "itself."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:239-245"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:253-261"),
     ),
     Requirement(
         id="ACP-EXT-204",
@@ -1747,20 +2886,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "stand in for fields of a future ACP revision."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/initialization.mdx:134; "
-            "docs/protocol/v2/draft/extensibility.mdx:49-50,148"
+            "docs/protocol/v2/draft/initialization.mdx:156; "
+            "docs/protocol/v2/draft/extensibility.mdx:51-52,157"
         ),
     ),
     Requirement(
         id="ACP-EXT-203",
-        tier=Tier.INFORMATIONAL,
+        tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "Behaviour on receiving an unrecognized `$/`-prefixed protocol-level notification "
-            "is recorded, never asserted -- the spec explicitly says the agent \"is free to "
-            "ignore\" it, so there is no conforming/non-conforming distinction to enforce."
+            "An unrecognized `$/`-prefixed protocol-level notification (standing in for one "
+            "from a later ACP version) sent to the agent gets no response and causes no crash "
+            "(SHOULD ignore)."
         ),
-        citation=_cite("schema/v2/schema.unstable.json#/$defs/ProtocolLevelNotification"),
+        citation=_cite(
+            "docs/protocol/v2/draft/extensibility.mdx:165,231; "
+            "docs/protocol/v2/draft/error.mdx:44"
+        ),
     ),
     Requirement(
         id="ACP-ERROR-001",
@@ -1768,11 +2910,87 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "A JSON-RPC error's `message` is a non-empty, single-line string, and its "
-            "optional `data` is well-formed JSON. Re-cited from v1 unchanged: `Error` "
-            "`$def` is byte-identical between v1 and v2."
+            "optional `data` is well-formed JSON."
         ),
         citation=_cite(
-            "schema/v2/schema.unstable.json#/$defs/Error; docs/protocol/v2/draft/overview.mdx:193-197"
+            "docs/protocol/v2/draft/error.mdx:6-10; docs/protocol/v2/draft/overview.mdx:223-227; "
+            "schema/v2/schema.unstable.json#/$defs/Error"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/prompt` naming a session that does not exist, or that this connection "
+            "already closed, gets error `-32002` with `data.sessionId` set to the requested id. "
+            "The schema's `Other` error-data branch accepts anything, so `data.sessionId` is "
+            "checked by hand."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47-51; "
+            "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-004",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/set_config_option` naming a never-created session (probed when "
+            "`session/new` returned `configOptions`), and `session/resume` of a `sessionId` the "
+            "agent never created (a nonce id with the TCK's own `cwd`), get error `-32002` with "
+            "`data.sessionId` set to the requested id, never a silent create-and-succeed. "
+            "Judged with the same assertion as `ACP-ERROR-003`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:54-56; docs/protocol/v2/draft/session-setup.mdx:47-51; "
+            "schema/v2/schema.unstable.json#/$defs/SessionNotFoundErrorData"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-006",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A standard method gated on a capability the agent did not advertise gets error "
+            "`-32601`. Sent only for what is not advertised: the `session/*` baseline "
+            "(`capabilities.session`), `session/delete`, `session/archive`/`session/unarchive`, "
+            "`session/fork` and `providers/list`. "
+            "A `-32000` reply FAILs, since an unadvertised method has no authentication surface. "
+            "SKIPs when every probed capability is advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:44,68; docs/protocol/v2/draft/overview.mdx:60,141-142"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-008",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every error `code` the agent returns in `-32768..-32000` or `-32899..-32800` is one "
+            "ACP defines (`ErrorCode`'s named members); implementation-specific errors use codes "
+            "outside those ranges. Sampled from the error replies to an unrecognised method, "
+            "and, when `capabilities.session` is advertised, a `session/new` missing `cwd` and a "
+            "`session/prompt` for an unknown session; passes vacuously if no probe yields an error."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:38; schema/v2/schema.unstable.json#/$defs/ErrorCode"
+        ),
+    ),
+    Requirement(
+        id="ACP-ERROR-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "If the agent answers a non-JSON stdin line, the answer is an error response with "
+            "`code: -32700` and `id: null`. Conditional: SKIPs when the agent stays silent or "
+            "exits, since no rule obliges a reply and the probe itself breaks a client MUST NOT."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:28; docs/protocol/v2/draft/transports.mdx:24; "
+            "schema/v2/schema.unstable.json#/$defs/AgentResponse"
         ),
     ),
     Requirement(
@@ -1780,12 +2998,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The agent exits promptly once stdin closes, without needing SIGTERM/SIGKILL. "
-            "Re-cited from v1 unchanged: v2 still defines no dedicated shutdown method "
-            "and no stdin-EOF MUST -- only the mermaid step \"Close stdin, terminate "
-            "subprocess\"."
+            "After the client closes stdin, the agent treats end of input as the end of the "
+            "connection and SHOULD exit once it has finished or stopped its work, without "
+            "needing SIGTERM/SIGKILL."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:41"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:43"),
     ),
     Requirement(
         id="ACP-SCHEMA-002",
@@ -1799,7 +3016,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "\"a type that's part of the specification\" -- already implemented in "
             "`tck.v2.validation.find_unknown_root_keys`."
         ),
-        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:95,226-233"),
+        citation=_cite("docs/protocol/v2/draft/extensibility.mdx:104,235-242"),
     ),
     Requirement(
         id="ACP-STDERR-001",
@@ -1809,18 +3026,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Stderr byte count is recorded for a human reading the report. The agent MAY "
             "write UTF-8 logging to stderr, so there is nothing to assert."
         ),
-        citation=_cite("docs/protocol/v2/draft/transports.mdx:26"),
+        citation=_cite("docs/protocol/v2/draft/transports.mdx:22"),
     ),
     Requirement(
         id="ACP-INFO-PARSE-001",
         tier=Tier.INFORMATIONAL,
         capability=None,
         text=(
-            "Behaviour on a malformed (non-JSON) stdin line is recorded, never asserted. Re-cited "
-            "from v1 unchanged: v2's error.mdx is still \"Documentation coming soon\" on "
-            "this exact scenario."
+            "Behaviour on a malformed (non-JSON) stdin line is recorded, never asserted. "
+            "`error.mdx` assigns `-32700` to non-JSON input but requires no reply, and the "
+            "client MUST NOT send such a line; the shape of a reply the agent chooses to send "
+            "is `ACP-ERROR-204`."
         ),
-        citation=_cite("docs/protocol/v2/draft/error.mdx"),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:28; docs/protocol/v2/draft/transports.mdx:24 "
+            "(the client MUST NOT send this, so agent behaviour is undefined)"
+        ),
     ),
     Requirement(
         id="ACP-INFO-INVALIDREQ-001",
@@ -1828,11 +3049,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text=(
             "Behaviour on a structurally-invalid (well-formed JSON, not a valid JSON-RPC "
-            "envelope) request line is recorded, never asserted. Re-cited from v1 unchanged: "
-            "v2's error.mdx is still \"Documentation coming soon\" on this exact "
-            "scenario."
+            "envelope) request line is recorded, never asserted. `error.mdx` assigns `-32600` "
+            "to a message that is not a valid request object but requires no reply, and the "
+            "client MUST NOT send one; reference SDKs disagree (rust-sdk replies `-32600`, "
+            "python-sdk stays silent)."
         ),
-        citation=_cite("docs/protocol/v2/draft/error.mdx"),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:29; docs/protocol/v2/draft/transports.mdx:24 "
+            "(the client MUST NOT send this, so agent behaviour is undefined)"
+        ),
     ),
 )
 

@@ -21,7 +21,7 @@ other's constant.
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "beac4ba96190018e9f6d82e148ff275084c5aa3e"
+SCHEMA_REVISION = "3961af94fa62d2386d993cadf1afc8b146fc799a"
 """The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every requirement
 citation in `tck.v1.requirements` -- are pinned to (see `schema/VENDORED.md`). Single source of
 truth: `tck.v1.requirements.SPEC_REVISION` and `Report.schema_revision` both read it from here."""
@@ -58,8 +58,9 @@ STOP_REASONS = frozenset(
 def load_meta() -> dict[str, Any]:
     """Parse `schema/meta.unstable.json`.
 
-    Structure: a `version` int, plus three flat `{internal_name: "wire/method"}` dicts --
-    `agentMethods`, `clientMethods`, `protocolMethods` (bidirectional, e.g. `$/cancel_request`).
+    Structure: a `version` int, plus four flat `{internal_name: "wire/method"}` dicts --
+    `agentMethods`, `clientMethods`, `protocolMethods` (bidirectional, e.g. `$/cancel_request`),
+    `proxyMethods` (proxy-chain methods, not used here).
     It doesn't distinguish requests from notifications -- that split is derived from
     `schema.unstable.json` below.
     """
@@ -70,6 +71,12 @@ def load_meta() -> dict[str, Any]:
 def load_schema() -> dict[str, Any]:
     """Parse `schema/schema.unstable.json`."""
     return json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
+
+
+def _const_members(def_name: str) -> frozenset[Any]:
+    """The `const` values of a schema `anyOf` enum `$def`, ignoring its open "other" variant."""
+    variants = load_schema()["$defs"][def_name]["anyOf"]
+    return frozenset(v["const"] for v in variants if "const" in v)
 
 
 def _collect_ref_names(node: Any) -> list[str]:
@@ -123,3 +130,10 @@ AGENT_NOTIFICATIONS: frozenset[str] = _notification_methods("ClientNotification"
 CLIENT_NOTIFICATIONS: frozenset[str] = _notification_methods("AgentNotification") & CLIENT_METHODS
 """Subset of `CLIENT_METHODS` that are notifications, not requests (`session/update`,
 `elicitation/complete`)."""
+
+
+ERROR_CODES: frozenset[int] = _const_members("ErrorCode")
+"""The named `ErrorCode` values (`error.mdx`'s codes plus `-32800`); any other code is "other"."""
+
+AUTH_STATES: frozenset[str] = _const_members("AuthState")
+"""The defined `AuthState` values; any other string must start with `_`."""

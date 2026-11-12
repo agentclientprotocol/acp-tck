@@ -10,7 +10,7 @@ or extra message chunk is emitted -- `ACP-PATCH-201/203/205/208/209` and `ACP-EN
 
 Since `_base.ConformingAgent._reply_to_prompt` calls `_send_rich_turn_updates` on every turn, this
 malformed `tool_call_update` is emitted whenever any test in the suite runs a prompt against this
-fixture, so `ACP-PROMPT-205` (CAPABILITY, affects the verdict) also FAILs when this fixture is run
+fixture, so `ACP-PROMPT-002` (CAPABILITY, affects the verdict) also FAILs when this fixture is run
 unscoped (see `tests/v2/test_cli.py`'s corresponding self-test, `-k` scope widened to catch this)."""
 
 import sys

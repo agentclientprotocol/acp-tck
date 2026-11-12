@@ -2,8 +2,8 @@
 every `@pytest.mark.requirement(...)` used under `src/tck/v2/conformance/` (import the modules
 and inspect `pytestmark` directly -- no grep). Mirrors `tests/v1/test_registry.py`.
 
-See `tck.v2.requirements`'s module docstring for the id-namespacing decisions (e.g. why
-`ACP-CLOSE-202` reuses `ACP-CANCEL-208`'s test instead of adding a second probe).
+See `tck.v2.requirements`'s module docstring for the id convention, and `ACP-CLOSE-002`'s row
+text for why it reuses `ACP-CANCEL-208`'s test instead of adding a second probe.
 """
 
 from __future__ import annotations
@@ -37,24 +37,31 @@ def test_ids_are_unique_and_well_formed():
 def test_registry_has_exactly_the_expected_requirements():
     """Notable non-obvious ids: `ACP-PATCH-202` and the re-worded `ACP-PROMPT-001` are
     deliberately not registered -- duplicates of `ACP-PROMPT-201`/`ACP-PROMPT-203` and
-    `ACP-STATE-203` respectively. `ACP-AUTH-203` (CAPABILITY) replaces v1's `ACP-AUTH-004`
-    outright -- v2 has no logout capability marker. See `tck.v2.requirements`'s module docstring
+    `ACP-STATE-203` respectively. `ACP-AUTH-004` is CAPABILITY-tier with an inferred gate -- v2
+    has no logout capability marker. See `tck.v2.requirements`'s module docstring
     for the full id-namespacing rationale."""
     assert set(REGISTRY) == {
         "ACP-INIT-001",
         "ACP-INIT-003",
         "ACP-INIT-201",
         "ACP-INIT-202",
-        "ACP-INIT-203",
+        "ACP-INIT-004",
         "ACP-INIT-204",
         "ACP-INIT-205",
         "ACP-INIT-206",
         "ACP-INIT-207",
         "ACP-INIT-208",
+        "ACP-ERROR-005",
+        "ACP-INIT-210",
+        "ACP-INIT-211",
+        "ACP-INIT-212",
+        "ACP-INIT-213",
+        "ACP-INIT-214",
+        "ACP-INIT-215",
         "ACP-SCHEMA-001",
         "ACP-SESSION-001",
         "ACP-SESSION-002",
-        "ACP-PROMPT-205",
+        "ACP-PROMPT-002",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
         "ACP-STATE-201",
@@ -63,17 +70,25 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PROMPTCAP-001",
         "ACP-PROMPTCAP-002",
         "ACP-PROMPTCAP-003",
-        "ACP-PROMPT-206",
+        "ACP-PROMPT-003",
         "ACP-PROMPT-207",
-        "ACP-PROMPT-208",
+        "ACP-PROMPT-209",
+        "ACP-PROMPT-211",
+        "ACP-PROMPTCAP-201",
         "ACP-STATE-204",
         "ACP-STATE-205",
+        "ACP-STATE-206",
+        "ACP-STATE-207",
+        "ACP-STATE-208",
         "ACP-PERM-201",
-        "ACP-CLIENTCAP-201",
+        "ACP-PERM-202",
+        "ACP-PERM-203",
+        "ACP-PERM-002",
+        "ACP-PERM-204",
+        "ACP-CLIENTCAP-003",
         "ACP-CLIENTCAP-202",
         "ACP-INFO-CONCURRENT-201",
-        "ACP-INFO-UNKNOWNSESSION-001",
-        "ACP-TRANSPORT-201",
+        "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
         "ACP-JSONRPC-001",
@@ -81,16 +96,10 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-JSONRPC-003",
         "ACP-JSONRPC-004",
         "ACP-JSONRPC-005",
-        "ACP-BATCH-201",
-        "ACP-BATCH-202",
-        "ACP-BATCH-203",
-        "ACP-BATCH-204",
-        "ACP-BATCH-205",
-        "ACP-BATCH-206",
-        "ACP-BATCH-207",
-        "ACP-BATCH-208",
-        "ACP-CANCEL-201",
-        "ACP-CANCEL-202",
+        "ACP-JSONRPC-202",
+        "ACP-BATCH-209",
+        "ACP-CANCEL-001",
+        "ACP-CANCEL-002",
         "ACP-CANCEL-203",
         "ACP-CANCEL-204",
         "ACP-CANCEL-205",
@@ -98,51 +107,97 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CANCEL-207",
         "ACP-CANCEL-208",
         "ACP-CANCEL-209",
-        "ACP-INFO-BATCH-201",
-        "ACP-INFO-BATCH-202",
+        "ACP-JSONRPC-006",
+        "ACP-CANCEL-211",
+        "ACP-JSONRPC-007",
+        "ACP-CANCEL-213",
+        "ACP-CANCEL-214",
         "ACP-INFO-CANCEL-201",
-        "ACP-INFO-CANCEL-202",
         "ACP-SESSION-203",
-        "ACP-RESUME-201",
+        "ACP-SESSION-204",
+        "ACP-SESSION-206",
+        "ACP-SESSION-207",
+        "ACP-SESSION-208",
+        "ACP-SESSION-209",
+        "ACP-RESUME-001",
         "ACP-RESUME-202",
-        "ACP-RESUME-203",
+        "ACP-RESUME-002",
         "ACP-RESUME-204",
         "ACP-RESUME-205",
         "ACP-RESUME-206",
         "ACP-RESUME-207",
         "ACP-RESUME-208",
         "ACP-RESUME-209",
-        "ACP-LIST-201",
-        "ACP-LIST-202",
+        "ACP-RESUME-210",
+        "ACP-RESUME-212",
+        "ACP-RESUME-213",
+        "ACP-RESUME-214",
+        "ACP-RESUME-216",
+        "ACP-LIST-001",
+        "ACP-LIST-002",
         "ACP-LIST-203",
         "ACP-LIST-204",
-        "ACP-CLOSE-201",
-        "ACP-CLOSE-202",
+        "ACP-LIST-205",
+        "ACP-LIST-003",
+        "ACP-LIST-207",
+        "ACP-CLOSE-001",
+        "ACP-CLOSE-002",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
-        "ACP-DELETE-201",
-        "ACP-DELETE-202",
-        "ACP-DELETE-203",
-        "ACP-ADDDIRS-201",
+        "ACP-CLOSE-205",
+        "ACP-CLOSE-206",
+        "ACP-CLOSE-003",
+        "ACP-DELETE-001",
+        "ACP-DELETE-003",
+        "ACP-DELETE-002",
+        "ACP-DELETE-204",
+        "ACP-DELETE-205",
+        "ACP-ARCHIVE-002",
+        "ACP-ARCHIVE-003",
+        "ACP-ARCHIVE-004",
+        "ACP-ARCHIVE-005",
+        "ACP-ARCHIVE-006",
+        "ACP-ARCHIVE-201",
+        "ACP-ADDDIRS-001",
         "ACP-ADDDIRS-202",
+        "ACP-ADDDIRS-203",
         "ACP-FORK-201",
         "ACP-FORK-202",
-        "ACP-SYSPROMPT-201",
+        "ACP-FORK-203",
+        "ACP-FORK-204",
+        "ACP-FORK-205",
+        "ACP-SYSPROMPT-001",
         "ACP-SYSPROMPT-202",
+        "ACP-SYSPROMPT-002",
+        "ACP-SYSPROMPT-003",
         "ACP-MCP-201",
         "ACP-MCP-202",
+        "ACP-MCP-203",
+        "ACP-MCP-204",
+        "ACP-SESSION-006",
         "ACP-CONFIG-201",
-        "ACP-CONFIG-202",
+        "ACP-CONFIG-002",
         "ACP-CONFIG-203",
-        "ACP-CONFIG-204",
+        "ACP-CONFIG-001",
         "ACP-CONFIG-206",
-        "ACP-AUTH-201",
-        "ACP-AUTH-202",
-        "ACP-AUTH-203",
-        "ACP-AUTH-204",
-        "ACP-AUTH-205",
+        "ACP-CONFIG-207",
+        "ACP-CONFIG-208",
+        "ACP-CONFIG-209",
+        "ACP-CONFIG-210",
+        "ACP-CONFIG-211",
+        "ACP-CONFIG-212",
+        "ACP-COMMANDS-201",
+        "ACP-AUTH-001",
+        "ACP-AUTH-002",
+        "ACP-AUTH-004",
+        "ACP-AUTH-003",
+        "ACP-AUTH-005",
         "ACP-AUTH-206",
-        "ACP-AUTH-207",
+        "ACP-AUTH-006",
+        "ACP-AUTH-208",
+        "ACP-AUTH-007",
+        "ACP-AUTH-008",
+        "ACP-AUTH-210",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -151,16 +206,28 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PATCH-207",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
         "ACP-ENUM-201",
         "ACP-ENUM-203",
+        "ACP-ENUM-204",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-203",
+        "ACP-META-204",
         "ACP-EXT-001",
-        "ACP-EXT-201",
+        "ACP-EXT-002",
         "ACP-EXT-202",
         "ACP-EXT-203",
         "ACP-EXT-204",
         "ACP-ERROR-001",
+        "ACP-ERROR-003",
+        "ACP-ERROR-004",
+        "ACP-ERROR-006",
+        "ACP-ERROR-008",
+        "ACP-ERROR-204",
         "ACP-SHUTDOWN-001",
         "ACP-SCHEMA-002",
         "ACP-STDERR-001",
@@ -174,23 +241,41 @@ def test_advisory_tier_is_exactly_these_ids():
     invariants and never actual tier membership, so a re-tiering mistake could silently regress
     without any test catching it."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.ADVISORY} == {
-        "ACP-AUTH-201",
-        "ACP-AUTH-205",
-        "ACP-BATCH-203",
-        "ACP-BATCH-204",
+        "ACP-AUTH-005",
+        "ACP-AUTH-210",
+        "ACP-BATCH-209",
+        "ACP-INIT-215",
+        "ACP-CANCEL-213",
         "ACP-CLOSE-204",
-        "ACP-DELETE-203",
+        "ACP-CLOSE-003",
+        "ACP-CONFIG-211",
+        "ACP-CONFIG-212",
+        "ACP-DELETE-002",
+        "ACP-ENUM-204",
         "ACP-ERROR-001",
-        "ACP-EXT-201",
+        "ACP-ERROR-008",
+        "ACP-ERROR-204",
+        "ACP-EXT-002",
         "ACP-EXT-202",
-        "ACP-JSONRPC-004",
+        "ACP-EXT-203",
         "ACP-JSONRPC-005",
         "ACP-META-001",
         "ACP-META-201",
+        "ACP-META-202",
+        "ACP-META-204",
+        "ACP-MCP-204",
+        "ACP-SESSION-006",
         "ACP-PATCH-208",
         "ACP-PATCH-209",
-        "ACP-PROMPT-208",
+        "ACP-PATCH-211",
+        "ACP-PATCH-212",
+        "ACP-RESUME-214",
+        "ACP-RESUME-216",
         "ACP-SCHEMA-002",
+        "ACP-SESSION-206",
+        "ACP-SESSION-207",
+        "ACP-SESSION-209",
+        "ACP-LIST-207",
         "ACP-SHUTDOWN-001",
         "ACP-STATE-204",
     }
@@ -198,23 +283,14 @@ def test_advisory_tier_is_exactly_these_ids():
 
 def test_informational_tier_is_exactly_these_ids():
     """Pins the INFORMATIONAL set -- see `test_advisory_tier_is_exactly_these_ids` above.
-    `ACP-BATCH-205/206/207/208` and `ACP-CANCEL-204` are here (not ADVISORY): each is always
-    SKIPped, never PASS/FAIL, so they belong in the record-only tier."""
+    `ACP-CANCEL-204` is here (not ADVISORY): it is always SKIPped, never PASS/FAIL, so it belongs
+    in the record-only tier."""
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.INFORMATIONAL} == {
-        "ACP-BATCH-205",
-        "ACP-BATCH-206",
-        "ACP-BATCH-207",
-        "ACP-BATCH-208",
         "ACP-CANCEL-204",
-        "ACP-EXT-203",
-        "ACP-INFO-BATCH-201",
-        "ACP-INFO-BATCH-202",
         "ACP-INFO-CANCEL-201",
-        "ACP-INFO-CANCEL-202",
         "ACP-INFO-CONCURRENT-201",
         "ACP-INFO-INVALIDREQ-001",
         "ACP-INFO-PARSE-001",
-        "ACP-INFO-UNKNOWNSESSION-001",
         "ACP-MCP-201",
         "ACP-MCP-202",
         "ACP-STDERR-001",
@@ -295,8 +371,7 @@ def test_cli_selftest_tier_sets_match_the_registry():
     `tests/v2/test_cli.py` hand-maintains `_MANDATORY_IDS`/`_CAPABILITY_IDS`, which must mirror
     `REGISTRY`'s own `Tier` field exactly -- otherwise a tier misclassification could go
     unnoticed. `tests/v2` is a package (unlike `tests/v1`), so the sibling module is imported as
-    `v2.test_cli`, not the bare `test_cli` v1 uses -- see `AGENTS.md`'s `tests/v2/__init__.py`
-    layout note."""
+    `v2.test_cli`, not the bare `test_cli` v1 uses."""
     import v2.test_cli as test_cli
 
     by_tier: dict[Tier, set[str]] = {tier: set() for tier in Tier}
@@ -389,6 +464,32 @@ def test_schema_citation_pointers_resolve_in_the_vendored_schema():
     assert not _unresolved_pointers(pointers_by_source, schema)
 
 
+# A root `anyOf`/`oneOf`/`allOf` index names a branch by position, so a schema refresh that
+# reorders or inserts a branch silently repoints the citation (as happened to
+# the transport and batch rows' `#/anyOf/3/items`). Cite the `$defs` name instead.
+_POSITIONAL_ROOT_POINTER = re.compile(r"^/(?:anyOf|oneOf|allOf)/\d")
+
+
+def _positional_root_pointers(pointers_by_source: dict[str, list[str]]) -> list[str]:
+    return [
+        f"{source}: {pointer}"
+        for source, pointers in pointers_by_source.items()
+        for pointer in pointers
+        if _POSITIONAL_ROOT_POINTER.match(pointer)
+    ]
+
+
+def test_no_citation_pointer_names_a_root_branch_by_position():
+    assert not _positional_root_pointers(_schema_pointers_by_source())
+
+
+def test_positional_root_pointer_is_reported():
+    pointers = {
+        "x": ["/anyOf/3/items", "/oneOf/0", "/$defs/RequestPermissionOutcome/anyOf/2", "/anyOf", "/$defs/RequestId"]
+    }
+    assert _positional_root_pointers(pointers) == ["x: /anyOf/3/items", "x: /oneOf/0"]
+
+
 def test_unresolvable_pointer_is_reported():
     schema = json.loads((SCHEMA_DIR / "schema.unstable.json").read_text())
     broken = {
@@ -425,3 +526,34 @@ def test_no_v2_source_cites_the_non_draft_docs_tree():
     for requirement in REGISTRY.values():
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.citation), requirement.id
         assert not _NON_DRAFT_DOCS_PATTERN.search(requirement.text), requirement.id
+
+
+def _tests_with_marker(name: str) -> dict[str, list[Any]]:
+    import tck.v2.conformance as conformance_pkg
+
+    found: dict[str, list[Any]] = {}
+    for module_info in pkgutil.iter_modules(conformance_pkg.__path__, conformance_pkg.__name__ + "."):
+        if not module_info.name.rsplit(".", 1)[-1].startswith("test_"):
+            continue
+        module = importlib.import_module(module_info.name)
+        for test_name, obj in vars(module).items():
+            if test_name.startswith("test_") and callable(obj):
+                for mark in getattr(obj, "pytestmark", []):
+                    if mark.name == name:
+                        found.setdefault(test_name, []).append(mark)
+    return found
+
+
+def test_every_logout_test_carries_the_revokes_marker_and_nothing_else_does():
+    """Logout takes credentials away from later tests, so it must be ordered last; only tests
+    that revoke something other tests rely on carry `revokes`."""
+    logout_tests = {
+        test_name
+        for test_name, marks in _tests_with_marker("requirement").items()
+        if "ACP-AUTH-004" in {req_id for mark in marks for req_id in mark.args}
+    }
+    assert logout_tests, "no test is bound to ACP-AUTH-004"
+    revoking = _tests_with_marker("revokes")
+    assert set(revoking) == logout_tests
+    for marks in revoking.values():
+        assert [(m.args, bool(m.kwargs.get("reason"))) for m in marks] == [(("auth",), True)]

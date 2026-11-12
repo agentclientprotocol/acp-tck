@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Conforming fixture that asks for permission mid-turn: on `session/prompt` it sends
-`session/request_permission` (`docs/protocol/v1/draft/prompt-turn.mdx:108-119`) and only resolves the
+`session/request_permission` (`docs/protocol/v1/draft/prompt-turn.mdx:133-144`) and only resolves the
 prompt once the client answers, honoring whichever option was selected (or "cancelled" if the
 client answers that way after `session/cancel`).
 
@@ -66,13 +66,16 @@ class AsksPermissionAgent(ConformingAgent):
                 "params": {
                     "sessionId": session_id,
                     "toolCall": {"toolCallId": "tool-1"},
-                    "options": [
-                        {"optionId": "allow-once", "name": "Allow", "kind": "allow_once"},
-                        {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"},
-                    ],
+                    "options": self._permission_options(),
                 },
             }
         )
+
+    def _permission_options(self) -> list[dict[str, Any]]:
+        return [
+            {"optionId": "allow-once", "name": "Allow", "kind": "allow_once"},
+            {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"},
+        ]
 
     def _handle_notification(self, method: str, params: dict[str, Any]) -> None:
         if method == "session/cancel" and self._awaiting_permission is not None:

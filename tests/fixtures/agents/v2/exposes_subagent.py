@@ -3,7 +3,7 @@
 the prompted session, then streams the child's own `running` -> `agent_message_chunk` ->
 `idle(end_turn)` under the child's `sessionId`, then finishes the parent turn normally. Child
 traffic is legal once announced, and the child's idle must not end the parent's turn: must PASS
-`ACP-PROMPT-203/205` and `ACP-STATE-201..205` like `conforming.py`.
+`ACP-PROMPT-002/203` and `ACP-STATE-201..205` like `conforming.py`.
 """
 
 import sys
