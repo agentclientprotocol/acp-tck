@@ -76,8 +76,9 @@ uv run pytest
 ```
 
 This runs only `tests/`: harness unit tests, registry meta-tests, and end-to-end CLI tests against every fixture
-for both versions. It takes a while, mostly v2's end-to-end subprocess runs. Some CLI tests scope a run with `-k`,
-which prints NOT CONFORMANT for that run; that is expected (see [Writing tests](writing-tests.md#fixtures)).
+for both versions. It takes a while, mostly v2's end-to-end subprocess runs; add `-n auto` (pytest-xdist, a dev
+dependency) to spread them across cores. Some CLI tests scope a run with `-k`, which prints NOT CONFORMANT for that
+run; that is expected (see [Writing tests](writing-tests.md#fixtures)).
 
 `spec-tracker/` and `cross-check/` have their own suites; see their READMEs.
 
@@ -85,7 +86,7 @@ which prints NOT CONFORMANT for that run; that is expected (see [Writing tests](
 
 `.github/workflows/ci.yml` has two jobs:
 
-- `test` (required): `uv sync --locked && uv run pytest -q`, then the spec-tracker tests against a fetched spec
+- `test` (required): `uv sync --locked && uv run pytest -q -n auto`, then the spec-tracker tests against a fetched spec
   checkout.
 - `cross-check` (informational, `continue-on-error: true`).
 
