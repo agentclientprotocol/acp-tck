@@ -8,7 +8,7 @@ cancellation, error handling, transport hygiene - and reports which requirements
 exercised.
 
 Targets **v1** by default, with an opt-in **v2** suite via `--protocol-version 2`.
-Both **v1** and **v2** target unstable spec versions (v1-unstable is a superset of v1-stable, so any v1-stable compatbile agent will be judged CONFORMANT).
+Both **v1** and **v2** target unstable spec versions (v1-unstable is a superset of v1-stable, so any v1-stable compatible agent will be judged CONFORMANT).
 
 See ["What is covered"](#what-is-covered) below for the exact per-version breakdown.
 
@@ -47,7 +47,7 @@ timeouts (real agents are slower than fixtures), and write the full JSON report 
 uv run acp-tck \
   --agent-cwd /tmp/acp-tck-wd \
   --timeout 90 --test-timeout 300 \
-  --report-json .agents/reports/report.json \
+  --report-json report.json \
   -- node /path/to/some-agent/dist/index.js
 ```
 
@@ -100,9 +100,10 @@ normally.
 
 ### `--cancel-prompt TEXT`
 
-Prompt text the cancellation tests send, instead of the short text every other prompt test uses. Pick something that
-keeps a real agent busy long enough for `session/cancel` to land while the turn is still in flight - otherwise those
-tests report `SKIPPED` ("cancellation not exercised"), which means exactly that, not a conformance failure.
+Prompt text the cancellation tests send, replacing the default (a request for a long, detailed explanation). Pick
+something that keeps a real agent busy long enough for `session/cancel` to land while the turn is still in flight -
+otherwise those tests report `SKIPPED` ("cancellation not exercised"), which means exactly that, not a conformance
+failure.
 
 ### `--auth-method ID`
 
@@ -119,7 +120,8 @@ the timeouts.
 
 Opts in to actually calling logout against the agent under test (`ACP-AUTH-004`): `logout` on v1 and `auth/logout`
 on v2. Off by default because it may revoke the operator's own credentials for whatever account the agent is
-authenticated as; without it, the logout requirement reports `SKIPPED` instead of exercising the method. A
+authenticated as; without it, the logout requirement reports `SKIPPED` instead of exercising the method. With it,
+the logout test runs last, after every other test. A
 `SKIPPED` `CAPABILITY`-tier requirement doesn't affect conformance - only a *failed* one does - so omitting
 `--allow-logout` never by itself makes a run `NOT CONFORMANT`.
 
@@ -186,9 +188,9 @@ A spec SHOULD. Always reported, never affects the verdict.
 Spec silent, or reference implementations disagree. The test never asserts on the probed behaviour itself; it records
 what was observed via `record_property`, and that note is surfaced alongside the status in both the terminal table (e.g.
 `ACP-INFO-PARSE-001   PASS  (silent; conn after: usable (sessionId=...))`) and the JSON report's
-`properties` field. It can still `FAIL` if the prerequisite handshake it rides on top of (e.g. `initialize`, or
-`session/new` for the unknown-`sessionId` probe) itself fails - that is a real conformance problem the probe correctly
-surfaces, not a probe bug. Never affects the verdict either way.
+`properties` field. It can still `FAIL` if the prerequisite handshake it rides on top of (e.g. `initialize`, or the
+`session/new` a probe needs) itself fails - that is a real conformance problem the probe correctly surfaces, not a
+probe bug. Never affects the verdict either way.
 
 ### Status
 
@@ -215,9 +217,10 @@ command after `--` is a usage error (`2`).
 ## Protocol scope
 
 The codebase is structured as a version-agnostic core plus one package per protocol version (`src/tck/common/` +
-`src/tck/v1/` + `src/tck/v2/`, see [`docs/development.md`](docs/development.md#layout)), so each version's suite does not require forking the harness, report
-model, or pytest plugin. ACP **v1** is the default. ACP **v2** is available via `--protocol-version 2`. For the precise,
-current requirement set, `src/tck/v{1,2}/requirements.py` is the source of truth.
+`src/tck/v1/` + `src/tck/v2/`, see [`docs/development.md`](docs/development.md#layout)), so each version's suite does
+not require forking the harness, report model, or pytest plugin. ACP **v1** is the default. ACP **v2** is available
+via `--protocol-version 2`. For the precise, current requirement set, `src/tck/v{1,2}/requirements.py` is the source
+of truth.
 
 ## What is covered
 
@@ -228,23 +231,29 @@ Those extras are optional for agents, but are validated against the draft shapes
 spec commit recorded in `src/tck/v1/schema/VENDORED.md`.
 
 - `initialize` handshake and version negotiation, including the unsupported-version probe (`ACP-INIT-003`)
-- Session lifecycle: `session/new`, `session/load`, `session/resume`, `session/list`, `session/delete`, `session/close`,
-  `additionalDirectories`
+- Session lifecycle: `session/new` (including stdio MCP servers: accepted and connected to), `session/load`,
+  `session/resume`, `session/list`, `session/delete`, `session/close`, `session/archive`/`unarchive`,
+  `additionalDirectories`, `systemPrompt`
 - `session/prompt` turns and `session/cancel`, including the cancellation race handling described above
 - Session `modes` and `configOptions`
 - Prompt content capabilities (`image`/`audio`/`embeddedContext`)
+- Permission requests (a rejected or unrecognised answer is not approval) and plan updates
 - Authentication surface: `authMethods` (including `terminal` methods when the client enables them), `authenticate`,
-  `logout`
-- Client-capability negatives: the agent must never call `fs/*`, `terminal/*`, or `elicitation/create` when the client
-  didn't advertise the matching capability (`ACP-CLIENTCAP-001`/`002`/`003`)
+  `logout`, `auth/status`
+- Client-capability negatives: the agent must never call `fs/*`, `terminal/*`, or `elicitation/create`, or send
+  notice, compaction, plan or subagent updates, when the client didn't advertise the matching capability
+  (`ACP-CLIENTCAP-001`..`007`)
+- Error codes: unknown sessions, requests before `initialize`, unadvertised methods, unknown modes and config values,
+  reserved-range codes
 - Extensibility and hygiene: `_`-prefixed custom methods must get a response (`ACP-EXT-001`), custom notifications
   are ignored, `_meta` passthrough, unknown top-level keys (including on error objects), error message shape and
-  `-32602` for invalid params, shutdown promptness
+  `-32602` for invalid params
 - Transport/JSON-RPC hygiene: stdio framing, envelope validation, unrecognised-method handling, no replies to
   notifications, `$/cancel_request` (unknown ids, and an in-flight `session/prompt`)
 - `INFORMATIONAL` probes (reported only, spec silent or reference agents disagree): malformed JSON, structurally-invalid
-  requests, unknown session ids, stderr volume
-- Not yet covered: MCP/terminal/filesystem capability surfaces
+  requests, stderr volume, shutdown promptness
+- Not yet covered: the agent's use of advertised `fs/*` and `terminal/*` client capabilities (only the negatives
+  above)
 
 ### v2
 
@@ -252,22 +261,26 @@ v2 is checked against the upstream *draft* schema (the unstable superset, includ
 extras are optional for agents, but are validated against the draft shapes when used. The schema is pinned to the spec
 commit recorded in `src/tck/v2/schema/VENDORED.md`.
 
-- `initialize`/version-negotiation baseline, including a v2-only agent's required behavior when asked for `1`
-- `session/new` baseline
-- Core `session/prompt` turn/`state_update` lifecycle (turn completion via `state_update`, not the prompt response) and
-  `session/cancel` (confirmed via a terminating `cancelled` idle `state_update`)
-- Prompt content capabilities (`image`/`audio`/`embeddedContext`)
-- `session/request_permission` flow
+- `initialize` and version negotiation, including a v2-only agent's required behavior when asked for `1`, and the
+  initialization rules (requests before `initialize`, repeated `initialize`)
+- `session/new` baseline, MCP server config, `additionalDirectories`, `systemPrompt`
+- Core `session/prompt` turn/`state_update` lifecycle (turn completion via `state_update`, not the prompt response),
+  prompts sent during active work, and background work lists
+- `session/cancel` (confirmed via a terminating `cancelled` idle `state_update`), including a turn blocked on a
+  permission request, and `$/cancel_request`
+- Prompt content capabilities (`image`/`audio`/`embeddedContext`), and rejection of unknown or unadvertised content
+- `session/request_permission` flow and tool-call status rules
 - Agent -> client method rules (including the `_`/`$/`-prefix extensibility rule)
-- stdio transport, the JSON-RPC envelope, and batching
+- stdio transport and the JSON-RPC envelope (request ids, no batching: JSON arrays are rejected)
 - Session management: `session/resume` (including replay ordering), `session/list`, `session/close`/`delete`,
-  `additionalDirectories`, MCP server config, `session/set_config_option`/`configOptions`
-- Authentication: `authMethods`, `auth/login`/`auth/logout`
+  `session/fork`, `session/archive`/`unarchive`, `session/set_config_option`/`configOptions`, slash commands
+- Authentication: `authMethods`, `auth/login`/`auth/logout`, `auth/status`
 - Keyed upsert/patch semantics (messages, tool calls, terminals), open-enum emitter rules (custom values must be `_`
   -prefixed)
-- Extensibility/`_meta`/schema-hygiene, error shape, shutdown promptness
-- `INFORMATIONAL` probes: malformed JSON, structurally-invalid requests, unknown session ids, stderr volume, MCP
-  connection details
+- Error codes (unknown sessions, unadvertised methods, reserved ranges), extensibility/`_meta` (including trace
+  context keys), schema hygiene, error shape, shutdown promptness
+- `INFORMATIONAL` probes: malformed JSON, structurally-invalid requests, stderr volume, whether stdio/http MCP servers
+  are accepted, how a prompt sent during active work is handled, and `session/cancel` with no foreground work
 
 ## Contributing / docs
 
