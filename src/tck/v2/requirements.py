@@ -1302,7 +1302,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "A retained user message inserted by `session/prompt` replays, if it replays at all, "
-            "with the same `messageId` that prompt's response returned. A narrow, conditional "
+            "with the same `messageId` that prompt's response returned. Judged for the resumed "
+            "session only: a child session's own `user_message` is not that message. A narrow, conditional "
             "trigger: absence of the message from replay is conforming (R5) and SKIPs this "
             "check rather than FAILing it."
         ),
@@ -1317,14 +1318,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "During replay, a `*_chunk` update for a `messageId` is preceded, within the same "
-            "replay window, by a matching whole-message update for that id carrying a `content` "
+            "During replay, a `*_chunk` update for the resumed session and a `messageId` is "
+            "preceded, within the same replay window, by a matching whole-message update for that id carrying a `content` "
             "array -- `[]` when chunks rebuild the message from its beginning, or full content "
             "the chunks then append to (a client cannot tell the two apart). Vacuous -- "
             "recorded, never FAILed -- for an agent whose replay uses only whole-message "
-            "updates."
+            "updates. Live traffic for other (child) sessions, which may accompany a replay, "
+            "is not judged (Draft Subagents RFD)."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:299-312"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:299-312; "
+            "docs/rfds/subagents.mdx:999-1006 (Draft RFD)"
+        ),
     ),
     Requirement(
         id="ACP-RESUME-206",
@@ -1379,13 +1384,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Every `session/update` the agent sends during a `session/resume` exchange with "
             "`replayFrom: {\"type\": \"start\"}` (replay plus the state snapshot) validates "
             "against the v2 schema and carries the resumed `sessionId` or that of a child "
-            "session already announced on this connection by a `subagent_update` (on the Draft "
-            "Subagents RFD's rule that replayed child history keeps the child's own `sessionId`, "
-            "announcement first). An update for a session never announced FAILs."
+            "session announced earlier in that same exchange by a `subagent_update` (on the "
+            "Draft Subagents RFD's rule that child updates keep the child's own `sessionId` and "
+            "follow its announcement within the load/resume). An update for a session not "
+            "announced within the exchange FAILs, even if an earlier turn announced it."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
-            "docs/rfds/subagents.mdx:925-935 (Draft RFD); "
+            "docs/rfds/subagents.mdx:925-935,995-1003 (Draft RFD); "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
     ),

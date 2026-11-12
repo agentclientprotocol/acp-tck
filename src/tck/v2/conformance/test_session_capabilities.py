@@ -62,7 +62,6 @@ from ._helpers import (
     same_dir,
     skip_if_auth_gated,
     skip_if_turn_end_race_not_exercised,
-    update_of,
 )
 
 _HISTORY_KINDS = {"user_message", "agent_message", "agent_thought"}
@@ -222,7 +221,8 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
 async def test_resume_replays_retained_user_message_with_same_message_id(agent_launch, tmp_path):
     """ACP-RESUME-204. Absence of the message from replay is itself conforming (R5) -- SKIPs
     this check rather than FAILing it. A replayed message only violates the requirement if its
-    *content* matches this test's own nonce-carrying prompt but its `messageId` differs."""
+    *content* matches this test's own nonce-carrying prompt but its `messageId` differs.
+    Filtered to the resumed session: a child's own `user_message` is not that prompt."""
     prompt_text = f"remember this {uuid.uuid4().hex}"
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
@@ -243,8 +243,8 @@ async def test_resume_replays_retained_user_message_with_same_message_id(agent_l
         )
         matching_updates = [
             update
-            for _, entry in updates
-            if (update := update_of(entry)) is not None
+            for _, msg in _session_update_messages(updates)
+            if (update := _update_for(msg, session_id)) is not None
             and update.get("sessionUpdate") in ("user_message", "user_message_chunk")
         ]
         if not matching_updates:
@@ -281,7 +281,8 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
     """ACP-RESUME-205. Accepts any preceding same-kind, same-`messageId` whole-message update
     with a `content` array: `[]` (rebuild from the beginning) and full content (chunks append)
     are wire-indistinguishable. Vacuous -- recorded, never FAILed -- for an agent whose replay
-    uses only whole-message updates (`_base.ConformingAgent`'s own case)."""
+    uses only whole-message updates (`_base.ConformingAgent`'s own case). Filtered to the
+    resumed session: live child chunks may accompany a replay (RFD: subagents)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -293,7 +294,11 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
             replay_from={"type": "start"},
             timeout=agent_launch.default_timeout,
         )
-        replayed = [update for _, entry in updates if (update := update_of(entry)) is not None]
+        replayed = [
+            update
+            for _, msg in _session_update_messages(updates)
+            if (update := _update_for(msg, session_id)) is not None
+        ]
         chunk_count = 0
         for index, update in enumerate(replayed):
             kind = update.get("sessionUpdate")
@@ -417,9 +422,9 @@ async def test_resume_with_malformed_replay_from_is_rejected(agent_launch, tmp_p
 async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, record_property):
     """ACP-RESUME-209. Covers every `session/update` read while waiting for the
     `session/resume` response -- replay and snapshot alike. Each carries the resumed `sessionId`
-    or that of a child session already announced, in wire order on this connection, by a
-    `subagent_update` on a known session (nested children included); a replayed child update
-    for a never-announced session FAILs."""
+    or that of a child session announced earlier in this resume exchange, in wire order, by a
+    `subagent_update` on a known session (nested children included); an update for a session not
+    announced within the exchange FAILs, even if an earlier turn announced it."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -437,26 +442,28 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
         known = {session_id}
         problems = []
         for line_index, entry in enumerate(agent.transcript):
-            if entry.direction is not Direction.RECEIVED:
+            # Only the resume exchange counts: a client resuming on a fresh connection has not
+            # seen announcements made by earlier turns.
+            if line_index not in resume_lines or entry.direction is not Direction.RECEIVED:
                 continue
             for msg in iter_messages(entry):
                 if msg.get("method") != "session/update":
                     continue
                 params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
                 carried = params.get("sessionId")
-                if line_index in resume_lines:
-                    issues = validate_agent_message(msg)
-                    if issues:
-                        problems.append((msg, issues))
-                    if carried not in known:
-                        problems.append(
-                            (
-                                msg,
-                                f"sessionId is neither the resumed {session_id!r} nor a child "
-                                f"announced earlier via subagent_update (known: {sorted(known)!r}; "
-                                "Draft Subagents RFD: replayed child updates follow their announcement)",
-                            )
+                issues = validate_agent_message(msg)
+                if issues:
+                    problems.append((msg, issues))
+                if carried not in known:
+                    problems.append(
+                        (
+                            msg,
+                            f"sessionId is neither the resumed {session_id!r} nor a child "
+                            f"announced earlier in this resume via subagent_update (known: "
+                            f"{sorted(known)!r}; Draft Subagents RFD: child announcements "
+                            "precede child traffic within the load/resume)",
                         )
+                    )
                 update = params.get("update")
                 if (
                     carried in known

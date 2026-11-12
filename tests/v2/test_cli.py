@@ -1601,8 +1601,9 @@ def test_unannounced_child_update_fails_prompt_002_only():
 
 
 def test_replays_subagent_history_passes_everything():
-    """A child announced and replayed under its own `sessionId` on `replayFrom: start`, plus live
-    child traffic before every resume response, is legal: same outcome as `conforming.py`."""
+    """A child announced and replayed under its own `sessionId` on `replayFrom: start` (with its own
+    `user_message`), plus live child chunks before every resume response, replay or not, is legal:
+    same outcome as `conforming.py`."""
     result = _run_cli(FIXTURES_DIR_V2, "replays_subagent_history.py", protocol_version=2)
     _assert_conforming_baseline(result, "replays_subagent_history.py")
 
@@ -1613,6 +1614,14 @@ def test_replays_unannounced_child_fails_resume_209_only():
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {"ACP-RESUME-209"}, result.stdout
     assert statuses["ACP-RESUME-002"] == "PASS", result.stdout
+
+
+def test_replays_child_before_announce_fails_resume_209_only():
+    """The child was announced on an earlier turn, but not within the resume exchange."""
+    result = _run_cli(FIXTURES_DIR_V2, "replays_child_before_announce.py", protocol_version=2)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-RESUME-209"}, result.stdout
 
 
 def test_requires_action_no_running_fails_state_205_only():
