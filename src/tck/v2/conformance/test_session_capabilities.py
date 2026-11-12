@@ -192,7 +192,7 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
     """ACP-RESUME-002. Vacuous -- and recorded, never FAILed on that account -- for an agent
     that retains no history to replay. The mandatory current-state snapshot is not history.
     Filtered to the resumed session: live child-session traffic may legally arrive before a
-    no-replay resume response (RFD: subagents)."""
+    no-replay resume response (Active Subagents RFD)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -282,7 +282,7 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
     with a `content` array: `[]` (rebuild from the beginning) and full content (chunks append)
     are wire-indistinguishable. Vacuous -- recorded, never FAILed -- for an agent whose replay
     uses only whole-message updates (`_base.ConformingAgent`'s own case). Filtered to the
-    resumed session: live child chunks may accompany a replay (RFD: subagents)."""
+    resumed session: live child chunks may accompany a replay (Active Subagents RFD)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -429,7 +429,7 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
         await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
-        # Child output may trail the turn just run (RFD: child work outlives the parent's
+        # Child output may trail the turn just run (Active Subagents RFD: child work outlives the parent's
         # turn); settle it first so it is not read as part of the resume exchange.
         await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
         response_entry, updates = await resume_session(

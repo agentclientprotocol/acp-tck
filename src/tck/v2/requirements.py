@@ -601,7 +601,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:382,384; "
-            "docs/rfds/v2/prompt.mdx:88"
+            "docs/rfds/v2/prompt.mdx:88 (Active RFD)"
         ),
     ),
     Requirement(
@@ -821,7 +821,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:382-384,1118-1119; "
-            "docs/rfds/v2/prompt.mdx:88"
+            "docs/rfds/v2/prompt.mdx:88 (Active RFD)"
         ),
     ),
     Requirement(
@@ -1988,7 +1988,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:49; "
             "docs/protocol/v2/draft/error.mdx:54; "
-            "docs/rfds/session-fork.mdx:67"
+            "docs/rfds/session-fork.mdx:67 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -2235,7 +2235,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:234,236,291,367-371; "
             "docs/protocol/v2/draft/initialization.mdx:239-240; "
-            "docs/rfds/session-config-options.mdx:45; "
+            "docs/rfds/session-config-options.mdx:45 (Completed RFD); "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionResponse"
         ),
@@ -2282,7 +2282,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:236,373,459; "
-            "docs/rfds/session-config-options.mdx:45; "
+            "docs/rfds/session-config-options.mdx:45 (Completed RFD); "
             "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
         ),
     ),
@@ -2567,7 +2567,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/schema.mdx:143-144; "
             "docs/protocol/v2/draft/initialization.mdx:215-219; "
             "docs/protocol/v2/draft/authentication.mdx:193; "
-            "docs/rfds/get-auth-state.mdx:293,297"
+            "docs/rfds/get-auth-state.mdx:293,297 (Draft RFD)"
         ),
     ),
     Requirement(

@@ -300,7 +300,7 @@ statement = "`ToolCallLocation.line` is a 1-based line number."
 reason = "Not enforced: the statement carries no RFC 2119 keyword and the v1 schema deliberately keeps `minimum: 0`, so a `0` is schema-valid and the TCK does not fail it."
 
 [[not_requirement]]
-citation = "docs/protocol/v1/draft/tool-calls.mdx:349-351; docs/rfds/subagents.mdx:636-638 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v1/draft/tool-calls.mdx:349-351; docs/rfds/subagents.mdx:636-638 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "A `session` tool-call reference names a session already known through ordinary session setup or a prior `subagent_update`."
 reason = "Out of scope: it applies only when the client advertises `subagents`, which the TCK never does, and provoking subagent spawns is model-driven. Revisit if a `subagents`-advertising test is added."
 

@@ -40,10 +40,10 @@ If `context-search` is unavailable, fails, or returns no useful result, continue
 Choose the authoritative upstream evidence that matches the question:
 
 - Use documentation for stated public behavior and concepts.
-- Use RFDs for design intent, tradeoffs, and protocol evolution.
+- Use RFDs for design intent, tradeoffs, and protocol evolution. An RFD's stage is the nearest enclosing sidebar group in `docs/docs.json` whose name is Draft, Active, Preview or Completed.
 - Use JSON schemas for wire names, shapes, required fields, optionality, nullability, and unions.
 - Use Rust model definitions as another representation of protocol data types and serialization shapes.
 
 Trace related evidence across these sources when the question spans semantics and wire representation. Treat schemas and normative documentation as protocol contracts. Do not infer runtime behavior, lifecycle semantics, or reference implementation details from the Rust models.
 
-Report the upstream revision checked, cite concrete repository-relative files and lines, and distinguish confirmed specification requirements from RFD proposals or Rust model representation details. If authoritative sources disagree, surface the discrepancy instead of choosing one without explanation.
+Report the upstream revision checked, cite concrete repository-relative files and lines, and distinguish confirmed specification requirements from Draft RFD proposals, Active or Preview RFD rules (say which stage, and whether the draft docs also state them), and Rust model representation details. If authoritative sources disagree, surface the discrepancy instead of choosing one without explanation.

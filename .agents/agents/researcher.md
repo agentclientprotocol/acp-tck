@@ -26,7 +26,12 @@ SDKs, and the TCK.
 
 1. **`check-specification`** — the ACP repository: documentation, RFDs, JSON schemas, Rust models.
    This is authoritative for wire format, required/optional fields, nullability, unions, and stated
-   behavior. Use RFDs for design intent, and label them as proposals, not requirements.
+   behavior. Use RFDs for design intent. Always report an RFD's stage (nearest stage group in the
+   spec repo's `docs/docs.json`): a Draft RFD is a proposal, not a requirement; an Active or Preview
+   RFD is a requirement source under the tier cap and docs precedence of `docs/requirements.md`
+   (a rule stated only there is never MANDATORY; where the draft docs or schema state the same
+   behaviour, they govern and the RFD is secondary context); a Completed RFD is absorbed into the
+   docs, so read the docs.
 2. **`check-rust-sdk`** and **`check-python-sdk`** — the reference implementations. Authoritative
    for runtime behavior, lifecycle ordering, error handling, and timing that the spec leaves
    implicit. Not authoritative for schema shape.

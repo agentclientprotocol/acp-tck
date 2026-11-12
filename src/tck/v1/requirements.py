@@ -993,7 +993,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v1/schema.unstable.json#/$defs/AgentAuthCapabilities/properties/status; "
             "schema/v1/schema.unstable.json#/$defs/AuthStatusRequest; "
             "schema/v1/schema.unstable.json#/$defs/AuthStatusResponse; "
-            "docs/rfds/get-auth-state.mdx:293,297"
+            "docs/rfds/get-auth-state.mdx:293,297 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -1010,7 +1010,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "schema/v1/schema.unstable.json#/$defs/AuthState; "
-            "docs/rfds/get-auth-state.mdx:160-161"
+            "docs/rfds/get-auth-state.mdx:160-161 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -1119,7 +1119,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v1/draft/prompt-turn.mdx:19-21,42; "
             "docs/protocol/v1/draft/tool-calls.mdx:358; "
-            "docs/rfds/subagents.mdx:76-78,644-645; "
+            "docs/rfds/subagents.mdx:76-78,644-645 (Active RFD); "
             "schema/v1/schema.unstable.json#/$defs/SubagentCapabilities; "
             "schema/v1/schema.unstable.json#/$defs/SessionReference"
         ),
@@ -1138,7 +1138,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/agent-plan.mdx:127; "
-            "docs/rfds/plan-operations.mdx:63; "
+            "docs/rfds/plan-operations.mdx:63 (Draft RFD); "
             "schema/v1/schema.unstable.json#/$defs/PlanFile"
         ),
     ),
