@@ -726,7 +726,8 @@ def session_content_references(
     Returns `(references, problems)`: the `sessionId` of every `session` item seen, in wire
     order, and one message per reference to a session not yet known. Items are read from a
     `tool_call` / `tool_call_update` `content` array, a `tool_call_content_chunk`'s single
-    `content` item and a `session/request_permission` request's `toolCall.content` array."""
+    `content` item and a `session/request_permission` request's `subject.toolCall.content` array
+    (only a `tool_call` subject carries a tool call; a `command` subject holds just its ID)."""
     references: list[str] = []
     problems: list[str] = []
     for _msg, method, params, known in _wire_messages(transcript, client_sessions):
@@ -736,9 +737,14 @@ def session_content_references(
         items: Any = None
         where = ""
         if method == "session/request_permission":
-            tool_call = params.get("toolCall")
+            subject = params.get("subject")
+            tool_call = (
+                subject.get("toolCall")
+                if isinstance(subject, dict) and subject.get("type") == "tool_call"
+                else None
+            )
             items = tool_call.get("content") if isinstance(tool_call, dict) else None
-            where = "session/request_permission toolCall"
+            where = "session/request_permission subject.toolCall"
         elif kind in ("tool_call", "tool_call_update"):
             items = update.get("content")
             where = f"session/update {kind}"
@@ -797,7 +803,8 @@ def subagent_updates(
     reparenting whose new parent descends from the child). Reparenting is judged only for an update
     sent on a known session; one sent on an unknown session is `child_session_traffic`'s to judge.
     Every update's `cwd` and `additionalDirectories` entries are checked for `relative_paths`
-    regardless."""
+    regardless, but only well-typed (string) values: a malformed one is `ACP-PROMPT-002`'s, and
+    `reported_directories` counts only the strings judged."""
     result = SubagentUpdates()
     parents: dict[str, str] = {}
     for _msg, method, params, known in _wire_messages(transcript, client_sessions):
@@ -831,11 +838,16 @@ def subagent_updates(
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
-            if value is None:
-                continue
-            result.reported_directories = True
-            items = value if field_name == "additionalDirectories" and isinstance(value, list) else [value]
+            # A value of the wrong type (a non-string `cwd`, a non-list `additionalDirectories`,
+            # a non-string entry) is a schema defect, `ACP-PROMPT-002`'s: not judged here.
+            if field_name == "additionalDirectories":
+                items = value if isinstance(value, list) else []
+            else:
+                items = [value]
             for item in items:
+                if not isinstance(item, str):
+                    continue
+                result.reported_directories = True
                 if not is_absolute_path(item):
                     result.relative_paths.append(
                         f"subagent_update for {child!r} reports {field_name} {item!r}, "
@@ -846,10 +858,14 @@ def subagent_updates(
 
 @dataclass
 class SessionMessages:
-    """What `session_messages` found: how many `session_message` upserts were seen and, per rule,
-    the violations."""
+    """What `session_messages` found: how many `session_message` upserts were seen, how many
+    messages had both participants known (`participants_judged`, what `ACP-SUBAGENT-007`/`-008`
+    judge), how many view links had both sides carrying a reference (`links_judged`,
+    `ACP-SUBAGENT-009`) and, per rule, the violations."""
 
     count: int = 0
+    participants_judged: int = 0
+    links_judged: int = 0
     same_participants: list[str] = field(default_factory=list)
     foreign_outer: list[str] = field(default_factory=list)
     unlinked_views: list[str] = field(default_factory=list)
@@ -877,12 +893,14 @@ def session_messages(
     different ones whose outer session is neither are `foreign_outer`. The link rule is judged on
     the final stored state: a view's `recipientMessageId` names a view in the recipient's
     transcript and its `senderMessageId` one in the sender's, and when that view was reported and
-    references back, the two must name each other, else `unlinked_views`. A referenced view that
-    was not reported, or has no reference of its own, is not judged. `session_message_chunk`
+    references back, the two must name each other, else `unlinked_views` (also when the referenced
+    view's own sender or recipient is a third session). A referenced view that was not reported,
+    or has no reference of its own, is not judged. `session_message_chunk`
     carries no identity."""
     result = SessionMessages()
     views: dict[tuple[str, str], dict[str, str | None]] = {}
     seen: set[tuple[str, str, str]] = set()
+    with_participants: set[tuple[str, str]] = set()
     for _msg, method, params, _known in _wire_messages(transcript, client_sessions):
         update = params.get("update") if method == "session/update" else None
         if not isinstance(update, dict) or update.get("sessionUpdate") != "session_message":
@@ -905,6 +923,7 @@ def session_messages(
         sender, recipient = view["sender"], view["recipient"]
         if sender is None or recipient is None:
             continue
+        with_participants.add((outer, message_id))
         if sender == recipient:
             if ("same", outer, message_id) not in seen:
                 seen.add(("same", outer, message_id))
@@ -919,20 +938,22 @@ def session_messages(
                 f"its sender {sender!r} nor its recipient {recipient!r}"
             )
 
+    result.participants_judged = len(with_participants)
     for (outer, message_id), view in views.items():
         # (this view's session / message reference, the other view's reference back)
-        for session_key, ref_key, back_session, back_ref, back_name in (
-            ("recipient", "recipient_msg", "sender", "sender_msg", "senderMessageId"),
-            ("sender", "sender_msg", "recipient", "recipient_msg", "recipientMessageId"),
+        for session_key, ref_key, back_ref, back_name in (
+            ("recipient", "recipient_msg", "sender_msg", "senderMessageId"),
+            ("sender", "sender_msg", "recipient_msg", "recipientMessageId"),
         ):
             target_session, target_id = view[session_key], view[ref_key]
             if target_session is None or target_id is None or target_session == outer:
                 continue
             other = views.get((target_session, target_id))
-            if other is None or other[back_ref] is None or other[back_ref] == message_id:
+            if other is None or other[back_ref] is None:
                 continue
-            if other[back_session] not in (None, outer):
-                continue  # the other view's own participant is someone else: not this message
+            result.links_judged += 1
+            if other[back_ref] == message_id:
+                continue
             result.unlinked_views.append(
                 f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
                 f"session {target_session!r} as its other view, but that view's {back_name} "
@@ -1011,10 +1032,12 @@ _USER_MESSAGE_KINDS = {"user_message", "user_message_chunk"}
 
 @dataclass
 class ChildTasks:
-    """What `child_task_reports` found: how many announced children began agent output and, per
-    rule, the violations."""
+    """What `child_task_reports` found: how many announced children began agent output
+    (`started`), how many of those were not told the task as a user message (`judged`, what
+    `ACP-SUBAGENT-012` judges) and, per rule, the violations."""
 
     started: int = 0
+    judged: int = 0
     user_message_tasks: list[str] = field(default_factory=list)
     unreported: list[str] = field(default_factory=list)
 
@@ -1030,12 +1053,14 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
     `user_message_tasks`. Otherwise a child whose first output was not preceded by an incoming
     `session_message` (outer `sessionId` the child, `senderSessionId` its immediate parent, the
     parent being the session that first announced it; the sender is stored across upserts of the
-    `messageId`) is `unreported`. A child that never produces output is not judged."""
+    `messageId`) is `unreported`. A child that never produces output is not judged, and a child
+    already in `user_message_tasks` is left out of `judged`."""
     result = ChildTasks()
     parents: dict[str, str] = {}
     senders: dict[tuple[str, str], str | None] = {}
     tasked: set[str] = set()  # children told the task, either way
     started: set[str] = set()
+    user_message_children: set[str] = set()  # `ACP-SUBAGENT-011`'s, not judged by 012
     for _msg, method, params, known in _wire_messages(transcript, client_sessions):
         update = params.get("update") if method == "session/update" else None
         outer = params.get("sessionId")
@@ -1056,6 +1081,7 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
             continue
         if kind in _USER_MESSAGE_KINDS:
             tasked.add(outer)
+            user_message_children.add(outer)
             result.user_message_tasks.append(
                 f"child {outer!r} has a {kind} before its first agent output; the task a parent "
                 f"gives a child is a `session_message`, not the user's"
@@ -1068,6 +1094,8 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
         elif kind in _CHILD_OUTPUT_KINDS:
             started.add(outer)
             result.started += 1
+            if outer not in user_message_children:
+                result.judged += 1
             if outer not in tasked:
                 result.unreported.append(
                     f"child {outer!r} produced agent output before an incoming `session_message` "

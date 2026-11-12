@@ -2,15 +2,18 @@
 """Conforming fixture: during each turn it announces a child session with `subagent_update` on
 the prompted session, then exchanges a `session_message` with the child in both views (outgoing
 on the parent, incoming on the child, each naming both participants and the other view),
-announces the delegation with a completed tool call whose content is a `session` reference to the child, has the child ask for permission
-with a `session/request_permission` carrying the child's `sessionId`, and streams the child's own
+announces the delegation with a completed tool call whose content is a `session` reference to the
+child, has the child ask for permission with a `session/request_permission` carrying the child's `sessionId`, then ask again to spawn its own child
+with one whose `tool_call` subject carries a `session` reference, and streams the child's own
 `running` -> `agent_message_chunk` -> `idle(end_turn)` under that `sessionId`. After the parent's
 turn has ended, the child sends one more `agent_message_chunk` (child work outlives the parent's
 turn). The association stays one tree: the child is later patched under the same parent with an
 absolute `cwd` and `additionalDirectories`, and announces one nested child of its own (also with
 an absolute `cwd`). Everything is legal once announced, and the child's idle must not end the
-parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..009` and `ACP-STATE-201..205`
-like `conforming.py` (the mock client answers the child's permission request; it is not awaited).
+parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..009`, `-011..014` and `-201` and
+`ACP-STATE-201..205` like `conforming.py`, and also exercises the rows that need a subagent, a
+permission request or `session` content (`_SUBAGENT_EXERCISED_IDS` in `tests/v2/test_cli.py`). The
+mock client answers the permission requests; the child's is not awaited.
 
 The `_`-hooks below are the seams the violator fixtures override.
 """
@@ -48,6 +51,7 @@ class ExposesSubagentAgent(ConformingAgent):
         self._send_session_reference(session_id, child_id)
         self._send_child_state(session_id, child_id, {"state": "running"})
         self._child_permission_step(child_id)
+        self._send_child_spawn_permission_request(child_id)
         self._send_update(
             child_id,
             {
@@ -215,6 +219,46 @@ class ExposesSubagentAgent(ConformingAgent):
 
     def _referenced_session(self, child_id: str) -> str:
         return child_id
+
+    def _permission_referenced_session(self, child_id: str) -> str:
+        return f"{child_id}-nested"
+
+    def _send_child_spawn_permission_request(self, child_id: str) -> None:
+        """The child asks to spawn its own child: a `tool_call` subject whose tool call carries the
+        `session` reference (v2 puts it at `params.subject.toolCall`, not `params.toolCall`).
+        Skipped when the nested child goes unannounced, so those violators keep to their one defect."""
+        if not self.announce_child:
+            return
+        self._write(
+            {
+                "jsonrpc": "2.0",
+                "id": f"{child_id}-spawn-perm",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": child_id,
+                    "title": "Allow spawning a helper?",
+                    "subject": {
+                        "type": "tool_call",
+                        "toolCall": {
+                            "toolCallId": f"{child_id}-spawn-ask",
+                            "title": "Spawn helper",
+                            "kind": "other",
+                            "status": "pending",
+                            "content": [
+                                {
+                                    "type": "session",
+                                    "sessionId": self._permission_referenced_session(child_id),
+                                }
+                            ],
+                        },
+                    },
+                    "options": [
+                        {"optionId": "allow-once", "name": "Allow", "kind": "allow_once"},
+                        {"optionId": "reject-once", "name": "Reject", "kind": "reject_once"},
+                    ],
+                },
+            }
+        )
 
     def _child_permission_step(self, child_id: str) -> None:
         self._send_child_permission_request(child_id)

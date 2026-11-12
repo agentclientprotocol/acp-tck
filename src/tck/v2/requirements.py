@@ -379,7 +379,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "known: one the client created, or a child announced by an earlier `subagent_update` "
             "on a known session. Judged for every such item in a `tool_call` or "
             "`tool_call_update` `content` array, a `tool_call_content_chunk`'s `content`, and a "
-            "`session/request_permission` request's `toolCall.content`, in wire order over one "
+            "`session/request_permission` request's `subject.toolCall.content` (a `tool_call` "
+            "subject; a `command` subject carries only a tool call ID), in wire order over one "
             "`session/new`, one prompt turn and a quiet period after it. A reference to a "
             "session no announcement preceded FAILs. A reference does not count as traffic "
             "carrying the child's ID, so it never FAILs `ACP-SUBAGENT-001`. The draft docs state "
@@ -458,11 +459,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "machine, not a URI). `null` clears the field and an omitted field is unchanged, so "
             "neither is judged. The vendored schema defines `AbsolutePath` as a bare `string`, so "
             "`ACP-PROMPT-002`'s schema validation accepts a relative path and this row is the "
-            "only check. The draft docs state the rule; only an agent that emits `subagent_update` "
-            "is bound and no `initialize` marker announces it, so the row is CAPABILITY and gated "
-            "by `inferred:subagents`. Judged for every `subagent_update` over one `session/new`, "
-            "one prompt turn and a quiet period after it; SKIPs when none carries `cwd` or "
-            "`additionalDirectories`."
+            "only check for it; a value of the wrong type (a non-string `cwd`, a non-array "
+            "`additionalDirectories`, a non-string entry) is a schema defect, "
+            "`ACP-PROMPT-002`'s, and is not judged here. The draft docs state the rule; only an "
+            "agent that emits `subagent_update` is bound and no `initialize` marker announces it, "
+            "so the row is CAPABILITY and gated by `inferred:subagents`. Judged for every `subagent_update` over one `session/new`, "
+            "one prompt turn and a quiet period after it; SKIPs when none carries a string `cwd` or "
+            "`additionalDirectories` entry."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/schema.mdx:10238,10254; "
@@ -486,7 +489,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "different sessions`), so the row is capped at CAPABILITY and gated by "
             "`inferred:subagents` (documentation-only, no `initialize` marker). Judged for every "
             "`session_message` over one `session/new`, one prompt turn and a quiet period after "
-            "it; SKIPs when none appears."
+            "it; SKIPs when no message has both participants known."
         ),
         citation=_cite("docs/rfds/subagents.mdx:477-480 (Active RFD)"),
     ),
@@ -503,8 +506,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "leaves out. Stated only by the Subagents RFD (Active RFD: `the outer "
             "params.sessionId matches one of them`), so the row is capped at CAPABILITY and gated "
             "by `inferred:subagents`. Judged for every `session_message` over one `session/new`, "
-            "one prompt turn and a quiet period after it; SKIPs when none appears. A participant "
-            "that was never announced is `ACP-SUBAGENT-001`'s."
+            "one prompt turn and a quiet period after it; SKIPs when no message has both participants "
+            "known. A participant that was never announced is `ACP-SUBAGENT-001`'s."
         ),
         citation=_cite("docs/rfds/subagents.mdx:477-481 (Active RFD)"),
     ),
@@ -517,42 +520,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "view's `recipientMessageId` names a view in the recipient's transcript, an incoming "
             "view's `senderMessageId` one in the sender's, and if that view was reported on the "
             "connection and carries the reverse reference, it names the first view's "
-            "`messageId`. Conflicting references FAIL. A reference to a view the agent never "
+            "`messageId`. Conflicting references FAIL, including when the referenced view's own "
+            "sender or recipient is a third session. A reference to a view the agent never "
             "reported, or to a view with no reference of its own, is not judged (each side is "
             "reported only when observed, and the draft docs add that views are not linked by "
             "equal IDs alone). The draft docs define what each field names; the RFD alone states "
             "the MUST that both references agree, so the row is capped at CAPABILITY and gated by "
             "`inferred:subagents`. Judged on the stored state after every `session_message` of "
-            "one `session/new`, one prompt turn and a quiet period after it; SKIPs when no "
-            "`session_message` appears. `session_message_chunk` carries no identity, so is not "
-            "judged."
+            "one `session/new`, one prompt turn and a quiet period after it; SKIPs when no two views "
+            "were found that both carry a reference, so no link was judged. "
+            "`session_message_chunk` carries no identity, so is not judged."
         ),
         citation=_cite(
             "docs/rfds/subagents.mdx:466-475 (Active RFD); "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:128-132; "
             "docs/protocol/v2/draft/schema.mdx:8237,8251"
-        ),
-    ),
-    Requirement(
-        id="ACP-SUBAGENT-010",
-        tier=Tier.ADVISORY,
-        capability=None,
-        text=(
-            "Every state a child reports in its own `state_update` is mirrored on the immediate "
-            "parent (the session that announced it) as the `state` of a `subagent_update` for "
-            "that child (SHOULD). For each child announced on a known session, the distinct "
-            "consecutive states of its own `state_update`s appear, in order, among the states "
-            "of its `subagent_update` mirrors; a mirror may arrive before or after the copy on "
-            "the child's stream, a repeated snapshot needs no second mirror, and only `state` "
-            "is compared. Judged over one `session/new`, one prompt turn and a quiet period "
-            "after it; SKIPs itself when no announced child reports a `state_update` (an agent "
-            "that exposes no subagent, or none that reports state). ADVISORY rows carry no "
-            "`capability`, so the SKIP is the test's own."
-        ),
-        citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1015-1018; "
-            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
-            "docs/rfds/subagents.mdx:765-774 (Active RFD)"
         ),
     ),
     Requirement(
@@ -586,7 +568,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "of the `messageId`; the parent is the session that announced the child). A child "
             "whose task was reported as a `user_message` is `ACP-SUBAGENT-011`'s FAIL, so is not "
             "judged here. Judged over one `session/new`, one prompt turn and a quiet period "
-            "after it; SKIPs itself when no announced child produces agent output."
+            "after it; SKIPs itself when no announced child that was not told its task as a "
+            "`user_message` produces agent output."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-142; "
@@ -630,6 +613,30 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "itself when no `config_option_update` for an announced child carries a select."
         ),
         citation=_cite("docs/rfds/subagents.mdx:392-419 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-201",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every state a child reports in its own `state_update` is mirrored on the immediate "
+            "parent (the session that announced it) as the `state` of a `subagent_update` for "
+            "that child (SHOULD). For each child announced on a known session, the distinct "
+            "consecutive states of its own `state_update`s appear, in order, among the states "
+            "of its `subagent_update` mirrors; a mirror may arrive before or after the copy on "
+            "the child's stream, a repeated snapshot needs no second mirror, and only `state` "
+            "is compared. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child reports a `state_update` (an agent "
+            "that exposes no subagent, or none that reports state). ADVISORY rows carry no "
+            "`capability`, so the SKIP is the test's own. v2-only (`2xx`): v1 has no "
+            "child-addressed `state_update` stream and reports a child's work state through the "
+            "association alone (`subagent_update.state`), so there is nothing to mirror."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1015-1018; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/rfds/subagents.mdx:765-774 (Active RFD)"
+        ),
     ),
     Requirement(
         id="ACP-PROMPT-201",

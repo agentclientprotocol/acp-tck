@@ -187,11 +187,11 @@ _CAPABILITY_IDS = {
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
-    "ACP-SUBAGENT-010",
     "ACP-SUBAGENT-011",
     "ACP-SUBAGENT-012",
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-STATE-204",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
@@ -309,11 +309,11 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
-    "ACP-SUBAGENT-010",
     "ACP-SUBAGENT-011",
     "ACP-SUBAGENT-012",
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -530,11 +530,11 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
-    "ACP-SUBAGENT-010",
     "ACP-SUBAGENT-011",
     "ACP-SUBAGENT-012",
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
@@ -587,11 +587,11 @@ _SUBAGENT_EXERCISED_IDS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
-    "ACP-SUBAGENT-010",
     "ACP-SUBAGENT-011",
     "ACP-SUBAGENT-012",
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-PATCH-204",
     "ACP-PATCH-208",
     "ACP-PATCH-210",
@@ -663,7 +663,7 @@ def test_v2_conforming_agent_passes_everything():
 # `_meta` at all; `emits_w3c_meta.py` exercises them), and `_BACKGROUND_SKIP_IDS` (it reports
 # no background work; `reports_background_work.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
-# `ACP-SUBAGENT-001/002` SKIP: it exposes no subagent (`exposes_subagent.py` exercises them).
+# `ACP-SUBAGENT-001..014`/`-201` SKIP: it exposes no subagent (`exposes_subagent.py` exercises them).
 _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
@@ -674,11 +674,11 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-007",
     "ACP-SUBAGENT-008",
     "ACP-SUBAGENT-009",
-    "ACP-SUBAGENT-010",
     "ACP-SUBAGENT-011",
     "ACP-SUBAGENT-012",
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -1719,7 +1719,7 @@ def test_subagent_rows_skip_without_a_child():
     result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
     statuses = _table_statuses(result.stdout)
     assert statuses["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
-    for number in range(2, 15):
+    for number in (*range(2, 10), *range(11, 15), 201):
         assert statuses[f"ACP-SUBAGENT-{number:03}"] == "SKIPPED", result.stdout
 
 
@@ -1767,7 +1767,7 @@ def test_session_message_inconsistencies_fail_one_row_only(fixture, failing):
 @pytest.mark.parametrize(
     ("fixture", "failing"),
     [
-        ("unmirrored_child_state.py", "ACP-SUBAGENT-010"),
+        ("unmirrored_child_state.py", "ACP-SUBAGENT-201"),
         ("child_task_as_user_message.py", "ACP-SUBAGENT-011"),
         ("child_task_after_output.py", "ACP-SUBAGENT-012"),
         ("session_message_chunk_before_participants.py", "ACP-SUBAGENT-013"),
@@ -1776,20 +1776,59 @@ def test_session_message_inconsistencies_fail_one_row_only(fixture, failing):
 )
 def test_subagent_should_violations_fail_one_advisory_row_only(fixture, failing):
     """Each defect is schema-valid and announced, so the MUST rows PASS and only the intended one of
-    `ACP-SUBAGENT-010..014` (all ADVISORY) FAILs. An ADVISORY FAIL does not change the verdict, so
+    `ACP-SUBAGENT-011..014` and `-201` (all ADVISORY) FAILs. An ADVISORY FAIL does not change the verdict, so
     the row outcome, not the exit code, is what is asserted."""
     result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {failing}, result.stdout
     assert failing in _ADVISORY_IDS
-    for req_id in ("ACP-PROMPT-002", *(f"ACP-SUBAGENT-00{n}" for n in range(1, 10))):
+    # `-009` is left out: a violator may leave no pair of linked views to judge, and it SKIPs then
+    for req_id in ("ACP-PROMPT-002", *(f"ACP-SUBAGENT-00{n}" for n in range(1, 9))):
         assert statuses[req_id] == "PASS", result.stdout
 
 
-def test_session_content_unknown_session_fails_subagent_002_only():
+def test_user_message_task_gives_subagent_012_nothing_to_judge():
+    """The child's task came as a `user_message`: `ACP-SUBAGENT-011` FAILs it, and `-012` SKIPs
+    instead of PASSing a child it did not judge."""
+    result = _run_cli(FIXTURES_DIR_V2, "child_task_as_user_message.py", protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-011"] == "FAIL", result.stdout
+    assert statuses["ACP-SUBAGENT-012"] == "SKIPPED", result.stdout
+
+
+def test_malformed_subagent_directories_fail_prompt_002_not_subagent_006():
+    """A non-string `cwd` and a non-array `additionalDirectories` are schema defects: only
+    `ACP-PROMPT-002` FAILs, and `ACP-SUBAGENT-006` judges the later well-typed values instead."""
+    result = _run_cli(FIXTURES_DIR_V2, "malformed_subagent_directories.py", protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-PROMPT-002"}, result.stdout
+    assert statuses["ACP-SUBAGENT-006"] == "PASS", result.stdout
+
+
+def test_session_message_rows_skip_when_they_judge_nothing():
+    """A `session_message` that names no participant and no view leaves `ACP-SUBAGENT-007..009`
+    nothing to judge: each SKIPs, none PASSes vacuously."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "session_message_without_participants.py", protocol_version=2, k=_SUBAGENT_K
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-SUBAGENT-007", "ACP-SUBAGENT-008", "ACP-SUBAGENT-009"):
+        assert statuses[req_id] == "SKIPPED", result.stdout
+    assert statuses["ACP-SUBAGENT-001"] == "PASS", result.stdout
+    assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "session_content_unknown_session.py",  # in a tool call's content
+        "session_content_unknown_in_permission.py",  # only in a permission request's `subject.toolCall`
+    ],
+)
+def test_session_content_unknown_session_fails_subagent_002_only(fixture):
     """A `session` content reference to a never-announced session is not child traffic: only
     `ACP-SUBAGENT-002` judges it, while `ACP-SUBAGENT-001` and `ACP-PROMPT-002` PASS."""
-    result = _run_cli(FIXTURES_DIR_V2, "session_content_unknown_session.py", protocol_version=2, k=_SUBAGENT_K)
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
     assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {"ACP-SUBAGENT-002"}, result.stdout
@@ -2664,11 +2703,11 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-SUBAGENT-007",
             "ACP-SUBAGENT-008",
             "ACP-SUBAGENT-009",
-            "ACP-SUBAGENT-010",
             "ACP-SUBAGENT-011",
             "ACP-SUBAGENT-012",
             "ACP-SUBAGENT-013",
             "ACP-SUBAGENT-014",
+            "ACP-SUBAGENT-201",
         }
     )
     for req_id, status in statuses.items():

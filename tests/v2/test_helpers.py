@@ -363,6 +363,19 @@ def _ref(session_id: str) -> dict[str, Any]:
     return {"type": "session", "sessionId": session_id}
 
 
+def _permission(session_id: str, content: Any, subject_type: str = "tool_call") -> dict[str, Any]:
+    """A v2 `session/request_permission` whose `tool_call` subject carries `content` (v2 has no
+    top-level `toolCall`: it sits at `params.subject.toolCall`)."""
+    subject: dict[str, Any] = {"type": subject_type}
+    if subject_type == "tool_call":
+        subject["toolCall"] = {"toolCallId": "t", "content": content}
+    return {
+        "id": 5,
+        "method": "session/request_permission",
+        "params": {"sessionId": session_id, "title": "ok?", "subject": subject, "options": []},
+    }
+
+
 def test_session_references_without_any_are_not_a_session_content_connection():
     transcript = _traffic(_tool_update("p", content=[{"type": "content", "content": {"type": "text", "text": "x"}}]))
     assert session_content_references(transcript, {"p"}) == ([], [])
@@ -374,7 +387,7 @@ def test_session_reference_to_a_known_session_is_conforming():
         _ANNOUNCE,
         _tool_update("p", content=[_ref("c")]),
         _tool_update("p", "tool_call_content_chunk", content=_ref("c")),
-        {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": {"toolCallId": "t", "content": [_ref("c")]}}},
+        _permission("p", [_ref("c")]),
         # a nested child, announced on a known child, then referenced
         _update("c", {"sessionUpdate": "subagent_update", "sessionId": "g"}),
         _tool_update("c", content=[_ref("g")]),
@@ -388,10 +401,7 @@ def test_session_reference_to_a_known_session_is_conforming():
         (_tool_update("p", content=[_ref("c")]), "tool_call_update"),
         (_tool_update("p", "tool_call", content=[_ref("c")]), "tool_call"),
         (_tool_update("p", "tool_call_content_chunk", content=_ref("c")), "tool_call_content_chunk"),
-        (
-            {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": {"toolCallId": "t", "content": [_ref("c")]}}},
-            "session/request_permission",
-        ),
+        (_permission("p", [_ref("c")]), "session/request_permission subject.toolCall"),
     ],
 )
 def test_session_reference_before_its_announcement_is_a_problem(message, mentions):
@@ -430,7 +440,12 @@ def test_session_reference_judgement_ignores_other_content_and_malformed_items()
     transcript = _traffic(
         _tool_update("p", content=["not a dict", {"type": "session"}, {"type": "session", "sessionId": 7}, {"type": "diff"}]),
         _tool_update("p", content="not a list"),
-        {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": "nope"}},
+        {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "subject": {"type": "tool_call", "toolCall": "nope"}}},
+        _permission("p", "not a list"),
+        # a command subject has no tool call, and the v1 top-level `toolCall` is not v2's carrier
+        _permission("p", [_ref("ghost")], subject_type="command"),
+        {"id": 6, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": {"toolCallId": "t", "content": [_ref("ghost")]}}},
+        {"id": 7, "method": "session/request_permission", "params": {"sessionId": "p", "subject": None}},
     )
     assert session_content_references(transcript, {"p"}) == ([], [])
 
@@ -492,14 +507,31 @@ def test_an_update_on_an_unknown_session_is_not_an_association():
         {"cwd": "./c"},
         {"cwd": "file:///work/c"},
         {"cwd": ""},
-        {"cwd": 5},
         {"additionalDirectories": ["/ok", "rel"]},
         {"cwd": "C:work"},
     ],
 )
-def test_a_relative_or_malformed_directory_is_a_problem(fields):
+def test_a_relative_directory_is_a_problem(fields):
     found = subagent_updates(_traffic(_sub("p", "c", **fields)), {"p"})
     assert found.reported_directories and len(found.relative_paths) == 1, found.relative_paths
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"cwd": 5},
+        {"cwd": ["/a"]},
+        {"additionalDirectories": "/a"},
+        {"additionalDirectories": {"a": "/a"}},
+        {"additionalDirectories": [5, None]},
+        {"cwd": None, "additionalDirectories": []},
+    ],
+)
+def test_a_malformed_directory_is_not_judged_here(fields):
+    """A value of the wrong type is a schema defect (`ACP-PROMPT-002`'s): neither a relative path
+    nor a reported directory, so `ACP-SUBAGENT-006` neither FAILs nor judges it."""
+    found = subagent_updates(_traffic(_sub("p", "c", **fields)), {"p"})
+    assert found.relative_paths == [] and not found.reported_directories
 
 
 def test_is_absolute_path_accepts_native_absolute_syntaxes_only():
@@ -607,12 +639,41 @@ def test_view_links_are_judged_only_when_both_views_reference_each_other():
     assert _problems(session_messages(_traffic(out), {"p"})) == (0, 0, 0)
     bare = _msg("c", "in", senderSessionId="p", recipientSessionId="c")
     assert _problems(session_messages(_traffic(out, bare), {"p"})) == (0, 0, 0)
-    # a view of someone else entirely is not this message's other view
-    stranger = _msg("c", "in", senderSessionId="x", recipientSessionId="c", senderMessageId="elsewhere")
-    assert _problems(session_messages(_traffic(out, stranger), {"p"})) == (0, 0, 0)
     # equal message IDs on two transcripts do not link them
     twin = _msg("c", "out", senderSessionId="p", recipientSessionId="c")
     assert _problems(session_messages(_traffic(out, twin), {"p"})) == (0, 0, 0)
+
+
+def test_a_referenced_view_whose_sender_is_a_third_session_conflicts():
+    """Both views carry references and they do not name each other, so it is judged even though
+    the referenced view's own sender is neither of this message's participants."""
+    out = _msg("p", "out", senderSessionId="p", recipientSessionId="c", recipientMessageId="in")
+    stranger = _msg("c", "in", senderSessionId="x", recipientSessionId="c", senderMessageId="elsewhere")
+    found = session_messages(_traffic(out, stranger), {"p"})
+    assert _problems(found) == (0, 0, 1) and found.links_judged == 1
+
+
+def test_session_message_rows_count_only_what_they_judged():
+    """The counts that decide a SKIP: `participants_judged` (007/008) is messages with both
+    participants known, `links_judged` (009) view pairs that both carry a reference."""
+    none = session_messages(_traffic(_msg("p", "m", content=[])), {"p"})
+    assert (none.count, none.participants_judged, none.links_judged) == (1, 0, 0)
+    one_sided = session_messages(_traffic(_msg("p", "m", senderSessionId="p", recipientMessageId="x")), {"p"})
+    assert (one_sided.count, one_sided.participants_judged, one_sided.links_judged) == (1, 0, 0)
+    out = _msg("p", "out", senderSessionId="p", recipientSessionId="c")
+    bare_in = _msg("c", "in", senderSessionId="p", recipientSessionId="c")
+    assert session_messages(_traffic(out, bare_in), {"p"}).participants_judged == 2  # not 009's
+    assert session_messages(_traffic(out, bare_in), {"p"}).links_judged == 0
+    # one outgoing view naming an unreported view, or one that has no reference back: not judged
+    named = _msg("p", "out", senderSessionId="p", recipientSessionId="c", recipientMessageId="in")
+    assert session_messages(_traffic(named), {"p"}).links_judged == 0
+    assert session_messages(_traffic(named, bare_in), {"p"}).links_judged == 0
+    linked = _msg("c", "in", senderSessionId="p", recipientSessionId="c", senderMessageId="out")
+    both = session_messages(_traffic(named, linked), {"p"})
+    assert both.links_judged == 2 and both.participants_judged == 2 and _problems(both) == (0, 0, 0)
+    # repeated upserts of one message count it once
+    twice = session_messages(_traffic(out, _msg("p", "out", content=[])), {"p"})
+    assert twice.count == 2 and twice.participants_judged == 1
 
 
 def _state(outer: str, state: str) -> dict[str, Any]:
@@ -671,7 +732,7 @@ _USER = _update("c", {"sessionUpdate": "user_message", "messageId": "u"})
 
 def test_a_task_session_message_before_the_output_is_conforming():
     found = child_task_reports(_traffic(_ANNOUNCE, _TASK, _CHILD_CHUNK), {"p"})
-    assert (found.started, found.user_message_tasks, found.unreported) == (1, [], [])
+    assert (found.started, found.judged, found.user_message_tasks, found.unreported) == (1, 1, [], [])
     # the sender may be supplied by a later upsert, before the output
     split = child_task_reports(
         _traffic(
@@ -697,6 +758,21 @@ def test_a_user_message_task_is_judged_only_as_a_user_message():
     for user in (_USER, _update("c", {"sessionUpdate": "user_message_chunk", "messageId": "u"})):
         found = child_task_reports(_traffic(_ANNOUNCE, user, _CHILD_CHUNK), {"p"})
         assert (len(found.user_message_tasks), found.unreported) == (1, [])
+        # `ACP-SUBAGENT-012` has nothing to judge here: the child still started, but it is 011's
+        assert (found.started, found.judged) == (1, 0)
+    # another child that was told its task properly is still judged
+    mixed = child_task_reports(
+        _traffic(
+            _ANNOUNCE,
+            _USER,
+            _CHILD_CHUNK,
+            _update("p", {"sessionUpdate": "subagent_update", "sessionId": "d"}),
+            _session_message("d", "in", senderSessionId="p", recipientSessionId="d"),
+            _update("d", {"sessionUpdate": "agent_message_chunk", "messageId": "m"}),
+        ),
+        {"p"},
+    )
+    assert (mixed.started, mixed.judged, mixed.unreported) == (2, 1, [])
     # a user message after the child's output is not the task that started it
     late = child_task_reports(_traffic(_ANNOUNCE, _TASK, _CHILD_CHUNK, _USER), {"p"})
     assert (late.user_message_tasks, late.unreported) == ([], [])
