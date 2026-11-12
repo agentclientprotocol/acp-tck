@@ -817,12 +817,13 @@ def subagent_updates(
         result.updates.append((child, outer))
         if child == outer:
             result.self_parented.append(
-                f"subagent_update on session {outer!r} announces that same session as its own child"
+                f"subagent_update on session {outer!r} announces that same session as its own child; "
+                f"the association cannot refer to itself (Active RFD)"
             )
         elif child in client_sessions:
             result.client_sessions_announced.append(
                 f"subagent_update on session {outer!r} announces session {child!r}, which the "
-                f"client created, as a child"
+                f"client created, as a child; a child's ID is unique to its session (Active RFD)"
             )
         elif outer in known:
             old = parents.setdefault(child, outer)
@@ -835,6 +836,7 @@ def subagent_updates(
                     f"subagent_update on session {outer!r} announces {child!r}, already a child "
                     f"of {old!r}"
                     + (" (the new parent descends from it: a cycle)" if cycle else "")
+                    + "; a child keeps one immediate parent (Active RFD)"
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
@@ -929,13 +931,15 @@ def session_messages(
                 seen.add(("same", outer, message_id))
                 result.same_participants.append(
                     f"session_message {message_id!r} on session {outer!r} has {sender!r} as both "
-                    f"senderSessionId and recipientSessionId"
+                    f"senderSessionId and recipientSessionId; they must identify different "
+                    f"sessions (Active RFD)"
                 )
         elif outer not in (sender, recipient) and ("foreign", outer, message_id) not in seen:
             seen.add(("foreign", outer, message_id))
             result.foreign_outer.append(
                 f"session_message {message_id!r} is sent on session {outer!r}, which is neither "
-                f"its sender {sender!r} nor its recipient {recipient!r}"
+                f"its sender {sender!r} nor its recipient {recipient!r}; the outer sessionId "
+                f"must be one of them (Active RFD)"
             )
 
     result.participants_judged = len(with_participants)
@@ -957,7 +961,7 @@ def session_messages(
             result.unlinked_views.append(
                 f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
                 f"session {target_session!r} as its other view, but that view's {back_name} "
-                f"is {other[back_ref]!r}"
+                f"is {other[back_ref]!r}; the two views must name each other (Active RFD)"
             )
     return result
 
@@ -1156,7 +1160,8 @@ def session_message_streams(
         if not had_participants and key in later:
             result.late_participants.append(
                 f"session_message {key[1]!r} on session {key[0]!r} was streamed with "
-                f"`session_message_chunk` before any `session_message` upsert named its participants"
+                f"`session_message_chunk` before any `session_message` upsert named its participants; "
+                f"participant IDs go on the first message when available (Active RFD)"
             )
     return result
 
@@ -1207,7 +1212,8 @@ def child_config_selects(
             if extra:
                 result.with_choices.append(
                     f"config_option_update for child {outer!r}: select {option.get('configId')!r} "
-                    f"has current value {option.get('currentValue')!r} but also offers {extra!r}"
+                    f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
+                    f"a child permits no Client-initiated configuration change (Active RFD)"
                 )
     return result
 

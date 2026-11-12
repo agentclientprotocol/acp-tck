@@ -2,9 +2,11 @@
 """Non-conforming fixture: `exposes_subagent.py`, except that before announcing the child it sends
 an `fs/read_text_file` request carrying the child's `sessionId`. The client advertised only
 `subagents`, so the mock client answers `-32601`, which the fixture ignores. The ID is carried by
-a request that is not a `session/update`, so FAILs exactly `ACP-SUBAGENT-001` (v1 child requests
-include `fs/*` and `terminal/*`). Sent only to a client that advertised `subagents`, so
-`ACP-CLIENTCAP-001` passes.
+a request that is not a `session/update`, so it FAILs `ACP-SUBAGENT-001` (v1 child requests
+include `fs/*` and `terminal/*`). The request is unadvertised too, so it also FAILs
+`ACP-CLIENTCAP-001`, which judges the subagents connection as well as the default one. Those are
+the only two. Sent only to a client that advertised `subagents`, so `ACP-CLIENTCAP-001` passes on
+the default connection.
 """
 
 import sys

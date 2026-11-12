@@ -1559,11 +1559,14 @@ def test_exposes_subagent_passes_everything():
     assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
 
 
-def test_replays_subagent_history_passes_every_subagent_row():
+@pytest.mark.parametrize("fixture", ["replays_subagent_history.py", "replays_historical_addresses.py"])
+def test_replays_subagent_history_passes_every_subagent_row(fixture):
     """`replays_subagent_history.py` advertises `loadSession` and, on `session/load` to a client that
     advertised `subagents`, replays its announcements and child updates before the response: the
-    replay is judged with the rest of the connection and every subagent row PASSes."""
-    result = _run_cli("replays_subagent_history.py", k=_SUBAGENT_K)
+    replay is judged on its own terms and every subagent row PASSes. `replays_historical_addresses.py`
+    also replays a `session_message` participant and a `session` reference that name a session
+    nothing announced: historical addresses, not judged."""
+    result = _run_cli(fixture, k=_SUBAGENT_K)
     statuses = _table_statuses(result.stdout)
     assert _output_fail_ids(result.stdout) == set(), result.stdout
     for req_id in _SUBAGENT_IDS | {"ACP-CLIENTCAP-007"}:
@@ -1587,10 +1590,13 @@ def test_subagent_rows_skip_without_a_child():
         # traffic after the turn and replay on `session/load`.
         ("unannounced_child_update.py", "ACP-SUBAGENT-001"),
         ("child_permission_before_announce.py", "ACP-SUBAGENT-001"),
-        ("child_fs_request_before_announce.py", "ACP-SUBAGENT-001"),
+        # unadvertised too, so `ACP-CLIENTCAP-001` (which judges this connection) FAILs as well
+        ("child_fs_request_before_announce.py", {"ACP-SUBAGENT-001", "ACP-CLIENTCAP-001"}),
+        ("child_fs_request_after_announce.py", "ACP-CLIENTCAP-001"),
         ("session_message_unknown_participant.py", "ACP-SUBAGENT-001"),
         ("child_update_after_turn_unannounced.py", "ACP-SUBAGENT-001"),
         ("replays_unannounced_child.py", "ACP-SUBAGENT-001"),
+        ("replays_child_without_announcement.py", "ACP-SUBAGENT-001"),
         # `session` content references are not child traffic
         ("session_content_unknown_session.py", "ACP-SUBAGENT-002"),
         ("session_content_unknown_in_permission.py", "ACP-SUBAGENT-002"),
@@ -1616,12 +1622,35 @@ def test_subagent_rows_skip_without_a_child():
 )
 def test_subagent_violators_fail_exactly_their_row(fixture, failing):
     """Each violator is `exposes_subagent.py` with one defect, sent only to a client that
-    advertised `subagents`: exactly the intended row FAILs, and `ACP-CLIENTCAP-007` PASSes (the
+    advertised `subagents`: exactly the intended row(s) FAIL, and `ACP-CLIENTCAP-007` PASSes (the
     default connection never sees subagent traffic). The ADVISORY ones leave the verdict alone."""
     result = _run_cli(fixture, k=_SUBAGENT_K)
     statuses = _table_statuses(result.stdout)
-    assert _output_fail_ids(result.stdout) == {failing}, f"{fixture}:\n{result.stdout}"
+    expected = {failing} if isinstance(failing, str) else failing
+    assert _output_fail_ids(result.stdout) == expected, f"{fixture}:\n{result.stdout}"
     assert statuses["ACP-CLIENTCAP-007"] == "PASS", result.stdout
+
+
+def test_subagent_rows_are_judged_on_the_turn_when_the_load_never_answers():
+    """`session/load` is never answered, so the connection has no replay to judge. That is
+    `ACP-LOAD-001`'s finding: every subagent row is still judged on the turn's traffic and PASSes,
+    none FAILs for the missing answer."""
+    result = _run_cli("subagents_load_never_answers.py", k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    for req_id in _SUBAGENT_IDS:
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_invalid_tool_call_status_fails_the_turn_schema_rows_not_subagent_015():
+    """Every tool call of `invalid_tool_call_status.py` has an invalid `status`, the spawn tool call
+    that carries a `session` item included. Only the rows that validate a turn's updates FAIL
+    (`ACP-PROMPT-002`, and `ACP-SCHEMA-001` over the basic exchange): `ACP-SUBAGENT-015`
+    validates the `session` item, not the tool call carrying it."""
+    result = _run_cli("invalid_tool_call_status.py")
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == {"ACP-PROMPT-002", "ACP-SCHEMA-001"}, result.stdout
+    assert statuses["ACP-SUBAGENT-015"] == "PASS", result.stdout
 
 
 def test_user_message_task_gives_subagent_012_nothing_to_judge():

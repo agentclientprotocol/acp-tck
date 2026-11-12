@@ -20,7 +20,7 @@ from tck.common.plugin import (
     skip_if_login_times_out,
 )
 from tck.v1.protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
-from tck.v1.validation import validate_agent_message
+from tck.v1.validation import validate_against_def
 
 
 @contextlib.asynccontextmanager
@@ -606,55 +606,95 @@ async def run_prompt(
 # `subagent_update`.
 
 
-def _wire_messages(
-    transcript: list[TranscriptEntry], client_sessions: set[str]
-) -> Iterator[tuple[dict[str, Any], str, dict[str, Any], set[str]]]:
+def _wire_messages_indexed(
+    transcript: list[TranscriptEntry],
+    client_sessions: set[str],
+    replay: tuple[int, int] | None = None,
+) -> Iterator[tuple[int, dict[str, Any], str, dict[str, Any], set[str]]]:
     """Walk the agent's requests and notifications in wire order, tracking which sessions are
     known (`SubagentUpdate`): the client's own, plus every child a `subagent_update` sent on an
-    already-known session announces. Yields `(msg, method, params, known)` per message with a
-    `method`; `known` is the set *before* the message, and the message's own announcement is
-    applied once the consumer resumes. Responses are skipped."""
-    known = set(client_sessions)
-    for entry in transcript:
+    already-known session announces. Yields `(index, msg, method, params, known)` per message
+    with a `method`, `index` being its transcript position; `known` is the set *before* the
+    message, and the message's own announcement is applied once the consumer resumes. Responses
+    are skipped.
+
+    `replay` is the `[start, end)` transcript range of a `session/load` exchange. Inside it `known`
+    starts over from `client_sessions`: a client loading a session on a fresh connection has not
+    seen earlier announcements, so only those made within the exchange count for it (Active
+    Subagents RFD, "Child announcements precede child traffic"). Announcements made inside the
+    range still count for traffic after it."""
+    live = set(client_sessions)
+    scoped: set[str] | None = None
+    for index, entry in enumerate(transcript):
         msg = entry.parsed
         if entry.direction is not Direction.RECEIVED or not isinstance(msg, dict):
             continue
         method = msg.get("method")
         if not isinstance(method, str):
             continue
+        if replay is not None and replay[0] <= index < replay[1]:
+            if scoped is None:
+                scoped = set(client_sessions)
+            known = scoped
+        else:
+            known = live
         params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
-        yield msg, method, params, known
+        yield index, msg, method, params, known
         update = params.get("update") if method == "session/update" else None
         if (
             isinstance(update, dict)
             and update.get("sessionUpdate") == "subagent_update"
             and isinstance(update.get("sessionId"), str)
             and isinstance(params.get("sessionId"), str)
-            and params["sessionId"] in known
         ):
-            known.add(update["sessionId"])
+            # Inside a replay the scoped set is stricter than `live`; each grows on its own.
+            for tracked in (known, live):
+                if params["sessionId"] in tracked:
+                    tracked.add(update["sessionId"])
+
+
+def _wire_messages(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> Iterator[tuple[dict[str, Any], str, dict[str, Any], set[str]]]:
+    """`_wire_messages_indexed` over the whole connection, without positions or a replay scope."""
+    for _index, msg, method, params, known in _wire_messages_indexed(transcript, client_sessions):
+        yield msg, method, params, known
+
+
+def _in_replay(replay: tuple[int, int] | None, index: int) -> bool:
+    return replay is not None and replay[0] <= index < replay[1]
 
 
 def child_session_traffic(
-    transcript: list[TranscriptEntry], client_sessions: set[str]
+    transcript: list[TranscriptEntry],
+    client_sessions: set[str],
+    replay: tuple[int, int] | None = None,
 ) -> tuple[set[str], list[str]]:
     """Replay the agent's traffic in wire order and judge the announcement rule (`SubagentUpdate`):
-    a child's announcing `subagent_update`, sent on a known session, precedes every live request
-    or notification bearing the child's session ID.
+    a child's announcing `subagent_update`, sent on a known session, precedes every request or
+    notification bearing the child's session ID.
 
-    `client_sessions` are the sessions the client created; they start out known. Returns
-    `(children, problems)`: every session ID on the wire the client did not create (announced
-    or not) and one message per violation. A session ID counts as carried when it is the
-    `params.sessionId` of any agent message with a `method` (a `session/update` notification, a
-    `session/request_permission`, `fs/*`, `terminal/*` or `elicitation/create` request, ...) or a
-    `session_message` update's `senderSessionId`/`recipientSessionId`. A `subagent_update`
-    announces its own `sessionId` only when it is itself sent on a known session. A `session`
-    tool-call content reference is not traffic carrying the child's ID
+    `client_sessions` are the sessions the client created; they start out known. `replay` is the
+    transcript range of a `session/load` exchange (`_wire_messages_indexed`). Traffic inside it is
+    judged against the announcements made inside it, even if an earlier turn announced the child
+    (Active Subagents RFD: replayed child updates keep "child announcements precede child
+    traffic"). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
+    historical addresses, not announcements, and are neither judged nor counted as children (a
+    recorded directed message may be replayed with its participants when the other participant's
+    association is unavailable).
+
+    Returns `(children, problems)`: every session ID the client did not create that the rule
+    judged (announced or not) and one message per violation. A session ID counts as carried when
+    it is the `params.sessionId` of any agent message with a `method` (a `session/update`
+    notification, a `session/request_permission`, `fs/*`, `terminal/*` or `elicitation/create`
+    request, ...) or a live `session_message` update's `senderSessionId`/`recipientSessionId`. A
+    `subagent_update` announces its own `sessionId` only when it is itself sent on a known
+    session. A `session` tool-call content reference is not traffic carrying the child's ID
     (`session_content_references` judges it). Responses are not judged."""
     children: set[str] = set()
     problems: list[str] = []
 
-    def carry(session_id: Any, what: str, known: set[str]) -> None:
+    def carry(session_id: Any, what: str, known: set[str], replaying: bool) -> None:
         if not isinstance(session_id, str):
             return
         if session_id not in client_sessions:
@@ -662,10 +702,15 @@ def child_session_traffic(
         if session_id not in known:
             problems.append(
                 f"{what} carries session ID {session_id!r}, which no earlier `subagent_update` "
-                f"on a known session announced (known: {sorted(known)!r})"
+                f"on a known session announced"
+                + (" within this `session/load` replay (Active RFD)" if replaying else "")
+                + f" (known: {sorted(known)!r})"
             )
 
-    for msg, method, params, known in _wire_messages(transcript, client_sessions):
+    for index, msg, method, params, known in _wire_messages_indexed(
+        transcript, client_sessions, replay
+    ):
+        replaying = _in_replay(replay, index)
         update = params.get("update") if method == "session/update" else None
         update = update if isinstance(update, dict) else {}
         kind = update.get("sessionUpdate")
@@ -673,31 +718,41 @@ def child_session_traffic(
         if "id" in msg:
             what = f"request {what} (id {msg['id']!r})"
 
-        carry(params.get("sessionId"), what, known)
+        carry(params.get("sessionId"), what, known, replaying)
         if kind == "subagent_update":
             if isinstance(update.get("sessionId"), str) and update["sessionId"] not in client_sessions:
                 children.add(update["sessionId"])
-        elif kind == "session_message":
-            carry(update.get("senderSessionId"), f"{what} senderSessionId", known)
-            carry(update.get("recipientSessionId"), f"{what} recipientSessionId", known)
+        elif kind == "session_message" and not replaying:
+            carry(update.get("senderSessionId"), f"{what} senderSessionId", known, replaying)
+            carry(update.get("recipientSessionId"), f"{what} recipientSessionId", known, replaying)
     return children, problems
 
 
 def session_content_references(
-    transcript: list[TranscriptEntry], client_sessions: set[str]
+    transcript: list[TranscriptEntry],
+    client_sessions: set[str],
+    replay: tuple[int, int] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Replay the agent's traffic in wire order and judge the `session` content rule
     (`docs/protocol/v1/draft/tool-calls.mdx` "Sessions (unstable)"): a `session` `ToolCallContent`
     item names a session already known, through ordinary session setup (`client_sessions`) or a
     `subagent_update` announcement on a known session.
 
-    Returns `(references, problems)`: the `sessionId` of every `session` item seen, in wire
+    A reference inside `replay`, the transcript range of a `session/load` exchange, is a
+    historical address: a replayed reference to a session that is not available follows the
+    historical replay rules (Active Subagents RFD), so it is neither judged nor counted.
+
+    Returns `(references, problems)`: the `sessionId` of every `session` item judged, in wire
     order, and one message per reference to a session not yet known. Items are read from a
     `tool_call` / `tool_call_update` `content` array and a `session/request_permission`
     request's `toolCall.content` array."""
     references: list[str] = []
     problems: list[str] = []
-    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+    for index, _msg, method, params, known in _wire_messages_indexed(
+        transcript, client_sessions, replay
+    ):
+        if _in_replay(replay, index):
+            continue
         update = params.get("update") if method == "session/update" else None
         update = update if isinstance(update, dict) else {}
         kind = update.get("sessionUpdate")
@@ -728,13 +783,17 @@ _SUBAGENT_SHAPE_KINDS = {"subagent_update", "session_message", "session_message_
 
 
 def subagent_shape_issues(transcript: list[TranscriptEntry]) -> tuple[int, list[str]]:
-    """Validate every subagent-related message the agent sent against the v1 schema: a
-    `session/update` of kind `subagent_update`, `session_message` or `session_message_chunk`, and
-    a `tool_call`/`tool_call_update` update or `session/request_permission` request whose
-    `toolCall` content carries a `session` item. The whole message is validated, so a malformed
-    `subagent_update.state` (`StateUpdate`) is among the issues.
+    """Validate the subagent-specific parts of what the agent sent against the v1 schema: the
+    `update` of a `session/update` of kind `subagent_update`, `session_message` or
+    `session_message_chunk` (`SessionUpdate`, so a malformed `subagent_update.state`
+    (`StateUpdate`) is among the issues), and each `session` item in the `content` of a
+    `tool_call`/`tool_call_update` update or a `session/request_permission` request's `toolCall`
+    (`ToolCallContent`). Nothing else of the carrying message is validated: a defect in the rest
+    of a tool call, a permission request or the notification envelope belongs to the schema rows
+    that judge those messages (`ACP-PROMPT-002`, `ACP-SCHEMA-001`).
 
-    Returns `(judged, problems)`: how many such messages were seen and one message per issue."""
+    Returns `(judged, problems)`: how many such updates and `session` items were seen and one
+    message per issue."""
     judged = 0
     problems: list[str] = []
     for entry in transcript:
@@ -743,28 +802,34 @@ def subagent_shape_issues(transcript: list[TranscriptEntry]) -> tuple[int, list[
             continue
         method = msg.get("method")
         params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        outer = params.get("sessionId")
         update = params.get("update") if method == "session/update" else None
         update = update if isinstance(update, dict) else {}
         kind = update.get("sessionUpdate")
-        container = (
-            params.get("toolCall")
-            if method == "session/request_permission"
-            else update
-            if kind in ("tool_call", "tool_call_update")
-            else None
-        )
-        content = container.get("content") if isinstance(container, dict) else None
-        has_session_content = isinstance(content, list) and any(
-            isinstance(item, dict) and item.get("type") == "session" for item in content
-        )
-        if kind not in _SUBAGENT_SHAPE_KINDS and not has_session_content:
+        if kind in _SUBAGENT_SHAPE_KINDS:
+            judged += 1
+            for issue in validate_against_def("SessionUpdate", update):
+                problems.append(
+                    f"session/update {kind} (params.sessionId {outer!r}) is invalid at "
+                    f"{issue.path or '/'}: {issue.message}"
+                )
             continue
-        judged += 1
-        for issue in validate_agent_message(msg):
-            problems.append(
-                f"{method} {kind or 'with `session` content'} (params.sessionId "
-                f"{params.get('sessionId')!r}) is invalid at {issue.path or '/'}: {issue.message}"
-            )
+        if method == "session/request_permission":
+            container, where = params.get("toolCall"), "session/request_permission toolCall"
+        elif kind in ("tool_call", "tool_call_update"):
+            container, where = update, f"session/update {kind}"
+        else:
+            continue
+        content = container.get("content") if isinstance(container, dict) else None
+        for position, item in enumerate(content if isinstance(content, list) else []):
+            if not isinstance(item, dict) or item.get("type") != "session":
+                continue
+            judged += 1
+            for issue in validate_against_def("ToolCallContent", item):
+                problems.append(
+                    f"{where} content[{position}] (a `session` item, params.sessionId "
+                    f"{outer!r}) is invalid at {issue.path or '/'}: {issue.message}"
+                )
     return judged, problems
 
 
@@ -817,12 +882,13 @@ def subagent_updates(
         result.updates.append((child, outer))
         if child == outer:
             result.self_parented.append(
-                f"subagent_update on session {outer!r} announces that same session as its own child"
+                f"subagent_update on session {outer!r} announces that same session as its own child; "
+                f"the association cannot refer to itself (Active RFD)"
             )
         elif child in client_sessions:
             result.client_sessions_announced.append(
                 f"subagent_update on session {outer!r} announces session {child!r}, which the "
-                f"client created, as a child"
+                f"client created, as a child; a child's ID is unique to its session (Active RFD)"
             )
         elif outer in known:
             old = parents.setdefault(child, outer)
@@ -835,6 +901,7 @@ def subagent_updates(
                     f"subagent_update on session {outer!r} announces {child!r}, already a child "
                     f"of {old!r}"
                     + (" (the new parent descends from it: a cycle)" if cycle else "")
+                    + "; a child keeps one immediate parent (Active RFD)"
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
@@ -929,13 +996,15 @@ def session_messages(
                 seen.add(("same", outer, message_id))
                 result.same_participants.append(
                     f"session_message {message_id!r} on session {outer!r} has {sender!r} as both "
-                    f"senderSessionId and recipientSessionId"
+                    f"senderSessionId and recipientSessionId; they must identify different "
+                    f"sessions (Active RFD)"
                 )
         elif outer not in (sender, recipient) and ("foreign", outer, message_id) not in seen:
             seen.add(("foreign", outer, message_id))
             result.foreign_outer.append(
                 f"session_message {message_id!r} is sent on session {outer!r}, which is neither "
-                f"its sender {sender!r} nor its recipient {recipient!r}"
+                f"its sender {sender!r} nor its recipient {recipient!r}; the outer sessionId "
+                f"must be one of them (Active RFD)"
             )
 
     result.participants_judged = len(with_participants)
@@ -957,7 +1026,7 @@ def session_messages(
             result.unlinked_views.append(
                 f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
                 f"session {target_session!r} as its other view, but that view's {back_name} "
-                f"is {other[back_ref]!r}"
+                f"is {other[back_ref]!r}; the two views must name each other (Active RFD)"
             )
     return result
 
@@ -1091,7 +1160,8 @@ def session_message_streams(
         if not had_participants and key in later:
             result.late_participants.append(
                 f"session_message {key[1]!r} on session {key[0]!r} was streamed with "
-                f"`session_message_chunk` before any `session_message` upsert named its participants"
+                f"`session_message_chunk` before any `session_message` upsert named its participants; "
+                f"participant IDs go on the first message when available (Active RFD)"
             )
     return result
 
@@ -1142,6 +1212,7 @@ def child_config_selects(
             if extra:
                 result.with_choices.append(
                     f"config_option_update for child {outer!r}: select {option.get('id')!r} "
-                    f"has current value {option.get('currentValue')!r} but also offers {extra!r}"
+                    f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
+                    f"a child permits no Client-initiated configuration change (Active RFD)"
                 )
     return result

@@ -4,12 +4,15 @@ Each version's conformance suite drives `session/prompt` through its own `run_pr
 `src/tck/v{1,2}/conformance/_helpers.py`. `run_prompt` acts as a minimal ACP client for the length of one turn:
 
 - answers `session/request_permission` per a [policy](#permission-policies). A request carrying another
-  session's ID (a subagent's) is answered the same way, but is never held and is not cancelled by the trigger;
+  session's ID (a subagent's) is answered the same way. What the trigger does to it differs by version. **v2**
+  never holds it and does not cancel it: only the prompted session's foreground requests are answered `cancelled`
+  once the trigger has fired. **v1** answers every request `cancelled` once the trigger has fired, whatever its
+  `sessionId`;
 - answers every other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) with `-32601`,
-  because the mock client advertises no client capabilities, and records it in `PromptTurn.client_requests_seen`.
-  The one exception to "no capabilities" is v1's subagent rows (`test_subagents.py`), whose connection advertises
-  `clientCapabilities.subagents` and nothing else, so `fs/*`, `terminal/*` and `elicitation/create` are still
-  answered `-32601` there;
+  because the mock client advertises no `fs`, `terminal` or elicitation capability, and records it in
+  `PromptTurn.client_requests_seen`. Two v1 connections advertise one unrelated feature and nothing else, so
+  those requests are still answered `-32601` there: the plan rows (`test_plan.py`, `plan`) and the subagent rows
+  (`_subagents_connection.py`, `subagents`);
 - records `session/update` notifications in wire order;
 - optionally fires a trigger mid-turn (`on_cancel` sends `session/cancel`, `on_action` sends another request,
   for example `session/close`);
