@@ -597,6 +597,16 @@ citation = "docs/protocol/v2/draft/tool-calls.mdx:622,653-661 @ 3961af94fa62d238
 statement = "A `git_patch` diff's paths (including `rename`/`copy` lines) MUST be absolute or `/dev/null` with no `a/` or `b/` prefix, each matches a `changes` entry, and each `path` appears in at most one `changes` entry."
 reason = "Deferred: a passive check of agent-emitted `diff` content is possible but not yet built, and it is vacuous against agents that emit no diff in a short turn."
 
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/tool-calls.mdx:459,460; schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`tool_call/cancel` is answered with `-32602` if the tool call is unknown, already final or not cancellable, and cancelling a tool call does not change the foreground state by itself."
+reason = "Not observable without breaking a client rule: the `-32602` cases are an unknown or non-cancellable tool call, which the client MUST NOT cancel (:456), or one that went final first, which only a race reaches (`ACP-TOOLCANCEL-201` leaves that answer unjudged). Whether the foreground state changed because of the cancel or because the agent chose to end or go on with its work cannot be told apart."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/tool-calls.mdx:605,606; schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "`terminal/cancel` is answered with `-32602` if the terminal is unknown, has exited or is not cancellable, and cancelling does not release the terminal or change the foreground state or the status of any tool call that references it."
+reason = "Not observable without breaking a client rule: the `-32602` cases are an unknown or non-cancellable terminal, which the client MUST NOT cancel (:602), or one that exited first, which only a race reaches (`ACP-TERMCANCEL-201` leaves that answer unjudged). Whether the terminal stays available, and whether the foreground state or a referencing tool call changed because of the cancel or for the agent's own reasons, cannot be told apart."
+
 # --- agent-plan.mdx ---
 
 [[not_requirement]]
@@ -652,16 +662,6 @@ reason = "Deferred unstable method: `session/status` is not yet tested and no dr
 citation = "docs/protocol/v2/draft/error.mdx:67; docs/rfds/session-set-title.mdx:178,179 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
 reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:458,459,460; schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`tool_call/cancel` is answered with an empty result once accepted, with `-32602` if the tool call is unknown, already final or not cancellable, and does not change the foreground state by itself."
-reason = "Deferred unstable method: it is gated per tool call by a dynamic `capabilities.cancel` the TCK cannot elicit, and the error paths need the client to send it against that rule. ACP-PATCH-212 covers the passive half, that a final tool call stops advertising `cancel`."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:604,605,606; schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`terminal/cancel` is answered with an empty result once accepted, with `-32602` if the terminal is unknown, has exited or is not cancellable, and does not release the terminal or change the foreground state."
-reason = "Deferred unstable method: it is gated per terminal by a dynamic `capabilities.cancel` the TCK cannot elicit, and the error paths need the client to send it against that rule. ACP-PATCH-212 covers the passive half, that an exited terminal stops advertising `cancel`."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/overview.mdx:266; docs/rfds/proxy-chains.mdx:235,236,304,305 (Draft RFD); schema/v2/schema.unstable.json#/$defs/ProxyRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"

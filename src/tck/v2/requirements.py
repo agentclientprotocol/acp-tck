@@ -3023,6 +3023,83 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-TOOLCANCEL-201",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "A tool call that currently advertises `capabilities.cancel` (an object) and is not "
+            "final accepts `tool_call/cancel`: the agent answers it with an empty result, not an "
+            "error. The docs state this as the rule without an RFC keyword, and no `initialize` "
+            "marker announces it, so the row is CAPABILITY and gated by `inferred:toolCallCancel` "
+            "(documentation-only): the test SKIPs itself when no tool call advertises `cancel` "
+            "while live during the driven turn. The TCK sends the request only for such a tool "
+            "call (the client MUST NOT otherwise) and treats a `-32602` that follows the tool "
+            "call's own final update as the legitimate `already final` answer, not judged; it "
+            "then tries the next live tool call. The driven turn runs the cancel prompt; a "
+            "`tool_call/cancel` stops a real tool call, and the TCK then sends `session/cancel` so "
+            "no work is left running."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456-459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "After it accepted `tool_call/cancel`, the agent confirms with a `tool_call_update` "
+            "that gives that tool call a final status (`completed`, `failed` or `cancelled`: "
+            "normally `cancelled`, and the other two when the work finished first). Gated by "
+            "`inferred:toolCallCancel` like `ACP-TOOLCANCEL-201`; SKIPPED when no cancel was "
+            "accepted (nothing advertised `cancel`, the agent rejected the request, which is "
+            "`ACP-TOOLCANCEL-201`'s finding, or the tool call was already final). The final "
+            "status must arrive within half the run's per-response timeout."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:423,458; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-201",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "A terminal that currently advertises `capabilities.cancel` (an object) and has no "
+            "`exitStatus` accepts `terminal/cancel`: the agent answers it with an empty result, "
+            "not an error. Same encoding as `ACP-TOOLCANCEL-201`: no RFC keyword and no "
+            "`initialize` marker, so the row is CAPABILITY, gated by `inferred:terminalCancel` "
+            "(documentation-only) and SKIPPED when no terminal advertises `cancel` while running "
+            "during the driven turn. The TCK sends the request only for such a terminal and "
+            "treats a `-32602` that follows the terminal's own `exitStatus` as the legitimate "
+            "`already exited` answer, not judged. `terminal/cancel` stops a real process; the "
+            "TCK then sends `session/cancel` so no work is left running."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:600-605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "After it accepted `terminal/cancel`, the agent confirms with a `terminal_update` "
+            "that sets `exitStatus` for that terminal. Gated by `inferred:terminalCancel` like "
+            "`ACP-TERMCANCEL-201`; SKIPPED when no cancel was accepted. The `exitStatus` must "
+            "arrive within half the run's per-response timeout."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:604; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
         id="ACP-ENUM-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",

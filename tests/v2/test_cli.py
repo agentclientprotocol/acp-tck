@@ -175,6 +175,10 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-210",
+    "ACP-TOOLCANCEL-201",
+    "ACP-TOOLCANCEL-202",
+    "ACP-TERMCANCEL-201",
+    "ACP-TERMCANCEL-202",
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
     "ACP-SUBAGENT-003",
@@ -282,6 +286,12 @@ _CANCEL_RACE_SKIP_IDS = {
 # (`reports_background_work.py` and the `background_*.py` defect fixtures).
 _BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
 
+# The `tool_call/cancel`/`terminal/cancel` rows judge only an item that advertises
+# `capabilities.cancel` while still live, which no `_base.py` fixture offers unless it opts into
+# `cancellable_work` (`conforming_full.py` and the `*_cancel_*` defect fixtures) and the cancel
+# prompt is `__hang__`.
+_ITEM_CANCEL_IDS = {"ACP-TOOLCANCEL-201", "ACP-TOOLCANCEL-202", "ACP-TERMCANCEL-201", "ACP-TERMCANCEL-202"}
+
 # `ACP-RESUME-213` judges only a resume snapshot that lists background work, and SKIPs otherwise.
 # Only a fixture with `background_on_resume` (`resume_lists_background_work.py` and its defect
 # sibling) leaves live work at resume; no other fixture does, not even
@@ -342,7 +352,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _ITEM_CANCEL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
 # session-related at all) legitimately SKIPs the session-management extras below -- `delete`,
@@ -571,7 +581,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _ITEM_CANCEL_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
 # Skipped for `conforming.py` but exercised by a fixture whose child asks for permission, whose
@@ -710,7 +720,10 @@ def test_v2_conforming_full_agent_passes_everything():
     never appears on the default connection this fixture also answers), and emits one
     `terminal_update` + one `terminal_output_chunk` per turn under the same
     `emit_rich_turn_updates` flag -- so `ACP-AUTH-006`/`ACP-PATCH-206`/`ACP-PATCH-207` all PASS
-    too, instead of SKIPping "nothing to check"/"no <variant> observed".
+    too, instead of SKIPping "nothing to check"/"no <variant> observed". Its `__hang__` turn also
+    leaves a tool call and a terminal open that advertise `capabilities.cancel` and implements
+    `tool_call/cancel`/`terminal/cancel` for them (`cancellable_work`), so
+    `ACP-TOOLCANCEL-201/202` and `ACP-TERMCANCEL-201/202` PASS.
 
     `_FULL_EXPECTED_SKIPS` still legitimately SKIP (see its comment), and `_ALWAYS_SKIPPED_IDS`
     (permanently unobservable record-only probes) SKIP regardless."""
@@ -2687,6 +2700,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         | _RICH_TURN_SKIP_IDS
         | _BACKGROUND_SKIP_IDS
         | _RESUME_BACKGROUND_SKIP_IDS
+        | _ITEM_CANCEL_IDS
         | {
             "ACP-PROMPT-207",
             "ACP-PROMPTCAP-201",  # every prompt capability is advertised
@@ -3991,6 +4005,55 @@ def test_tool_call_referencing_a_listed_terminal_is_live_at_idle():
     assert fails == set(), stdout
     for req_id in ("ACP-PATCH-210", "ACP-PATCH-211", "ACP-STATE-206", "ACP-STATE-207"):
         assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def _item_cancel_statuses(fixture: str) -> tuple[dict[str, str], str]:
+    """Run only `test_item_controls.py` against `fixture` with the `__hang__` cancel prompt, which
+    is what makes a fixture's `cancellable_work` items appear."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_item_controls", cancel_prompt="__hang__"
+    )
+    statuses = _table_statuses(result.stdout)
+    return {r: statuses.get(r) for r in sorted(_ITEM_CANCEL_IDS)}, result.stdout
+
+
+def test_cancellable_items_pass_the_cancel_rows():
+    """`conforming_full.py` advertises `capabilities.cancel` on a tool call and a terminal that
+    stay open on a `__hang__` turn and implements both cancel methods: all four rows PASS."""
+    statuses, stdout = _item_cancel_statuses("conforming_full.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_items_that_finish_first_leave_the_cancel_rows_nothing_to_judge():
+    """`completes_before_cancel.py` reports its cancellable items already final, so nothing may
+    be cancelled and a `-32602` would be right: every row SKIPs and nothing FAILs."""
+    statuses, stdout = _item_cancel_statuses("completes_before_cancel.py")
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+    assert "FAIL" not in {s for s in _table_statuses(stdout).values()}, stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "expected"),
+    [
+        (
+            "tool_call_cancel_errors.py",
+            {"ACP-TOOLCANCEL-201": "FAIL", "ACP-TOOLCANCEL-202": "SKIPPED"},
+        ),
+        ("tool_call_cancel_never_final.py", {"ACP-TOOLCANCEL-202": "FAIL"}),
+        (
+            "terminal_cancel_errors.py",
+            {"ACP-TERMCANCEL-201": "FAIL", "ACP-TERMCANCEL-202": "SKIPPED"},
+        ),
+        ("terminal_cancel_never_exits.py", {"ACP-TERMCANCEL-202": "FAIL"}),
+    ],
+)
+def test_item_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str, str]):
+    """Each defect trips its own row: an error for an advertised, running item fails the
+    acceptance row (and leaves the confirmation row nothing to judge); an accepted cancel with no
+    final update fails the confirmation row. The other kind of item still PASSes."""
+    statuses, stdout = _item_cancel_statuses(fixture)
+    for req_id, status in statuses.items():
+        assert status == expected.get(req_id, "PASS"), f"{req_id}:\n{stdout}"
 
 
 def test_permission_before_requires_action_judges_cancel_while_blocked():

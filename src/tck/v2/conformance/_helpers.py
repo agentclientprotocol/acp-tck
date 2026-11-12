@@ -2364,6 +2364,201 @@ async def prompt_during_active_work(
     return _result("held", None)
 
 
+@dataclass
+class ItemCancel:
+    """What cancelling one kind of item (`tool_call/cancel` or `terminal/cancel`) showed."""
+
+    outcome: str = "none"
+    """`none`: no item advertised `capabilities.cancel` while still live. `raced`: every such
+    item was already final when the agent read the request, so it rightly rejected it.
+    `rejected`: an error for an item the agent had not finalized. `unanswered`: no response in
+    time. `unconfirmed`: an empty result, but no final status or `exitStatus` in time.
+    `confirmed`: a result, then the final update (tool-calls.mdx:458,604)."""
+    item_id: str | None = None
+    result: Any = None
+    """The response's `result`, for `unconfirmed`/`confirmed`."""
+    error: dict[str, Any] | None = None
+    """The response's `error`, for `rejected`."""
+
+
+@dataclass
+class ItemCancelRun:
+    """The outcome of `drive_item_cancel`."""
+
+    turn: PromptTurn | None
+    """The driven turn, or `None` when it did not end within `timeout` after the TCK's own
+    `session/cancel` (a cancellation defect that the cancel rows judge)."""
+    tool_call: ItemCancel
+    terminal: ItemCancel
+
+
+class _ItemProbe:
+    """One kind of item's cancel request, from choosing a live candidate to the verdict."""
+
+    def __init__(self, kind: str, method: str, id_field: str) -> None:
+        self.kind, self.method, self.id_field = kind, method, id_field
+        self.result = ItemCancel()
+        self.tried: set[str] = set()
+        self.request_id: Any = None
+        self.sent_at = 0.0
+        self.response: TranscriptEntry | None = None
+        self.response_index = -1
+        self.final_index: int | None = None
+        self.done = False
+
+    def _live(self, tracker: PatchTracker) -> list[str]:
+        """The items that advertise `cancel` and are not final, in first-report order."""
+        if self.kind == "tool_call":
+            return [
+                item_id
+                for item_id, item in tracker.tool_calls.items()
+                if item.cancel and item.status not in FINAL_TOOL_CALL_STATUSES
+            ]
+        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
+
+    def _is_final(self, tracker: PatchTracker) -> bool:
+        item_id = self.result.item_id
+        if self.kind == "tool_call":
+            return tracker.tool_calls[item_id].status in FINAL_TOOL_CALL_STATUSES
+        return tracker.terminals[item_id].exited
+
+    def observe(self, index: int, entry: TranscriptEntry, tracker: PatchTracker) -> None:
+        """Called after `tracker` applied `entry`: note the response and the final update."""
+        if self.request_id is None or self.done:
+            return
+        if self.response is None and entry.matches_id(self.request_id):
+            self.response, self.response_index = entry, index
+        if self.final_index is None and self._is_final(tracker):
+            self.final_index = index
+
+    async def step(
+        self, agent: AgentProcess, session_id: str, tracker: PatchTracker, now: float, window: float
+    ) -> None:
+        if self.done:
+            return
+        if self.request_id is None:
+            for item_id in self._live(tracker):
+                if item_id not in self.tried:
+                    self.tried.add(item_id)
+                    self.result.item_id = item_id
+                    self.final_index = None
+                    self.sent_at = now
+                    self.request_id = await agent.send_request(
+                        self.method, {"sessionId": session_id, self.id_field: item_id}
+                    )
+                    return
+            return
+        if self.response is not None:
+            message = self.response.parsed
+            if "error" in message:
+                if self.final_index is not None and self.final_index < self.response_index:
+                    # The item was already final when the agent read the request: nothing to
+                    # judge (tool-calls.mdx:459,605). Try another live item.
+                    self.request_id, self.response = None, None
+                    self.result.outcome = "raced"
+                    return
+                self._finish("rejected", error=message["error"])
+                return
+            self.result.result = message.get("result")
+            if self.final_index is not None:
+                self._finish("confirmed")
+                return
+        if now - self.sent_at > window:
+            self._finish("unanswered" if self.response is None else "unconfirmed")
+
+    def _finish(self, outcome: str, *, error: dict[str, Any] | None = None) -> None:
+        self.result.outcome, self.result.error, self.done = outcome, error, True
+
+    def idle(self, tracker: PatchTracker) -> bool:
+        """Nothing in flight and no untried live item."""
+        return self.request_id is None and not any(i not in self.tried for i in self._live(tracker))
+
+
+async def drive_item_cancel(
+    agent: AgentProcess, session_id: str, prompt_text: str, *, timeout: float
+) -> ItemCancelRun:
+    """Drive one turn of `prompt_text` and, for the first tool call and the first terminal that
+    advertise `capabilities.cancel` while still live, send `tool_call/cancel` / `terminal/cancel`
+    and watch for the confirming final update (tool-calls.mdx:440,456-459,600-605). The client
+    MUST NOT send either unless the item currently advertises `cancel`, so nothing is sent for an
+    item that does not.
+
+    A candidate is judged on what the TCK had read when it chose it, so an item the agent
+    finalized in the meantime answers `-32602` after its final update; that is `raced`, and the
+    next live item is tried. Items still live after the turn's idle (background work) count too.
+    Each request gets `timeout / 2` for its response and its final update. Once every kind is
+    settled (judged, or nothing live for `max(quiet_period(timeout), timeout / 4)` of silence), the
+    TCK sends `session/cancel` if the turn is still running so no work is left behind. The
+    turn's own end is not judged here; `turn` is `None` if it never ends."""
+    loop = asyncio.get_running_loop()
+    window = timeout / 2
+    silence = max(quiet_period(timeout), timeout / 4)
+    probes = [
+        _ItemProbe("tool_call", "tool_call/cancel", "toolCallId"),
+        _ItemProbe("terminal", "terminal/cancel", "terminalId"),
+    ]
+    tracker = PatchTracker()
+    cursor = len(agent.transcript)
+    last_activity = loop.time()
+    cancel_sent = False
+    turn: PromptTurn | None = None
+    turn_task = asyncio.ensure_future(
+        run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout)
+    )
+    try:
+        while True:
+            turn_done = turn_task.done()
+            while cursor < len(agent.transcript):
+                index, entry = cursor, agent.transcript[cursor]
+                cursor += 1
+                last_activity = loop.time()
+                if entry.direction is not Direction.RECEIVED:
+                    continue
+                for message in iter_messages(entry):
+                    params = message.get("params")
+                    if not isinstance(params, dict) or params.get("sessionId") != session_id:
+                        continue
+                    if message.get("method") == "session/update" and isinstance(params.get("update"), dict):
+                        tracker.apply("update", params["update"])
+                    elif message.get("method") == "session/request_permission":
+                        tracker.apply("permission", params)
+                for probe in probes:
+                    probe.observe(index, entry, tracker)
+            now = loop.time()
+            for probe in probes:
+                await probe.step(agent, session_id, tracker, now, window)
+            if turn_done and (error := turn_task.exception()) is not None:
+                if cancel_sent and isinstance(error, AgentTimeout):
+                    break
+                raise error
+            settled = all(
+                probe.done or (probe.idle(tracker) and (turn_done or now - last_activity > silence))
+                for probe in probes
+            )
+            if settled and not turn_done and not cancel_sent:
+                await agent.send_notification("session/cancel", {"sessionId": session_id})
+                cancel_sent = True
+            if settled and turn_done:
+                turn = turn_task.result()
+                break
+            if turn_done:
+                with contextlib.suppress(AgentTimeout):
+                    await agent.read_line(timeout=0.05)
+            else:
+                await asyncio.sleep(0.01)
+    finally:
+        if not turn_task.done():
+            turn_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await turn_task
+    results = []
+    for probe in probes:
+        if probe.result.outcome == "none" and probe.tried:
+            probe.result.outcome = "raced"
+        results.append(probe.result)
+    return ItemCancelRun(turn=turn, tool_call=results[0], terminal=results[1])
+
+
 _USER_MESSAGE_UPDATES = frozenset({"user_message", "user_message_chunk"})
 
 
