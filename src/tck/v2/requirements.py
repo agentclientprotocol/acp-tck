@@ -1288,10 +1288,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "With `replayFrom` omitted (or `null`), no conversation-history `session/update` for "
             "the resumed session arrives before the response. Vacuous -- and recorded, never "
-            "FAILed on that account -- for an agent that retains no history to replay."
+            "FAILed on that account -- for an agent that retains no history to replay. Live "
+            "traffic for other (child) sessions is not judged (Draft Subagents RFD)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history)"
+            "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history); "
+            "docs/rfds/subagents.mdx:1008-1013 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -1376,10 +1378,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Every `session/update` the agent sends during a `session/resume` exchange with "
             "`replayFrom: {\"type\": \"start\"}` (replay plus the state snapshot) validates "
-            "against the v2 schema and carries the resumed `sessionId`."
+            "against the v2 schema and carries the resumed `sessionId` or that of a child "
+            "session already announced on this connection by a `subagent_update` (on the Draft "
+            "Subagents RFD's rule that replayed child history keeps the child's own `sessionId`, "
+            "announcement first). An update for a session never announced FAILs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
+            "docs/rfds/subagents.mdx:925-935 (Draft RFD); "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
     ),

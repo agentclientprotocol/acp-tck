@@ -194,7 +194,7 @@ reason = "Unobservable: the client cannot tell what foreground work is waiting o
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:210 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "A detached background child is listed while its state is not `idle`, or while its own `background` list is non-empty or not reported; an `idle` child with no background work of its own is not listed."
-reason = "Out of scope: it needs a child session, which only exists with the unstable `subagents` the TCK never advertises, and the child's own state and `background` list are not on the parent connection's wire."
+reason = "Deferred: a passive check is possible, since v2 needs no client marker for subagents and a child's `state_update`s arrive on the parent connection, but it applies only when the agent emits a child session, which the TCK cannot make an agent do."
 
 # --- initialization.mdx ---
 
@@ -596,7 +596,7 @@ reason = "Deferred: a passive check of agent-emitted `diff` content is possible 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:740-742 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "A `session` tool-call content reference names a session already known through ordinary session setup or a `subagent_update` announcement."
-reason = "Out of scope: it applies only to the Draft `subagents` feature the TCK never advertises, and provoking a subagent spawn is model-driven."
+reason = "Deferred: a passive check is possible, since v2 needs no client marker for subagents, but it applies only when the agent emits `session` content, and provoking a subagent spawn is model-driven."
 
 # --- agent-plan.mdx ---
 

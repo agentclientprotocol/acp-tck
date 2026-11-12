@@ -191,7 +191,9 @@ async def test_resume_with_replay_from_start_replays_before_responding(
 @pytest.mark.capability("capabilities.session")
 async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_path, record_property):
     """ACP-RESUME-002. Vacuous -- and recorded, never FAILed on that account -- for an agent
-    that retains no history to replay. The mandatory current-state snapshot is not history."""
+    that retains no history to replay. The mandatory current-state snapshot is not history.
+    Filtered to the resumed session: live child-session traffic may legally arrive before a
+    no-replay resume response (RFD: subagents)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -203,7 +205,9 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
         history_updates = [
             update
             for _, entry in updates
-            if (update := update_of(entry)) is not None
+            for msg in iter_messages(entry)
+            if msg.get("method") == "session/update"
+            and (update := _update_for(msg, session_id)) is not None
             and update.get("sessionUpdate") in _REPLAYED_HISTORY_KINDS
         ]
         record_property("acp_tck_resume_no_replay_history_update_count", len(history_updates))
@@ -412,7 +416,10 @@ async def test_resume_with_malformed_replay_from_is_rejected(agent_launch, tmp_p
 @pytest.mark.capability("capabilities.session")
 async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, record_property):
     """ACP-RESUME-209. Covers every `session/update` read while waiting for the
-    `session/resume` response -- replay and snapshot alike."""
+    `session/resume` response -- replay and snapshot alike. Each carries the resumed `sessionId`
+    or that of a child session already announced, in wire order on this connection, by a
+    `subagent_update` on a known session (nested children included); a replayed child update
+    for a never-announced session FAILs."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -425,16 +432,39 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
             timeout=agent_launch.default_timeout,
         )
         _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
-        messages = [msg for _, msg in _session_update_messages(updates)]
-        record_property("acp_tck_resume_update_count", len(messages))
+        resume_lines = {line_index for line_index, _ in updates}
+        record_property("acp_tck_resume_update_count", len(_session_update_messages(updates)))
+        known = {session_id}
         problems = []
-        for msg in messages:
-            issues = validate_agent_message(msg)
-            if issues:
-                problems.append((msg, issues))
-            params = msg.get("params")
-            if not isinstance(params, dict) or params.get("sessionId") != session_id:
-                problems.append((msg, f"sessionId is not the resumed {session_id!r}"))
+        for line_index, entry in enumerate(agent.transcript):
+            if entry.direction is not Direction.RECEIVED:
+                continue
+            for msg in iter_messages(entry):
+                if msg.get("method") != "session/update":
+                    continue
+                params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+                carried = params.get("sessionId")
+                if line_index in resume_lines:
+                    issues = validate_agent_message(msg)
+                    if issues:
+                        problems.append((msg, issues))
+                    if carried not in known:
+                        problems.append(
+                            (
+                                msg,
+                                f"sessionId is neither the resumed {session_id!r} nor a child "
+                                f"announced earlier via subagent_update (known: {sorted(known)!r}; "
+                                "Draft Subagents RFD: replayed child updates follow their announcement)",
+                            )
+                        )
+                update = params.get("update")
+                if (
+                    carried in known
+                    and isinstance(update, dict)
+                    and update.get("sessionUpdate") == "subagent_update"
+                    and isinstance(update.get("sessionId"), str)
+                ):
+                    known.add(update["sessionId"])
         assert not problems, (
             f"session/update(s) sent during session/resume are invalid: {problems!r}"
         )
