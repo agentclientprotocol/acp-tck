@@ -12,14 +12,22 @@ child (its `capabilities.cancel`, its latest state from its own `state_update` o
 2. `session/cancel` with the child's `sessionId`, only for a child that advertises
    `capabilities.cancel` and was last reported running (a client MUST NOT cancel one that does not;
    RFD:1069-1073). The child's own idle report after it settles it: `idle` with `stopReason:
-   "cancelled"` is `confirmed`; any other idle means the child ended on its own first (`raced`: a
-   cancel racing with ended work does not rewrite its outcome, RFD:1093-1095, so nothing is
-   judged); silence for `timeout / 2` is `unconfirmed`. After a short quiet period the parent and
-   the other children are checked for a cancelled `idle` the child's cancel must not have caused.
+   "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
+   a stop reason the child could have reached on its own, means it ended first (`raced`: a cancel
+   racing with ended work does not rewrite its outcome, RFD:1093-1095, so nothing is judged; the
+   same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
+   finished by other means after the cancel. Silence for `timeout / 2` is `unconfirmed`. After a
+   short quiet period the parent is checked for a cancelled `idle` the child's cancel must not
+   have caused, and the other children's are recorded (not judged: the Agent may cancel its own
+   delegated work, RFD:1071-1073).
 3. `session/cancel` for the parent, so no work is left behind and the cascade can be judged: every
-   descendant that was running and that the cancelled work waits on (not in its parent's latest
-   `background` list; a list that was never reported means the TCK cannot tell, so nothing is
-   judged) must reach `idle`.
+   descendant that was running and that the cancelled work waits on must reach `idle`. A
+   descendant counts as waited on only when its parent's latest `state_update` reported a
+   `background` list that does not name it *and* arrived after the descendant was announced: an
+   agent announces a background item before listing it (prompt-lifecycle.mdx:206) and re-sends
+   the state when the list changes only as a SHOULD (:205), so a descendant announced after the
+   latest list may be background work no list names yet, and a list never reported leaves the
+   TCK unable to tell (:204). Nothing is judged for those.
 
 Every wait is bounded per step (`timeout` to find something to cancel, `timeout / 2` for each
 response or state), never by one overall deadline that a long turn could exhaust, so a slow or
@@ -47,6 +55,7 @@ from ._helpers import (
     is_active_state,
     iter_messages,
     quiet_period,
+    race_plausible,
     run_prompt,
 )
 
@@ -54,11 +63,15 @@ from ._helpers import (
 @dataclass
 class _Child:
     parent: str
+    announced_at: int
+    """Transcript index of the child's first `subagent_update`."""
     cancel: bool = False
     state: dict[str, Any] | None = None
     """The latest snapshot reported for the child, by its own `state_update` or its mirror."""
     background: set[tuple[str, str]] | None = None
     """`background_keys` of the child's own latest `state_update`; `None` when not reported."""
+    background_at: int = -1
+    """Transcript index of that `state_update`."""
     tracker: PatchTracker = field(default_factory=PatchTracker)
 
 
@@ -72,14 +85,16 @@ class ChildCancelRun:
     """The child `session/cancel` was sent for, if any."""
     outcome: str = "none"
     """`none`: no child advertised `cancel` while reported running. `raced`: the child reported
-    an idle that is not a cancellation, so it had ended first. `unconfirmed`: no idle within
-    `timeout / 2`. `confirmed`: `idle` with `stopReason: "cancelled"`."""
+    an idle that is not a cancellation within the race window (`quiet_period`), with a stop reason
+    it could have reached on its own, so it had ended first. `not_cancelled`: any other
+    non-cancelled idle. `unconfirmed`: no idle within `timeout / 2`. `confirmed`: `idle` with
+    `stopReason: "cancelled"`."""
     parent_cancelled: bool = False
     """The parent reported `idle`/`cancelled` after the child cancel and before the TCK's own
     parent `session/cancel`."""
     cancelled_siblings: list[str] = field(default_factory=list)
     """Children that are neither the target nor its descendants and reported `idle`/`cancelled`
-    in that same window."""
+    in that same window. Recorded, not judged (module docstring)."""
     cascade_judged: list[str] = field(default_factory=list)
     """Descendants that were running and waited on when the TCK cancelled the parent."""
     cascade_unstopped: list[str] = field(default_factory=list)
@@ -104,6 +119,7 @@ class _Driver:
         self.silence = max(self.quiet, timeout / 4)
         self.children: dict[str, _Child] = {}
         self.parent_state: dict[str, Any] | None = None
+        self.parent_state_at = -1
         self.result = ChildCancelRun()
         self.probes = {
             "tool_call": _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=self.quiet),
@@ -117,6 +133,8 @@ class _Driver:
         self.parent_cancel_at = 0.0
         self.parent_ended_at: float | None = None
         self.cascade_targets: list[str] = []
+        self.finishing = False
+        self.turn_timed_out = False
 
     # --- reading the wire
 
@@ -155,7 +173,7 @@ class _Driver:
         child_id = update.get("sessionId")
         if not isinstance(child_id, str) or child_id == self.session_id:
             return
-        child = self.children.setdefault(child_id, _Child(parent=parent))
+        child = self.children.setdefault(child_id, _Child(parent=parent, announced_at=index))
         if "capabilities" in update:
             capabilities = update["capabilities"]
             child.cancel = isinstance(capabilities, dict) and isinstance(capabilities.get("cancel"), dict)
@@ -164,7 +182,7 @@ class _Driver:
 
     def _apply_state(self, index: int, sid: str, update: dict[str, Any]) -> None:
         if sid == self.session_id:
-            self.parent_state = update
+            self.parent_state, self.parent_state_at = update, index
             if (
                 self.target_sent_index is not None
                 and index > self.target_sent_index
@@ -174,6 +192,7 @@ class _Driver:
                 self.result.parent_cancelled = True
             return
         self.children[sid].background = background_keys(update)
+        self.children[sid].background_at = index
         self._report(index, sid, update)
 
     def _report(self, index: int, child_id: str, state: Any) -> None:
@@ -183,7 +202,7 @@ class _Driver:
             return
         if child_id == self.result.target:
             if self.result.outcome == "none" and child.state.get("state") == "idle":
-                self.result.outcome = "confirmed" if _is_idle_cancelled(child.state) else "raced"
+                self.result.outcome = self._settle(index, child.state)
                 self.target_settled_at = asyncio.get_running_loop().time()
         elif (
             self.parent_cancel_index is None
@@ -192,6 +211,15 @@ class _Driver:
             and child_id not in self.result.cancelled_siblings
         ):
             self.result.cancelled_siblings.append(child_id)
+
+    def _settle(self, index: int, state: dict[str, Any]) -> str:
+        if _is_idle_cancelled(state):
+            return "confirmed"
+        assert self.target_sent_index is not None
+        transcript = self.agent.transcript
+        elapsed = transcript[index].timestamp - transcript[self.target_sent_index].timestamp
+        raced = elapsed < self.quiet and race_plausible(state.get("stopReason"))
+        return "raced" if raced else "not_cancelled"
 
     def _descends_from(self, child_id: str, ancestor: str | None) -> bool:
         seen: set[str] = set()
@@ -204,23 +232,31 @@ class _Driver:
 
     # --- deciding what to send
 
-    def _background_of(self, session_id: str) -> set[tuple[str, str]] | None:
+    def _background_of(self, session_id: str) -> tuple[set[tuple[str, str]], int] | None:
+        """The `background` list of the session's latest `state_update` and that update's
+        transcript index; `None` when the session has no state yet or it reported no list."""
         if session_id == self.session_id:
-            return background_keys(self.parent_state) if self.parent_state is not None else None
+            if self.parent_state is None:
+                return None
+            keys = background_keys(self.parent_state)
+            return (keys, self.parent_state_at) if keys is not None else None
         child = self.children.get(session_id)
-        return child.background if child is not None else None
+        if child is None or child.background is None:
+            return None
+        return child.background, child.background_at
 
     def _waited_on(self, child_id: str, seen: frozenset[str] = frozenset()) -> bool:
-        """Whether the cancelled parent is waiting on `child_id`: it is not in its parent's latest
-        `background` list (a list that was never reported leaves it unknown) and neither is any
-        ancestor up to the prompted session."""
+        """Whether the cancelled parent is waiting on `child_id`: its parent reported a
+        `background` list after announcing it that does not name it, and the same holds for every
+        ancestor up to the prompted session. Anything else leaves it unclassified (module
+        docstring)."""
         if child_id in seen or child_id not in self.children:
             return False
-        parent = self.children[child_id].parent
-        listed = self._background_of(parent)
-        if listed is None or ("subagent", child_id) in listed:
+        child = self.children[child_id]
+        listing = self._background_of(child.parent)
+        if listing is None or ("subagent", child_id) in listing[0] or listing[1] <= child.announced_at:
             return False
-        return parent == self.session_id or self._waited_on(parent, seen | {child_id})
+        return child.parent == self.session_id or self._waited_on(child.parent, seen | {child_id})
 
     def _candidate(self) -> str | None:
         """The first child that advertises `cancel` and was last reported active, and is not the
@@ -249,7 +285,21 @@ class _Driver:
         return True
 
     async def step(self, now: float, turn_done: bool, last_activity: float, started: float) -> bool:
-        """One pass of decisions over what was read; `True` when the run is complete."""
+        """One pass of decisions over what was read; `True` when the run is complete: nothing
+        is left to send and no item request is still awaiting its verdict (each is bounded by
+        `timeout / 2`, so a request in flight when the cascade ends is judged, not abandoned)."""
+        if not self.finishing:
+            self.finishing = await self._decide(now, turn_done, last_activity, started)
+            return False
+        for kind, probe in self.probes.items():
+            child_id = self.probe_child[kind]
+            if probe.in_flight() and child_id is not None:
+                await probe.step(
+                    self.agent, child_id, self.children[child_id].tracker, now, self.window
+                )
+        return not any(probe.in_flight() for probe in self.probes.values())
+
+    async def _decide(self, now: float, turn_done: bool, last_activity: float, started: float) -> bool:
         for kind, probe in self.probes.items():
             if self.probe_child[kind] is None:
                 for child_id, child in self.children.items():
@@ -288,7 +338,11 @@ class _Driver:
         items_settled = self._items_settled(search_over)
         if self.parent_cancel_index is None:
             if turn_done and target_settled and items_settled:
-                self.result.cascade_skip = "the parent's turn ended before the TCK sent session/cancel for it"
+                self.result.cascade_skip = (
+                    "the parent's turn did not end within the budget, so the TCK never cancelled it"
+                    if self.turn_timed_out
+                    else "the parent's turn ended before the TCK sent session/cancel for it"
+                )
                 return True
             if not turn_done and target_settled and items_settled:
                 await self.agent.send_notification("session/cancel", {"sessionId": self.session_id})
@@ -325,7 +379,7 @@ async def drive_child_cancel(
     a turn that does not end within the budget is `turn=None` and leaves the cascade unjudged."""
     loop = asyncio.get_running_loop()
     driver = _Driver(agent, session_id, timeout)
-    cursor = len(agent.transcript)
+    cursor = since = len(agent.transcript)
     started = last_activity = loop.time()
     answer_from: int | None = None
     # Several times the per-response timeout: the waits above are bounded one by one and add up
@@ -340,11 +394,12 @@ async def drive_child_cancel(
                 error = turn_task.exception()
                 if error is not None and not isinstance(error, AgentTimeout):
                     raise error
+                driver.turn_timed_out = error is not None
             if turn_done and answer_from is None:
                 answer_from = len(agent.transcript)
             while cursor < len(agent.transcript):
                 if answer_from is not None and cursor >= answer_from:
-                    await answer_post_turn_requests(agent, agent.transcript[cursor])
+                    await answer_post_turn_requests(agent, agent.transcript[cursor], since=since)
                 driver.ingest(cursor, agent.transcript[cursor])
                 cursor += 1
                 last_activity = loop.time()
@@ -365,8 +420,6 @@ async def drive_child_cancel(
         result.turn = turn_task.result()
     _judge_cascade(driver, result)
     for kind, probe in driver.probes.items():
-        if probe.result.outcome == "none" and probe.tried:
-            probe.result.outcome = "raced"
         setattr(result, kind, probe.result)
         setattr(result, f"{kind}_child", driver.probe_child[kind])
     return result

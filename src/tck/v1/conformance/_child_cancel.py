@@ -10,11 +10,14 @@ clears it). Then, in this order:
 1. `session/cancel` with the child's `sessionId`, only for a child that advertises
    `capabilities.cancel` and was last reported running (a client MUST NOT cancel one that does
    not; RFD:1069-1073). The child's next idle snapshot settles it: `idle` with `stopReason:
-   "cancelled"` is `confirmed`; any other idle means the child ended on its own first (`raced`: a
-   cancel racing with ended work does not rewrite its outcome, RFD:1093-1095, so nothing is
-   judged); silence for `timeout / 2` is `unconfirmed`. After a short quiet period the parent's
-   prompt response and the other children's snapshots are checked for a cancellation the child's
-   cancel must not have caused.
+   "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
+   a stop reason the child could have reached on its own, means it ended first (`raced`: a cancel
+   racing with ended work does not rewrite its outcome, RFD:1093-1095, so nothing is judged; the
+   same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
+   finished by other means after the cancel. Silence for `timeout / 2` is `unconfirmed`. After a
+   short quiet period the parent's prompt response is checked for a cancellation the child's cancel must not have caused, and the
+   other children's snapshots are recorded (not judged: the Agent may cancel its own delegated
+   work, RFD:1071-1073).
 2. `session/cancel` for the parent, so no work is left behind.
 
 Every wait is bounded per step (`timeout` to find something to cancel, `timeout / 2` for the
@@ -32,7 +35,9 @@ from typing import Any
 
 from tck.common.harness import AgentProcess, AgentTimeout, Direction, TranscriptEntry
 
-from ._helpers import PromptTurn, quiet_period, run_prompt
+from tck.v1.protocol import STOP_REASONS
+
+from ._helpers import PromptTurn, answer_post_turn_requests, quiet_period, run_prompt
 
 _ACTIVE_STATES = frozenset({"running", "requires_action"})
 
@@ -55,18 +60,25 @@ class ChildCancelRun:
     """The child `session/cancel` was sent for, if any."""
     outcome: str = "none"
     """`none`: no child advertised `cancel` while reported running. `raced`: the child reported
-    an idle snapshot that is not a cancellation, so it had ended first. `unconfirmed`: no idle
-    snapshot within `timeout / 2`. `confirmed`: `idle` with `stopReason: "cancelled"`."""
+    an idle snapshot that is not a cancellation within the race window (`quiet_period`), with a
+    stop reason it could have reached on its own, so it had ended first. `not_cancelled`: any
+    other non-cancelled idle snapshot. `unconfirmed`: no idle snapshot within `timeout / 2`.
+    `confirmed`: `idle` with `stopReason: "cancelled"`."""
     parent_cancelled: bool = False
     """The parent's prompt was answered `stopReason: "cancelled"` after the child cancel and
     before the TCK's own parent `session/cancel`."""
     cancelled_siblings: list[str] = field(default_factory=list)
     """Children that are neither the target nor its descendants and reported `idle`/`cancelled`
-    in that same window."""
+    in that same window. Recorded, not judged (module docstring)."""
 
 
 def _is_idle_cancelled(state: Any) -> bool:
     return isinstance(state, dict) and state.get("state") == "idle" and state.get("stopReason") == "cancelled"
+
+
+def _race_plausible(stop_reason: Any) -> bool:
+    """A stop reason the child may have reached on its own just before reading the cancel."""
+    return stop_reason is None or (stop_reason in STOP_REASONS and stop_reason != "cancelled")
 
 
 def _stop_reason(turn: PromptTurn) -> Any:
@@ -119,7 +131,7 @@ class _Driver:
             return
         if child_id == self.result.target:
             if self.result.outcome == "none" and child.state.get("state") == "idle":
-                self.result.outcome = "confirmed" if _is_idle_cancelled(child.state) else "raced"
+                self.result.outcome = self._settle(index, child.state)
                 self.target_settled_at = asyncio.get_running_loop().time()
         elif (
             self.parent_cancel_at is None
@@ -128,6 +140,15 @@ class _Driver:
             and child_id not in self.result.cancelled_siblings
         ):
             self.result.cancelled_siblings.append(child_id)
+
+    def _settle(self, index: int, state: dict[str, Any]) -> str:
+        if _is_idle_cancelled(state):
+            return "confirmed"
+        assert self.target_sent_index is not None
+        transcript = self.agent.transcript
+        elapsed = transcript[index].timestamp - transcript[self.target_sent_index].timestamp
+        raced = elapsed < self.quiet and _race_plausible(state.get("stopReason"))
+        return "raced" if raced else "not_cancelled"
 
     def _descends_from(self, child_id: str, ancestor: str | None) -> bool:
         seen: set[str] = set()
@@ -202,8 +223,9 @@ async def drive_child_cancel(
     does not end within the budget is `turn=None`."""
     loop = asyncio.get_running_loop()
     driver = _Driver(agent, session_id, timeout)
-    cursor = len(agent.transcript)
+    cursor = since = len(agent.transcript)
     started = last_activity = loop.time()
+    answer_from: int | None = None
     # Several times the per-response timeout: the waits above are bounded one by one and add up
     # to less, so the turn's own deadline never fires first in a normal run.
     turn_task = asyncio.ensure_future(
@@ -219,7 +241,12 @@ async def drive_child_cancel(
                     turn = turn_task.result()
                 elif not isinstance(error, AgentTimeout):
                     raise error
+            if turn_done and answer_from is None:
+                answer_from = len(agent.transcript)
             while cursor < len(agent.transcript):
+                if answer_from is not None and cursor >= answer_from:
+                    # A child may ask after the parent's turn ended, and wait for the answer.
+                    await answer_post_turn_requests(agent, agent.transcript[cursor], since=since)
                 driver.ingest(cursor, agent.transcript[cursor])
                 cursor += 1
                 last_activity = loop.time()

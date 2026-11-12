@@ -17,8 +17,10 @@ turn (`drive_child_cancel`: the cancel prompt, so a real agent still has a runni
 every row, made by the first test that asks and reused by the rest. The request goes only to a
 child that advertises `cancel` and was last reported running, since a client MUST NOT cancel one
 that does not; a cancel that races with work that has already ended does not rewrite its outcome,
-so it is not judged (see `_child_cancel.py`). 016 judges the confirmation, 017 that the parent and
-the siblings were left alone, so one defect fails one row.
+so a child that ends otherwise within the race window (`quiet_period`, as for `ACP-CANCEL-*`) is not
+judged, while one that finishes later without cancelling is (see `_child_cancel.py`). 016 judges
+the confirmation, 017 that the parent was left alone (a stopped sibling is only recorded: the
+Agent may cancel its own delegated work), so one defect fails one row.
 
 The module and its tests are named without "cancel": the CLI self-tests select the cancellation
 suite with `-k cancel`, and a defect fixture that hangs on `session/cancel` must not be judged here.
@@ -68,8 +70,8 @@ def _skip_unless_child_cancelled(run: ChildCancelRun) -> None:
         pytest.skip("no child advertised capabilities.cancel while reported running during the driven turn")
     if run.outcome == "raced":
         pytest.skip(
-            f"child {run.target!r} ended on its own before the agent read session/cancel: "
-            "a cancel racing with ended work is not judged"
+            f"child {run.target!r} ended on its own before the agent read session/cancel (within "
+            "the race window): a cancel racing with ended work is not judged"
         )
 
 
@@ -78,9 +80,14 @@ async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_p
     """ACP-SUBAGENT-016 (CAPABILITY, `inferred:subagentCancel`). After `session/cancel` for a
     running child that advertises `capabilities.cancel`, the child reports `idle` with
     `stopReason: "cancelled"` (on its own session or mirrored on its parent association). SKIPs
-    when no such child was running or it ended first."""
+    when no such child was running or it ended on its own within the race window."""
     run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
     _skip_unless_child_cancelled(run)
+    assert run.outcome != "not_cancelled", (
+        f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
+        "running, was followed by an idle state_update without stopReason 'cancelled' after the "
+        "race window: the child finished by other means instead of stopping"
+    )
     assert run.outcome == "confirmed", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
         "running, was not followed by an idle state_update with stopReason 'cancelled' for it "
@@ -89,20 +96,22 @@ async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_p
 
 
 @pytest.mark.requirement("ACP-SUBAGENT-017")
-async def test_child_stop_leaves_parent_and_siblings(request, agent_launch, tmp_path, cancel_prompt_text):
+async def test_child_stop_leaves_the_parent_running(
+    request, agent_launch, tmp_path, cancel_prompt_text, record_property
+):
     """ACP-SUBAGENT-017 (CAPABILITY, `inferred:subagentCancel`). `session/cancel` for a child
-    cancels that child's work, not its parent or its siblings: neither the parent nor another
-    child (outside the cancelled child's own subtree) reports `idle`/`cancelled` because of it.
-    SKIPs when no such child was running or it ended first."""
+    cancels that child's work, not its parent: the parent does not report `idle`/`cancelled`
+    because of it. Siblings are not judged, since the per-child capability does not prevent the
+    Agent from cancelling its own delegated work (RFD:1071-1073) and that is indistinguishable
+    from a leaked cancel; a sibling that reports `idle`/`cancelled` is recorded as
+    `acp_tck_cancelled_siblings`. SKIPs when no such child was running or it ended on its own
+    within the race window."""
     run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
     _skip_unless_child_cancelled(run)
-    problems = []
-    if run.parent_cancelled:
-        problems.append("the parent reported idle/cancelled")
     if run.cancelled_siblings:
-        problems.append(f"sibling(s) {run.cancelled_siblings!r} reported idle/cancelled")
-    assert not problems, (
-        f"after session/cancel for child {run.target!r}: {'; '.join(problems)}"
+        record_property("acp_tck_cancelled_siblings", ", ".join(run.cancelled_siblings))
+    assert not run.parent_cancelled, (
+        f"after session/cancel for child {run.target!r}, the parent reported idle/cancelled"
     )
 
 

@@ -4379,11 +4379,16 @@ def test_item_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str,
         assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
 
 
-def _child_control_statuses(fixture: str) -> tuple[dict[str, str], str]:
+def _child_control_statuses(fixture: str, timeout: str = "1") -> tuple[dict[str, str], str]:
     """Run only `test_subagent_controls.py` against `fixture` with the `__hang__` cancel prompt,
     which is what makes the cancellable children appear."""
     result = _run_cli(
-        FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_subagent_controls", cancel_prompt="__hang__"
+        FIXTURES_DIR_V2,
+        fixture,
+        protocol_version=2,
+        k="test_subagent_controls",
+        cancel_prompt="__hang__",
+        timeout=timeout,
     )
     statuses = _table_statuses(result.stdout)
     return {r: statuses.get(r) for r in sorted(_CHILD_CONTROL_IDS)}, result.stdout
@@ -4408,6 +4413,69 @@ def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():
         assert status == expected, f"{req_id}:\n{stdout}"
 
 
+def test_child_that_ignores_cancel_and_ends_later_fails_the_confirmation_row():
+    """`child_ignores_cancel_then_ends.py` reports `end_turn` about 1.5 s after the cancel, past the
+    race window (`--timeout 4`: 0.5 s) but inside the wait for the confirmation. It is no cancel
+    racing with ended work, so `-016` FAILs, `-017` is still judged and PASSes, and so do the
+    rest."""
+    statuses, stdout = _child_control_statuses("child_ignores_cancel_then_ends.py", timeout="4")
+    for req_id, status in statuses.items():
+        assert status == ("FAIL" if req_id == "ACP-SUBAGENT-016" else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_item_request_still_in_flight_when_the_cascade_ends_is_judged_not_raced():
+    """`child_items_cancellable_at_cascade_end.py` announces its first cancellable child tool call
+    and terminal right before the parent's `idle`, so the TCK's requests for them are still
+    unanswered when the cascade ends. The TCK waits for the answers instead of reporting the items
+    as already final: both item rows PASS (a SKIP would hide a missing response)."""
+    statuses, stdout = _child_control_statuses("child_items_cancellable_at_cascade_end.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_background_child_announced_after_the_last_snapshot_is_not_judged():
+    """`announces_background_child_after_snapshot.py` adds a third child, announced after the
+    parent's last `state_update` (no list names it yet, and re-sending the state is only a SHOULD)
+    and left running when the parent is cancelled, as background work may be. It cannot be told from
+    foreground work, so `-202` is judged on the other two children only and PASSes, as do all the
+    rows."""
+    statuses, stdout = _child_control_statuses("announces_background_child_after_snapshot.py", timeout="2")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_asks_after_the_parent_turn_ended_is_still_answered():
+    """`child_asks_after_turn_ends.py` ends the parent's turn on the child's cancel and only then
+    asks permission for the child's work, confirming `cancelled` only if the TCK answers it
+    `cancelled` (the child was cancelled). The request is read after the turn ended: `-016` and
+    `-017` PASS, so it was answered, and answered `cancelled` and not allowed. No descendant is left
+    for the parent's cascade (`-202` SKIPs)."""
+    statuses, stdout = _child_control_statuses("child_asks_after_turn_ends.py", timeout="2")
+    for req_id, status in statuses.items():
+        assert status == ("SKIPPED" if req_id == "ACP-SUBAGENT-202" else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
+    """The per-child `cancel` capability does not prevent the Agent from cancelling its own
+    delegated work (RFD:1071-1073), which is indistinguishable from a leaked cancel, so
+    `child_cancel_stops_sibling_too.py` PASSes `-016`/`-017` and the sibling is only recorded.
+    Nothing is left running for the parent's cascade (`-202` SKIPs)."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "child_cancel_stops_sibling_too.py",
+        protocol_version=2,
+        k="test_subagent_controls",
+        cancel_prompt="__hang__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in sorted(_CHILD_CONTROL_IDS):
+        expected = "SKIPPED" if req_id == "ACP-SUBAGENT-202" else "PASS"
+        assert statuses[req_id] == expected, f"{req_id}:\n{result.stdout}"
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (test,) = by_id["ACP-SUBAGENT-017"]["tests"]
+    assert test["properties"]["acp_tck_cancelled_siblings"].endswith("-child-b"), test
+
+
 def test_child_control_rows_skip_without_a_cancellable_child():
     """`exposes_subagent.py` exposes a child that advertises no `cancel` and ends with the turn,
     `conforming_full.py` none: nothing cancellable is running, so every row SKIPs."""
@@ -4417,25 +4485,25 @@ def test_child_control_rows_skip_without_a_cancellable_child():
 
 
 @pytest.mark.parametrize(
-    ("fixture", "failing"),
+    ("fixture", "failing", "skipped"),
     [
-        ("child_cancel_ignored.py", "ACP-SUBAGENT-016"),
-        ("child_cancel_cancels_parent.py", "ACP-SUBAGENT-017"),
-        ("child_cancel_cancels_sibling.py", "ACP-SUBAGENT-017"),
-        ("parent_cancel_leaves_child_running.py", "ACP-SUBAGENT-202"),
-        ("child_tool_call_cancel_errors.py", "ACP-TOOLCANCEL-203"),
-        ("child_terminal_cancel_never_exits.py", "ACP-TERMCANCEL-203"),
+        ("child_cancel_ignored.py", "ACP-SUBAGENT-016", set()),
+        ("child_cancel_cancels_parent.py", "ACP-SUBAGENT-017", {"ACP-SUBAGENT-202"}),
+        ("parent_cancel_leaves_child_running.py", "ACP-SUBAGENT-202", set()),
+        ("child_tool_call_cancel_errors.py", "ACP-TOOLCANCEL-203", set()),
+        ("child_terminal_cancel_never_exits.py", "ACP-TERMCANCEL-203", set()),
     ],
 )
-def test_child_control_defect_fails_its_row_only(fixture: str, failing: str):
+def test_child_control_defect_fails_its_row_only(fixture: str, failing: str, skipped: set[str]):
     """Each defect trips its own row: a child that ignores its cancel fails `-016`; a cancel that
-    also ends the parent's turn or a sibling fails `-017`; a parent cancel that leaves the child it
-    waits on running fails `-202`; a child's item whose cancel errors, or is accepted but never
-    confirmed, fails its item row. Every other row PASSes or, where its work was already undone
-    by the same defect, SKIPs."""
+    also ends the parent's turn fails `-017` (the parent's turn is over before the TCK cancels it,
+    so `-202` SKIPs); a parent cancel that leaves the child it waits on running fails `-202`; a
+    child's item whose cancel errors, or is accepted but never confirmed, fails its item row.
+    Every other row PASSes, except where the same defect left it nothing to judge."""
     statuses, stdout = _child_control_statuses(fixture)
-    assert statuses[failing] == "FAIL", f"{failing}:\n{stdout}"
-    assert {r for r, status in statuses.items() if status == "FAIL"} == {failing}, stdout
+    for req_id, status in statuses.items():
+        expected = "FAIL" if req_id == failing else "SKIPPED" if req_id in skipped else "PASS"
+        assert status == expected, f"{req_id}:\n{stdout}"
 
 
 def test_permission_before_requires_action_judges_cancel_while_blocked():

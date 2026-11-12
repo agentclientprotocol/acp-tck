@@ -203,7 +203,7 @@ reason = "Partly unobservable: a client cannot tell whether a `running` or `requ
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:67; docs/rfds/subagents.mdx:439-441 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "The Agent does not reuse an entity ID for a different entity of the same type within a session, including the `messageId` of session-directed messages (MUST NOT)."
-reason = "Unobservable: an update that repeats an ID is an upsert of the same entity, so reuse for a different entity cannot be told from a legitimate update."
+reason = "Partly unobservable: an update that repeats an ID is an upsert of the same entity, so reuse for a different entity cannot be told from a legitimate update. The observable cases are judged by rows: ACP-PATCH-203 (two prompts on a session answered with the same `messageId`, which are two user messages) and ACP-CANCEL-002 (an `agent_message*`/`agent_thought*` update reusing a `messageId` of the cancelled turn after its idle). A `terminalId` is ledgered on its own (tool-calls.mdx:496,497)."
 
 # --- initialization.mdx ---
 
@@ -590,7 +590,7 @@ reason = "Out of scope: it needs an agent that stores and echoes unknown content
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:496,497 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "A `terminalId` is stable for the terminal's lifetime and MUST NOT be reused for a different terminal."
-reason = "Unobservable: whether a later terminal is \"different\" is internal to the agent, and the TCK cannot force an agent to run several terminals."
+reason = "Unobservable: whether a later terminal is \"different\" is internal to the agent, and the TCK cannot force an agent to run several terminals. This is the `terminalId` case of the general entity-ID rule at prompt-lifecycle.mdx:67."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:578,579 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"

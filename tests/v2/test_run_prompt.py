@@ -806,3 +806,96 @@ def test_session_events_merge_permission_subjects_with_updates_in_wire_order():
         ("t1", "permission subject"),
         ("t1", "tool_call_update"),
     ]
+
+
+# --- session/cancel sent by a driver on the same connection, and subagent requests
+
+_CHILD = "s1-child"
+
+
+def _child_request(request_id: str, options: list[dict[str, Any]], session_id: str = _CHILD) -> dict[str, Any]:
+    request = _permission_request(options)
+    request["id"] = request_id
+    request["params"]["sessionId"] = session_id
+    return request
+
+
+def _drive_cancelling(steps: list[dict[str, Any]], *cancelled: str, **kwargs: Any):
+    """Like `_drive`, but a driver on the connection sends `session/cancel` for each of
+    `cancelled` once the turn is under way (the plan's first message has been read)."""
+
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            task = asyncio.ensure_future(
+                run_prompt(agent, _SESSION, [{"type": "text", "text": "hi"}], timeout=3.0, **kwargs)
+            )
+            while not any(e.direction is Direction.RECEIVED for e in agent.transcript):
+                await asyncio.sleep(0.01)
+            for session_id in cancelled:
+                await agent.send_notification("session/cancel", {"sessionId": session_id})
+            return agent, await task
+
+    return asyncio.run(go())
+
+
+def test_requests_after_a_drivers_own_cancel_are_answered_cancelled_not_allowed():
+    """The driver's `session/cancel` for the prompted session or for a subagent resolves that
+    session's later permission requests `cancelled` (prompt-lifecycle.mdx:1177; Active Subagents
+    RFD, "Pending permission and elicitation requests"); a request of a session nobody
+    cancelled is still answered per the policy."""
+    steps = [
+        _RESPONSE,
+        _state("running"),
+        {"wait_method": "session/cancel"},
+        {"wait_method": "session/cancel"},
+        _permission_request(_ALLOW_ONCE),
+        _child_request("perm-child", _ALLOW_ONCE),
+        _child_request("perm-other", _ALLOW_ONCE, "s1-other"),
+        {"wait_id": "perm-1"},
+        {"wait_id": "perm-child"},
+        {"wait_id": "perm-other"},
+        _state("idle", stopReason="cancelled"),
+    ]
+    agent, turn = _drive_cancelling(steps, _SESSION, _CHILD)
+    _assert_answered(agent, "perm-1", {"outcome": "cancelled"})
+    _assert_answered(agent, "perm-child", {"outcome": "cancelled"})
+    _assert_answered(agent, "perm-other", _selected("yes"))
+    assert turn.cancelled_at_index is None  # the turn itself sent no cancel
+    assert turn.stop_reason == "cancelled"
+
+
+def test_an_earlier_turns_cancel_does_not_cancel_a_later_turns_requests():
+    async def go():
+        plan = json.dumps({"pre": [], "steps": _permission_steps(_ALLOW_ONCE)})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            await agent.send_notification("session/cancel", {"sessionId": _SESSION})
+            turn = await run_prompt(agent, _SESSION, [{"type": "text", "text": "hi"}], timeout=3.0)
+            return agent, turn
+
+    agent, _ = asyncio.run(go())
+    _assert_answered(agent, "perm-1", _selected("yes"))
+
+
+def test_a_subagents_unsatisfiable_request_is_declined_without_any_session_cancel():
+    """No option fits the policy and the request is a subagent's. A client MUST NOT cancel a
+    subagent that does not advertise `capabilities.cancel` and the TCK does not track which do,
+    and cancelling the prompted session would end this turn: only the request is answered
+    `cancelled`."""
+    never = [{"optionId": "never", "name": "Never", "kind": "reject_always"}]
+    agent, turn, _ = _recording(
+        steps=[_RESPONSE, _state("running"), _child_request("perm-child", never),
+               {"wait_id": "perm-child"}, _state("idle", stopReason="end_turn")],
+    )
+    _assert_answered(agent, "perm-child", {"outcome": "cancelled"})
+    assert _sent_cancels(agent) == []
+    assert turn.cancelled_at_index is None
+    assert turn.permission_cancels == []
+    assert turn.permission_fallbacks == [f"{_NO_ALLOW_NOTE}; answered cancelled for session {_CHILD!r}"]
+    assert turn.stop_reason == "end_turn"

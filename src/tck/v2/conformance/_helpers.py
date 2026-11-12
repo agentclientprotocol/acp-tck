@@ -1561,6 +1561,22 @@ def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str
     return {"outcome": "cancelled"}, missing
 
 
+def client_cancelled(agent: AgentProcess, session_id: str, since: int) -> bool:
+    """Whether the TCK has sent `session/cancel` for `session_id` at or after transcript index
+    `since`, whoever sent it (this turn's trigger or a driver on the same connection)."""
+    for entry in agent.transcript[since:]:
+        message = entry.parsed
+        if (
+            entry.direction is Direction.SENT
+            and isinstance(message, dict)
+            and message.get("method") == "session/cancel"
+            and isinstance(message.get("params"), dict)
+            and message["params"].get("sessionId") == session_id
+        ):
+            return True
+    return False
+
+
 def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
     """`permission_outcome`, recording any fallback note on the current test's report entry."""
     outcome, note = permission_outcome(options, policy)
@@ -1720,6 +1736,7 @@ async def run_prompt(
     params = {"sessionId": session_id, "prompt": blocks}
     if extra_params:
         params.update(extra_params)
+    turn_start = len(agent.transcript)
     prompt_id = await agent.send_request("session/prompt", params)
 
     loop = asyncio.get_running_loop()
@@ -1941,8 +1958,20 @@ async def run_prompt(
                 held_permission = entry
                 await _fire_trigger()
                 return  # left unanswered; see `_answer_held`
-            cancelled = (trigger_sent and not _cancel_pending()) or cancelled_at_index is not None
-            if cancelled and for_foreground:
+            target = req_params.get("sessionId")
+            cancelled = (
+                for_this_session
+                and for_foreground
+                and (
+                    (trigger_sent and not _cancel_pending())
+                    or cancelled_at_index is not None
+                    or client_cancelled(agent, session_id, turn_start)
+                )
+            ) or (not for_this_session and isinstance(target, str) and client_cancelled(agent, target, turn_start))
+            # A request of a session the TCK cancelled (this turn's trigger, or a driver on the
+            # same connection) is answered `cancelled` (prompt-lifecycle.mdx:1177; Active
+            # Subagents RFD, "Pending permission and elicitation requests").
+            if cancelled:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
@@ -1951,18 +1980,19 @@ async def run_prompt(
                     # (prompt-lifecycle.mdx:1173,1177), so only this request is declined
                     # (tool-calls.mdx:340).
                     permission_fallbacks.append(note)
+                elif note is not None and outcome["outcome"] == "cancelled" and not for_this_session:
+                    # No option can be selected. A client MUST NOT cancel a subagent that does
+                    # not advertise `capabilities.cancel` (Active Subagents RFD, "Cancellation
+                    # and resource ownership"), and this client does not track which do, so it
+                    # sends no `session/cancel` for a subagent and declines only this request.
+                    permission_fallbacks.append(f"{note}; answered cancelled for session {target!r}")
                 elif note is not None and outcome["outcome"] == "cancelled":
-                    # The policy's option kinds were not offered: cancel the request's session
+                    # The policy's option kinds were not offered: cancel this turn's session
                     # first, then answer `cancelled` without waiting for `$/cancel_request`
                     # (prompt-lifecycle.mdx:1177). The turn then drains to its `idle` like any
                     # other cancelled turn.
-                    target = req_params.get("sessionId")
-                    await agent.send_notification(
-                        "session/cancel",
-                        {"sessionId": target if isinstance(target, str) else session_id},
-                    )
-                    if for_this_session:
-                        cancelled_at_index = len(agent.transcript) - 1
+                    await agent.send_notification("session/cancel", {"sessionId": session_id})
+                    cancelled_at_index = len(agent.transcript) - 1
                     permission_cancels.append(note)
                 elif note is not None:
                     permission_fallbacks.append(note)
@@ -2580,11 +2610,12 @@ class _StaleProbe:
             self.result.outcome, self.done = "unanswered", True
 
 
-async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry) -> None:
+async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry, *, since: int) -> None:
     """Answer the agent -> client requests in `entry`, a line read after `run_prompt` returned,
-    as `run_prompt` would have: `session/request_permission` per the `allow` policy, anything
-    else `-32601` (the mock client advertises no capabilities). Background work may ask after
-    the turn's idle (tool-calls.mdx:268), and an agent may wait for the answer."""
+    as `run_prompt` would have: `session/request_permission` per the `allow` policy (`cancelled`
+    for a session the TCK sent `session/cancel` for at or after transcript index `since`),
+    anything else `-32601` (the mock client advertises no capabilities). Background work may ask
+    after the turn's idle (tool-calls.mdx:268), and an agent may wait for the answer."""
     if entry.direction is not Direction.RECEIVED:
         return
     for message in iter_messages(entry):
@@ -2592,9 +2623,13 @@ async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry)
             continue
         if message["method"] == "session/request_permission":
             params = message.get("params")
-            outcome, _note = _answer_permission(
-                params.get("options") if isinstance(params, dict) else None, "allow"
-            )
+            if not isinstance(params, dict):
+                params = {}
+            target = params.get("sessionId")
+            if isinstance(target, str) and client_cancelled(agent, target, since):
+                outcome: dict[str, Any] = {"outcome": "cancelled"}
+            else:
+                outcome, _note = _answer_permission(params.get("options"), "allow")
             await agent.send_message(
                 {"jsonrpc": "2.0", "id": message["id"], "result": {"outcome": outcome}}
             )
@@ -2643,7 +2678,7 @@ async def drive_item_cancel(
     ]
     stale = [_StaleProbe(probe) for probe in probes]
     tracker = PatchTracker()
-    cursor = len(agent.transcript)
+    cursor = since = len(agent.transcript)
     started = last_activity = loop.time()
     cancel_sent = False
     answer_from: int | None = None
@@ -2665,7 +2700,7 @@ async def drive_item_cancel(
                 if entry.direction is not Direction.RECEIVED:
                     continue
                 if answer_from is not None and index >= answer_from:
-                    await answer_post_turn_requests(agent, entry)
+                    await answer_post_turn_requests(agent, entry, since=since)
                 for message in iter_messages(entry):
                     params = message.get("params")
                     if not isinstance(params, dict) or params.get("sessionId") != session_id:

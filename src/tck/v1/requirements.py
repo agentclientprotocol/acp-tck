@@ -1477,10 +1477,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "advertised `subagents`, in a driven turn of the cancel prompt: the TCK sends the "
             "request only to a child that advertises `cancel` and was last reported running (the "
             "client MUST NOT cancel one that does not) and gives the child `timeout / 2` to "
-            "confirm. A child reported idle without being cancelled had ended first: a "
-            "cancellation racing with already-ended work does not rewrite its outcome, so that "
-            "SKIPs. SKIPs when no child advertised `cancel` while reported running. Shared id "
-            "with v2 (which also accepts the confirmation on the child's own `state_update`)."
+            "confirm. A child reported idle without being cancelled within `quiet_period` of the "
+            "request, with a stop reason it could have reached on its own (the race window of "
+            "`ACP-CANCEL-*`), had ended first: a cancellation racing with already-ended work "
+            "does not rewrite its outcome, so that SKIPs. A later one means the child finished "
+            "by other means and FAILs. SKIPs when no child advertised `cancel` while reported "
+            "running. Shared id with v2 (which also accepts the confirmation on the child's own "
+            "`state_update`)."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/schema.mdx:8694; "
@@ -1493,18 +1496,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="inferred:subagentCancel",
         text=(
-            "`session/cancel` for a child cancels current work in that child, not its parent or "
-            "its siblings: after the TCK cancels a running child that advertises `cancel`, the "
-            "parent's `session/prompt` is not answered with `stopReason: \"cancelled\"` and no "
-            "other child (other than the cancelled child's own descendants, which the cascade "
-            "may stop) is reported `idle` with `stopReason: \"cancelled\"`, before the TCK "
+            "`session/cancel` for a child cancels current work in that child, not its parent: "
+            "after the TCK cancels a running child that advertises `cancel`, the parent's "
+            "`session/prompt` is not answered with `stopReason: \"cancelled\"` before the TCK "
             "itself cancels the parent. Stated only by the Subagents RFD (Active RFD: `This "
             "cancels current work in that child, not its parent or siblings`), so the row is "
-            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). Judged over the "
-            "same driven turn as `ACP-SUBAGENT-016`, which owns the child's own confirmation, so "
-            "one defect never FAILs both; a window of `quiet_period` after the child settles "
-            "catches the parent's or a sibling's reaction. SKIPs when no child was cancelled or "
-            "it had ended first. Shared id with v2."
+            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). Siblings are "
+            "not judged: the same RFD says the per-child capability `does not prevent the Agent "
+            "from cancelling its own delegated work`, and an Agent that reacts to the cancelled "
+            "child by stopping a sibling is indistinguishable on the wire from a cancel that "
+            "leaked, so a sibling reported `idle`/`cancelled` is only recorded on the test's "
+            "report entry (`acp_tck_cancelled_siblings`). Judged over the same driven turn as "
+            "`ACP-SUBAGENT-016`, which owns the child's own confirmation, so one defect never "
+            "FAILs both; a window of `quiet_period` after the child settles catches the parent's "
+            "reaction. SKIPs when no child was cancelled or it had ended first. Shared id with "
+            "v2."
         ),
         citation=_cite("docs/rfds/subagents.mdx:1069-1073 (Active RFD)"),
     ),

@@ -61,14 +61,23 @@ persists an approval or a standing deny in the operator's own agent. A fallback 
 
 **Unsatisfiable policy.** When none of the policy's option kinds is offered, the mock client never picks another
 option. As a conforming client does before answering a pending request `cancelled`, it sends `session/cancel` for
-the request's session first, then answers `cancelled`. It records a note in `PromptTurn.permission_cancels`, and the
+the prompted session first, then answers `cancelled`. It records a note in `PromptTurn.permission_cancels`, and the
 turn drains like any cancelled turn. A test that depends on a specific option kind should SKIP when
 `permission_cancels` is set (v1's `test_permissions.py` does); a missing `reject_once` is not a FAIL, since no rule
 requires offering one.
 
-**After the trigger.** Once `session/cancel` (or the `on_action` request) has been sent, a permission request for
-the prompted session is answered `cancelled`: a real client resolves a pending prompt that way rather than choosing
-for the user.
+A request of another session (a subagent's) never triggers that `session/cancel`: in v1 it would end the prompted
+turn, and in v2 a client MUST NOT cancel a subagent that does not advertise `capabilities.cancel` (the driver does not
+track which do). Such a request is answered `cancelled` without any `session/cancel` and recorded in
+`PromptTurn.permission_fallbacks`, not `permission_cancels`.
+
+**After a cancel.** Once the TCK has sent `session/cancel` for a request's session since the turn began, that
+request is answered `cancelled`: a real client resolves a pending prompt that way rather than choosing for the user
+(v1 prompt-turn.mdx:641; v2 prompt-lifecycle.mdx:1177; Subagents RFD, "Pending permission and elicitation requests").
+This covers the driver's own trigger, and also a `session/cancel` that a driver such as `drive_child_cancel` sent for the
+prompted session or for a child on the same connection, whichever session it names. A request of a session nobody
+cancelled, such as a sibling's, is still answered per the policy, since cancelling one session does not resolve
+another's requests. A cancel from an earlier turn does not count.
 
 **Holding (v2 only).** `hold_permission=True` is a mode, not a policy, and needs a trigger. The trigger fires when the
 first foreground `session/request_permission` arrives, and that request is left unanswered, because after
@@ -132,5 +141,35 @@ Every wait is bounded per step, never by one overall deadline, so a turn that st
 it advertised and not failed because the TCK ran out of time. The turn's own end is not judged (the `ACP-CANCEL-*` rows
 own that): the driver gives the turn `timeout * 3` and ignores a timeout. Agent -> client requests that arrive after the
 turn's idle (background work may ask for permission) are answered like `run_prompt` does: `session/request_permission`
-per the `allow` policy, anything else `-32601`. `drive_child_cancel` (`_child_cancel.py`) does the same for the child
-rows.
+per the `allow` policy (`cancelled` for a session the TCK cancelled), anything else `-32601`.
+
+## Cancelling a subagent (`drive_child_cancel`)
+
+`ACP-SUBAGENT-016`/`017` (v1 and v2), `ACP-SUBAGENT-202` and the child-item rows `ACP-TOOLCANCEL-203` /
+`ACP-TERMCANCEL-203` (v2 only) share one driven turn of `--cancel-prompt` (`_child_cancel.py`), so a real agent needs
+a prompt that makes it delegate to a child that can still be cancelled: one that advertises `capabilities.cancel`, or
+whose tool call or terminal does. Otherwise the rows SKIP ("no child advertised `capabilities.cancel` while reported
+running"). In v1 the connection advertises `subagents` and nothing else, and a child's state is only the parent's
+`subagent_update.state`; v2 also reads each child's own `state_update`. The driver reads the turn in wire order,
+tracking each announced child and its `cancel` capability, state, tool calls and terminals, then, each step bounded
+(`timeout` to find something to cancel, `timeout / 2` for each response):
+
+1. (v2) `tool_call/cancel` / `terminal/cancel` with the child's `sessionId` for the first child item that advertises
+   `cancel` and is live, judged like `drive_item_cancel`. A request still awaiting its verdict when the rest of the run
+   ends is waited for, not turned into a race.
+2. `session/cancel` with the child's `sessionId`, only for a child that advertises `cancel` and was last reported
+   running (a client MUST NOT cancel one that does not). The child's idle report settles it: `idle` with
+   `stopReason: "cancelled"` confirms (016). Another idle within `quiet_period(timeout)` of the request, with a stop reason
+   the child could have reached on its own, is the same race as for `ACP-CANCEL-*` (the child had ended first) and
+   SKIPs 016/017; a later one FAILs 016 (the child finished instead of stopping). No idle within `timeout / 2` FAILs
+   016. For `quiet_period(timeout)` after the child settles the driver watches the parent: an `idle`/`cancelled`
+   (v2) or a `cancelled` prompt response (v1) FAILs 017. A sibling that reports `idle`/`cancelled` is only recorded
+   (`acp_tck_cancelled_siblings`), since the Agent may cancel its own delegated work.
+3. `session/cancel` for the parent, so nothing is left behind. In v2, once its turn ends `cancelled`, every descendant
+   that was running and that the parent's work waits on must reach `idle` within `timeout / 2` (202). A descendant counts
+   as waited on only if its parent reported a `background` list after announcing it that does not name it; a child
+   announced after the parent's latest list, or a parent that reports no list, leaves it unjudged, because the agent may
+   re-send the state when the list changes only as a SHOULD.
+
+The turn's own end is not judged (`ACP-CANCEL-*` own that), and agent requests read after the parent's turn ends are
+answered like `run_prompt` does.

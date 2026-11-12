@@ -114,6 +114,13 @@ default essay prompt an agent essentially never has such an item, so those tests
 advertised `capabilities.cancel` while still live"). To exercise them, choose a prompt that makes the agent start a
 long-running cancellable command or background task.
 
+The subagent cancellation tests also use it: `ACP-SUBAGENT-016`/`017` (both versions), `ACP-SUBAGENT-202` and, in
+version 2, the child tool call and terminal rows `ACP-TOOLCANCEL-203`/`ACP-TERMCANCEL-203`. They judge an agent that
+exposes a child that advertises `capabilities.cancel` (or has a tool call or terminal that does). The TCK sends this
+prompt, cancels such a child with `session/cancel` for its `sessionId`, then cancels the turn itself. For these rows
+choose a prompt that makes the agent delegate to a long-running subagent; with the default essay prompt they report
+`SKIPPED` ("no child advertised `capabilities.cancel` while reported running").
+
 ### `--auth-method ID`
 
 Authenticates with this method id (one advertised in `initialize`'s `authMethods`) right after `initialize`, before any

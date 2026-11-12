@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Conforming fixture: its tool call and terminal advertise `capabilities.cancel`, and the agent
-finishes both 0.25 s later (a final status and an `exitStatus`, both clearing `capabilities`), a
-pause during which the TCK's `tool_call/cancel` and `terminal/cancel` arrive unread. It answers
-them `-32602`, as tool-calls.mdx:459,605 require for an item that is already final, after the final
-updates, so the driver reads the final update before the response and the `-32602` is a race:
+finishes both (a final status and an `exitStatus`, both clearing `capabilities`) only once the
+TCK's `tool_call/cancel` and `terminal/cancel` have arrived unanswered, so they are always sent
+before the TCK has seen a final update, however slow the machine. It answers them `-32602`, as
+tool-calls.mdx:459,605 require for an item that is already final, after the final updates, so the
+driver reads the final update before the response and the `-32602` is a race:
 `ACP-TOOLCANCEL-*` and `ACP-TERMCANCEL-*` all SKIP and nothing FAILs. The deterministic version of
 `completes_before_cancel.py`, whose updates are written in one burst, so the driver usually sees
 the final update before it sends anything. Within the `-k` scope of the `test_item_controls.py`
 module, with `--cancel-prompt __hang__`.
 """
 
+import json
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +37,33 @@ class RacesCancelWithCompletionAgent(ConformingAgent):
         self._send_update(
             session_id, {**terminal, "command": "true", "cwd": "/tmp", "capabilities": {"cancel": {}}}
         )
-        time.sleep(0.25)
+        queued = self._read_cancel_requests()
         self._send_update(session_id, {**tool_call, "status": "completed", "capabilities": None})
         self._send_update(session_id, {**terminal, "exitStatus": {"exitCode": 0}, "capabilities": None})
+        for message in queued:
+            self._handle(message)
+
+    @staticmethod
+    def _read_cancel_requests() -> list[dict[str, Any]]:
+        """Block until both cancel requests have been read (or any other message shows the TCK
+        will not send them), returning everything read, unhandled, in order."""
+        queued: list[dict[str, Any]] = []
+        wanted = {"tool_call/cancel", "terminal/cancel"}
+        while wanted:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(message, dict):
+                continue
+            queued.append(message)
+            if message.get("method") not in wanted:
+                break
+            wanted.discard(message["method"])
+        return queued
 
 
 def main() -> None:

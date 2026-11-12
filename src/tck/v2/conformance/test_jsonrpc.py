@@ -99,8 +99,9 @@ async def test_response_envelope_is_result_xor_error_with_valid_shape(agent_laun
 
 async def _assert_no_reply_to_notification(agent: AgentProcess, timeout: float, what: str) -> None:
     """Shared by the notification probes below. An agent that exits instead of replying sent no
-    reply, so only a reply fails ACP-JSONRPC-003 here. An exit after `session/cancel` is
-    `ACP-CANCEL-*`'s concern, and after `mcp/message` `ACP-EXT-002`'s."""
+    reply, so only a reply fails ACP-JSONRPC-003 here. An exit after `mcp/message` is
+    `ACP-EXT-002`'s concern; one after `session/cancel` is only recorded (`ACP-INFO-CANCEL-201`)
+    and judged by no row."""
     try:
         entry = await first_response_within(agent, quiet_period(timeout))
     except AgentExited:

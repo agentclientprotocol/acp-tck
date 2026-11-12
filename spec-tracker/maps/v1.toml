@@ -351,7 +351,7 @@ reason = "Unobservable: whether the agent observed the recipient's receipt is in
 [[not_requirement]]
 citation = "docs/rfds/subagents.mdx:831-841 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "When the Agent observes a child's foreground work starting, resuming or stopping it reports `running` or `idle` in the parent's `subagent_update.state` (MUST), reports `requires_action` while observed work is blocked on user action (SHOULD), and includes `stopReason` when the reason for stopping is known (SHOULD)."
-reason = "Deferred: not observable as a violation, because the rule binds only work the agent observes and a client cannot tell work the agent did not observe from a report that went missing. Only the heuristic that a child with output under its own ID eventually reports `running` and then `idle` is checkable, and it goes beyond the cited text. The cancellation confirmation (`idle` with `stopReason: \"cancelled\"`) is judged by ACP-SUBAGENT-016."
+reason = "Unobservable: the rule binds only work the agent observes, and a client cannot tell work the agent did not observe from a report that went missing, so a missing or late `running`/`idle`/`requires_action`/`stopReason` is not a violation it can prove. The cancellation confirmation (`idle` with `stopReason: \"cancelled\"`) is judged by ACP-SUBAGENT-016."
 
 [[not_requirement]]
 citation = "schema/v1/schema.unstable.json#/$defs/UnknownStateUpdate; docs/rfds/subagents.mdx:855-860 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"

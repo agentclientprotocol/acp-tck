@@ -3,7 +3,8 @@
 `<id>-child-a` (advertises `capabilities.cancel`) and `<id>-child-b` (advertises nothing, but has
 a tool call and a terminal of its own that advertise `capabilities.cancel`), each reporting its
 `running` state on its own session and mirrored on the parent. The parent's `state_update`s carry
-an empty `background` list, so both children are foreground work.
+an empty `background` list (re-sent once the children are announced), so both children are
+foreground work.
 
 - `session/cancel` for child A stops that child only: it reports `idle` with `stopReason:
   "cancelled"` on its own session and on the parent association (RFD:1069-1073, 1089-1093). A
@@ -39,6 +40,10 @@ class CancellableSubagentAgent(ConformingAgent):
         self._spawn_child(session_id, child_a, cancellable=True)
         self._spawn_child(session_id, child_b, cancellable=False)
         self._start_child_items(child_b)
+        # The children are announced after the turn's first snapshot, so the agent re-sends the
+        # state with its (still empty) `background` list (prompt-lifecycle.mdx:205): a client may
+        # tell from it that they are foreground work.
+        self._send_update(session_id, {"sessionUpdate": "state_update", "state": "running"})
 
     def _spawn_child(self, session_id: Any, child_id: str, *, cancellable: bool) -> None:
         update: dict[str, Any] = {

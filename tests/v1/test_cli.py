@@ -1674,10 +1674,10 @@ def test_subagent_violators_fail_exactly_their_row(fixture, failing):
 _CHILD_STOP_K = "test_subagent_controls"
 
 
-def _child_stop_statuses(fixture: str) -> tuple[dict[str, str], str]:
+def _child_stop_statuses(fixture: str, timeout: str = "1") -> tuple[dict[str, str], str]:
     """Run only `test_subagent_controls.py` against `fixture` with the `__hang__` cancel prompt,
     which is what makes the cancellable child appear."""
-    result = _run_cli(fixture, k=_CHILD_STOP_K, cancel_prompt="__hang__")
+    result = _run_cli(fixture, k=_CHILD_STOP_K, cancel_prompt="__hang__", timeout=timeout)
     statuses = _table_statuses(result.stdout)
     return {r: statuses.get(r) for r in sorted(_SUBAGENT_CANCEL_IDS)}, result.stdout
 
@@ -1698,6 +1698,41 @@ def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():
     assert "FAIL" not in set(_table_statuses(stdout).values()), stdout
 
 
+def test_child_that_asks_after_the_parent_turn_ended_is_still_answered():
+    """`child_asks_after_turn_ends.py` ends the parent's turn on the child's cancel and only then
+    asks permission for the child's work, confirming `cancelled` only if the TCK answers it
+    `cancelled` (the child was cancelled). The request is read after the turn ended: both rows
+    PASS, so it was answered, and answered `cancelled` and not allowed."""
+    statuses, stdout = _child_stop_statuses("child_asks_after_turn_ends.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_ignores_cancel_and_ends_later_fails_the_confirmation_row():
+    """`child_ignores_cancel_then_ends.py` reports `end_turn` about 1.5 s after the cancel, past the
+    race window (`--timeout 4`: 0.5 s) but inside the wait for the confirmation. It is no
+    cancel racing with ended work, so `-016` FAILs, and `-017` is still judged and PASSes."""
+    statuses, stdout = _child_stop_statuses("child_ignores_cancel_then_ends.py", timeout="4")
+    assert statuses == {"ACP-SUBAGENT-016": "FAIL", "ACP-SUBAGENT-017": "PASS"}, stdout
+
+
+def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
+    """The per-child `cancel` capability does not prevent the Agent from cancelling its own
+    delegated work (RFD:1071-1073), which is indistinguishable from a leaked cancel, so
+    `child_cancel_stops_sibling_too.py` PASSes both rows and the sibling is only recorded."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "child_cancel_stops_sibling_too.py",
+        k=_CHILD_STOP_K,
+        cancel_prompt="__hang__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-016"] == statuses["ACP-SUBAGENT-017"] == "PASS", result.stdout
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (test,) = by_id["ACP-SUBAGENT-017"]["tests"]
+    assert test["properties"]["acp_tck_cancelled_siblings"].endswith("-child-b"), test
+
+
 def test_child_cancel_rows_skip_without_a_cancellable_child():
     """`exposes_subagent.py` exposes a child that advertises no `cancel`, and `conforming.py` none:
     nothing is cancelled, so both rows SKIP."""
@@ -1711,13 +1746,12 @@ def test_child_cancel_rows_skip_without_a_cancellable_child():
     [
         ("child_cancel_ignored.py", "ACP-SUBAGENT-016"),
         ("child_cancel_cancels_parent.py", "ACP-SUBAGENT-017"),
-        ("child_cancel_cancels_sibling.py", "ACP-SUBAGENT-017"),
     ],
 )
 def test_child_cancel_defect_fails_its_row_only(fixture: str, failing: str):
     """Each defect trips its own row: a child that ignores its cancel fails the confirmation row
-    (`-016`); a cancel that also ends the parent's turn or a sibling fails `-017`, whose child
-    still confirmed its own cancellation."""
+    (`-016`); a cancel that also ends the parent's turn fails `-017`, whose child still confirmed
+    its own cancellation."""
     statuses, stdout = _child_stop_statuses(fixture)
     for req_id, status in statuses.items():
         assert status == ("FAIL" if req_id == failing else "PASS"), f"{req_id}:\n{stdout}"

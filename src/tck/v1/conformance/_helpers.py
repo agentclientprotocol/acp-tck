@@ -381,6 +381,22 @@ class PromptTurn:
     recorded as the `acp_tck_permission_fallback` property."""
 
 
+def client_cancelled(agent: AgentProcess, session_id: str, since: int) -> bool:
+    """Whether the TCK has sent `session/cancel` for `session_id` at or after transcript index
+    `since`, whoever sent it (this turn's trigger or a driver on the same connection)."""
+    for entry in agent.transcript[since:]:
+        message = entry.parsed
+        if (
+            entry.direction is Direction.SENT
+            and isinstance(message, dict)
+            and message.get("method") == "session/cancel"
+            and isinstance(message.get("params"), dict)
+            and message["params"].get("sessionId") == session_id
+        ):
+            return True
+    return False
+
+
 async def run_prompt(
     agent: AgentProcess,
     session_id: str,
@@ -434,6 +450,7 @@ async def run_prompt(
     params = {"sessionId": session_id, "prompt": blocks}
     if extra_params:
         params.update(extra_params)
+    turn_start = len(agent.transcript)
     prompt_id = await agent.send_request("session/prompt", params)
     updates: list[tuple[int, TranscriptEntry]] = []
     client_requests_seen: list[TranscriptEntry] = []
@@ -505,15 +522,31 @@ async def run_prompt(
             return None
 
         if method == "session/request_permission" and "id" in msg:
-            options = (msg.get("params") or {}).get("options") or []
-            if trigger_sent or cancelled_at_index is not None:
-                # Once `session/cancel` or the `on_action` request (e.g. `session/close`) has
-                # fired, a real client would resolve an in-flight permission prompt as
-                # cancelled rather than picking an option on the user's behalf.
+            req_params = msg.get("params")
+            if not isinstance(req_params, dict):
+                req_params = {}
+            options = req_params.get("options") or []
+            target = req_params.get("sessionId")
+            # A request of another session (a subagent's) is never cancelled through the
+            # prompted session: `session/cancel` for it would end this turn.
+            for_this_session = not isinstance(target, str) or target == session_id
+            if (for_this_session and (trigger_sent or cancelled_at_index is not None)) or (
+                isinstance(target, str) and client_cancelled(agent, target, turn_start)
+            ):
+                # Once `session/cancel` (by this turn or by a driver on the same connection) or
+                # the `on_action` request (e.g. `session/close`) has fired for the request's
+                # session, a real client resolves an in-flight permission prompt as cancelled
+                # rather than picking an option on the user's behalf (`prompt-turn.mdx:641`;
+                # Active Subagents RFD, "Pending permission and elicitation requests").
+                # Cancelling one session does not resolve another's requests.
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(options, permission)
-                if note is not None and outcome["outcome"] == "cancelled":
+                if note is not None and outcome["outcome"] == "cancelled" and not for_this_session:
+                    # No option can be selected; this client sends no `session/cancel` for a
+                    # subagent, so only this request is declined.
+                    permission_fallbacks.append(f"{note}; answered cancelled for session {target!r}")
+                elif note is not None and outcome["outcome"] == "cancelled":
                     # The policy's option kinds were not offered: cancel the turn first, then
                     # answer `cancelled` (`prompt-turn.mdx:641`).
                     await agent.send_notification("session/cancel", {"sessionId": session_id})
@@ -597,6 +630,40 @@ async def run_prompt(
                 if peek_result is not None:
                     return peek_result
                 await _fire_trigger()
+
+
+async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry, *, since: int) -> None:
+    """Answer the agent -> client requests in `entry`, a line read after `run_prompt` returned,
+    as `run_prompt` would have: `session/request_permission` per the `allow` policy (`cancelled`
+    for a session the TCK sent `session/cancel` for at or after transcript index `since`),
+    anything else `-32601` (the mock client advertises no capabilities). A subagent may ask
+    after the parent's turn ended, and the agent may wait for the answer."""
+    if entry.direction is not Direction.RECEIVED:
+        return
+    parsed = entry.parsed
+    for message in parsed if isinstance(parsed, list) else [parsed]:
+        if not isinstance(message, dict) or "method" not in message or "id" not in message:
+            continue
+        if message["method"] == "session/request_permission":
+            params = message.get("params")
+            if not isinstance(params, dict):
+                params = {}
+            target = params.get("sessionId")
+            if isinstance(target, str) and client_cancelled(agent, target, since):
+                outcome: dict[str, Any] = {"outcome": "cancelled"}
+            else:
+                outcome, _note = _answer_permission(params.get("options") or [], "allow")
+            await agent.send_message(
+                {"jsonrpc": "2.0", "id": message["id"], "result": {"outcome": outcome}}
+            )
+        else:
+            await agent.send_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "error": {"code": METHOD_NOT_FOUND, "message": "Method not found"},
+                }
+            )
 
 
 # --- subagents (`clientCapabilities.subagents`, unstable) ---
