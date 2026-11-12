@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Conforming fixture: during each turn it announces a child session with `subagent_update` on
 the prompted session, then exchanges a `session_message` with the child in both views (outgoing
-on the parent, incoming on the child), has the child ask for permission with a
-`session/request_permission` carrying the child's `sessionId`, and streams the child's own
+on the parent, incoming on the child), announces the delegation with a completed
+tool call whose content is a `session` reference to the child, has the child ask for permission
+with a `session/request_permission` carrying the child's `sessionId`, and streams the child's own
 `running` -> `agent_message_chunk` -> `idle(end_turn)` under that `sessionId`. After the parent's
 turn has ended, the child sends one more `agent_message_chunk` (child work outlives the parent's
 turn). Everything is legal once announced, and the child's idle must not end the parent's turn:
-must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001` and `ACP-STATE-201..205` like `conforming.py`
+must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001/002` and `ACP-STATE-201..205` like `conforming.py`
 (the mock client answers the child's permission request; it is not awaited).
 
 The `_`-hooks below are the seams the violator fixtures override.
@@ -35,6 +36,7 @@ class ExposesSubagentAgent(ConformingAgent):
         self._turn_child = child_id
         self._announce_child(session_id, child_id)
         self._send_session_messages(session_id, child_id)
+        self._send_session_reference(session_id, child_id)
         self._send_update(child_id, {"sessionUpdate": "state_update", "state": "running"})
         self._child_permission_step(child_id)
         self._send_update(
@@ -77,6 +79,26 @@ class ExposesSubagentAgent(ConformingAgent):
                 "content": [{"type": "text", "text": "please help"}],
             },
         )
+
+    def _send_session_reference(self, session_id: Any, child_id: str) -> None:
+        """A tool call that reports the spawn and references the announced child. Skipped when
+        the child goes unannounced, so those violators keep to their one defect."""
+        if not self.announce_child:
+            return
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": f"{child_id}-spawn",
+                "title": "Spawn helper",
+                "kind": "other",
+                "status": "completed",
+                "content": [{"type": "session", "sessionId": self._referenced_session(child_id)}],
+            },
+        )
+
+    def _referenced_session(self, child_id: str) -> str:
+        return child_id
 
     def _child_permission_step(self, child_id: str) -> None:
         self._send_child_permission_request(child_id)

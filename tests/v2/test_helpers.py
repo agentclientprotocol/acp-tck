@@ -20,6 +20,7 @@ from tck.v2.conformance._helpers import (
     child_session_traffic,
     is_agent_initiated,
     is_response_line,
+    session_content_references,
     tool_call_report,
 )
 
@@ -345,3 +346,83 @@ def test_child_traffic_judgement_ignores_client_lines_and_responses():
     sent = TranscriptEntry.build(Direction.SENT, json.dumps({"jsonrpc": "2.0", **_CHILD_CHUNK}).encode(), 0.0)
     reply = _entry(json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"sessionId": "other"}}))
     assert child_session_traffic([sent, reply], {"p"}) == (set(), [])
+
+
+def _tool_update(session_id: str, kind: str = "tool_call_update", **fields: Any) -> dict[str, Any]:
+    return _update(session_id, {"sessionUpdate": kind, "toolCallId": "t", **fields})
+
+
+def _ref(session_id: str) -> dict[str, Any]:
+    return {"type": "session", "sessionId": session_id}
+
+
+def test_session_references_without_any_are_not_a_session_content_connection():
+    transcript = _traffic(_tool_update("p", content=[{"type": "content", "content": {"type": "text", "text": "x"}}]))
+    assert session_content_references(transcript, {"p"}) == ([], [])
+
+
+def test_session_reference_to_a_known_session_is_conforming():
+    transcript = _traffic(
+        _tool_update("p", "tool_call", content=[_ref("p")]),  # a client-created session
+        _ANNOUNCE,
+        _tool_update("p", content=[_ref("c")]),
+        _tool_update("p", "tool_call_content_chunk", content=_ref("c")),
+        {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": {"toolCallId": "t", "content": [_ref("c")]}}},
+        # a nested child, announced on a known child, then referenced
+        _update("c", {"sessionUpdate": "subagent_update", "sessionId": "g"}),
+        _tool_update("c", content=[_ref("g")]),
+    )
+    assert session_content_references(transcript, {"p"}) == (["p", "c", "c", "c", "g"], [])
+
+
+@pytest.mark.parametrize(
+    ("message", "mentions"),
+    [
+        (_tool_update("p", content=[_ref("c")]), "tool_call_update"),
+        (_tool_update("p", "tool_call", content=[_ref("c")]), "tool_call"),
+        (_tool_update("p", "tool_call_content_chunk", content=_ref("c")), "tool_call_content_chunk"),
+        (
+            {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": {"toolCallId": "t", "content": [_ref("c")]}}},
+            "session/request_permission",
+        ),
+    ],
+)
+def test_session_reference_before_its_announcement_is_a_problem(message, mentions):
+    references, problems = session_content_references(_traffic(message, _ANNOUNCE), {"p"})
+    assert references == ["c"]
+    assert len(problems) == 1 and mentions in problems[0] and "'c'" in problems[0], problems
+
+
+def test_session_reference_in_the_announcing_message_itself_is_not_yet_known():
+    """The announcement counts only for messages after it."""
+    transcript = _traffic(
+        _update("p", {"sessionUpdate": "subagent_update", "sessionId": "c", "content": [_ref("c")]}),
+        _tool_update("p", content=[_ref("c")]),
+    )
+    assert session_content_references(transcript, {"p"}) == (["c"], [])
+
+
+def test_session_reference_after_an_announcement_on_an_unknown_session_is_a_problem():
+    transcript = _traffic(
+        _update("stranger", {"sessionUpdate": "subagent_update", "sessionId": "c"}),
+        _tool_update("p", content=[_ref("c")]),
+    )
+    references, problems = session_content_references(transcript, {"p"})
+    assert references == ["c"] and len(problems) == 1
+
+
+def test_session_reference_is_not_child_traffic():
+    """An unknown reference alone is judged by `session_content_references`, not by
+    `child_session_traffic` (so `ACP-SUBAGENT-001` is not double-counted)."""
+    transcript = _traffic(_tool_update("p", content=[_ref("ghost")]))
+    assert child_session_traffic(transcript, {"p"}) == (set(), [])
+    assert len(session_content_references(transcript, {"p"})[1]) == 1
+
+
+def test_session_reference_judgement_ignores_other_content_and_malformed_items():
+    transcript = _traffic(
+        _tool_update("p", content=["not a dict", {"type": "session"}, {"type": "session", "sessionId": 7}, {"type": "diff"}]),
+        _tool_update("p", content="not a list"),
+        {"id": 5, "method": "session/request_permission", "params": {"sessionId": "p", "toolCall": "nope"}},
+    )
+    assert session_content_references(transcript, {"p"}) == ([], [])

@@ -593,11 +593,6 @@ citation = "docs/protocol/v2/draft/tool-calls.mdx:622,653-661 @ 3961af94fa62d238
 statement = "A `git_patch` diff's paths (including `rename`/`copy` lines) MUST be absolute or `/dev/null` with no `a/` or `b/` prefix, each matches a `changes` entry, and each `path` appears in at most one `changes` entry."
 reason = "Deferred: a passive check of agent-emitted `diff` content is possible but not yet built, and it is vacuous against agents that emit no diff in a short turn."
 
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:740-742 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A `session` tool-call content reference names a session already known through ordinary session setup or a `subagent_update` announcement."
-reason = "Deferred: a passive check is possible, since v2 needs no client marker for subagents, but it applies only when the agent emits `session` content, and provoking a subagent spawn is model-driven."
-
 # --- agent-plan.mdx ---
 
 [[not_requirement]]

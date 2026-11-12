@@ -176,6 +176,7 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-207",
     "ACP-PATCH-210",
     "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
@@ -288,6 +289,7 @@ _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 # (see `test_v2_conforming_agent_passes_everything` above).
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUBAGENT-001",  # the fixture exposes no subagent
+    "ACP-SUBAGENT-002",  # nor any `session` content
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -496,6 +498,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-COMMANDS-201",
     "ACP-RESUME-210",
     "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
@@ -535,10 +538,16 @@ _CONFORMING_EXPECTED_SKIPS = {
 } | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
-# Skipped for `conforming.py` but exercised by a fixture whose child asks for permission and
-# whose announced child shows up on the wire: a request and a custom session ID are observed.
+# Skipped for `conforming.py` but exercised by a fixture whose child asks for permission, whose
+# announced child shows up on the wire (a request and a custom session ID are observed) and whose
+# spawn tool call carries `session` content (so the tool-call rows see a report).
 _SUBAGENT_EXERCISED_IDS = {
     "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
+    "ACP-PATCH-204",
+    "ACP-PATCH-208",
+    "ACP-PATCH-210",
+    "ACP-PATCH-211",
     "ACP-PERM-201",
     "ACP-PERM-202",
     "ACP-JSONRPC-202",
@@ -606,9 +615,10 @@ def test_v2_conforming_agent_passes_everything():
 # `_meta` at all; `emits_w3c_meta.py` exercises them), and `_BACKGROUND_SKIP_IDS` (it reports
 # no background work; `reports_background_work.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
-# `ACP-SUBAGENT-001` SKIPs: it exposes no subagent (`exposes_subagent.py` exercises it).
+# `ACP-SUBAGENT-001/002` SKIP: it exposes no subagent (`exposes_subagent.py` exercises them).
 _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -1644,10 +1654,23 @@ def test_unannounced_child_use_outside_prompt_002_fails_subagent_001_only(fixtur
     assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
 
 
-def test_subagent_001_skips_without_a_child():
-    """`conforming.py` never uses a session ID the client did not create."""
+def test_subagent_rows_skip_without_a_child():
+    """`conforming.py` never uses a session ID the client did not create, nor `session` content."""
     result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
-    assert _table_statuses(result.stdout)["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
+    assert statuses["ACP-SUBAGENT-002"] == "SKIPPED", result.stdout
+
+
+def test_session_content_unknown_session_fails_subagent_002_only():
+    """A `session` content reference to a never-announced session is not child traffic: only
+    `ACP-SUBAGENT-002` judges it, while `ACP-SUBAGENT-001` and `ACP-PROMPT-002` PASS."""
+    result = _run_cli(FIXTURES_DIR_V2, "session_content_unknown_session.py", protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-SUBAGENT-002"}, result.stdout
+    assert statuses["ACP-SUBAGENT-001"] == "PASS", result.stdout
+    assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
 
 
 def test_replays_subagent_history_passes_everything():
@@ -2509,6 +2532,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-CLOSE-205",
             "ACP-ERROR-204",
             "ACP-SUBAGENT-001",  # no subagent exposed
+            "ACP-SUBAGENT-002",
         }
     )
     for req_id, status in statuses.items():

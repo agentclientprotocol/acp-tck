@@ -371,6 +371,28 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-002",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `session` tool-call content item (`SessionReference`) names a session already "
+            "known: one the client created, or a child announced by an earlier `subagent_update` "
+            "on a known session. Judged for every such item in a `tool_call` or "
+            "`tool_call_update` `content` array, a `tool_call_content_chunk`'s `content`, and a "
+            "`session/request_permission` request's `toolCall.content`, in wire order over one "
+            "`session/new`, one prompt turn and a quiet period after it. A reference to a "
+            "session no announcement preceded FAILs. A reference does not count as traffic "
+            "carrying the child's ID, so it never FAILs `ACP-SUBAGENT-001`. The draft docs state "
+            "the MUST, but only an agent that emits `session` content is bound and no "
+            "`initialize` marker announces that, so the row is gated by `inferred:subagents` "
+            "(documentation-only) and SKIPs when no `session` content item appears."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:740-742; "
+            "docs/rfds/subagents.mdx:636-638 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",

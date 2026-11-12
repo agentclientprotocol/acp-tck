@@ -28,7 +28,7 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Literal
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
 import pytest
 
@@ -638,6 +638,35 @@ def agent_requests(transcript: list[TranscriptEntry]) -> list[dict[str, Any]]:
     ]
 
 
+def _wire_messages(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> Iterator[tuple[dict[str, Any], str, dict[str, Any], set[str]]]:
+    """Walk the agent's requests and notifications in wire order, tracking which sessions are
+    known (Active Subagents RFD; `SubagentUpdate`): the client's own, plus every child a
+    `subagent_update` sent on an already-known session announces. Yields `(msg, method, params,
+    known)` per message with a `method`; `known` is the set *before* the message, and the message's
+    own announcement is applied once the consumer resumes. Responses are skipped."""
+    known = set(client_sessions)
+    for entry in transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            method = msg.get("method")
+            if not isinstance(method, str):
+                continue
+            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            yield msg, method, params, known
+            update = params.get("update") if method == "session/update" else None
+            if (
+                isinstance(update, dict)
+                and update.get("sessionUpdate") == "subagent_update"
+                and isinstance(update.get("sessionId"), str)
+                and isinstance(params.get("sessionId"), str)
+                and params["sessionId"] in known
+            ):
+                known.add(update["sessionId"])
+
+
 def child_session_traffic(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> tuple[set[str], list[str]]:
@@ -651,12 +680,13 @@ def child_session_traffic(
     `params.sessionId` of any agent message with a `method` (a `session/update` notification, a
     `session/request_permission` or `elicitation/create` request, ...) or a live `session_message`
     update's `senderSessionId`/`recipientSessionId`. A `subagent_update` announces its own
-    `sessionId` only when it is itself sent on a known session. Responses are not judged."""
-    known = set(client_sessions)
+    `sessionId` only when it is itself sent on a known session. A `session` tool-call content
+    reference is not traffic carrying the child's ID (`session_content_references` judges it).
+    Responses are not judged."""
     children: set[str] = set()
     problems: list[str] = []
 
-    def carry(session_id: Any, what: str) -> None:
+    def carry(session_id: Any, what: str, known: set[str]) -> None:
         if not isinstance(session_id, str):
             return
         if session_id not in client_sessions:
@@ -667,31 +697,68 @@ def child_session_traffic(
                 f"on a known session announced (known: {sorted(known)!r})"
             )
 
-    for entry in transcript:
-        if entry.direction is not Direction.RECEIVED:
-            continue
-        for msg in iter_messages(entry):
-            method = msg.get("method")
-            if not isinstance(method, str):
-                continue
-            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
-            outer = params.get("sessionId")
-            update = params.get("update") if method == "session/update" else None
-            update = update if isinstance(update, dict) else {}
-            kind = update.get("sessionUpdate")
-            what = f"{method} {kind}" if kind else method
-            if "id" in msg:
-                what = f"request {what} (id {msg['id']!r})"
-            carry(outer, what)
-            if kind == "subagent_update" and isinstance(update.get("sessionId"), str):
-                if update["sessionId"] not in client_sessions:
-                    children.add(update["sessionId"])
-                if isinstance(outer, str) and outer in known:
-                    known.add(update["sessionId"])
-            elif kind == "session_message":
-                carry(update.get("senderSessionId"), f"{what} senderSessionId")
-                carry(update.get("recipientSessionId"), f"{what} recipientSessionId")
+    for msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        update = update if isinstance(update, dict) else {}
+        kind = update.get("sessionUpdate")
+        what = f"{method} {kind}" if kind else method
+        if "id" in msg:
+            what = f"request {what} (id {msg['id']!r})"
+
+        carry(params.get("sessionId"), what, known)
+        if kind == "subagent_update":
+            if isinstance(update.get("sessionId"), str) and update["sessionId"] not in client_sessions:
+                children.add(update["sessionId"])
+        elif kind == "session_message":
+            carry(update.get("senderSessionId"), f"{what} senderSessionId", known)
+            carry(update.get("recipientSessionId"), f"{what} recipientSessionId", known)
     return children, problems
+
+
+def session_content_references(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> tuple[list[str], list[str]]:
+    """Replay the agent's traffic in wire order and judge the `session` content rule
+    (`docs/protocol/v2/draft/tool-calls.mdx` `SessionReference`; Active Subagents RFD): a
+    `session` `ToolCallContent` item names a session already known, through ordinary session
+    setup (`client_sessions`) or a `subagent_update` announcement on a known session.
+
+    Returns `(references, problems)`: the `sessionId` of every `session` item seen, in wire
+    order, and one message per reference to a session not yet known. Items are read from a
+    `tool_call` / `tool_call_update` `content` array, a `tool_call_content_chunk`'s single
+    `content` item and a `session/request_permission` request's `toolCall.content` array."""
+    references: list[str] = []
+    problems: list[str] = []
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        update = update if isinstance(update, dict) else {}
+        kind = update.get("sessionUpdate")
+        items: Any = None
+        where = ""
+        if method == "session/request_permission":
+            tool_call = params.get("toolCall")
+            items = tool_call.get("content") if isinstance(tool_call, dict) else None
+            where = "session/request_permission toolCall"
+        elif kind in ("tool_call", "tool_call_update"):
+            items = update.get("content")
+            where = f"session/update {kind}"
+        elif kind == "tool_call_content_chunk":
+            items = [update.get("content")]
+            where = f"session/update {kind}"
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict) or item.get("type") != "session":
+                continue
+            target = item.get("sessionId")
+            if not isinstance(target, str):
+                continue
+            references.append(target)
+            if target not in known:
+                problems.append(
+                    f"{where} content references session {target!r}, which is neither a session "
+                    f"the client created nor announced by an earlier `subagent_update` on a known "
+                    f"session (known: {sorted(known)!r})"
+                )
+    return references, problems
 
 
 def is_response_line(entry: TranscriptEntry) -> bool:
