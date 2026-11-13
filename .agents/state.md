@@ -7,6 +7,7 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 - Product suite is parallel by default (root addopts, since S0.3); `-n 0` for serial.
 - Programmers run the FULL product suite per slice, plus spec-tracker tests; reviewer per milestone.
 ## Decisions (final)
+- ACP-SUBAGENT-017 (user, option A): judges only the parent half; sibling cancels recorded as report property `acp_tck_cancelled_siblings`, never FAIL; no new sibling row.
 - Research: .agents/research/subagents-coverage.md (RFD docs/rfds/subagents.mdx at upstream 95452a77; identical at TCK pin 3961af94). Gap ids P1–P11.
 - Scope: M1–M6. P11 (`--subagent-prompt`) out of scope unless asked.
 - Tiers: Active/Preview RFD-only rules are never MANDATORY. RFD-only MUST (incl. lowercase/declarative binding rules: no reparenting/cycles, participant consistency, child-only cancel, cascade cancel) = Tier.CAPABILITY with documentation-only gate `inferred:<feature>` (subagents: `inferred:subagents`; test self-SKIPs, never `@pytest.mark.capability`); if no gate fits = ADVISORY. RFD-only SHOULD = ADVISORY.
@@ -59,4 +60,4 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 - Opt-in parallel TCK run (`acp-tck --workers N`): needs xdist-aware report/exit-code aggregation (plugin.py pytest_sessionfinish runs per worker), xdist as optional extra, per-worker agent cwd. Measure on real agents first.
 - Latent bug fixed by S0.3: installed acp-tck's inner pytest walked up into the user's project config (e.g. .venv inside a project).
 ## Open questions (waiting on the user)
-- Sign-off on S4.4 N1 (017 judges parent only; sibling cancels recorded as acp_tck_cancelled_siblings).
+- none
