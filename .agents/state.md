@@ -4,7 +4,7 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 ## Commit messages
 - Plain conventional messages, NO attribution trailers (no `Claude-Session:`). Commits up to fae0c9d-era have them.
 ## Verification cadence
-- `-n auto` on every product `uv run pytest` (until S0.3 makes it the default). Full suite ~5-6.5 min parallel (38.5 min serial).
+- Product suite is parallel by default (root addopts, since S0.3); `-n 0` for serial.
 - Programmers run the FULL product suite per slice, plus spec-tracker tests; reviewer per milestone.
 ## Decisions (final)
 - Research: .agents/research/subagents-coverage.md (RFD docs/rfds/subagents.mdx at upstream 95452a77; identical at TCK pin 3961af94). Gap ids P1–P11.
@@ -22,7 +22,7 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 - M5 (v2 background-work): S5.1 PATCH-211 exemption for tool calls referencing a listed terminal · S5.2 tool_call/cancel + terminal/cancel happy paths + fix v2.toml ~661-669 ledger · S5.3 ADVISORY re-send state on background change, background across resume, fork isolation, ENUM-201 background[].type, ledger rewording (v2.toml ~188-191, 392-395, 644-647). Source: backfill-v2-background-work.md.
 - M6 (mcp-over-acp P1): S6.1 `acp` probe in v2 ACP-MCP-203 + mcp/message notification-silence row (v2 CAP session.mcp.acp; v1 CAP mcpCapabilities.acp). Source: backfill-mcp-over-acp.md.
 - M4: S4.1 active child cancel tests v1+v2 (P9) · S4.2 ledger entries for unobservable agent-side rules (P10).
-- S0.3 (APPROVED by user, no rough timings in docs/testing.md; IN PROGRESS): isolate acp-tck's own pytest run from repo config (pytest.ini per conformance dir; today it resolves ../../../../pyproject.toml) + root `addopts = ["-n","auto"]` + new docs/testing.md single source + per-file cleanup of literal `uv run pytest` (list given in chat: AGENTS.md keeps command + link; development.md sections move; writing-tests/spec-updates reminders link; ci.yml drops -n auto; programmer.md/reviewer.md/orchestrator SKILL reminders without commands; spec-tracker/cross-check READMEs unchanged).
+- S0.3 (APPROVED by user, no rough timings in docs/testing.md; DONE, see Done): isolate acp-tck's own pytest run from repo config (pytest.ini per conformance dir; today it resolves ../../../../pyproject.toml) + root `addopts = ["-n","auto"]` + new docs/testing.md single source + per-file cleanup of literal `uv run pytest` (list given in chat: AGENTS.md keeps command + link; development.md sections move; writing-tests/spec-updates reminders link; ci.yml drops -n auto; programmer.md/reviewer.md/orchestrator SKILL reminders without commands; spec-tracker/cross-check READMEs unchanged).
 ## Done
 - Research — subagents-coverage.md.
 - M1: S1.1 d899514, S1.2 c25547e (RESUME-209 known children scoped to resume exchange; RESUME-002/204/205 scoped to resumed session; fixtures replays_subagent_history, replays_unannounced_child, replays_child_before_announce). Review: review-m1.md.
@@ -46,7 +46,8 @@ mode: single · branch: eugenethedev/subagents (from main 13c4f7a) · reviews: o
 - M4 review — .agents/research/review-m4.md — 0 blockers, 3 should-fix (S1 016/017: any non-cancelled idle within timeout/2 = raced -> ignored cancel SKIPs; S2 202 FAILs a background child announced after the parent's latest snapshot; S3 v2.toml:204-206 entity-ID reuse entry falsely 'unobservable', overlaps :592), 9 nits incl. N2 pre-existing on main: run_prompt answers permission `allow` after the drivers' own cancels, and its fallback session/cancel cancels the parent for a child's request (v1) / a child without `cancel` (v2 _helpers.py:1959-1962, client MUST NOT).
 - S4.4 1e38d44 — M4 review fixes: 016 race only within quiet_period + plausible stop reason (else FAIL); 202 judges only children announced before the parent's latest list; v2.toml entity-ID entry narrowed; 017 judges only the parent half, sibling cancels recorded as report property `acp_tck_cancelled_siblings` (RFD:1071-1073 lets the agent stop its own work; user sign-off requested); run_prompt (pre-existing on main): `cancelled` after TCK's own cancel, fallback session/cancel only for the prompted session; v1 answer_post_turn_requests; docs; event-driven race fixture. Full suite twice 981 passed; spec-tracker --spec-repo 120. M4 DONE.
 - `.agents/` grep over src tests cross-check spec-tracker docs README AGENTS: clean.
-## ALL PLANNED MILESTONES DONE (M0-M6). Remaining: S0.3 (approved, programmer running).
+- S0.3 dda6129 (conformance pytest.ini v1+v2, shipped in wheel+sdist; root addopts -n auto; ci.yml plain `uv run pytest -q`; tests/common/test_cli_isolation.py) + 7534516 (docs/testing.md single source, no timings; AGENTS.md link; development.md test/CI sections moved; reminders without commands in writing-tests, spec-updates, programmer, reviewer, orchestrator SKILL). Full suite 985 passed (plain `uv run pytest`, 16 workers); spec-tracker --spec-repo 120; cross-check 20; orchestrator re-ran narrow unit+registry command (535) and isolation tests (4). PYTEST_ADDOPTS still leaks into the inner run (documented).
+## ALL PLANNED WORK DONE (M0-M6, S0.3). Branch not pushed, no PR.
 - Then M4 (S4.1 child cancel tests v1+v2, S4.2 ledger incl. v1 S9 Deferred), final review of M4.
 - S4.2 must add a 'Deferred' v1 ledger entry for S9 (child terminal/create cwd; blocker: mock client implements no terminal). S20: at most INFORMATIONAL; skip.
 ## Follow-ups (not scheduled)
