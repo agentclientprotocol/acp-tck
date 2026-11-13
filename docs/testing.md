@@ -65,11 +65,12 @@ the tests assert on the per-id statuses, not the verdict (see [Writing tests](wr
 
 ## CI
 
-`.github/workflows/ci.yml` has two jobs:
+`.github/workflows/ci.yml` runs two independent parts side by side:
 
 - `test` (required): `uv sync --locked && uv run pytest -q` (the product suite, parallel via addopts), then the
   spec-tracker tests against a fetched spec checkout.
-- `cross-check` (informational, `continue-on-error: true`): the cross-check tests, then the TCK against upstream
-  agents and a baseline check.
+- The cross-check (informational, `continue-on-error: true`): one `cross-check <agent>` job per upstream agent,
+  each running the TCK against it on its own runner, then a `cross-check` job that runs the cross-check tests and
+  checks the four reports against the expected baseline.
 
 Each project's README says what its CI step checks.
