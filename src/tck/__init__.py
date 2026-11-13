@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import shlex
+import shutil
 import sys
+import tempfile
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
@@ -136,6 +138,14 @@ def main(argv: list[str] | None = None) -> int:
         plugin_module,
         "-p",
         "no:cacheprovider",
+        # The TCK's report only works in a single process; this makes a stray `-n` fail loudly.
+        "-p",
+        "no:xdist",
+        # Explicit config: discovery would treat option values that are existing paths (agent
+        # command, `--agent-cwd`, ...) as path args, since the plugin options are not registered
+        # yet when pytest resolves its config, and could walk up to an outer project's config.
+        "-c",
+        str(conformance_dir / "pytest.ini"),
         "--rootdir",
         str(conformance_dir),
         "--tck-agent-cmd",
@@ -168,4 +178,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.verbose:
         pytest_args.append("-v")
 
-    return pytest.main(pytest_args)
+    # Private per-run basetemp: pytest's default root (`pytest-of-<user>/`) is shared, so concurrent
+    # `acp-tck` runs race in its numbered-dir/`pytest-current` symlink cleanup and crash at session
+    # finish. `--report-json` is a user-supplied path, so it is not affected by removing this dir.
+    basetemp = tempfile.mkdtemp(prefix="acp-tck-")
+    try:
+        return pytest.main([*pytest_args, "--basetemp", basetemp])
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)

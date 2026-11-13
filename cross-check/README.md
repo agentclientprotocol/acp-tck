@@ -26,10 +26,15 @@ shallow-fetched at the SHAs pinned in `sdk-pins.sh` into `scratch/cross-check/sd
 - `ACP_RUST_SDK`, `ACP_PYTHON_SDK`: opt-in overrides pointing at your own SDK checkouts. `run.sh`
   warns when they are set, since the expected baseline below is defined for the pinned SHAs only.
 - `OUT_DIR`: where the JSON reports go (default `scratch/cross-check/`).
-- `ACP_CROSS_CHECK_V2=0`: skip both v2 legs.
+- `ACP_CROSS_CHECK_V2=0`: skip both v2 legs (ignored when legs are named, below).
 
-`run.sh` exits 0 once every agent ran and its report was written; the agents' verdicts are data,
-checked by `summary.py` below.
+To run only some agents, name their legs: `./cross-check/run.sh testy python_v2_agent`. The legs are
+`testy`, `echo_agent`, `testy_v2` and `python_v2_agent`. Only the SDKs and builds those legs need are
+fetched, and the reports are written without the comparison table or the baseline check (CI runs
+each leg on its own runner, then checks all four reports in one job).
+
+`run.sh` exits 0 once every selected agent ran and its report was written; the agents' verdicts are
+data, checked by `summary.py` below.
 
 ## SDK pins
 
@@ -67,5 +72,6 @@ uv run --directory cross-check pytest
 
 (`--directory`, not `--project`: pytest finds its config from the working directory.)
 
-The informational CI `cross-check` job runs these tests, then `run.sh`, then re-checks the scorecard
-with `summary.py` so a drifted baseline turns the job red.
+The informational CI cross-check runs one `cross-check <leg>` job per agent (`run.sh <leg>`, each
+uploading its report), in parallel with the `test` job. A final `cross-check` job runs these tests,
+downloads the four reports, and checks them with `summary.py`, so a drifted baseline turns it red.

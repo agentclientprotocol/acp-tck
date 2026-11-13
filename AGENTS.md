@@ -18,6 +18,8 @@ Read before changing code:
 - [`docs/development.md`](docs/development.md): layout, setup, commands, CI, the vendored schema,
   and the plugin-shim footgun. Follow its [conventions](docs/development.md#conventions) (concise
   comments, `uv`-only exact pins).
+- [`docs/testing.md`](docs/testing.md): running the repo's tests and how they work. Read before running or
+  changing tests.
 - [`docs/README.md`](docs/README.md): index of the contributor contracts (requirements, writing
   tests, the mock client, the harness, spec updates). Read the page covering what you change.
 - [`README.md`](README.md): running the TCK, its options, and the report.
@@ -26,7 +28,7 @@ Read before changing code:
 
 ```
 uv sync --all-packages                                  # dev setup (plain `uv sync` drops spec-tracker)
-uv run pytest                                           # the repo's own tests (slow: end-to-end fixture runs)
+uv run pytest                                           # all repo tests (parallel by default)
 uv run acp-tck -- python tests/fixtures/agents/v1/conforming.py
 uv run acp-tck --protocol-version 2 -- python tests/fixtures/agents/v2/conforming.py
 ```

@@ -72,6 +72,13 @@ def test_malformed_entries_are_rejected(extra, message):
         parse_spec_map(_MINIMAL + extra)
 
 
+def test_rfd_audit_marker_is_optional_and_must_be_a_non_empty_string():
+    assert parse_spec_map(_MINIMAL).rfd_audit is None
+    assert parse_spec_map(_MINIMAL + 'rfd_audit = "3961af94"\n').rfd_audit == "3961af94"
+    with pytest.raises(SpecMapError, match="'rfd_audit'"):
+        parse_spec_map(_MINIMAL + 'rfd_audit = ""\n')
+
+
 def test_core_defs_is_required():
     with pytest.raises(SpecMapError, match="core_defs"):
         parse_spec_map("")

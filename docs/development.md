@@ -1,7 +1,7 @@
 # Development
 
-Repo layout, setup, the commands for running the TCK from source and the repo's own tests, CI, the vendored
-schema, and coding conventions. How to run the TCK against an agent, its options and its report are in the
+Repo layout, setup, the commands for running the TCK from source, the vendored schema, and coding
+conventions. How to run the TCK against an agent, its options and its report are in the
 [top-level README](../README.md).
 
 ## Layout
@@ -63,34 +63,17 @@ uv run acp-tck --protocol-version 2 -- python tests/fixtures/agents/v2/conformin
 To add pytest's own flags, run a suite with plain pytest:
 
 ```
-uv run pytest src/tck/v1/conformance -p tck.v1.plugin --tck-agent-cmd 'python tests/fixtures/agents/v1/conforming.py'
+uv run pytest src/tck/v1/conformance -c src/tck/v1/conformance/pytest.ini -p tck.v1.plugin --tck-agent-cmd 'python tests/fixtures/agents/v1/conforming.py'
 ```
 
 The plugin shims are deliberately not auto-registered through `pytest11` entry points, so always pass
-`-p tck.v1.plugin` or `-p tck.v2.plugin`.
+`-p tck.v1.plugin` or `-p tck.v2.plugin`, and pass `-c src/tck/vN/conformance/pytest.ini` so the run uses the
+conformance suite's own pytest config, not the repo's (see [Testing](testing.md#parallel-by-default)). `acp-tck`
+does this for you.
 
-## Running the repo's own tests
+## Tests and CI
 
-```
-uv run pytest
-```
-
-This runs only `tests/`: harness unit tests, registry meta-tests, and end-to-end CLI tests against every fixture
-for both versions. It takes a while, mostly v2's end-to-end subprocess runs; add `-n auto` (pytest-xdist, a dev
-dependency) to spread them across cores. Some CLI tests scope a run with `-k`, which prints NOT CONFORMANT for that
-run; that is expected (see [Writing tests](writing-tests.md#fixtures)).
-
-`spec-tracker/` and `cross-check/` have their own suites; see their READMEs.
-
-## CI
-
-`.github/workflows/ci.yml` has two jobs:
-
-- `test` (required): `uv sync --locked && uv run pytest -q -n auto`, then the spec-tracker tests against a fetched spec
-  checkout.
-- `cross-check` (informational, `continue-on-error: true`).
-
-Each project's README says what its CI step checks.
+How to run the repo's own tests and what CI runs are in [Testing](testing.md).
 
 ## Vendored schema
 

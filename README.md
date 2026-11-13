@@ -106,6 +106,21 @@ something that keeps a real agent busy long enough for `session/cancel` to land 
 otherwise those tests report `SKIPPED` ("cancellation not exercised"), which means exactly that, not a conformance
 failure.
 
+Protocol version 2 also uses it for the `tool_call/cancel` and `terminal/cancel` tests (`ACP-TOOLCANCEL-*`,
+`ACP-TERMCANCEL-*`), which judge only an agent that advertises `capabilities.cancel` on a tool call or terminal that is
+still running. The TCK sends this prompt, watches for such an item (for up to `--timeout` seconds, or until the turn
+ends), cancels the first tool call and the first terminal it finds, then sends `session/cancel` for the turn. With the
+default essay prompt an agent essentially never has such an item, so those tests report `SKIPPED` ("no tool call
+advertised `capabilities.cancel` while still live"). To exercise them, choose a prompt that makes the agent start a
+long-running cancellable command or background task.
+
+The subagent cancellation tests also use it: `ACP-SUBAGENT-016`/`017` (both versions), `ACP-SUBAGENT-202` and, in
+version 2, the child tool call and terminal rows `ACP-TOOLCANCEL-203`/`ACP-TERMCANCEL-203`. They judge an agent that
+exposes a child that advertises `capabilities.cancel` (or has a tool call or terminal that does). The TCK sends this
+prompt, cancels such a child with `session/cancel` for its `sessionId`, then cancels the turn itself. For these rows
+choose a prompt that makes the agent delegate to a long-running subagent; with the default essay prompt they report
+`SKIPPED` ("no child advertised `capabilities.cancel` while reported running").
+
 ### `--auth-method ID`
 
 Authenticates with this method id (one advertised in `initialize`'s `authMethods`) right after `initialize`, before any
@@ -244,6 +259,9 @@ spec commit recorded in `src/tck/v1/schema/VENDORED.md`.
 - Client-capability negatives: the agent must never call `fs/*`, `terminal/*`, or `elicitation/create`, or send
   notice, compaction, plan or subagent updates, when the client didn't advertise the matching capability
   (`ACP-CLIENTCAP-001`..`007`)
+- Subagents (unstable): over a connection that advertises `clientCapabilities.subagents`, an agent that exposes a
+  child must announce it before any traffic for it, keep the association and `session` references consistent, report
+  absolute directories and schema-valid state (`ACP-SUBAGENT-*`; they SKIP when the agent exposes no child)
 - Error codes: unknown sessions, requests before `initialize`, unadvertised methods, unknown modes and config values,
   reserved-range codes
 - Extensibility and hygiene: `_`-prefixed custom methods must get a response (`ACP-EXT-001`), custom notifications

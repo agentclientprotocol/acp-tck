@@ -16,11 +16,18 @@ PASS is vacuous for an agent that never needs any client tool at all -- Reqs 29/
 forbid *calling* the unadvertised capability, they do not require an agent to try and be
 refused.
 
+The same three tests also judge the subagents connection (`_subagents_connection.py`), which
+advertises `clientCapabilities.subagents` and no `fs`, `terminal` or elicitation mode: there too
+no `fs/*`, `terminal/*` or `elicitation/create` request may appear, anywhere in the connection
+(turn, `session/load` replay or quiet period), whatever `sessionId` it carries -- a child's
+included. An agent that sends one only for a child session is caught only there.
+
 ACP-CLIENTCAP-004..007 cover client-gated `session/update` kinds rather than requests (notices,
 compaction, plan operations, subagent updates). These may be sent outside a prompt turn too, and
 compaction also during `session/load` replay, so each test scans the whole connection's
 transcript (see `_received_with_no_client_capabilities`), again one id per test. ACP-CLIENTCAP-007
-also scans tool-call content for `session` items.
+also scans tool-call content for `session` items. None of these connections ever advertises
+`subagents`; what an agent sends once it *is* advertised is judged by `test_subagents.py`.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from tck.common.harness import AgentExited, AgentTimeout, Direction, TranscriptE
 from tck.common.plugin import capability_is_supported
 
 from ._helpers import connected_agent, new_session, quiet_period, run_prompt, session_update_kind
+from ._subagents_connection import subagents_connection_received
 
 # Each test uses its own capability-shaped prompt: a shared fs-flavoured prompt would give the
 # terminal/elicitation tests little chance of ever provoking the behaviour they guard.
@@ -57,16 +65,45 @@ async def _methods_called_with_no_client_capabilities(agent_launch, tmp_path, pr
     ]
 
 
+async def _requests_on_subagents_connection(
+    request, agent_launch, agent_initialize_result, tmp_path
+) -> list[str]:
+    """The `method` of every agent -> client request on the subagents connection, which
+    advertises `clientCapabilities.subagents` and nothing else."""
+    entries = await subagents_connection_received(
+        request, agent_launch, agent_initialize_result, tmp_path
+    )
+    return [
+        entry.parsed["method"]
+        for entry in entries
+        if isinstance(entry.parsed, dict)
+        and "id" in entry.parsed
+        and isinstance(entry.parsed.get("method"), str)
+    ]
+
+
 @pytest.mark.requirement("ACP-CLIENTCAP-001")
-async def test_no_unadvertised_clientcap_fs_call(agent_launch, tmp_path):
+async def test_no_unadvertised_clientcap_fs_call(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
     """ACP-CLIENTCAP-001 (Req 29). See module docstring."""
     methods_seen = await _methods_called_with_no_client_capabilities(agent_launch, tmp_path, _FS_PROMPT_TEXT)
     fs_calls = [m for m in methods_seen if isinstance(m, str) and m.startswith("fs/")]
     assert not fs_calls, f"ACP-CLIENTCAP-001: fs/* called without fs advertised: {fs_calls!r}"
+    subagent_methods = await _requests_on_subagents_connection(
+        request, agent_launch, agent_initialize_result, tmp_path
+    )
+    fs_calls = [m for m in subagent_methods if m.startswith("fs/")]
+    assert not fs_calls, (
+        f"ACP-CLIENTCAP-001: fs/* called without fs advertised, on the connection that "
+        f"advertised only `subagents`: {fs_calls!r}"
+    )
 
 
 @pytest.mark.requirement("ACP-CLIENTCAP-002")
-async def test_no_unadvertised_clientcap_terminal_call(agent_launch, tmp_path):
+async def test_no_unadvertised_clientcap_terminal_call(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
     """ACP-CLIENTCAP-002 (Req 30). See module docstring."""
     methods_seen = await _methods_called_with_no_client_capabilities(
         agent_launch, tmp_path, _TERMINAL_PROMPT_TEXT
@@ -75,10 +112,20 @@ async def test_no_unadvertised_clientcap_terminal_call(agent_launch, tmp_path):
     assert not terminal_calls, (
         f"ACP-CLIENTCAP-002: terminal/* called without terminal advertised: {terminal_calls!r}"
     )
+    subagent_methods = await _requests_on_subagents_connection(
+        request, agent_launch, agent_initialize_result, tmp_path
+    )
+    terminal_calls = [m for m in subagent_methods if m.startswith("terminal/")]
+    assert not terminal_calls, (
+        f"ACP-CLIENTCAP-002: terminal/* called without terminal advertised, on the connection "
+        f"that advertised only `subagents`: {terminal_calls!r}"
+    )
 
 
 @pytest.mark.requirement("ACP-CLIENTCAP-003")
-async def test_no_unadvertised_clientcap_elicitation_call(agent_launch, tmp_path):
+async def test_no_unadvertised_clientcap_elicitation_call(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
     """ACP-CLIENTCAP-003 (Req 32). See module docstring."""
     methods_seen = await _methods_called_with_no_client_capabilities(
         agent_launch, tmp_path, _ELICITATION_PROMPT_TEXT
@@ -87,6 +134,14 @@ async def test_no_unadvertised_clientcap_elicitation_call(agent_launch, tmp_path
     assert not elicitation_calls, (
         f"ACP-CLIENTCAP-003: elicitation/create called without an elicitation mode advertised: "
         f"{elicitation_calls!r}"
+    )
+    subagent_methods = await _requests_on_subagents_connection(
+        request, agent_launch, agent_initialize_result, tmp_path
+    )
+    elicitation_calls = [m for m in subagent_methods if m == "elicitation/create"]
+    assert not elicitation_calls, (
+        f"ACP-CLIENTCAP-003: elicitation/create called without an elicitation mode advertised, "
+        f"on the connection that advertised only `subagents`: {elicitation_calls!r}"
     )
 
 
@@ -112,7 +167,10 @@ async def _received_with_no_client_capabilities(
                 "session/load", {"sessionId": session_id, "cwd": str(tmp_path), "mcpServers": []}
             )
             # A failed load is ACP-LOAD-001's finding; only the updates seen are judged here.
-            await agent.wait_for_response(load_id, timeout=agent_launch.default_timeout)
+            try:
+                await agent.wait_for_response(load_id, timeout=agent_launch.default_timeout)
+            except (AgentTimeout, AgentExited):
+                pass
         try:
             await agent.wait_for_message(
                 lambda _entry: False, timeout=quiet_period(agent_launch.default_timeout)

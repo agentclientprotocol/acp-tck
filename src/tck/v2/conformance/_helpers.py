@@ -27,8 +27,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass, field, replace
-from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Literal
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
 import pytest
 
@@ -638,6 +638,586 @@ def agent_requests(transcript: list[TranscriptEntry]) -> list[dict[str, Any]]:
     ]
 
 
+def _wire_messages(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> Iterator[tuple[dict[str, Any], str, dict[str, Any], set[str]]]:
+    """Walk the agent's requests and notifications in wire order, tracking which sessions are
+    known (Active Subagents RFD; `SubagentUpdate`): the client's own, plus every child a
+    `subagent_update` sent on an already-known session announces. Yields `(msg, method, params,
+    known)` per message with a `method`; `known` is the set *before* the message, and the message's
+    own announcement is applied once the consumer resumes. Responses are skipped."""
+    known = set(client_sessions)
+    for entry in transcript:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            method = msg.get("method")
+            if not isinstance(method, str):
+                continue
+            params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            yield msg, method, params, known
+            update = params.get("update") if method == "session/update" else None
+            if (
+                isinstance(update, dict)
+                and update.get("sessionUpdate") == "subagent_update"
+                and isinstance(update.get("sessionId"), str)
+                and isinstance(params.get("sessionId"), str)
+                and params["sessionId"] in known
+            ):
+                known.add(update["sessionId"])
+
+
+def child_session_traffic(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> tuple[set[str], list[str]]:
+    """Replay the agent's traffic in wire order and judge the subagent announcement rule
+    (Active Subagents RFD; `SubagentUpdate`): a child's announcing `subagent_update`, sent on a
+    known session, precedes every live request or notification bearing the child's session ID.
+
+    `client_sessions` are the sessions the client created; they start out known. Returns
+    `(children, problems)`: every session ID on the wire the client did not create (announced
+    or not) and one message per violation. A session ID counts as carried when it is the
+    `params.sessionId` of any agent message with a `method` (a `session/update` notification, a
+    `session/request_permission` or `elicitation/create` request, ...) or a live `session_message`
+    update's `senderSessionId`/`recipientSessionId`. A `subagent_update` announces its own
+    `sessionId` only when it is itself sent on a known session. A `session` tool-call content
+    reference is not traffic carrying the child's ID (`session_content_references` judges it).
+    Responses are not judged."""
+    children: set[str] = set()
+    problems: list[str] = []
+
+    def carry(session_id: Any, what: str, known: set[str]) -> None:
+        if not isinstance(session_id, str):
+            return
+        if session_id not in client_sessions:
+            children.add(session_id)
+        if session_id not in known:
+            problems.append(
+                f"{what} carries session ID {session_id!r}, which no earlier `subagent_update` "
+                f"on a known session announced (known: {sorted(known)!r})"
+            )
+
+    for msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        update = update if isinstance(update, dict) else {}
+        kind = update.get("sessionUpdate")
+        what = f"{method} {kind}" if kind else method
+        if "id" in msg:
+            what = f"request {what} (id {msg['id']!r})"
+
+        carry(params.get("sessionId"), what, known)
+        if kind == "subagent_update":
+            if isinstance(update.get("sessionId"), str) and update["sessionId"] not in client_sessions:
+                children.add(update["sessionId"])
+        elif kind == "session_message":
+            carry(update.get("senderSessionId"), f"{what} senderSessionId", known)
+            carry(update.get("recipientSessionId"), f"{what} recipientSessionId", known)
+    return children, problems
+
+
+def session_content_references(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> tuple[list[str], list[str]]:
+    """Replay the agent's traffic in wire order and judge the `session` content rule
+    (`docs/protocol/v2/draft/tool-calls.mdx` `SessionReference`; Active Subagents RFD): a
+    `session` `ToolCallContent` item names a session already known, through ordinary session
+    setup (`client_sessions`) or a `subagent_update` announcement on a known session.
+
+    Returns `(references, problems)`: the `sessionId` of every `session` item seen, in wire
+    order, and one message per reference to a session not yet known. Items are read from a
+    `tool_call` / `tool_call_update` `content` array, a `tool_call_content_chunk`'s single
+    `content` item and a `session/request_permission` request's `subject.toolCall.content` array
+    (only a `tool_call` subject carries a tool call; a `command` subject holds just its ID)."""
+    references: list[str] = []
+    problems: list[str] = []
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        update = update if isinstance(update, dict) else {}
+        kind = update.get("sessionUpdate")
+        items: Any = None
+        where = ""
+        if method == "session/request_permission":
+            subject = params.get("subject")
+            tool_call = (
+                subject.get("toolCall")
+                if isinstance(subject, dict) and subject.get("type") == "tool_call"
+                else None
+            )
+            items = tool_call.get("content") if isinstance(tool_call, dict) else None
+            where = "session/request_permission subject.toolCall"
+        elif kind in ("tool_call", "tool_call_update"):
+            items = update.get("content")
+            where = f"session/update {kind}"
+        elif kind == "tool_call_content_chunk":
+            items = [update.get("content")]
+            where = f"session/update {kind}"
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict) or item.get("type") != "session":
+                continue
+            target = item.get("sessionId")
+            if not isinstance(target, str):
+                continue
+            references.append(target)
+            if target not in known:
+                problems.append(
+                    f"{where} content references session {target!r}, which is neither a session "
+                    f"the client created nor announced by an earlier `subagent_update` on a known "
+                    f"session (known: {sorted(known)!r})"
+                )
+    return references, problems
+
+
+def is_absolute_path(value: Any) -> bool:
+    """True if `value` is a string that is an absolute path in the native syntax of the machine
+    the agent runs on (`AbsolutePath`): POSIX `/...`, a Windows drive path or a UNC path. It is not
+    a URI, and a rooted-but-driveless Windows path (`\\dir`) or `C:dir` is not absolute."""
+    return isinstance(value, str) and (
+        PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+    )
+
+
+@dataclass
+class SubagentUpdates:
+    """What `subagent_updates` found: the `updates` seen (`sessionId` of the child and the outer
+    session each was sent on, in wire order) and, per rule, the violations."""
+
+    updates: list[tuple[str, str]] = field(default_factory=list)
+    self_parented: list[str] = field(default_factory=list)
+    client_sessions_announced: list[str] = field(default_factory=list)
+    reparented: list[str] = field(default_factory=list)
+    relative_paths: list[str] = field(default_factory=list)
+    reported_directories: bool = False
+
+
+def subagent_updates(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> SubagentUpdates:
+    """Replay the agent's traffic in wire order and judge the `subagent_update` association
+    rules (`SubagentUpdate`; Active Subagents RFD): the outer `sessionId` is the immediate parent
+    of `update.sessionId`.
+
+    The three association rules are disjoint by construction, so one defect FAILs one row. A
+    child equal to its own parent is `self_parented`, whatever session that is. Otherwise a child
+    that is a session the client created is `client_sessions_announced`. Otherwise, on a known
+    parent, a child already announced under another parent is `reparented` (a cycle is a
+    reparenting whose new parent descends from the child). Reparenting is judged only for an update
+    sent on a known session; one sent on an unknown session is `child_session_traffic`'s to judge.
+    Every update's `cwd` and `additionalDirectories` entries are checked for `relative_paths`
+    regardless, but only well-typed (string) values: a malformed one is `ACP-PROMPT-002`'s, and
+    `reported_directories` counts only the strings judged."""
+    result = SubagentUpdates()
+    parents: dict[str, str] = {}
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        outer, child = params.get("sessionId"), update.get("sessionId")
+        if not isinstance(outer, str) or not isinstance(child, str):
+            continue
+        result.updates.append((child, outer))
+        if child == outer:
+            result.self_parented.append(
+                f"subagent_update on session {outer!r} announces that same session as its own child; "
+                f"the association cannot refer to itself (Active RFD)"
+            )
+        elif child in client_sessions:
+            result.client_sessions_announced.append(
+                f"subagent_update on session {outer!r} announces session {child!r}, which the "
+                f"client created, as a child; a child's ID is unique to its session (Active RFD)"
+            )
+        elif outer in known:
+            old = parents.setdefault(child, outer)
+            if old != outer:
+                ancestor, cycle = outer, False
+                while ancestor in parents and not cycle:  # parents is acyclic by construction
+                    ancestor = parents[ancestor]
+                    cycle = ancestor == child
+                result.reparented.append(
+                    f"subagent_update on session {outer!r} announces {child!r}, already a child "
+                    f"of {old!r}"
+                    + (" (the new parent descends from it: a cycle)" if cycle else "")
+                    + "; a child keeps one immediate parent (Active RFD)"
+                )
+        for field_name in ("cwd", "additionalDirectories"):
+            value = update.get(field_name)
+            # A value of the wrong type (a non-string `cwd`, a non-list `additionalDirectories`,
+            # a non-string entry) is a schema defect, `ACP-PROMPT-002`'s: not judged here.
+            if field_name == "additionalDirectories":
+                items = value if isinstance(value, list) else []
+            else:
+                items = [value]
+            for item in items:
+                if not isinstance(item, str):
+                    continue
+                result.reported_directories = True
+                if not is_absolute_path(item):
+                    result.relative_paths.append(
+                        f"subagent_update for {child!r} reports {field_name} {item!r}, "
+                        f"which is not an absolute path"
+                    )
+    return result
+
+
+@dataclass
+class SessionMessages:
+    """What `session_messages` found: how many `session_message` upserts were seen, how many
+    messages had both participants known (`participants_judged`, what `ACP-SUBAGENT-007`/`-008`
+    judge), how many view links had both sides carrying a reference (`links_judged`,
+    `ACP-SUBAGENT-009`) and, per rule, the violations."""
+
+    count: int = 0
+    participants_judged: int = 0
+    links_judged: int = 0
+    same_participants: list[str] = field(default_factory=list)
+    foreign_outer: list[str] = field(default_factory=list)
+    unlinked_views: list[str] = field(default_factory=list)
+
+
+def _patched(stored: str | None, update: dict[str, Any], key: str) -> str | None:
+    """The stored value of a nullable string patch field: omitted leaves it, `null` clears it, a
+    string replaces it. Anything else is malformed (`ACP-PROMPT-002`'s) and counts as unknown."""
+    if key not in update:
+        return stored
+    value = update[key]
+    return value if isinstance(value, str) else None
+
+
+def session_messages(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> SessionMessages:
+    """Replay the agent's `session_message` upserts in wire order and judge the participant and
+    link consistency rules (Active Subagents RFD, "Session-directed messages"). A message is the
+    transcript entry `(params.sessionId, messageId)`, and its participants and references follow
+    the patch convention across upserts (omitted keeps, `null` clears, a value replaces).
+
+    The participant rules are judged once both participant IDs are stored and are disjoint by
+    construction: equal participants are `same_participants`, whatever the outer session is;
+    different ones whose outer session is neither are `foreign_outer`. The link rule is judged on
+    the final stored state: a view's `recipientMessageId` names a view in the recipient's
+    transcript and its `senderMessageId` one in the sender's, and when that view was reported and
+    references back, the two must name each other, else `unlinked_views` (also when the referenced
+    view's own sender or recipient is a third session). A referenced view that was not reported,
+    or has no reference of its own, is not judged. `session_message_chunk`
+    carries no identity."""
+    result = SessionMessages()
+    views: dict[tuple[str, str], dict[str, str | None]] = {}
+    seen: set[tuple[str, str, str]] = set()
+    with_participants: set[tuple[str, str]] = set()
+    for _msg, method, params, _known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "session_message":
+            continue
+        outer, message_id = params.get("sessionId"), update.get("messageId")
+        if not isinstance(outer, str) or not isinstance(message_id, str):
+            continue
+        result.count += 1
+        view = views.setdefault(
+            (outer, message_id),
+            {"sender": None, "recipient": None, "sender_msg": None, "recipient_msg": None},
+        )
+        for name, key in (
+            ("sender", "senderSessionId"),
+            ("recipient", "recipientSessionId"),
+            ("sender_msg", "senderMessageId"),
+            ("recipient_msg", "recipientMessageId"),
+        ):
+            view[name] = _patched(view[name], update, key)
+        sender, recipient = view["sender"], view["recipient"]
+        if sender is None or recipient is None:
+            continue
+        with_participants.add((outer, message_id))
+        if sender == recipient:
+            if ("same", outer, message_id) not in seen:
+                seen.add(("same", outer, message_id))
+                result.same_participants.append(
+                    f"session_message {message_id!r} on session {outer!r} has {sender!r} as both "
+                    f"senderSessionId and recipientSessionId; they must identify different "
+                    f"sessions (Active RFD)"
+                )
+        elif outer not in (sender, recipient) and ("foreign", outer, message_id) not in seen:
+            seen.add(("foreign", outer, message_id))
+            result.foreign_outer.append(
+                f"session_message {message_id!r} is sent on session {outer!r}, which is neither "
+                f"its sender {sender!r} nor its recipient {recipient!r}; the outer sessionId "
+                f"must be one of them (Active RFD)"
+            )
+
+    result.participants_judged = len(with_participants)
+    for (outer, message_id), view in views.items():
+        # (this view's session / message reference, the other view's reference back)
+        for session_key, ref_key, back_ref, back_name in (
+            ("recipient", "recipient_msg", "sender_msg", "senderMessageId"),
+            ("sender", "sender_msg", "recipient_msg", "recipientMessageId"),
+        ):
+            target_session, target_id = view[session_key], view[ref_key]
+            if target_session is None or target_id is None or target_session == outer:
+                continue
+            other = views.get((target_session, target_id))
+            if other is None or other[back_ref] is None:
+                continue
+            result.links_judged += 1
+            if other[back_ref] == message_id:
+                continue
+            result.unlinked_views.append(
+                f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
+                f"session {target_session!r} as its other view, but that view's {back_name} "
+                f"is {other[back_ref]!r}; the two views must name each other (Active RFD)"
+            )
+    return result
+
+
+@dataclass
+class ChildStateMirrors:
+    """What `child_state_mirrors` found: how many child `state_update` snapshots were judged and
+    the ones with no mirror on the immediate parent."""
+
+    judged: int = 0
+    unmirrored: list[str] = field(default_factory=list)
+
+
+def child_state_mirrors(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildStateMirrors:
+    """Replay the agent's traffic in wire order and judge the state mirroring rule
+    (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session states"; `SubagentUpdate`): every
+    state a child reports in its own `state_update` is also reported in the `state` of a
+    `subagent_update` for that child on its immediate parent (the session that first announced it).
+
+    A child is judged once a `subagent_update` on a known session announces it. For each child the
+    distinct consecutive states of its own `state_update`s (a repeated snapshot is idempotent) must
+    appear, in order, among the states of its mirrors. A mirror may arrive before or after the copy
+    on the child's own stream and extra mirrors are fine. Only `state.state` is compared: a
+    mirror is "the same snapshot", and `stopReason`/`background` are not judged."""
+    parents: dict[str, str] = {}
+    own: dict[str, list[str]] = {}
+    mirrored: dict[str, list[str]] = {}
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        child = update.get("sessionId")
+        if kind == "subagent_update" and isinstance(child, str):
+            if outer in known and child != outer and child not in client_sessions:
+                parents.setdefault(child, outer)
+            state = update.get("state")
+            if (
+                parents.get(child) == outer
+                and isinstance(state, dict)
+                and isinstance(state.get("state"), str)
+            ):
+                mirrored.setdefault(child, []).append(state["state"])
+        elif kind == "state_update" and outer in parents and isinstance(update.get("state"), str):
+            states = own.setdefault(outer, [])
+            if not states or states[-1] != update["state"]:
+                states.append(update["state"])
+    result = ChildStateMirrors()
+    for child, states in own.items():
+        copies = mirrored.get(child, [])
+        position = 0
+        for state in states:
+            result.judged += 1
+            while position < len(copies) and copies[position] != state:
+                position += 1
+            if position == len(copies):
+                result.unmirrored.append(
+                    f"child {child!r} reported state {state!r}, but no `subagent_update.state` "
+                    f"for it on its parent {parents[child]!r} mirrors it (in order)"
+                )
+            else:
+                position += 1
+    return result
+
+
+_CHILD_OUTPUT_KINDS = {"agent_message", "agent_message_chunk", "agent_thought", "agent_thought_chunk"}
+_USER_MESSAGE_KINDS = {"user_message", "user_message_chunk"}
+
+
+@dataclass
+class ChildTasks:
+    """What `child_task_reports` found: how many announced children began agent output
+    (`started`), how many of those were not told the task as a user message (`judged`, what
+    `ACP-SUBAGENT-012` judges) and, per rule, the violations."""
+
+    started: int = 0
+    judged: int = 0
+    user_message_tasks: list[str] = field(default_factory=list)
+    unreported: list[str] = field(default_factory=list)
+
+
+def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[str]) -> ChildTasks:
+    """Replay the agent's traffic in wire order and judge how each announced child is told its
+    task (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session-directed messages"; Active
+    Subagents RFD, "Delegated tasks"). The task starts the child's work, so only what the child's
+    transcript holds before its first agent output (`agent_message`, `agent_thought` or a chunk of
+    either) is judged.
+
+    The two rules are disjoint by construction. A `user_message`/`user_message_chunk` there is
+    `user_message_tasks`. Otherwise a child whose first output was not preceded by an incoming
+    `session_message` (outer `sessionId` the child, `senderSessionId` its immediate parent, the
+    parent being the session that first announced it; the sender is stored across upserts of the
+    `messageId`) is `unreported`. A child that never produces output is not judged, and a child
+    already in `user_message_tasks` is left out of `judged`."""
+    result = ChildTasks()
+    parents: dict[str, str] = {}
+    senders: dict[tuple[str, str], str | None] = {}
+    tasked: set[str] = set()  # children told the task, either way
+    started: set[str] = set()
+    user_message_children: set[str] = set()  # `ACP-SUBAGENT-011`'s, not judged by 012
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        if kind == "subagent_update":
+            child = update.get("sessionId")
+            if (
+                isinstance(child, str)
+                and outer in known
+                and child != outer
+                and child not in client_sessions
+            ):
+                parents.setdefault(child, outer)
+            continue
+        if outer not in parents or outer in started:
+            continue
+        if kind in _USER_MESSAGE_KINDS:
+            tasked.add(outer)
+            user_message_children.add(outer)
+            result.user_message_tasks.append(
+                f"child {outer!r} has a {kind} before its first agent output; the task a parent "
+                f"gives a child is a `session_message`, not the user's"
+            )
+        elif kind == "session_message" and isinstance(update.get("messageId"), str):
+            key = (outer, update["messageId"])
+            senders[key] = _patched(senders.get(key), update, "senderSessionId")
+            if senders[key] == parents[outer]:
+                tasked.add(outer)
+        elif kind in _CHILD_OUTPUT_KINDS:
+            started.add(outer)
+            result.started += 1
+            if outer not in user_message_children:
+                result.judged += 1
+            if outer not in tasked:
+                result.unreported.append(
+                    f"child {outer!r} produced agent output before an incoming `session_message` "
+                    f"from its parent {parents[outer]!r}"
+                )
+    return result
+
+
+@dataclass
+class SessionMessageStreams:
+    """What `session_message_streams` found: how many session-directed messages were streamed (got
+    a `session_message_chunk`) and the ones whose participants came only after the first chunk."""
+
+    streamed: int = 0
+    late_participants: list[str] = field(default_factory=list)
+
+
+def session_message_streams(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> SessionMessageStreams:
+    """Replay the agent's `session_message` / `session_message_chunk` updates in wire order and
+    judge the participant-ordering rule (`docs/protocol/v2/draft/prompt-lifecycle.mdx`
+    "Session-directed messages"): participant IDs go on the first `session_message` when
+    available, before the first chunk of a streamed message.
+
+    A message is `(params.sessionId, messageId)`. Whether the participants were available
+    cannot be seen, so a message is flagged only when it is streamed, none of its participant IDs
+    was stored when its first chunk arrived (no upsert yet, or one without them) and some upsert
+    for it supplies one later, evidence that the agent knew them. A message that never names a
+    participant, or has one stored at its first chunk, is not flagged. Participant IDs follow the
+    patch convention across upserts (omitted keeps, `null` clears)."""
+    result = SessionMessageStreams()
+    stored: dict[tuple[str, str], tuple[str | None, str | None]] = {}
+    at_first_chunk: dict[tuple[str, str], bool] = {}
+    later: set[tuple[str, str]] = set()
+    for _msg, method, params, _known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        message_id = update.get("messageId")
+        if kind not in ("session_message", "session_message_chunk") or not isinstance(message_id, str):
+            continue
+        key = (outer, message_id)
+        if kind == "session_message_chunk":
+            if key not in at_first_chunk:
+                at_first_chunk[key] = any(value is not None for value in stored.get(key, (None, None)))
+            continue
+        sender, recipient = stored.get(key, (None, None))
+        sender = _patched(sender, update, "senderSessionId")
+        recipient = _patched(recipient, update, "recipientSessionId")
+        stored[key] = (sender, recipient)
+        if key in at_first_chunk and not at_first_chunk[key] and (sender or recipient):
+            later.add(key)
+    for key, had_participants in at_first_chunk.items():
+        result.streamed += 1
+        if not had_participants and key in later:
+            result.late_participants.append(
+                f"session_message {key[1]!r} on session {key[0]!r} was streamed with "
+                f"`session_message_chunk` before any `session_message` upsert named its participants; "
+                f"participant IDs go on the first message when available (Active RFD)"
+            )
+    return result
+
+
+@dataclass
+class ChildConfigSelects:
+    """What `child_config_selects` found: how many select options a child reported and the ones
+    that offer a value other than the current one."""
+
+    selects: int = 0
+    with_choices: list[str] = field(default_factory=list)
+
+
+def child_config_selects(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildConfigSelects:
+    """Replay the agent's traffic in wire order and judge the child configuration rule (Active
+    Subagents RFD, "Child configuration"): a select option in a `config_option_update` for an
+    announced child offers only its current value, because no Client-initiated configuration
+    change is permitted on a child. Values are counted across option groups. Updates for a
+    session the client created, or for a child not yet announced (`child_session_traffic`'s), are
+    not judged, and neither are boolean options."""
+    result = ChildConfigSelects()
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if (
+            not isinstance(update, dict)
+            or update.get("sessionUpdate") != "config_option_update"
+            or outer not in known
+            or outer in client_sessions
+            or not isinstance(update.get("configOptions"), list)
+        ):
+            continue
+        for option in update["configOptions"]:
+            if not isinstance(option, dict) or option.get("type") != "select":
+                continue
+            entries = option.get("options")
+            if not isinstance(entries, list) or not entries:
+                continue
+            values = []
+            for entry in entries:
+                nested = entry.get("options") if isinstance(entry, dict) else None
+                values.extend(nested if isinstance(nested, list) else [entry])
+            values = [item.get("value") for item in values if isinstance(item, dict)]
+            result.selects += 1
+            extra = [value for value in values if value != option.get("currentValue")]
+            if extra:
+                result.with_choices.append(
+                    f"config_option_update for child {outer!r}: select {option.get('configId')!r} "
+                    f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
+                    f"a child permits no Client-initiated configuration change (Active RFD)"
+                )
+    return result
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
     array line, even a malformed one missing `id`/`result`/`error`.
@@ -981,6 +1561,22 @@ def permission_outcome(options: Any, policy: PermissionPolicy) -> tuple[dict[str
     return {"outcome": "cancelled"}, missing
 
 
+def client_cancelled(agent: AgentProcess, session_id: str, since: int) -> bool:
+    """Whether the TCK has sent `session/cancel` for `session_id` at or after transcript index
+    `since`, whoever sent it (this turn's trigger or a driver on the same connection)."""
+    for entry in agent.transcript[since:]:
+        message = entry.parsed
+        if (
+            entry.direction is Direction.SENT
+            and isinstance(message, dict)
+            and message.get("method") == "session/cancel"
+            and isinstance(message.get("params"), dict)
+            and message["params"].get("sessionId") == session_id
+        ):
+            return True
+    return False
+
+
 def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str, Any], str | None]:
     """`permission_outcome`, recording any fallback note on the current test's report entry."""
     outcome, note = permission_outcome(options, policy)
@@ -1140,6 +1736,7 @@ async def run_prompt(
     params = {"sessionId": session_id, "prompt": blocks}
     if extra_params:
         params.update(extra_params)
+    turn_start = len(agent.transcript)
     prompt_id = await agent.send_request("session/prompt", params)
 
     loop = asyncio.get_running_loop()
@@ -1361,8 +1958,20 @@ async def run_prompt(
                 held_permission = entry
                 await _fire_trigger()
                 return  # left unanswered; see `_answer_held`
-            cancelled = (trigger_sent and not _cancel_pending()) or cancelled_at_index is not None
-            if cancelled and for_foreground:
+            target = req_params.get("sessionId")
+            cancelled = (
+                for_this_session
+                and for_foreground
+                and (
+                    (trigger_sent and not _cancel_pending())
+                    or cancelled_at_index is not None
+                    or client_cancelled(agent, session_id, turn_start)
+                )
+            ) or (not for_this_session and isinstance(target, str) and client_cancelled(agent, target, turn_start))
+            # A request of a session the TCK cancelled (this turn's trigger, or a driver on the
+            # same connection) is answered `cancelled` (prompt-lifecycle.mdx:1177; Active
+            # Subagents RFD, "Pending permission and elicitation requests").
+            if cancelled:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
@@ -1371,18 +1980,19 @@ async def run_prompt(
                     # (prompt-lifecycle.mdx:1173,1177), so only this request is declined
                     # (tool-calls.mdx:340).
                     permission_fallbacks.append(note)
+                elif note is not None and outcome["outcome"] == "cancelled" and not for_this_session:
+                    # No option can be selected. A client MUST NOT cancel a subagent that does
+                    # not advertise `capabilities.cancel` (Active Subagents RFD, "Cancellation
+                    # and resource ownership"), and this client does not track which do, so it
+                    # sends no `session/cancel` for a subagent and declines only this request.
+                    permission_fallbacks.append(f"{note}; answered cancelled for session {target!r}")
                 elif note is not None and outcome["outcome"] == "cancelled":
-                    # The policy's option kinds were not offered: cancel the request's session
+                    # The policy's option kinds were not offered: cancel this turn's session
                     # first, then answer `cancelled` without waiting for `$/cancel_request`
                     # (prompt-lifecycle.mdx:1177). The turn then drains to its `idle` like any
                     # other cancelled turn.
-                    target = req_params.get("sessionId")
-                    await agent.send_notification(
-                        "session/cancel",
-                        {"sessionId": target if isinstance(target, str) else session_id},
-                    )
-                    if for_this_session:
-                        cancelled_at_index = len(agent.transcript) - 1
+                    await agent.send_notification("session/cancel", {"sessionId": session_id})
+                    cancelled_at_index = len(agent.transcript) - 1
                     permission_cancels.append(note)
                 elif note is not None:
                     permission_fallbacks.append(note)
@@ -1588,6 +2198,9 @@ def _advertises_cancel(capabilities: Any) -> bool:
 class TrackedToolCall:
     status: Any = "pending"
     cancel: bool = False
+    terminal_ids: set[str] = field(default_factory=set)
+    """Every `terminalId` a `terminal` content item of this tool call has referenced
+    (tool-calls.mdx:482-488)."""
 
 
 @dataclass
@@ -1615,10 +2228,27 @@ class PatchTracker:
         report = tool_call_report(kind, payload)
         if report is not None:
             self._apply_tool_call(*report)
+            self._note_terminal_references(report, payload)
         elif kind == "update" and payload.get("sessionUpdate") in ("terminal_update", "terminal_output_chunk"):
             terminal_id = payload.get("terminalId")
             if isinstance(terminal_id, str) and terminal_id:
                 self._apply_terminal(terminal_id, payload)
+
+    def _note_terminal_references(
+        self, report: tuple[str, str, dict[str, Any]], payload: dict[str, Any]
+    ) -> None:
+        """Record the terminals the report's `content` references: an update's or permission
+        subject's `content` list, or a content chunk's single `content` object."""
+        tool_call_id, source, fields = report
+        content = payload.get("content") if source == "tool_call_content_chunk" else fields.get("content")
+        items = [content] if isinstance(content, dict) else content if isinstance(content, list) else []
+        for item in items:
+            if (
+                isinstance(item, dict)
+                and item.get("type") == "terminal"
+                and isinstance(item.get("terminalId"), str)
+            ):
+                self.tool_calls[tool_call_id].terminal_ids.add(item["terminalId"])
 
     def _apply_tool_call(self, tool_call_id: str, source: str, fields: dict[str, Any]) -> None:
         tool_call = self.tool_calls.setdefault(tool_call_id, TrackedToolCall())
@@ -1768,6 +2398,362 @@ async def prompt_during_active_work(
     if end_index < cancel_index:
         return _result(None, "the first prompt's work ended before session/cancel was sent")
     return _result("held", None)
+
+
+@dataclass
+class ItemCancel:
+    """What cancelling one kind of item (`tool_call/cancel` or `terminal/cancel`) showed."""
+
+    outcome: str = "none"
+    """`none`: no item advertised `capabilities.cancel` while still live. `raced`: every such
+    item was final, or had stopped advertising `cancel`, when the agent read the request, so it
+    rightly answered `-32602` (tool-calls.mdx:440,459,605). `rejected`: any other error, or a
+    `-32602` for an item that stayed live and kept advertising `cancel`. `unanswered`: no
+    response in time. `unconfirmed`: an empty result, but no final status or `exitStatus` in
+    time. `confirmed`: a result, then the final update (tool-calls.mdx:458,604)."""
+    item_id: str | None = None
+    result: Any = None
+    """The response's `result`, for `unconfirmed`/`confirmed`."""
+    error: dict[str, Any] | None = None
+    """The response's `error`, for `rejected`."""
+
+
+@dataclass
+class StaleCancel:
+    """What a further cancel request showed for an item that was final yet still advertised
+    `capabilities.cancel` (the agent SHOULD have stopped, tool-calls.mdx:440,600)."""
+
+    outcome: str = "none"
+    """`none`: no item was final and still advertising `cancel`. `error`: answered with an
+    error (`error`). `result`: answered with a result (`result`). `unanswered`: no response in
+    time."""
+    item_id: str | None = None
+    result: Any = None
+    error: dict[str, Any] | None = None
+
+
+@dataclass
+class ItemCancelRun:
+    """The outcome of `drive_item_cancel`."""
+
+    turn: PromptTurn | None
+    """The driven turn, or `None` when it did not end in time (the turn is not judged here)."""
+    tool_call: ItemCancel
+    terminal: ItemCancel
+    tool_call_stale: StaleCancel = field(default_factory=StaleCancel)
+    terminal_stale: StaleCancel = field(default_factory=StaleCancel)
+
+
+class _ItemProbe:
+    """One kind of item's cancel request, from choosing a live candidate to the verdict."""
+
+    def __init__(self, kind: str, method: str, id_field: str, *, grace: float) -> None:
+        self.kind, self.method, self.id_field = kind, method, id_field
+        self.grace = grace
+        """How long a `-32602` waits for the final update or the withdrawal of `cancel` that
+        explains it."""
+        self.result = ItemCancel()
+        self.tried: set[str] = set()
+        self.request_id: Any = None
+        self.sent_at = 0.0
+        self.response: TranscriptEntry | None = None
+        self.response_index = -1
+        self.final_index: int | None = None
+        self.withdrawn = False
+        """The item stopped advertising `cancel` after the request was sent."""
+        self.grace_until: float | None = None
+        self.done = False
+
+    def _live(self, tracker: PatchTracker) -> list[str]:
+        """The items that advertise `cancel` and are not final, in first-report order."""
+        if self.kind == "tool_call":
+            return [
+                item_id
+                for item_id, item in tracker.tool_calls.items()
+                if item.cancel and item.status not in FINAL_TOOL_CALL_STATUSES
+            ]
+        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
+
+    def _is_final(self, tracker: PatchTracker) -> bool:
+        item_id = self.result.item_id
+        assert item_id is not None
+        if self.kind == "tool_call":
+            return tracker.tool_calls[item_id].status in FINAL_TOOL_CALL_STATUSES
+        return tracker.terminals[item_id].exited
+
+    def _advertises_cancel(self, tracker: PatchTracker) -> bool:
+        item_id = self.result.item_id
+        assert item_id is not None
+        if self.kind == "tool_call":
+            return tracker.tool_calls[item_id].cancel
+        return tracker.terminals[item_id].cancel
+
+    def observe(self, index: int, entry: TranscriptEntry, tracker: PatchTracker) -> None:
+        """Called after `tracker` applied `entry`: note the response, the final update and a
+        withdrawal of `cancel`."""
+        if self.request_id is None or self.done:
+            return
+        if self.response is None and entry.matches_id(self.request_id):
+            self.response, self.response_index = entry, index
+        if self.final_index is None and self._is_final(tracker):
+            self.final_index = index
+        if not self._advertises_cancel(tracker):
+            self.withdrawn = True
+
+    def in_flight(self) -> bool:
+        return self.request_id is not None and not self.done
+
+    async def step(
+        self, agent: AgentProcess, session_id: str, tracker: PatchTracker, now: float, window: float
+    ) -> None:
+        if self.done:
+            return
+        if self.request_id is None:
+            for item_id in self._live(tracker):
+                if item_id not in self.tried:
+                    self.tried.add(item_id)
+                    self.result.item_id = item_id
+                    self.final_index, self.withdrawn, self.grace_until = None, False, None
+                    self.sent_at = now
+                    self.request_id = await agent.send_request(
+                        self.method, {"sessionId": session_id, self.id_field: item_id}
+                    )
+                    return
+            return
+        if self.response is not None:
+            message = self.response.parsed
+            if "error" in message:
+                error = message["error"]
+                code = error.get("code") if isinstance(error, dict) else None
+                if code == INVALID_PARAMS:
+                    # `-32602` is the documented answer for an item that is already final or
+                    # not cancellable (tool-calls.mdx:459,605). Either explains it: the final
+                    # update (it may be flushed after the response) or the agent no longer
+                    # advertising `cancel`. Wait a moment for one, then judge.
+                    if self.final_index is not None or self.withdrawn:
+                        self.request_id, self.response, self.grace_until = None, None, None
+                        self.result.outcome = "raced"
+                        return
+                    if self.grace_until is None:
+                        self.grace_until = now + self.grace
+                    if now < self.grace_until:
+                        return
+                self._finish("rejected", error=error)
+                return
+            self.result.result = message.get("result")
+            if self.final_index is not None:
+                self._finish("confirmed")
+                return
+        if now - self.sent_at > window:
+            self._finish("unanswered" if self.response is None else "unconfirmed")
+
+    def _finish(self, outcome: str, *, error: dict[str, Any] | None = None) -> None:
+        self.result.outcome, self.result.error, self.done = outcome, error, True
+
+    def idle(self, tracker: PatchTracker) -> bool:
+        """Nothing in flight and no untried live item."""
+        return self.request_id is None and not any(i not in self.tried for i in self._live(tracker))
+
+
+class _StaleProbe:
+    """A further cancel request for the first item that is final yet still advertises `cancel`.
+    Such an item is not live, but the client may send the request while the advertisement
+    stands, and the agent must answer `-32602` (tool-calls.mdx:440,459,600,605). Sent only
+    while the kind's main probe has no request in flight."""
+
+    def __init__(self, main: _ItemProbe) -> None:
+        self.main = main
+        self.result = StaleCancel()
+        self.request_id: Any = None
+        self.sent_at = 0.0
+        self.response: TranscriptEntry | None = None
+        self.done = False
+
+    def _candidates(self, tracker: PatchTracker) -> list[str]:
+        if self.main.kind == "tool_call":
+            return [
+                item_id
+                for item_id, item in tracker.tool_calls.items()
+                if item.cancel and item.status in FINAL_TOOL_CALL_STATUSES
+            ]
+        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and item.exited]
+
+    def observe(self, entry: TranscriptEntry) -> None:
+        if self.request_id is not None and self.response is None and entry.matches_id(self.request_id):
+            self.response = entry
+
+    def in_flight(self) -> bool:
+        return self.request_id is not None and not self.done
+
+    async def step(
+        self, agent: AgentProcess, session_id: str, tracker: PatchTracker, now: float, window: float
+    ) -> None:
+        if self.done:
+            return
+        if self.request_id is None:
+            candidates = self._candidates(tracker)
+            if candidates and not self.main.in_flight():
+                self.result.item_id = candidates[0]
+                self.sent_at = now
+                self.request_id = await agent.send_request(
+                    self.main.method, {"sessionId": session_id, self.main.id_field: candidates[0]}
+                )
+            return
+        if self.response is not None:
+            message = self.response.parsed
+            if "error" in message:
+                self.result.outcome, self.result.error = "error", message["error"]
+            else:
+                self.result.outcome, self.result.result = "result", message.get("result")
+            self.done = True
+        elif now - self.sent_at > window:
+            self.result.outcome, self.done = "unanswered", True
+
+
+async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry, *, since: int) -> None:
+    """Answer the agent -> client requests in `entry`, a line read after `run_prompt` returned,
+    as `run_prompt` would have: `session/request_permission` per the `allow` policy (`cancelled`
+    for a session the TCK sent `session/cancel` for at or after transcript index `since`),
+    anything else `-32601` (the mock client advertises no capabilities). Background work may ask
+    after the turn's idle (tool-calls.mdx:268), and an agent may wait for the answer."""
+    if entry.direction is not Direction.RECEIVED:
+        return
+    for message in iter_messages(entry):
+        if "method" not in message or "id" not in message:
+            continue
+        if message["method"] == "session/request_permission":
+            params = message.get("params")
+            if not isinstance(params, dict):
+                params = {}
+            target = params.get("sessionId")
+            if isinstance(target, str) and client_cancelled(agent, target, since):
+                outcome: dict[str, Any] = {"outcome": "cancelled"}
+            else:
+                outcome, _note = _answer_permission(params.get("options"), "allow")
+            await agent.send_message(
+                {"jsonrpc": "2.0", "id": message["id"], "result": {"outcome": outcome}}
+            )
+        else:
+            await agent.send_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "error": {"code": METHOD_NOT_FOUND, "message": "Method not found"},
+                }
+            )
+
+
+async def drive_item_cancel(
+    agent: AgentProcess, session_id: str, prompt_text: str, *, timeout: float
+) -> ItemCancelRun:
+    """Drive one turn of `prompt_text` and, for the first tool call and the first terminal that
+    advertise `capabilities.cancel` while still live, send `tool_call/cancel` / `terminal/cancel`
+    and watch for the confirming final update (tool-calls.mdx:440,456-459,600-605). The client
+    MUST NOT send either unless the item currently advertises `cancel`, so nothing is sent for an
+    item that does not. A further request goes to the first item that is final yet still
+    advertises `cancel` (`_StaleProbe`).
+
+    A candidate is judged on what the TCK had read when it chose it. A `-32602` is the documented
+    answer for an item that is already final or not cancellable (:459,605), so it is `raced`
+    when the item's final update, or the agent's withdrawal of `cancel`, arrives before it or
+    within `quiet_period(timeout)` after it, and the next live item is tried; any other error is
+    `rejected`. Items still live, or announced, after the turn's idle (background work) count
+    too: the TCK keeps reading for `quiet_period(timeout)` after it.
+
+    Every wait is bounded per step, never by one overall deadline that a long turn could exhaust:
+    `timeout` to find something to cancel, `timeout / 2` for each response and its final update.
+    Once every kind is settled (judged, nothing live for `max(quiet_period(timeout), timeout / 4)`
+    of silence, `quiet_period(timeout)` of silence after the idle, or the `timeout` search over),
+    the TCK sends `session/cancel` if the turn is still
+    running so no work is left behind. The turn's own end is not judged here (`ACP-CANCEL-*` own
+    that): `turn` is `None` if it does not end within `timeout * 3`. Agent requests read after the
+    turn's idle are answered like `run_prompt` does."""
+    loop = asyncio.get_running_loop()
+    window = timeout / 2
+    grace = quiet_period(timeout)
+    silence = max(grace, timeout / 4)
+    probes = [
+        _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=grace),
+        _ItemProbe("terminal", "terminal/cancel", "terminalId", grace=grace),
+    ]
+    stale = [_StaleProbe(probe) for probe in probes]
+    tracker = PatchTracker()
+    cursor = since = len(agent.transcript)
+    started = last_activity = loop.time()
+    cancel_sent = False
+    answer_from: int | None = None
+    turn: PromptTurn | None = None
+    # Several times the per-response timeout: the waits above are bounded one by one and add up
+    # to less, so the turn's own deadline never fires first in a normal run.
+    turn_task = asyncio.ensure_future(
+        run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout * 3)
+    )
+    try:
+        while True:
+            turn_done = turn_task.done()
+            if turn_done and answer_from is None:
+                answer_from = len(agent.transcript)
+            while cursor < len(agent.transcript):
+                index, entry = cursor, agent.transcript[cursor]
+                cursor += 1
+                last_activity = loop.time()
+                if entry.direction is not Direction.RECEIVED:
+                    continue
+                if answer_from is not None and index >= answer_from:
+                    await answer_post_turn_requests(agent, entry, since=since)
+                for message in iter_messages(entry):
+                    params = message.get("params")
+                    if not isinstance(params, dict) or params.get("sessionId") != session_id:
+                        continue
+                    if message.get("method") == "session/update" and isinstance(params.get("update"), dict):
+                        tracker.apply("update", params["update"])
+                    elif message.get("method") == "session/request_permission":
+                        tracker.apply("permission", params)
+                for probe in probes:
+                    probe.observe(index, entry, tracker)
+                for probe in stale:
+                    probe.observe(entry)
+            now = loop.time()
+            for probe in probes:
+                await probe.step(agent, session_id, tracker, now, window)
+            for probe in stale:
+                await probe.step(agent, session_id, tracker, now, window)
+            error = turn_task.exception() if turn_done else None
+            if error is not None and not isinstance(error, AgentTimeout):
+                raise error
+            quiet = now - last_activity
+            search_over = (turn_done and quiet > grace) or now - started > timeout or quiet > silence
+            settled = all(
+                probe.done or (probe.idle(tracker) and search_over) for probe in probes
+            ) and not any(probe.in_flight() for probe in stale)
+            if settled and not cancel_sent and (not turn_done or error is not None):
+                await agent.send_notification("session/cancel", {"sessionId": session_id})
+                cancel_sent = True
+            if settled and turn_done:
+                turn = turn_task.result() if error is None else None
+                break
+            if turn_done:
+                with contextlib.suppress(AgentTimeout):
+                    await agent.read_line(timeout=0.05)
+            else:
+                await asyncio.sleep(0.01)
+    finally:
+        if not turn_task.done():
+            turn_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await turn_task
+    results = []
+    for probe in probes:
+        if probe.result.outcome == "none" and probe.tried:
+            probe.result.outcome = "raced"
+        results.append(probe.result)
+    return ItemCancelRun(
+        turn=turn,
+        tool_call=results[0],
+        terminal=results[1],
+        tool_call_stale=stale[0].result,
+        terminal_stale=stale[1].result,
+    )
 
 
 _USER_MESSAGE_UPDATES = frozenset({"user_message", "user_message_chunk"})

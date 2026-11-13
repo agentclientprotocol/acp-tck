@@ -41,6 +41,8 @@ class SpecMap:
     core_defs: tuple[str, ...]
     """Names under the schema's `$defs` whose changes are treated like a core doc change."""
     not_requirements: tuple[NotRequirement, ...]
+    rfd_audit: str | None = None
+    """Spec commit at which every tracked RFD was last audited in full; `None` when never."""
 
 
 def _strings(table: dict, key: str, where: str) -> tuple[str, ...]:
@@ -67,7 +69,7 @@ def parse_spec_map(text: str) -> SpecMap:
     data = tomllib.loads(text)
     if "core_defs" not in data:
         raise SpecMapError("spec map: 'core_defs' is required (use [] for none)")
-    _reject_unknown(data, {"core_defs", "core_doc", "not_requirement"}, "spec map")
+    _reject_unknown(data, {"core_defs", "core_doc", "not_requirement", "rfd_audit"}, "spec map")
     core_docs = []
     for i, table in enumerate(data.get("core_doc", [])):
         where = f"core_doc[{i}]"
@@ -95,6 +97,7 @@ def parse_spec_map(text: str) -> SpecMap:
         core_docs=tuple(core_docs),
         core_defs=_strings(data, "core_defs", "spec map"),
         not_requirements=tuple(ledger),
+        rfd_audit=_text(data, "rfd_audit", "spec map") if "rfd_audit" in data else None,
     )
 
 

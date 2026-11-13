@@ -347,6 +347,382 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-001",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "The announcing `subagent_update` precedes every live request or notification on "
+            "the connection that carries a child session's ID: a `session/update` for the child "
+            "(inside a prompt turn or outside it, including after the turn ends), an "
+            "agent -> client request such as `session/request_permission` or "
+            "`elicitation/create` with the child's `sessionId`, and a `session_message` naming "
+            "the child as `senderSessionId` or `recipientSessionId`. The announcement must itself "
+            "be sent on a known session (nested children included); traffic for an unannounced "
+            "child FAILs. Stated by the schema's `SubagentUpdate` and the Subagents RFD (Active "
+            "RFD). Judged in wire order over one `session/new`, one prompt turn and a quiet "
+            "period after it (`session/resume` replay is `ACP-RESUME-209`'s). Subagents have no "
+            "`initialize` marker, so support is inferred from the traffic "
+            "(`capability=\"inferred:subagents\"` is documentation-only); SKIPs when no "
+            "session ID the client did not create appears on the connection."
+        ),
+        citation=_cite(
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/rfds/subagents.mdx:95-99,189-193 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-002",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `session` tool-call content item (`SessionReference`) names a session already "
+            "known: one the client created, or a child announced by an earlier `subagent_update` "
+            "on a known session. Judged for every such item in a `tool_call` or "
+            "`tool_call_update` `content` array, a `tool_call_content_chunk`'s `content`, and a "
+            "`session/request_permission` request's `subject.toolCall.content` (a `tool_call` "
+            "subject; a `command` subject carries only a tool call ID), in wire order over one "
+            "`session/new`, one prompt turn and a quiet period after it. A reference to a "
+            "session no announcement preceded FAILs. A reference does not count as traffic "
+            "carrying the child's ID, so it never FAILs `ACP-SUBAGENT-001`. The draft docs state "
+            "the MUST, but only an agent that emits `session` content is bound and no "
+            "`initialize` marker announces that, so the row is gated by `inferred:subagents` "
+            "(documentation-only) and SKIPs when no `session` content item appears."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:740-742; "
+            "docs/rfds/subagents.mdx:636-638 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-003",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `subagent_update` never makes a session its own parent: `update.sessionId` differs "
+            "from the `sessionId` of the session the notification is sent on, whichever session "
+            "that is. Stated only by the Subagents RFD (Active RFD: `the association cannot ... "
+            "refer to itself`), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents` (documentation-only, no `initialize` marker). Judged for every "
+            "`subagent_update` over one `session/new`, one prompt turn and a quiet period after "
+            "it; SKIPs when none appears. A self-referencing update is judged here and by no "
+            "other association row (`ACP-SUBAGENT-004`/`-005` leave it out), so one defect never "
+            "FAILs several."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:165-169 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-004",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A `subagent_update` never announces a session ID that is already an ordinary session "
+            "the client created with `session/new`, as the child of another session. The child's "
+            "ID identifies the child session in all ACP messages and is unique within the "
+            "connection, so it is not reused for an unrelated session. Stated only by the "
+            "Subagents RFD (Active RFD), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents`. A client session announced as its own child is "
+            "`ACP-SUBAGENT-003`'s. Judged for every `subagent_update` over one `session/new`, one "
+            "prompt turn and a quiet period after it; SKIPs when none appears. Announcing a "
+            "client session under one of its own descendants is the cycle case of this row."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:122-124,165-169 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-005",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "A child announced on a known session keeps that one immediate parent: a later "
+            "`subagent_update` for the same `sessionId` sent on a different session (a "
+            "reparenting, which includes one that would create a cycle) FAILs. Later updates only "
+            "modify the association's metadata, not its ownership. The draft docs state the "
+            "ownership rule and the RFD states the one-parent, no-cycle rule; there is no "
+            "`initialize` marker and the rule binds only an agent that emits `subagent_update`, "
+            "so the row is CAPABILITY and gated by `inferred:subagents`. The remaining ways to "
+            "close a cycle are `ACP-SUBAGENT-003` (a self-parent) and `-004` (a client session "
+            "announced as a child), so a cycle never FAILs more than one row. Judged for every "
+            "`subagent_update` sent on a known session over one `session/new`, one prompt turn and "
+            "a quiet period after it; SKIPs when none appears."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:10189-10193; "
+            "docs/rfds/subagents.mdx:165-169 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-006",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "`SubagentUpdate.cwd` and every `additionalDirectories` entry is an `AbsolutePath`: "
+            "POSIX `/...`, a Windows drive path or a UNC path (native syntax of the agent's "
+            "machine, not a URI). `null` clears the field and an omitted field is unchanged, so "
+            "neither is judged. The vendored schema defines `AbsolutePath` as a bare `string`, so "
+            "`ACP-PROMPT-002`'s schema validation accepts a relative path and this row is the "
+            "only check for it; a value of the wrong type (a non-string `cwd`, a non-array "
+            "`additionalDirectories`, a non-string entry) is a schema defect, "
+            "`ACP-PROMPT-002`'s, and is not judged here. The draft docs state the rule; only an "
+            "agent that emits `subagent_update` is bound and no `initialize` marker announces it, "
+            "so the row is CAPABILITY and gated by `inferred:subagents`. Judged for every `subagent_update` over one `session/new`, "
+            "one prompt turn and a quiet period after it; SKIPs when none carries a string `cwd` or "
+            "`additionalDirectories` entry."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:10238,10254; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories; "
+            "schema/v2/schema.unstable.json#/$defs/AbsolutePath; "
+            "docs/rfds/subagents.mdx:298-308 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-007",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "In a `session_message` whose `senderSessionId` and `recipientSessionId` are both "
+            "known (supplied by this upsert or an earlier one for the same `messageId` in the "
+            "same transcript; `null` clears, omitted keeps), they identify different sessions. A "
+            "message a session sends to itself FAILs, whatever session the update is sent on "
+            "(`ACP-SUBAGENT-008` judges only messages with different participants, so one defect "
+            "never FAILs both). Stated only by the Subagents RFD (Active RFD: `they identify "
+            "different sessions`), so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents` (documentation-only, no `initialize` marker). Judged for every "
+            "`session_message` over one `session/new`, one prompt turn and a quiet period after "
+            "it; SKIPs when no message has both participants known."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:477-480 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-008",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "In a `session_message` whose `senderSessionId` and `recipientSessionId` are both "
+            "known and different, the outer `params.sessionId` is one of them: the sender's "
+            "transcript holds the outgoing view and the recipient's the incoming view, so an "
+            "update sent on a third session FAILs. Participants are stored across upserts of the "
+            "same `messageId`, as for `ACP-SUBAGENT-007`, whose equal-participant case this row "
+            "leaves out. Stated only by the Subagents RFD (Active RFD: `the outer "
+            "params.sessionId matches one of them`), so the row is capped at CAPABILITY and gated "
+            "by `inferred:subagents`. Judged for every `session_message` over one `session/new`, "
+            "one prompt turn and a quiet period after it; SKIPs when no message has both participants "
+            "known. A participant that was never announced is `ACP-SUBAGENT-001`'s."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:477-481 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-009",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "When both views of one message carry a reference, they name each other: an outgoing "
+            "view's `recipientMessageId` names a view in the recipient's transcript, an incoming "
+            "view's `senderMessageId` one in the sender's, and if that view was reported on the "
+            "connection and carries the reverse reference, it names the first view's "
+            "`messageId`. Conflicting references FAIL, including when the referenced view's own "
+            "sender or recipient is a third session. A reference to a view the agent never "
+            "reported, or to a view with no reference of its own, is not judged (each side is "
+            "reported only when observed, and the draft docs add that views are not linked by "
+            "equal IDs alone). The draft docs define what each field names; the RFD alone states "
+            "the MUST that both references agree, so the row is capped at CAPABILITY and gated by "
+            "`inferred:subagents`. Judged on the stored state after every `session_message` of "
+            "one `session/new`, one prompt turn and a quiet period after it; SKIPs when no two views "
+            "were found that both carry a reference, so no link was judged. "
+            "`session_message_chunk` carries no identity, so is not judged."
+        ),
+        citation=_cite(
+            "docs/rfds/subagents.mdx:466-475 (Active RFD); "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:128-132; "
+            "docs/protocol/v2/draft/schema.mdx:8237,8251"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-011",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The task a parent gives a child is not reported as a `user_message` or "
+            "`user_message_chunk` in the child's transcript (SHOULD NOT): none appears for an "
+            "announced child before that child's first agent output (`agent_message`, "
+            "`agent_thought` or a chunk of either), which is when the first task has started its "
+            "work. The Client cannot prompt a child, so such a message would attribute the task "
+            "to the user. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child produces agent output and none has a "
+            "user message."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-142; "
+            "docs/rfds/subagents.mdx:648-664 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-012",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The task a parent gives a child is reported as an incoming `session_message` in the "
+            "child's transcript, with `senderSessionId` set to the parent, before the child's "
+            "first agent output (SHOULD): the child's `agent_message`, `agent_thought` or a "
+            "chunk of either is preceded by such an upsert (the sender is stored across upserts "
+            "of the `messageId`; the parent is the session that announced the child). A child "
+            "whose task was reported as a `user_message` is `ACP-SUBAGENT-011`'s FAIL, so is not "
+            "judged here. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child that was not told its task as a "
+            "`user_message` produces agent output."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-142; "
+            "docs/rfds/subagents.mdx:648-657 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-013",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Participant IDs go on the first `session_message` for a message when available, "
+            "before the first `session_message_chunk` of a streamed message (SHOULD). Whether "
+            "they were available cannot be seen, so a streamed message is flagged only when no "
+            "participant ID was stored when its first chunk arrived and a later `session_message` "
+            "for it supplies one (participant IDs follow the patch convention). A message that "
+            "never names a participant, or has one before its first chunk, is not flagged. "
+            "The draft docs state it without an RFC keyword (\"Include them ... when "
+            "available\") and the Active RFD as a SHOULD; either way it is not a MUST. Judged "
+            "over one `session/new`, one prompt turn and a quiet period after it; SKIPs itself "
+            "when no `session_message_chunk` appears."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:77-81; "
+            "docs/rfds/subagents.mdx:461-464 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-014",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A select config option reported for a child in a `config_option_update` offers only "
+            "its current value (SHOULD): the child does not permit Client-initiated "
+            "configuration changes (the only mutation the Subagents RFD defines is `cancel`, and "
+            "`session/set_config_option` is not authorized for a child), so the value is kept for "
+            "its name without advertising choices the Client cannot select. Values are counted "
+            "across option groups; boolean options and updates for a not-yet-announced child are "
+            "not judged. Stated only by the Subagents RFD (Active RFD), so the row is ADVISORY. "
+            "Judged over one `session/new`, one prompt turn and a quiet period after it; SKIPS "
+            "itself when no `config_option_update` for an announced child carries a select."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:392-419 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-201",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Every state a child reports in its own `state_update` is mirrored on the immediate "
+            "parent (the session that announced it) as the `state` of a `subagent_update` for "
+            "that child (SHOULD). For each child announced on a known session, the distinct "
+            "consecutive states of its own `state_update`s appear, in order, among the states "
+            "of its `subagent_update` mirrors; a mirror may arrive before or after the copy on "
+            "the child's stream, a repeated snapshot needs no second mirror, and only `state` "
+            "is compared. Judged over one `session/new`, one prompt turn and a quiet period "
+            "after it; SKIPs itself when no announced child reports a `state_update` (an agent "
+            "that exposes no subagent, or none that reports state). ADVISORY rows carry no "
+            "`capability`, so the SKIP is the test's own. v2-only (`2xx`): v1 has no "
+            "child-addressed `state_update` stream and reports a child's work state through the "
+            "association alone (`subagent_update.state`), so there is nothing to mirror."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1015-1018; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
+            "docs/rfds/subagents.mdx:765-774 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-016",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "A child whose `subagent_update` capabilities carry a `cancel` object may be cancelled "
+            "with `session/cancel` for the child's `sessionId`, and confirms it: the child "
+            "reports `idle` with `stopReason: \"cancelled\"` in a `state_update` on its own "
+            "session, or in its mirror on the parent association (`subagent_update.state`). The "
+            "per-child capability is stated by the draft docs and schema (`SubagentSessionCapabilities`: "
+            "`cancel` `Permits the client to cancel this child's current work`); the confirmation "
+            "is stated only by the Subagents RFD (Active RFD), and no `initialize` marker "
+            "announces it, so the row is CAPABILITY, gated by `inferred:subagentCancel` "
+            "(documentation-only). The TCK sends the request only to a child that advertises "
+            "`cancel` and was last reported running (the client MUST NOT cancel one that does "
+            "not), in the driven turn of the cancel prompt, and gives the child `timeout / 2` to "
+            "confirm. A child that reports an idle that is not a cancellation within "
+            "`quiet_period` of the request, with a stop reason it could have reached on its own "
+            "(the race window of `ACP-CANCEL-*`), had ended first: a cancellation racing with "
+            "already-ended work does not rewrite its outcome, so that SKIPs. A later one means "
+            "the child finished by other means and FAILs. SKIPs when no child advertised "
+            "`cancel` while reported running. Shared id with v1 (which confirms through the "
+            "parent snapshot alone)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/schema.mdx:10178; "
+            "schema/v2/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
+            "docs/rfds/subagents.mdx:1069-1073,1089-1095 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-017",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "`session/cancel` for a child cancels current work in that child, not its parent: "
+            "after the TCK cancels a running child that advertises `cancel`, the parent does not "
+            "report `idle` with `stopReason: \"cancelled\"` before the TCK itself cancels it. "
+            "Stated only by the Subagents RFD (Active RFD: `This cancels current work in that "
+            "child, not its parent or siblings`), so the row is CAPABILITY, gated by "
+            "`inferred:subagentCancel` (documentation-only). Siblings are not judged: the same "
+            "RFD says the per-child capability `does not prevent the Agent from cancelling its "
+            "own delegated work`, and an Agent that reacts to the cancelled child by stopping a "
+            "sibling is indistinguishable on the wire from a cancel that leaked, so a sibling's "
+            "`idle`/`cancelled` is only recorded on the test's report entry "
+            "(`acp_tck_cancelled_siblings`). Judged over the same driven turn as "
+            "`ACP-SUBAGENT-016`, which owns the child's own confirmation, so one defect never "
+            "FAILs both; a window of `quiet_period` after the child settles catches the parent's "
+            "reaction. SKIPs when no child was cancelled or it had ended first. Shared id with "
+            "v1."
+        ),
+        citation=_cite("docs/rfds/subagents.mdx:1069-1073 (Active RFD)"),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "Cancelling a session's current work also cancels the descendant work it waits on, "
+            "and the Client learns that from the descendants' reported state: after the TCK "
+            "sends `session/cancel` for the parent and its turn ends `cancelled`, every "
+            "descendant that was running at that moment and is foreground work (not in its "
+            "parent's latest `background` list, reported after the descendant was announced) "
+            "reaches `idle`. A descendant in the list, one whose parent never reported a "
+            "`background` list, or one announced after the parent's latest list (an item is "
+            "announced before it is listed and re-sending the state when the list changes is "
+            "only a SHOULD, so no list names it yet) is not judged, since the TCK cannot tell "
+            "which children the parent waits on: whether other descendants keep running is the "
+            "Agent's choice. An omitted per-child `cancel` capability does not "
+            "waive the cascade. The draft docs state that `session/cancel` covers foreground "
+            "work and that foreground work is not listed in `background`; that a child the "
+            "cancelled work waits on stops is stated by the Subagents RFD (Active RFD), so the "
+            "row is CAPABILITY, gated by `inferred:subagents` (documentation-only). Each "
+            "descendant gets `timeout / 2` after the parent's turn ends. SKIPs when the parent's "
+            "turn did not end `cancelled` (the cancel raced with its end, or `ACP-CANCEL-*` own "
+            "that turn), or no such descendant was running. v2-only (`2xx`): v1 has no "
+            "`background` list, so the TCK cannot tell which running children the parent waits "
+            "on."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:208,210,1173; "
+            "docs/rfds/subagents.mdx:1075-1087,1413-1425 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -508,6 +884,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-STATE-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When a `terminal`/`tool_call` item in the session's latest `background` list "
+            "reaches its final status (a `terminal_update` with a non-null `exitStatus`, or a "
+            "`tool_call_update` with status `completed`/`failed`/`cancelled`) while the "
+            "session is `idle`, a later `state_update` for the session drops it from the list: "
+            "the Agent SHOULD re-send the state with the updated list when background work "
+            "ends. Judged over one prompt turn plus a quiet drain after it. The start of "
+            "background work is not judged here, nor is an end during active work (the next "
+            "snapshot follows anyway). SKIPPED when no listed item ends while idle. The test is gated "
+            "on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:205-206; "
+            "docs/rfds/v2/background-work.mdx:193-194 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-003",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -555,7 +951,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:382,384; "
-            "docs/rfds/v2/prompt.mdx:88"
+            "docs/rfds/v2/prompt.mdx:88 (Active RFD)"
         ),
     ),
     Requirement(
@@ -775,7 +1171,37 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:382-384,1118-1119; "
-            "docs/rfds/v2/prompt.mdx:88"
+            "docs/rfds/v2/prompt.mdx:88 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-INFO-BACKGROUND-201",
+        tier=Tier.INFORMATIONAL,
+        capability=None,
+        text=(
+            "Record (never assert) which tool calls a `background` list names together with a "
+            "terminal that they reference in `terminal` content and that the list also names. "
+            "Process-backed work is listed as its terminal, and the Agent MUST NOT also list a "
+            "tool call whose only live work is a listed terminal, but the client cannot tell "
+            "whether the tool call has other live work. SKIPPED when no list is reported."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:208"),
+    ),
+    Requirement(
+        id="ACP-INFO-BACKGROUND-202",
+        tier=Tier.INFORMATIONAL,
+        capability=None,
+        text=(
+            "Record (never assert) what happens to the items of the latest `background` list "
+            "when `session/cancel` is sent: which of them reach a final status before the "
+            "cancelled turn's idle, and which the idle still lists. Work in the list is not "
+            "covered by `session/cancel` and keeps running, but it may also end on its own, so "
+            "an item finishing proves nothing. SKIPPED when the cancel did not land or no "
+            "work was listed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1173; "
+            "docs/protocol/v2/draft/tool-calls.mdx:268"
         ),
     ),
     Requirement(
@@ -1087,10 +1513,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.MANDATORY,
         capability=None,
         text=(
-            "Notifications never receive a response, success or error. Messages the agent "
+            "Notifications never receive a response, success or error. Probed with `session/cancel` "
+            "(no prompt in flight), or `_tck/notify` for an agent without `capabilities.session`, "
+            "and with `mcp/message` notifications (the unstable MCP-over-ACP envelope, "
+            "well-formed and malformed; the rule binds every agent, so the probe is not gated "
+            "on `capabilities.session.mcp.acp`). The `mcp/message` probes break client rules "
+            "on purpose: the envelope is sent only for an active request on a declared `acp` "
+            "MCP server, to an agent that advertised `acp`, and `requestId` and `method` are "
+            "required; the spec defines the agent's answer to exactly these inputs (no "
+            "reply). An agent that exits instead of replying sent no reply (`ACP-EXT-002` "
+            "judges a crash on `mcp/message`). Messages the agent "
             "itself initiates (they carry `method`) are not responses."
         ),
-        citation=_cite("docs/protocol/v2/draft/overview.mdx:10,227"),
+        citation=_cite(
+            "docs/protocol/v2/draft/overview.mdx:10,227; "
+            "docs/rfds/mcp-over-acp.mdx:225,257 (Active RFD); "
+            "schema/v2/schema.unstable.json#/$defs/MessageMcpNotification"
+        ),
     ),
     Requirement(
         id="ACP-JSONRPC-004",
@@ -1288,10 +1727,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "With `replayFrom` omitted (or `null`), no conversation-history `session/update` for "
             "the resumed session arrives before the response. Vacuous -- and recorded, never "
-            "FAILed on that account -- for an agent that retains no history to replay."
+            "FAILed on that account -- for an agent that retains no history to replay. Live "
+            "traffic for other (child) sessions is not judged (Active Subagents RFD)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history)"
+            "docs/protocol/v2/draft/session-setup.mdx:179-184 (the current-state snapshot is live sync, not history); "
+            "docs/rfds/subagents.mdx:1008-1013 (Active RFD)"
         ),
     ),
     Requirement(
@@ -1300,7 +1741,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "A retained user message inserted by `session/prompt` replays, if it replays at all, "
-            "with the same `messageId` that prompt's response returned. A narrow, conditional "
+            "with the same `messageId` that prompt's response returned. Judged for the resumed "
+            "session only: a child session's own `user_message` is not that message. A narrow, conditional "
             "trigger: absence of the message from replay is conforming (R5) and SKIPs this "
             "check rather than FAILing it."
         ),
@@ -1315,14 +1757,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "During replay, a `*_chunk` update for a `messageId` is preceded, within the same "
-            "replay window, by a matching whole-message update for that id carrying a `content` "
+            "During replay, a `*_chunk` update for the resumed session and a `messageId` is "
+            "preceded, within the same replay window, by a matching whole-message update for that id carrying a `content` "
             "array -- `[]` when chunks rebuild the message from its beginning, or full content "
             "the chunks then append to (a client cannot tell the two apart). Vacuous -- "
             "recorded, never FAILed -- for an agent whose replay uses only whole-message "
-            "updates."
+            "updates. Live traffic for other (child) sessions, which may accompany a replay, "
+            "is not judged (Active Subagents RFD)."
         ),
-        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:299-312"),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:299-312; "
+            "docs/rfds/subagents.mdx:999-1006 (Active RFD)"
+        ),
     ),
     Requirement(
         id="ACP-RESUME-206",
@@ -1376,10 +1822,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Every `session/update` the agent sends during a `session/resume` exchange with "
             "`replayFrom: {\"type\": \"start\"}` (replay plus the state snapshot) validates "
-            "against the v2 schema and carries the resumed `sessionId`."
+            "against the v2 schema and carries the resumed `sessionId` or that of a child "
+            "session announced earlier in that same exchange by a `subagent_update` (on the "
+            "Active Subagents RFD's rule that child updates keep the child's own `sessionId` and "
+            "follow its announcement within the load/resume). An update for a session not "
+            "announced within the exchange FAILs, even if an earlier turn announced it."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:207-209,221,282-284; "
+            "docs/rfds/subagents.mdx:925-935,995-1003 (Active RFD); "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
     ),
@@ -1465,6 +1916,25 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "SKIPs on one. The test is gated on `capabilities.session`."
         ),
         citation=_cite("docs/protocol/v2/draft/session-setup.mdx:49,53"),
+    ),
+    Requirement(
+        id="ACP-RESUME-217",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When the agent reported a `background` array for a session on the connection the test "
+            "resumes it on, before the resume (`[]` counts), the resume's current-state "
+            "snapshot carries an array too, not an omitted or `null` one: the snapshot carries "
+            "the list like any other, and an agent that reports background work MUST include "
+            "it on every `state_update`. Checked with `replayFrom` omitted, after a turn on the "
+            "session on that connection. SKIPs when no list was reported before the resume, or the resume sent no "
+            "snapshot (`ACP-RESUME-206` judges that)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:346; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:204; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background"
+        ),
     ),
     Requirement(
         id="ACP-LIST-001",
@@ -1930,7 +2400,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:49; "
             "docs/protocol/v2/draft/error.mdx:54; "
-            "docs/rfds/session-fork.mdx:67"
+            "docs/rfds/session-fork.mdx:67 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -1976,6 +2446,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:108,140; "
             "schema/v2/schema.unstable.json#/$defs/ForkSessionResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-FORK-206",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "When the source session's latest `background` list is non-empty at fork time, no "
+            "`state_update` of the forked session lists one of those items: a fork starts with "
+            "no background work, and its snapshots report `background: []` until it starts its "
+            "own. The fork is prompted once so that it reports its state. Definitional (the "
+            "draft docs state it with no RFC keyword), like `ACP-FORK-202`. SKIPs when the "
+            "source has no listed work at fork time, or when the fork fails, or its turn never "
+            "ends and no snapshot received so far lists a copied item (`ACP-FORK-201`/`202` "
+            "judge those)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:49; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background; "
+            "docs/rfds/v2/background-work.mdx:226 (Active RFD)"
         ),
     ),
     Requirement(
@@ -2079,12 +2569,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "`session/new` with an MCP server of a transport the agent does not support is "
-            "rejected with `-32602` (the code is named by the spec). Two probes: v1's `sse`, "
-            "which the spec names explicitly, and the implementation-reserved "
-            "`_tck_unsupported_transport`, which no agent supports. A success, or another "
-            "error code, on either FAILs. The probes break the client rule to use only "
-            "advertised transports on purpose, because the spec defines the agent's answer to "
-            "exactly those inputs."
+            "rejected with `-32602` (the code is named by the spec). Three probes: v1's `sse`, "
+            "which the spec names explicitly, the implementation-reserved "
+            "`_tck_unsupported_transport`, which no agent supports, and `acp` (the unstable "
+            "MCP-over-ACP transport, covered by the spec's \"a transport they did not "
+            "advertise\"), sent only when the agent does not advertise "
+            "`capabilities.session.mcp.acp`. A success, or another error code, on any probe "
+            "FAILs. The probes break the client rule to use only advertised transports on "
+            "purpose, because the spec defines the agent's answer to exactly those inputs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:545,553; "
@@ -2177,7 +2669,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:234,236,291,367-371; "
             "docs/protocol/v2/draft/initialization.mdx:239-240; "
-            "docs/rfds/session-config-options.mdx:45; "
+            "docs/rfds/session-config-options.mdx:45 (Completed RFD); "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionRequest; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionConfigOptionResponse"
         ),
@@ -2224,7 +2716,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:236,373,459; "
-            "docs/rfds/session-config-options.mdx:45; "
+            "docs/rfds/session-config-options.mdx:45 (Completed RFD); "
             "schema/v2/schema.unstable.json#/$defs/ConfigOptionUpdate"
         ),
     ),
@@ -2509,7 +3001,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/schema.mdx:143-144; "
             "docs/protocol/v2/draft/initialization.mdx:215-219; "
             "docs/protocol/v2/draft/authentication.mdx:193; "
-            "docs/rfds/get-auth-state.mdx:293,297"
+            "docs/rfds/get-auth-state.mdx:293,297 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -2684,11 +3176,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "When the turn's idle arrives, every tool call reported for the prompted session "
             "during the turn has a final status (`completed`, `failed` or `cancelled`), unless "
-            "a `background` list reported during the turn names it. SKIPPED when no tool call "
-            "is reported, or the turn ends with an error response. The test is gated on "
-            "`capabilities.session`."
+            "a `background` list reported during the turn names it, or the idle's own `background` "
+            "list names a terminal it references with a `terminal` content item that has not "
+            "reported `exitStatus` (a tool call that references a live listed terminal is live, "
+            "like Codex's command items that stay `in_progress` until the process exits; an "
+            "Active RFD allows this explicitly). A terminal that exited, or that left the list, "
+            "keeps nothing alive. The docs are not uniform: "
+            "`tool-calls.mdx:423` exempts only tool calls in the list, while the other draft "
+            "docs treat a tool call that references a listed terminal as live too, so the row "
+            "follows the broader text. SKIPPED when no tool call is reported, or the turn ends "
+            "with an error response. The test is gated on `capabilities.session`."
         ),
-        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:423"),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:216,998,1175; "
+            "docs/protocol/v2/draft/session-setup.mdx:391; "
+            "docs/protocol/v2/draft/tool-calls.mdx:423; "
+            "docs/rfds/v2/background-work.mdx:56 (Active RFD)"
+        ),
     ),
     Requirement(
         id="ACP-PATCH-212",
@@ -2709,6 +3213,209 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-TOOLCANCEL-201",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "A tool call that currently advertises `capabilities.cancel` (an object) and is not "
+            "final accepts `tool_call/cancel`: the agent answers it with an empty result, not an "
+            "error. The docs state this as the rule without an RFC keyword, and no `initialize` "
+            "marker announces it, so the row is CAPABILITY and gated by `inferred:toolCallCancel` "
+            "(documentation-only): the test SKIPs itself when no tool call advertises `cancel` "
+            "while live during the driven turn. The TCK sends the request only for such a tool "
+            "call (the client MUST NOT otherwise). A `-32602` is the documented answer for an "
+            "item that is already final or not cancellable, so one that comes with (before or "
+            "shortly after) the tool call's own final status, or with the agent no longer "
+            "advertising `cancel`, is a race and not judged (the TCK then tries the next live "
+            "tool call). Any other error, or a `-32602` for a tool call that stays live and "
+            "keeps advertising `cancel`, FAILs. The driven turn runs the cancel prompt; a "
+            "`tool_call/cancel` stops a real tool call, and the TCK then sends `session/cancel` so "
+            "no work is left running."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456,458; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "After it accepted `tool_call/cancel`, the agent confirms with a `tool_call_update` "
+            "that gives that tool call a final status (`completed`, `failed` or `cancelled`: "
+            "normally `cancelled`, and the other two when the work finished first). Gated by "
+            "`inferred:toolCallCancel` like `ACP-TOOLCANCEL-201`; SKIPPED when no cancel was "
+            "accepted (nothing advertised `cancel`, the agent rejected the request, which is "
+            "`ACP-TOOLCANCEL-201`'s finding, or the tool call was already final). The final "
+            "status must arrive within half the run's per-response timeout."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:423,458; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-204",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` for a tool call that has a final status but still advertises "
+            "`capabilities.cancel` is rejected with an error, not answered with a result (\"The "
+            "Agent responds with `-32602` if the tool call is unknown, already final, or not "
+            "cancellable\"; declarative, no RFC keyword). The code is judged separately "
+            "(`ACP-TOOLCANCEL-205`). The client may send the request: it MUST NOT only when the "
+            "tool call does not currently advertise `cancel`, and the agent SHOULD have stopped "
+            "advertising it (`ACP-PATCH-212` judges that), so this is the already-final case "
+            "reached without breaking a client rule. Gated by `inferred:toolCallCancel` "
+            "(documentation-only): the test SKIPs itself unless a tool call is final while "
+            "still advertising `cancel` during the `ACP-TOOLCANCEL-201` driven turn. v2-only "
+            "(`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456,459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-205",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `tool_call/cancel` for a tool call that is final but still "
+            "advertises `cancel` (`ACP-TOOLCANCEL-204`'s request) uses `-32602` (Invalid "
+            "params). The sentence naming the code carries no RFC keyword, so the code is "
+            "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
+            "or was not rejected (`ACP-TOOLCANCEL-204`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-203",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` sent with a child session's `sessionId` for a child tool call that "
+            "currently advertises `capabilities.cancel` and is not final is accepted and "
+            "confirmed like a tool call of the prompted session (`ACP-TOOLCANCEL-201/202`): an "
+            "empty result, then a `tool_call_update` that gives it a final status. `sessionId` is "
+            "the session that reports the tool call, and the tool call's own `cancel` enables the "
+            "request even when the child advertises no `cancel`. The docs state this as the rule "
+            "without an RFC keyword, and no `initialize` marker announces it, so the row is "
+            "CAPABILITY and gated by `inferred:toolCallCancel` (documentation-only). A separate "
+            "row from 201/202 because the prompted-session driver does not follow a child's "
+            "items: judged over the driven turn that also exercises the child cancel "
+            "(`ACP-SUBAGENT-016`), for the first child tool call that advertises `cancel` while "
+            "live, so a defect in routing by the child's `sessionId` fails exactly this row. "
+            "SKIPs when no child tool call advertises `cancel` while live, or it was already "
+            "final (or no longer advertising `cancel`) when the agent read the request, judged "
+            "like `ACP-TOOLCANCEL-201`: a `-32602` with that evidence is a race, any other "
+            "error FAILs. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456-458; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
+            "docs/rfds/subagents.mdx:1042-1045 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-201",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "A terminal that currently advertises `capabilities.cancel` (an object) and has no "
+            "`exitStatus` accepts `terminal/cancel`: the agent answers it with an empty result, "
+            "not an error. Same encoding as `ACP-TOOLCANCEL-201`: no RFC keyword and no "
+            "`initialize` marker, so the row is CAPABILITY, gated by `inferred:terminalCancel` "
+            "(documentation-only) and SKIPPED when no terminal advertises `cancel` while running "
+            "during the driven turn. The TCK sends the request only for such a terminal. A "
+            "`-32602` is the documented answer for a terminal that has already exited or is not "
+            "cancellable, so one that comes with (before or shortly after) the terminal's own "
+            "`exitStatus`, or with the agent no longer advertising `cancel`, is a race and not "
+            "judged. Any other error, or a `-32602` for a terminal that keeps running and "
+            "advertising `cancel`, FAILs. `terminal/cancel` stops a real process; the TCK then "
+            "sends `session/cancel` so no work is left running."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:600-604; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "After it accepted `terminal/cancel`, the agent confirms with a `terminal_update` "
+            "that sets `exitStatus` for that terminal. Gated by `inferred:terminalCancel` like "
+            "`ACP-TERMCANCEL-201`; SKIPPED when no cancel was accepted. The `exitStatus` must "
+            "arrive within half the run's per-response timeout."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:604; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-204",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` for a terminal that reported `exitStatus` but still advertises "
+            "`capabilities.cancel` is rejected with an error, not answered with a result "
+            "(\"The Agent responds with `-32602` if the terminal is unknown, has already "
+            "exited, or is not cancellable\"; declarative, no RFC keyword). The code is judged "
+            "separately (`ACP-TERMCANCEL-205`). Same encoding as `ACP-TOOLCANCEL-204`: the "
+            "client may send the request while the advertisement stands (the agent SHOULD have "
+            "stopped it, `ACP-PATCH-212`), gated by `inferred:terminalCancel` "
+            "(documentation-only), and SKIPPED unless a terminal has exited while still "
+            "advertising `cancel` during the `ACP-TERMCANCEL-201` driven turn. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:600,602,605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-205",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `terminal/cancel` for a terminal that has exited but still "
+            "advertises `cancel` (`ACP-TERMCANCEL-204`'s request) uses `-32602` (Invalid "
+            "params). The sentence naming the code carries no RFC keyword, so the code is "
+            "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
+            "or was not rejected (`ACP-TERMCANCEL-204`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-203",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` sent with a child session's `sessionId` for a child terminal that "
+            "currently advertises `capabilities.cancel` and has no `exitStatus` is accepted and "
+            "confirmed like a terminal of the prompted session (`ACP-TERMCANCEL-201/202`): an "
+            "empty result, then a `terminal_update` that sets `exitStatus`. `sessionId` is the "
+            "session that reports the terminal, and the terminal's own `cancel` enables the "
+            "request even when the child advertises no `cancel`. Same encoding and separate-row "
+            "reason as `ACP-TOOLCANCEL-203`: CAPABILITY, gated by `inferred:terminalCancel` "
+            "(documentation-only), judged over the child-cancel driven turn for the first child "
+            "terminal that advertises `cancel` while running; SKIPs when none does, or it had "
+            "already exited (or stopped advertising `cancel`) when the agent read the request, "
+            "judged like `ACP-TERMCANCEL-201`: a `-32602` with that evidence is a race, any "
+            "other error FAILs. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:600-604; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
+            "docs/rfds/subagents.mdx:1042-1045 (Active RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-ENUM-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -2722,7 +3429,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`tool_call_update`, on a chunk's single `content` object, and on a `subject.toolCall`), "
             "`diff` content's `changes[].operation`/`changes[].fileType`/`patch.format`, "
             "`plan_update`'s `plan.type` and plan entries' `priority`/`status`, "
-            "`available_commands_update` commands' `type`, and `session/request_permission` "
+            "`available_commands_update` commands' `type`, a defined state's `background[].type`, "
+            "and `session/request_permission` "
             "options' `kind` (the permission sites are only observable if the agent asks for "
             "permission). A curated, non-exhaustive subset of the schema's open-enum sites; "
             "`subject.type` is not checked."
@@ -2732,6 +3440,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/tool-calls.mdx:76,372,419,662,685-686,700-701; "
             "docs/protocol/v2/draft/agent-plan.mdx:145,164,176; "
             "docs/protocol/v2/draft/slash-commands.mdx:110; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:209; "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork; "
             "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),
@@ -2859,7 +3569,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "An unrecognized `_`-prefixed *notification* sent to the agent gets no response "
             "and causes no crash (SHOULD-ignore) -- the v2 analogue of v1's "
             "`answers_notifications.py` defect pattern, generalised from `session/cancel` "
-            "specifically to any custom notification."
+            "specifically to any custom notification. The same holds for `mcp/message` "
+            "notifications (the unstable MCP-over-ACP envelope, well-formed and malformed) "
+            "sent to an agent that does not advertise `capabilities.session.mcp.acp`, which "
+            "has not recognized the method; those probes break client rules on purpose (the "
+            "envelope is for an active request on a declared `acp` server, and `requestId` "
+            "and `method` are required) because the spec defines how an agent treats a "
+            "notification it does not recognize, and that probe SKIPs when `acp` is "
+            "advertised."
         ),
         citation=_cite("docs/protocol/v2/draft/extensibility.mdx:231"),
     ),

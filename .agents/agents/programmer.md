@@ -27,8 +27,8 @@ well-specified slices don't need it.
 - Python, managed with `uv`. `requires-python = ">=3.14"`.
 - Package source: `src/tck/`. `spec-tracker/` (workspace member) and `cross-check/` (standalone uv
   project) are maintenance tooling, not product.
-- Tests: `pytest`, run as `uv run pytest` (root `tests/` only). Also, when you touch them:
-  `uv run --package spec-tracker pytest spec-tracker/tests` and `uv run --directory cross-check pytest`.
+- Tests: run the suites your change touches (product, spec-tracker, cross-check); `docs/testing.md` has
+  the commands.
 - Add dependencies with `uv add <pkg>` (or `uv add --dev <pkg>`; `uv add --package spec-tracker <pkg>` or
   `uv add --project cross-check <pkg>` for the other projects), never by hand-editing
   `pyproject.toml` and never with bare `pip`.
@@ -87,7 +87,8 @@ never edit the orchestrator's checkout.
 4. **Test.** Every behavior you add gets a test. Tests must assert real behavior: no tests that
    pass trivially, no assertions weakened to go green, and no `xfail`/`skip` that hides a genuine
    failure. For TCK assertions, cover both a conforming and a non-conforming agent where feasible.
-5. **Verify.** Run `uv run pytest` and iterate until the **whole** suite passes, not just your new
+5. **Verify.** Run the full product suite (plus any other suite you touched) and iterate until it
+   passes, unless your brief gives a narrower command; the **whole** suite, not just your new
    tests. If a pre-existing failure blocks you, report it rather than patching around it.
 6. **Finish** as your worker mode says.
 7. **Report:** mode, worktree path and branch (or commit hash), files touched, the exact

@@ -44,11 +44,40 @@ There is no retirement mechanism and no list of retired ids.
 | Tier | Meaning | Effect on the verdict |
 | --- | --- | --- |
 | `MANDATORY` | A spec MUST. | A FAIL or NOT_TESTED makes the run non-conformant. |
-| `CAPABILITY` | Applies only when the agent advertises the capability in `initialize`; the row names the path in `capability`. | A FAIL makes the run non-conformant. SKIPPED (not advertised) and NOT_TESTED do not. |
+| `CAPABILITY` | Applies only when the agent opts into a feature: it advertises the capability in `initialize` (the row names the path in `capability`), or, for a feature with no marker, shows it by behaviour (an [`inferred:` gate](#inferredfeature-gates)). | A FAIL makes the run non-conformant. SKIPPED (not advertised, or the feature unused) and NOT_TESTED do not. |
 | `ADVISORY` | A spec SHOULD. | Reported, never affects the verdict. |
 | `INFORMATIONAL` | The spec is silent, or reference implementations disagree. The test records what it saw and asserts nothing about it. | Reported, never affects the verdict. |
 
 `capability` is set if and only if the tier is `CAPABILITY`.
+
+**Docs take precedence.** When a [tracked RFD](spec-updates.md#tracked-rfds) and the version's draft docs or
+schema document the same behaviour or component, the draft docs govern, in both versions: cite them as the primary
+source, take the row text and tier from them, and cite the RFD only as secondary context. On a conflict follow the
+docs and record the discrepancy (in the row text, or in the research report). For example `ACP-CLIENTCAP-007` is
+`MANDATORY` because `docs/protocol/v1/draft/prompt-turn.mdx:19-21 @ 3961af94` states it, even though the subagents
+RFD does too.
+
+**Tier cap for RFD-only rules.** A rule stated *only* in an RFD (any stage) is never `MANDATORY`:
+
+- a MUST is `CAPABILITY`, behind a real gate or an [`inferred:` gate](#inferredfeature-gates);
+- if no gate fits (the rule binds every agent, with no feature to opt into), it is `ADVISORY`;
+- a SHOULD is `ADVISORY`.
+
+### `inferred:<feature>` gates
+
+Some features have no `initialize` marker; an agent opts in by behaviour (it returns `modes`, it exposes a child
+session, it lists commands). A `CAPABILITY` row for such a feature uses a documentation-only `capability` string,
+`inferred:<feature>` (`inferred:modes`, `inferred:configOptions`, `inferred:authMethods`,
+`inferred:availableCommands`).
+
+- The plugin never parses it: `@pytest.mark.capability(...)` and `_tck_capability_gate` only understand real
+  `initialize`-result paths, so an `inferred:` row carries no `capability` marker. Never pass an `inferred:` path to
+  the marker: it would SKIP on every agent and the run would false-PASS (`tests/common/test_capability_markers.py`
+  fails on it).
+- The test must `pytest.skip` itself, with a reason that says what was missing, when the agent shows no use of the
+  feature. An agent that never opts in SKIPs; one that does is held to the rule.
+- It is also the right gate for a MUST stated only in an RFD about such a feature, such as the subagents RFD's
+  rules (`inferred:subagents`), which keeps the row out of `MANDATORY` (see the cap above).
 
 ## Statuses
 
@@ -96,8 +125,16 @@ helper from its `SCHEMA_REVISION`). Take the rule from the spec text, not from m
   or ranges in the spec repo at the pinned commit. Always the draft tree, which pairs with the draft schema.
 - **Schema:** a JSON Pointer by name path, `schema/v1/schema.unstable.json#/$defs/Name` (or `schema/v2/...`),
   never a line number.
-- **Draft RFDs** (`docs/rfds/<name>.mdx:<line>`): only where nothing else states the rule. Label the citation
-  `(Draft RFD)` in the row text and in any failure message that relies on it, because an RFD is a proposal.
+- **RFDs** (`docs/rfds/<name>.mdx:<line>`): Active and Preview RFDs carry nearly the weight of the docs; a Draft
+  RFD only where nothing else states the rule. Where the draft docs or schema state the same rule, cite them first
+  and the RFD only as secondary context ([docs take precedence](#tiers)). Label every RFD citation with the RFD's
+  stage at the pinned revision, e.g. `(Active RFD)`, in the row text and in any failure message that relies on it,
+  because an RFD is not yet part of the protocol docs. The stage is the nearest enclosing sidebar group in the spec
+  repo's `docs/docs.json` whose name is a stage (Draft, Active, Preview, Completed); an RFD nested under Active,
+  such as `rfds/v2/*` in "Active > v2", is Active. A Completed RFD is labelled `(Completed RFD)`; prefer the docs
+  that absorbed it and keep the RFD only as secondary context. A rule stated only in an RFD is capped below
+  `MANDATORY` ([Tiers](#tiers)). A spec update refreshes these labels when the pin moves
+  ([spec-updates.md](spec-updates.md#re-vendor)).
 
 `tests/v1/test_registry.py` and `tests/v2/test_registry.py` check that every citation carries the pinned spec
 commit, that every schema pointer resolves in the vendored schema, and that no citation points outside the draft
@@ -114,5 +151,7 @@ describes the tooling. The ledger exists so that a spec update can tell "not cov
   client, unsafe, out of scope). Leave out rules that bind clients, intermediaries or UIs, and pure MAYs.
 - **Cited, not inferred.** Each entry's `statement` restates the cited text in one sentence, and its `citation` has
   the same form as a requirement citation. Do not record a rule the spec does not state.
-- `reason` says why the TCK does not test it.
+- `reason` says why the TCK does not test it. It must not rest on a TCK choice ("the TCK never advertises X"): a
+  rule that becomes observable when the TCK changes its own behaviour belongs in a row that can SKIP, or in an entry
+  marked "Deferred" that names the real blocker.
 - If a rule later becomes a requirement, add the row and delete its ledger entry in the same change.

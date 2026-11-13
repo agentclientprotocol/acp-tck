@@ -117,6 +117,7 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-210",
     "ACP-RESUME-212",
     "ACP-RESUME-213",
+    "ACP-RESUME-217",
     "ACP-ERROR-003",
     "ACP-ERROR-004",
     "ACP-LIST-001",
@@ -149,6 +150,7 @@ _CAPABILITY_IDS = {
     "ACP-FORK-203",
     "ACP-FORK-204",
     "ACP-FORK-205",
+    "ACP-FORK-206",
     "ACP-SYSPROMPT-001",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -175,10 +177,36 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-210",
+    "ACP-TOOLCANCEL-201",
+    "ACP-TOOLCANCEL-202",
+    "ACP-TERMCANCEL-201",
+    "ACP-TERMCANCEL-202",
+    "ACP-TOOLCANCEL-203",
+    "ACP-TERMCANCEL-203",
+    "ACP-TOOLCANCEL-204",
+    "ACP-TERMCANCEL-204",
+    "ACP-SUBAGENT-016",
+    "ACP-SUBAGENT-017",
+    "ACP-SUBAGENT-202",
+    "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
+    "ACP-SUBAGENT-007",
+    "ACP-SUBAGENT-008",
+    "ACP-SUBAGENT-009",
 }
 _ADVISORY_IDS = {
     "ACP-INIT-215",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-STATE-204",
+    "ACP-STATE-209",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
@@ -202,6 +230,8 @@ _ADVISORY_IDS = {
     "ACP-PATCH-209",
     "ACP-PATCH-211",
     "ACP-PATCH-212",
+    "ACP-TOOLCANCEL-205",
+    "ACP-TERMCANCEL-205",
     "ACP-META-001",
     "ACP-META-201",
     "ACP-META-202",
@@ -219,6 +249,8 @@ _ADVISORY_IDS = {
 _INFORMATIONAL_IDS = {
     "ACP-INFO-CONCURRENT-201",
     "ACP-INFO-CANCEL-201",
+    "ACP-INFO-BACKGROUND-201",
+    "ACP-INFO-BACKGROUND-202",
     "ACP-MCP-201",
     "ACP-MCP-202",
     "ACP-STDERR-001",
@@ -268,11 +300,45 @@ _CANCEL_RACE_SKIP_IDS = {
 # (`reports_background_work.py` and the `background_*.py` defect fixtures).
 _BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
 
+# The `tool_call/cancel`/`terminal/cancel` rows judge only an item that advertises
+# `capabilities.cancel` while still live, which no `_base.py` fixture offers unless it opts into
+# `cancellable_work` (`conforming_full.py` and the `*_cancel_*` defect fixtures) and the cancel
+# prompt is `__hang__`. The `-204`/`-205` rows judge only an item that is final yet still
+# advertises `cancel` (`keeps_cancel_after_final.py` and its defect siblings), so they also SKIP for
+# `conforming_full.py`, whose items stop advertising it.
+_ITEM_ACCEPT_IDS = {"ACP-TOOLCANCEL-201", "ACP-TOOLCANCEL-202", "ACP-TERMCANCEL-201", "ACP-TERMCANCEL-202"}
+_STALE_CANCEL_IDS = {"ACP-TOOLCANCEL-204", "ACP-TOOLCANCEL-205", "ACP-TERMCANCEL-204", "ACP-TERMCANCEL-205"}
+_ITEM_CANCEL_IDS = _ITEM_ACCEPT_IDS | _STALE_CANCEL_IDS
+
+# The child-stop rows judge only a running child that advertises `capabilities.cancel` (or a child's
+# own cancellable tool call or terminal) in the `__hang__` turn: only `cancellable_subagent.py` and
+# its siblings offer one, so every other fixture SKIPs them, `exposes_subagent.py` and
+# `conforming_full.py` included.
+_CHILD_CONTROL_IDS = {
+    "ACP-SUBAGENT-016",
+    "ACP-SUBAGENT-017",
+    "ACP-SUBAGENT-202",
+    "ACP-TOOLCANCEL-203",
+    "ACP-TERMCANCEL-203",
+}
+
 # `ACP-RESUME-213` judges only a resume snapshot that lists background work, and SKIPs otherwise.
 # Only a fixture with `background_on_resume` (`resume_lists_background_work.py` and its defect
 # sibling) leaves live work at resume; no other fixture does, not even
 # `reports_background_work.py`, whose turns finish their work before they end.
 _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
+
+# The other background rows judge only an agent that reports a `background` list, and
+# `ACP-STATE-209` needs one of its items to end while idle (`background_outlives_turn="finish"`),
+# `ACP-INFO-BACKGROUND-202` a list that is non-empty when `session/cancel` lands. A fixture that
+# merely reports lists (`reports_background_work.py`) PASSes `ACP-RESUME-217` and
+# `ACP-INFO-BACKGROUND-201` and SKIPs the other two.
+_BACKGROUND_OTHER_SKIP_IDS = {
+    "ACP-STATE-209",
+    "ACP-INFO-BACKGROUND-201",
+    "ACP-INFO-BACKGROUND-202",
+    "ACP-RESUME-217",
+}
 
 # `ACP-PROMPTCAP-001/002/003` SKIP whenever the agent doesn't advertise the corresponding
 # `capabilities.session.prompt.*` marker, and `ACP-PERM-201`/`202` SKIP whenever a turn never
@@ -286,6 +352,20 @@ _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 # SKIP ("no <variant> observed") rather than PASS, exactly as they do for `conforming.py` itself
 # (see `test_v2_conforming_agent_passes_everything` above).
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
+    "ACP-SUBAGENT-001",  # the fixture exposes no subagent
+    "ACP-SUBAGENT-002",  # nor any `session` content
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
+    "ACP-SUBAGENT-007",
+    "ACP-SUBAGENT-008",
+    "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -314,7 +394,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
 # session-related at all) legitimately SKIPs the session-management extras below -- `delete`,
@@ -348,6 +428,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-FORK-203",
     "ACP-FORK-204",
     "ACP-FORK-205",
+    "ACP-FORK-206",
     "ACP-SYSPROMPT-001",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -493,11 +574,26 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CONFIG-212",
     "ACP-COMMANDS-201",
     "ACP-RESUME-210",
+    "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
+    "ACP-SUBAGENT-007",
+    "ACP-SUBAGENT-008",
+    "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
     "ACP-FORK-204",
     "ACP-FORK-205",
+    "ACP-FORK-206",
     "ACP-SYSPROMPT-001",
     "ACP-SYSPROMPT-202",
     "ACP-SYSPROMPT-002",
@@ -529,18 +625,50 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
-def _assert_conforming_baseline(result: subprocess.CompletedProcess[str], fixture: str) -> None:
+# Skipped for `conforming.py` but exercised by a fixture whose child asks for permission, whose
+# announced child shows up on the wire (a request and a custom session ID are observed) and whose
+# spawn tool call carries `session` content (so the tool-call rows see a report).
+_SUBAGENT_EXERCISED_IDS = {
+    "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
+    "ACP-SUBAGENT-007",
+    "ACP-SUBAGENT-008",
+    "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
+    "ACP-PATCH-204",
+    "ACP-PATCH-208",
+    "ACP-PATCH-210",
+    "ACP-PATCH-211",
+    "ACP-PERM-201",
+    "ACP-PERM-202",
+    "ACP-JSONRPC-202",
+    "ACP-ENUM-203",
+}
+
+
+def _assert_conforming_baseline(
+    result: subprocess.CompletedProcess[str], fixture: str, exercised: set[str] = frozenset()
+) -> None:
     """Assert `result` matches `conforming.py`'s own full-run outcome (see its test below):
-    every id in `_CONFORMING_EXPECTED_SKIPS` SKIPs, every other id PASSes."""
+    every id in `_CONFORMING_EXPECTED_SKIPS` SKIPs, except those in `exercised`, which PASS like
+    every other id."""
     assert result.returncode == 0, result.stdout + result.stderr
 
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
     for req_id, status in statuses.items():
-        if req_id in _CONFORMING_EXPECTED_SKIPS:
+        if req_id in _CONFORMING_EXPECTED_SKIPS - exercised:
             assert status == "SKIPPED", (
                 f"{req_id} is {status}, expected SKIPPED (not advertised / no permission "
                 f"request observed):\n{result.stdout}"
@@ -589,7 +717,23 @@ def test_v2_conforming_agent_passes_everything():
 # `_meta` at all; `emits_w3c_meta.py` exercises them), and `_BACKGROUND_SKIP_IDS` (it reports
 # no background work; `reports_background_work.py` exercises them).
 # `ACP-ERROR-204` SKIPs for every `_base.py` fixture that stays silent on a non-JSON line.
+# `ACP-SUBAGENT-001..014`/`-201` SKIP: it exposes no subagent (`exposes_subagent.py` exercises them),
+# and so do `_CHILD_CONTROL_IDS` (`cancellable_subagent.py` exercises them).
 _FULL_EXPECTED_SKIPS = {
+    "ACP-SUBAGENT-001",
+    "ACP-SUBAGENT-002",
+    "ACP-SUBAGENT-003",
+    "ACP-SUBAGENT-004",
+    "ACP-SUBAGENT-005",
+    "ACP-SUBAGENT-006",
+    "ACP-SUBAGENT-007",
+    "ACP-SUBAGENT-008",
+    "ACP-SUBAGENT-009",
+    "ACP-SUBAGENT-011",
+    "ACP-SUBAGENT-012",
+    "ACP-SUBAGENT-013",
+    "ACP-SUBAGENT-014",
+    "ACP-SUBAGENT-201",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -599,7 +743,8 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-ERROR-204",
     "ACP-META-203",
     "ACP-META-204",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS
+    "ACP-FORK-206",  # no listed work at fork time
+} | _STALE_CANCEL_IDS | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _CHILD_CONTROL_IDS
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -621,7 +766,11 @@ def test_v2_conforming_full_agent_passes_everything():
     never appears on the default connection this fixture also answers), and emits one
     `terminal_update` + one `terminal_output_chunk` per turn under the same
     `emit_rich_turn_updates` flag -- so `ACP-AUTH-006`/`ACP-PATCH-206`/`ACP-PATCH-207` all PASS
-    too, instead of SKIPping "nothing to check"/"no <variant> observed".
+    too, instead of SKIPping "nothing to check"/"no <variant> observed". Its `__hang__` turn also
+    leaves a tool call and a terminal open that advertise `capabilities.cancel` and implements
+    `tool_call/cancel`/`terminal/cancel` for them (`cancellable_work`), so
+    `ACP-TOOLCANCEL-201/202` and `ACP-TERMCANCEL-201/202` PASS (its items stop advertising `cancel`
+    once final, so the `-204/205` already-final rows SKIP).
 
     `_FULL_EXPECTED_SKIPS` still legitimately SKIP (see its comment), and `_ALWAYS_SKIPPED_IDS`
     (permanently unobservable record-only probes) SKIP regardless."""
@@ -1263,6 +1412,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -1435,6 +1585,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -1480,7 +1631,14 @@ def test_reports_background_work_agent_passes_everything():
     assert result.returncode == 0, result.stdout + result.stderr
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
-    exercised = _BACKGROUND_SKIP_IDS | {"ACP-PATCH-204", "ACP-PATCH-208", "ACP-PATCH-210", "ACP-PATCH-211"}
+    exercised = _BACKGROUND_SKIP_IDS | {
+        "ACP-PATCH-204",
+        "ACP-PATCH-208",
+        "ACP-PATCH-210",
+        "ACP-PATCH-211",
+        "ACP-RESUME-217",
+        "ACP-INFO-BACKGROUND-201",
+    }
     for req_id, status in statuses.items():
         expected = "SKIPPED" if req_id in _CONFORMING_EXPECTED_SKIPS - exercised else "PASS"
         assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
@@ -1515,6 +1673,105 @@ def test_background_removed_unfinished_fails_only_state_208():
     assert statuses == {
         "ACP-STATE-206": "PASS", "ACP-STATE-207": "PASS", "ACP-STATE-208": "FAIL"
     }, stdout
+
+
+def _full_run(fixture: str, tmp_path, **kwargs) -> tuple[dict[str, str], dict[str, dict], str]:
+    """The whole suite against `fixture`: every row's status, each row's report entry by id, and
+    stdout."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2, fixture, protocol_version=2, report_json=str(report_path), **kwargs
+    )
+    statuses = _table_statuses(result.stdout)
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    return statuses, by_id, result.stdout
+
+
+def _recorded(by_id: dict[str, dict], req_id: str) -> dict[str, str]:
+    (test,) = by_id[req_id]["tests"]
+    return test["properties"]
+
+
+def test_finishes_background_after_idle_passes_state_209(tmp_path):
+    """The positive control: the background tool call ends after the turn's idle, and the agent
+    re-sends the idle with it removed. `ACP-STATE-209` PASSes (judged), next to the rows that
+    judge the same traffic."""
+    statuses, _by_id, stdout = _full_run("finishes_background_after_idle.py", tmp_path)
+    assert _fails(statuses) == set(), stdout
+    for req_id in ("ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208", "ACP-STATE-209"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_background_end_not_resent_fails_only_state_209(tmp_path):
+    """The item finishes after the idle and no snapshot drops it. `ACP-STATE-208` SKIPs: no
+    snapshot removed anything, so there is no removal to judge."""
+    statuses, _by_id, stdout = _full_run("background_end_not_resent.py", tmp_path)
+    assert _fails(statuses) == {"ACP-STATE-209"}, stdout
+    assert statuses["ACP-STATE-208"] == "SKIPPED", stdout
+
+
+def test_resume_snapshot_omits_background_fails_only_resume_217(tmp_path):
+    """Live updates carry the list, the resume snapshot omits it. `ACP-RESUME-213` SKIPs (the
+    snapshot lists nothing); `reports_background_work.py` PASSes `ACP-RESUME-217`."""
+    statuses, _by_id, stdout = _full_run("resume_snapshot_omits_background.py", tmp_path)
+    assert _fails(statuses) == {"ACP-RESUME-217"}, stdout
+    assert statuses["ACP-RESUME-213"] == "SKIPPED", stdout
+
+
+def test_keeps_background_work_passes_fork_206_and_records_the_cancel(tmp_path):
+    """The positive control for the fork row: the source session's work is still listed at fork
+    time and the fork's snapshots do not list it. Run with a `__hang__` cancel prompt, its
+    `session/cancel` leaves that listed work running, so `ACP-INFO-BACKGROUND-202` records it."""
+    statuses, by_id, stdout = _full_run(
+        "keeps_background_work.py", tmp_path, cancel_prompt="__hang__"
+    )
+    assert _fails(statuses) == set(), stdout
+    for req_id in ("ACP-FORK-206", "ACP-RESUME-213", "ACP-RESUME-217", "ACP-INFO-BACKGROUND-202"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+    recorded = _recorded(by_id, "ACP-INFO-BACKGROUND-202")
+    assert "tool-bg-" in recorded["acp_tck_background_listed_at_cancel"], recorded
+    assert recorded["acp_tck_background_finalized_after_cancel"] == "[]", recorded
+    assert "tool-bg-" in recorded["acp_tck_background_listed_at_idle"], recorded
+
+
+def test_fork_copies_background_work_fails_only_fork_206(tmp_path):
+    statuses, _by_id, stdout = _full_run("fork_copies_background_work.py", tmp_path)
+    assert _fails(statuses) == {"ACP-FORK-206"}, stdout
+
+
+def test_fork_206_judges_snapshots_received_before_the_fork_turn_times_out():
+    """`fork_copies_background_work_and_hangs.py` copies the source's list into the fork's
+    `running` snapshot and never ends the fork's turn. `ACP-FORK-206` FAILs on the snapshot it
+    received (it does not SKIP on the timeout), next to `ACP-FORK-202`."""
+    fails, _statuses, stdout = _fails_for("fork_copies_background_work_and_hangs.py", "fork")
+    assert fails == {"ACP-FORK-202", "ACP-FORK-206"}, stdout
+
+
+def test_unprefixed_background_type_fails_only_enum_201(tmp_path):
+    """`background[].type` is `"task"`: the `other` branch accepts it, `ACP-STATE-206..208` ignore
+    items of other types, and only the open-enum sweep objects."""
+    statuses, _by_id, stdout = _full_run("unprefixed_background_type.py", tmp_path)
+    assert _fails(statuses) == {"ACP-ENUM-201"}, stdout
+    for req_id in ("ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_lists_tool_call_with_its_terminal_is_recorded_not_failed(tmp_path):
+    """The list names a command's tool call and the terminal that tool call references. The rule
+    against listing both cannot be judged, so `ACP-INFO-BACKGROUND-201` records the pair."""
+    statuses, by_id, stdout = _full_run("lists_tool_call_with_its_terminal.py", tmp_path)
+    assert _fails(statuses) == set(), stdout
+    assert statuses["ACP-INFO-BACKGROUND-201"] == "PASS", stdout
+    recorded = _recorded(by_id, "ACP-INFO-BACKGROUND-201")
+    assert "tool-cmd-" in recorded["acp_tck_listed_tool_calls_with_listed_terminal"], recorded
+
+
+def test_references_background_terminal_records_no_pair(tmp_path):
+    """The Codex-style agent lists only the terminal, so the record is empty."""
+    statuses, by_id, stdout = _full_run("references_background_terminal.py", tmp_path)
+    assert statuses["ACP-INFO-BACKGROUND-201"] == "PASS", stdout
+    recorded = _recorded(by_id, "ACP-INFO-BACKGROUND-201")
+    assert recorded["acp_tck_listed_tool_calls_with_listed_terminal"] == "[]", recorded
 
 
 _PROMPT_K = "test_prompt and not capabilities"
@@ -1587,17 +1844,188 @@ def test_inserts_cancelled_held_prompt_fails_only_cancel_214():
 
 
 def test_exposes_subagent_passes_everything():
-    """Announced child-session traffic (including the child's own `running`/`idle`) is legal
-    and must not end or start the parent's turn: same outcome as `conforming.py`."""
+    """Announced child-session traffic is legal and must not end or start the parent's turn:
+    the child's own `running`/`idle`, a `session_message` in both views, a child
+    `session/request_permission` after the announcement, and a child chunk after the parent's turn
+    ended. Same outcome as `conforming.py`, except that `_SUBAGENT_EXERCISED_IDS` PASS."""
     result = _run_cli(FIXTURES_DIR_V2, "exposes_subagent.py", protocol_version=2)
-    _assert_conforming_baseline(result, "exposes_subagent.py")
+    _assert_conforming_baseline(result, "exposes_subagent.py", _SUBAGENT_EXERCISED_IDS)
 
 
-def test_unannounced_child_update_fails_prompt_002_only():
-    result = _run_cli(FIXTURES_DIR_V2, "unannounced_child_update.py", protocol_version=2, k=_PROMPT_K)
+_SUBAGENT_K = f"({_PROMPT_K}) or test_subagents"
+
+
+def test_unannounced_child_update_fails_prompt_002_and_subagent_001():
+    """The child's traffic is unannounced inside the turn, so both rows judge the one defect:
+    `ACP-PROMPT-002` (in-turn notifications) and `ACP-SUBAGENT-001` (the whole connection)."""
+    result = _run_cli(FIXTURES_DIR_V2, "unannounced_child_update.py", protocol_version=2, k=_SUBAGENT_K)
     assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-PROMPT-002", "ACP-SUBAGENT-001"}, result.stdout
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "child_permission_before_announce.py",
+        "session_message_unknown_participant.py",
+        "child_update_after_turn_unannounced.py",
+    ],
+)
+def test_unannounced_child_use_outside_prompt_002_fails_subagent_001_only(fixture):
+    """A child request, a `session_message` participant and a post-turn child update are not
+    in-turn `session/update`s for an unannounced child, so only `ACP-SUBAGENT-001` judges them."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-SUBAGENT-001"}, result.stdout
+    assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
+
+
+def test_subagent_rows_skip_without_a_child():
+    """`conforming.py` never uses a session ID the client did not create, nor `session` content."""
+    result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-001"] == "SKIPPED", result.stdout
+    for number in (*range(2, 10), *range(11, 15), 201):
+        assert statuses[f"ACP-SUBAGENT-{number:03}"] == "SKIPPED", result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("self_parented_subagent.py", "ACP-SUBAGENT-003"),
+        ("subagent_reuses_session_id.py", "ACP-SUBAGENT-004"),
+        ("reparents_subagent.py", "ACP-SUBAGENT-005"),
+        ("relative_subagent_cwd.py", "ACP-SUBAGENT-006"),
+    ],
+)
+def test_subagent_association_violations_fail_one_row_only(fixture, failing):
+    """Each association defect is announced on a known session and is schema-valid (`AbsolutePath`
+    is a bare string), so `ACP-PROMPT-002`, `ACP-SUBAGENT-001` and `-002` PASS and the disjoint
+    association rows `ACP-SUBAGENT-003..006` FAIL only the intended one."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {failing}, result.stdout
+    for req_id in ("ACP-PROMPT-002", "ACP-SUBAGENT-001", "ACP-SUBAGENT-002"):
+        assert statuses[req_id] == "PASS", result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("session_message_same_participants.py", "ACP-SUBAGENT-007"),
+        ("session_message_foreign_outer_session.py", "ACP-SUBAGENT-008"),
+        ("session_message_mismatched_views.py", "ACP-SUBAGENT-009"),
+    ],
+)
+def test_session_message_inconsistencies_fail_one_row_only(fixture, failing):
+    """Each `session_message` defect names only announced sessions on a known session and is
+    schema-valid, so `ACP-PROMPT-002`, `ACP-SUBAGENT-001` and the other `session_message` rows
+    PASS and only the intended one of `ACP-SUBAGENT-007..009` FAILs."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {failing}, result.stdout
+    for req_id in ("ACP-PROMPT-002", "ACP-SUBAGENT-001", "ACP-SUBAGENT-002"):
+        assert statuses[req_id] == "PASS", result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("unmirrored_child_state.py", "ACP-SUBAGENT-201"),
+        ("child_task_as_user_message.py", "ACP-SUBAGENT-011"),
+        ("child_task_after_output.py", "ACP-SUBAGENT-012"),
+        ("session_message_chunk_before_participants.py", "ACP-SUBAGENT-013"),
+        ("child_select_with_choices.py", "ACP-SUBAGENT-014"),
+    ],
+)
+def test_subagent_should_violations_fail_one_advisory_row_only(fixture, failing):
+    """Each defect is schema-valid and announced, so the MUST rows PASS and only the intended one of
+    `ACP-SUBAGENT-011..014` and `-201` (all ADVISORY) FAILs. An ADVISORY FAIL does not change the verdict, so
+    the row outcome, not the exit code, is what is asserted."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {failing}, result.stdout
+    assert failing in _ADVISORY_IDS
+    # `-009` is left out: a violator may leave no pair of linked views to judge, and it SKIPs then
+    for req_id in ("ACP-PROMPT-002", *(f"ACP-SUBAGENT-00{n}" for n in range(1, 9))):
+        assert statuses[req_id] == "PASS", result.stdout
+
+
+def test_user_message_task_gives_subagent_012_nothing_to_judge():
+    """The child's task came as a `user_message`: `ACP-SUBAGENT-011` FAILs it, and `-012` SKIPs
+    instead of PASSing a child it did not judge."""
+    result = _run_cli(FIXTURES_DIR_V2, "child_task_as_user_message.py", protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-011"] == "FAIL", result.stdout
+    assert statuses["ACP-SUBAGENT-012"] == "SKIPPED", result.stdout
+
+
+def test_malformed_subagent_directories_fail_prompt_002_not_subagent_006():
+    """A non-string `cwd` and a non-array `additionalDirectories` are schema defects: only
+    `ACP-PROMPT-002` FAILs, and `ACP-SUBAGENT-006` judges the later well-typed values instead."""
+    result = _run_cli(FIXTURES_DIR_V2, "malformed_subagent_directories.py", protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {"ACP-PROMPT-002"}, result.stdout
+    assert statuses["ACP-SUBAGENT-006"] == "PASS", result.stdout
+
+
+def test_session_message_rows_skip_when_they_judge_nothing():
+    """A `session_message` that names no participant and no view leaves `ACP-SUBAGENT-007..009`
+    nothing to judge: each SKIPs, none PASSes vacuously."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "session_message_without_participants.py", protocol_version=2, k=_SUBAGENT_K
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-SUBAGENT-007", "ACP-SUBAGENT-008", "ACP-SUBAGENT-009"):
+        assert statuses[req_id] == "SKIPPED", result.stdout
+    assert statuses["ACP-SUBAGENT-001"] == "PASS", result.stdout
+    assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "session_content_unknown_session.py",  # in a tool call's content
+        "session_content_unknown_in_permission.py",  # only in a permission request's `subject.toolCall`
+    ],
+)
+def test_session_content_unknown_session_fails_subagent_002_only(fixture):
+    """A `session` content reference to a never-announced session is not child traffic: only
+    `ACP-SUBAGENT-002` judges it, while `ACP-SUBAGENT-001` and `ACP-PROMPT-002` PASS."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-SUBAGENT-002"}, result.stdout
+    assert statuses["ACP-SUBAGENT-001"] == "PASS", result.stdout
+    assert statuses["ACP-PROMPT-002"] == "PASS", result.stdout
+
+
+def test_replays_subagent_history_passes_everything():
+    """A child announced and replayed under its own `sessionId` on `replayFrom: start` (with its own
+    `user_message`), plus live child chunks before every resume response, replay or not, is legal:
+    same outcome as `conforming.py`."""
+    result = _run_cli(FIXTURES_DIR_V2, "replays_subagent_history.py", protocol_version=2)
+    _assert_conforming_baseline(result, "replays_subagent_history.py", _SUBAGENT_EXERCISED_IDS)
+
+
+def test_replays_unannounced_child_fails_resume_209_only():
+    result = _run_cli(FIXTURES_DIR_V2, "replays_unannounced_child.py", protocol_version=2)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-RESUME-209"}, result.stdout
+    assert statuses["ACP-RESUME-002"] == "PASS", result.stdout
+
+
+def test_replays_child_before_announce_fails_resume_209_only():
+    """The child was announced on an earlier turn, but not within the resume exchange."""
+    result = _run_cli(FIXTURES_DIR_V2, "replays_child_before_announce.py", protocol_version=2)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-RESUME-209"}, result.stdout
 
 
 def test_requires_action_no_running_fails_state_205_only():
@@ -1839,6 +2267,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
@@ -1950,6 +2379,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
@@ -2059,6 +2489,7 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-RESUME-209",
         "ACP-RESUME-212",
         "ACP-RESUME-213",
+        "ACP-RESUME-217",
         "ACP-RESUME-214",
         "ACP-ENUM-201",
         "ACP-META-001",
@@ -2286,6 +2717,51 @@ def test_v2_answers_notifications_fails_jsonrpc_003_only():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
+@pytest.mark.parametrize(
+    "fixture", ["answers_mcp_notification.py", "answers_malformed_mcp_notification.py"]
+)
+def test_v2_answers_mcp_notification_fails_jsonrpc_003_only(fixture: str):
+    """Each fixture advertises `capabilities.session.mcp.acp` and replies to one `mcp/message`
+    probe only (`answers_mcp_notification.py` the well-formed one,
+    `answers_malformed_mcp_notification.py` the one missing `requestId`/`method`); `session/cancel`
+    and the other probes stay silent, so that probe alone fails `ACP-JSONRPC-003` and each probe is
+    pinned."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="jsonrpc")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-JSONRPC-003"}, result.stdout
+
+
+def test_v2_exit_on_malformed_mcp_message_fails_ext_002_only():
+    """`exits_on_malformed_mcp_message.py` does not advertise `capabilities.session.mcp.acp` and
+    exits on an `mcp/message` notification missing `requestId`. It sent no reply, so
+    `ACP-JSONRPC-003` PASSes (v1 agrees); the crash on a notification it does not recognize is
+    `ACP-EXT-002`'s finding."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "exits_on_malformed_mcp_message.py",
+        protocol_version=2,
+        k="jsonrpc or extensibility",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-EXT-002"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-003") == "PASS", result.stdout
+
+
+def test_v2_acp_advertising_agent_is_not_sent_the_ext_002_mcp_probe():
+    """`answers_mcp_notification.py` advertises `capabilities.session.mcp.acp`, so
+    `ACP-EXT-002`'s `mcp/message` probe is skipped for it; the `_tck/ping` probe still PASSes the
+    row."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, "answers_mcp_notification.py", protocol_version=2, k="extensibility"
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
+
+
 def test_v2_pushes_status_notifications_passes_everything():
     """`pushes_status_notifications.py` pushes an unsolicited `_`-prefixed notification right
     after `initialize` and before handling every later message, including ahead of an array's
@@ -2426,7 +2902,9 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         | _NO_AUTH_SKIP_IDS
         | _RICH_TURN_SKIP_IDS
         | _BACKGROUND_SKIP_IDS
-        | _RESUME_BACKGROUND_SKIP_IDS
+        | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS
+        | _ITEM_CANCEL_IDS
+        | _CHILD_CONTROL_IDS
         | {
             "ACP-PROMPT-207",
             "ACP-PROMPTCAP-201",  # every prompt capability is advertised
@@ -2434,6 +2912,20 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-CANCEL-213",
             "ACP-CLOSE-205",
             "ACP-ERROR-204",
+            "ACP-SUBAGENT-001",  # no subagent exposed
+            "ACP-SUBAGENT-002",
+            "ACP-SUBAGENT-003",
+            "ACP-SUBAGENT-004",
+            "ACP-SUBAGENT-005",
+            "ACP-SUBAGENT-006",
+            "ACP-SUBAGENT-007",
+            "ACP-SUBAGENT-008",
+            "ACP-SUBAGENT-009",
+            "ACP-SUBAGENT-011",
+            "ACP-SUBAGENT-012",
+            "ACP-SUBAGENT-013",
+            "ACP-SUBAGENT-014",
+            "ACP-SUBAGENT-201",
         }
     )
     for req_id, status in statuses.items():
@@ -3685,6 +4177,8 @@ _TOOL_CALL_K = "test_permission or patches or background or test_enums or test_p
         ("permission_without_requires_action.py", "ACP-PATCH-209"),
         ("tool_call_reopens_after_final.py", "ACP-PATCH-210"),
         ("leaves_tool_call_in_progress.py", "ACP-PATCH-211"),
+        ("leaves_terminal_tool_call_in_progress.py", "ACP-PATCH-211"),
+        ("abandons_tool_call_after_terminal_exit.py", "ACP-PATCH-211"),
         ("advertises_cancel_after_final.py", "ACP-PATCH-212"),
     ],
 )
@@ -3704,6 +4198,312 @@ def test_tool_call_defect_fails_its_row_only(fixture: str, failing_id: str):
         # No `requires_action` at all: cancelling while blocked is still judged (no state gate).
         assert statuses["ACP-CANCEL-209"] == "PASS", stdout
         assert statuses["ACP-CANCEL-213"] == "PASS", stdout
+
+
+def test_tool_call_referencing_a_listed_terminal_is_live_at_idle():
+    """`references_background_terminal.py` is Codex-style: its command's tool call stays
+    `in_progress` at the turn-ending idle, and the terminal it references is the one listed in
+    `background`. `ACP-PATCH-211` PASSes (it judged a tool call, not a SKIP) next to
+    `ACP-STATE-206`/`207`, and nothing FAILs (`ACP-STATE-208` SKIPs: no item is ever removed).
+    `leaves_terminal_tool_call_in_progress.py` keeps the FAIL for the same tool call when no list
+    names the terminal, and `abandons_tool_call_after_terminal_exit.py` when the terminal exited
+    and left the list before the idle."""
+    fails, statuses, stdout = _fails_for("references_background_terminal.py", _TOOL_CALL_K)
+    assert fails == set(), stdout
+    for req_id in ("ACP-PATCH-210", "ACP-PATCH-211", "ACP-STATE-206", "ACP-STATE-207"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def _item_cancel_run(
+    fixture: str, tmp_path, *, cancel_prompt: str | None = "__hang__", timeout: str = "1"
+) -> tuple[dict[str, str], dict[str, dict], str]:
+    """Run only `test_item_controls.py` against `fixture` (by default with the `__hang__` cancel
+    prompt, which is what makes a fixture's `cancellable_work` items appear): the item-cancel rows'
+    statuses, every row's report entry by id, and stdout."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        fixture,
+        protocol_version=2,
+        k="test_item_controls",
+        cancel_prompt=cancel_prompt,
+        timeout=timeout,
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    return {r: statuses.get(r) for r in sorted(_ITEM_CANCEL_IDS)}, by_id, result.stdout
+
+
+def _item_cancel_statuses(fixture: str, tmp_path) -> tuple[dict[str, str], str]:
+    statuses, _by_id, stdout = _item_cancel_run(fixture, tmp_path)
+    return statuses, stdout
+
+
+def _skip_message(by_id: dict[str, dict], req_id: str) -> str:
+    (test,) = by_id[req_id]["tests"]
+    return test["message"]
+
+
+def test_cancellable_items_pass_the_cancel_rows(tmp_path):
+    """`conforming_full.py` advertises `capabilities.cancel` on a tool call and a terminal that
+    stay open on a `__hang__` turn and implements both cancel methods. It stops advertising `cancel`
+    once they are final, so no already-final request is made: `-201/202` PASS, `-204/205` SKIP."""
+    statuses, stdout = _item_cancel_statuses("conforming_full.py", tmp_path)
+    for req_id, status in statuses.items():
+        assert status == ("SKIPPED" if req_id in _STALE_CANCEL_IDS else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_agent_that_keeps_advertising_cancel_gets_a_further_request(tmp_path):
+    """`keeps_cancel_after_final.py` leaves `cancel` advertised on its final items (an
+    `ACP-PATCH-212` finding) and answers the further requests `-32602`, as tool-calls.mdx:459,605
+    say: all eight rows PASS."""
+    statuses, stdout = _item_cancel_statuses("keeps_cancel_after_final.py", tmp_path)
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "expected"),
+    [
+        (
+            "accepts_cancel_for_final_tool_call.py",
+            {"ACP-TOOLCANCEL-204": "FAIL", "ACP-TOOLCANCEL-205": "SKIPPED"},
+        ),
+        (
+            "accepts_cancel_for_exited_terminal.py",
+            {"ACP-TERMCANCEL-204": "FAIL", "ACP-TERMCANCEL-205": "SKIPPED"},
+        ),
+        ("final_tool_call_cancel_wrong_code.py", {"ACP-TOOLCANCEL-205": "FAIL"}),
+        ("exited_terminal_cancel_wrong_code.py", {"ACP-TERMCANCEL-205": "FAIL"}),
+    ],
+)
+def test_already_final_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str, str], tmp_path):
+    """An accepted request for an already-final item fails `-204` (and leaves the code row nothing
+    to judge); a rejection with the wrong code fails only the ADVISORY `-205`. The other kind of
+    item, and the happy-path rows, still PASS."""
+    statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
+    for req_id, status in statuses.items():
+        assert status == expected.get(req_id, "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_items_that_finish_first_leave_the_cancel_rows_nothing_to_judge(tmp_path):
+    """`completes_before_cancel.py` reports its cancellable items already final, so nothing may
+    be cancelled and a `-32602` would be right: every row SKIPs and nothing FAILs."""
+    statuses, stdout = _item_cancel_statuses("completes_before_cancel.py", tmp_path)
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+    assert "FAIL" not in {s for s in _table_statuses(stdout).values()}, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "races_cancel_with_completion.py",
+        "withdraws_cancel_on_request.py",
+        "finalizes_after_rejecting_cancel.py",
+    ],
+)
+def test_legitimate_invalid_params_is_not_a_rejection(fixture: str, tmp_path):
+    """A `-32602` is the documented answer for an item that is already final or not cancellable
+    (tool-calls.mdx:459,605). It is not judged when the item's final update came first
+    (`races_cancel_with_completion.py`), arrives right after it
+    (`finalizes_after_rejecting_cancel.py`), or the agent stopped advertising `cancel`
+    (`withdraws_cancel_on_request.py`). Every row SKIPs for the `raced` reason, never for "nothing
+    advertised", and nothing FAILs."""
+    statuses, by_id, stdout = _item_cancel_run(fixture, tmp_path)
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+    for req_id in ("ACP-TOOLCANCEL-201", "ACP-TERMCANCEL-201"):
+        assert "had stopped advertising it" in _skip_message(by_id, req_id), f"{req_id}:\n{stdout}"
+
+
+def test_missing_cancel_methods_are_not_hidden_by_the_race_excuse(tmp_path):
+    """`cancel_missing_after_completion.py` answers `tool_call/cancel` and `terminal/cancel`
+    `-32601` after its items finished. Only `-32602` is the documented answer for an already-final
+    item, so the race excuse does not apply: both acceptance rows FAIL, their confirmation rows
+    SKIP."""
+    statuses, stdout = _item_cancel_statuses("cancel_missing_after_completion.py", tmp_path)
+    for req_id, status in statuses.items():
+        expected = (
+            "FAIL"
+            if req_id in ("ACP-TOOLCANCEL-201", "ACP-TERMCANCEL-201")
+            else "SKIPPED"
+        )
+        assert status == expected, f"{req_id}:\n{stdout}"
+
+
+def test_background_item_cancel_is_confirmed_after_a_permission_request_is_answered(tmp_path):
+    """`confirms_cancel_after_permission_answer.py` announces a cancellable background tool call
+    after the turn's idle and asks permission before it confirms the cancel. The TCK still reads
+    after the idle and answers that request, so the confirmation arrives: `-201/202` for the tool
+    call PASS, nothing FAILs, and the terminal rows SKIP."""
+    statuses, _by_id, stdout = _item_cancel_run(
+        "confirms_cancel_after_permission_answer.py", tmp_path, cancel_prompt=None
+    )
+    assert statuses["ACP-TOOLCANCEL-201"] == "PASS", stdout
+    assert statuses["ACP-TOOLCANCEL-202"] == "PASS", stdout
+    assert "FAIL" not in set(statuses.values()), stdout
+
+
+def test_long_streaming_turn_does_not_fail_the_cancel_rows(tmp_path):
+    """`streams_long_turn.py` streams message chunks for about 4 s and advertises nothing
+    cancellable. With `--timeout 1` the turn outlasts the per-response timeout, which the TCK's own
+    overall deadline once reported as the agent's failure on every row: now every row SKIPs and
+    nothing FAILs."""
+    statuses, _by_id, stdout = _item_cancel_run("streams_long_turn.py", tmp_path, cancel_prompt=None)
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "expected"),
+    [
+        (
+            "tool_call_cancel_errors.py",
+            {"ACP-TOOLCANCEL-201": "FAIL", "ACP-TOOLCANCEL-202": "SKIPPED"},
+        ),
+        ("tool_call_cancel_never_final.py", {"ACP-TOOLCANCEL-202": "FAIL"}),
+        (
+            "terminal_cancel_errors.py",
+            {"ACP-TERMCANCEL-201": "FAIL", "ACP-TERMCANCEL-202": "SKIPPED"},
+        ),
+        ("terminal_cancel_never_exits.py", {"ACP-TERMCANCEL-202": "FAIL"}),
+    ],
+)
+def test_item_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str, str], tmp_path):
+    """Each defect trips its own row: an error for an advertised, running item (`-32603`, or a
+    `-32602` for a terminal that neither exits nor stops advertising `cancel`) fails the
+    acceptance row (and leaves the confirmation row nothing to judge); an accepted cancel with no
+    final update fails the confirmation row. The other kind of item still PASSes, and the
+    already-final rows SKIP (these items stop advertising `cancel`)."""
+    statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
+    for req_id, status in statuses.items():
+        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS else "PASS"
+        assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
+
+
+def _child_control_statuses(fixture: str, timeout: str = "1") -> tuple[dict[str, str], str]:
+    """Run only `test_subagent_controls.py` against `fixture` with the `__hang__` cancel prompt,
+    which is what makes the cancellable children appear."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        fixture,
+        protocol_version=2,
+        k="test_subagent_controls",
+        cancel_prompt="__hang__",
+        timeout=timeout,
+    )
+    statuses = _table_statuses(result.stdout)
+    return {r: statuses.get(r) for r in sorted(_CHILD_CONTROL_IDS)}, result.stdout
+
+
+def test_cancellable_children_pass_the_child_control_rows():
+    """`cancellable_subagent.py` runs two children on a `__hang__` turn: one advertises
+    `capabilities.cancel` and stops on `session/cancel` for it alone, the other advertises nothing
+    but has a tool call and a terminal that advertise `cancel`, which are cancelled with the child's
+    `sessionId` and leave it running; cancelling the parent then stops it. All five rows PASS."""
+    statuses, stdout = _child_control_statuses("cancellable_subagent.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():
+    """`child_ends_before_cancel.py`'s cancellable child finishes (`end_turn`) as the TCK's
+    requests arrive, so the `session/cancel` for it finds no running work: a cancel racing with
+    ended work is not judged. `-016` and `-017` SKIP, nothing FAILs, and the rest still PASS."""
+    statuses, stdout = _child_control_statuses("child_ends_before_cancel.py")
+    for req_id, status in statuses.items():
+        expected = "SKIPPED" if req_id in ("ACP-SUBAGENT-016", "ACP-SUBAGENT-017") else "PASS"
+        assert status == expected, f"{req_id}:\n{stdout}"
+
+
+def test_child_that_ignores_cancel_and_ends_later_fails_the_confirmation_row():
+    """`child_ignores_cancel_then_ends.py` reports `end_turn` about 1.5 s after the cancel, past the
+    race window (`--timeout 4`: 0.5 s) but inside the wait for the confirmation. It is no cancel
+    racing with ended work, so `-016` FAILs, `-017` is still judged and PASSes, and so do the
+    rest."""
+    statuses, stdout = _child_control_statuses("child_ignores_cancel_then_ends.py", timeout="4")
+    for req_id, status in statuses.items():
+        assert status == ("FAIL" if req_id == "ACP-SUBAGENT-016" else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_item_request_still_in_flight_when_the_cascade_ends_is_judged_not_raced():
+    """`child_items_cancellable_at_cascade_end.py` announces its first cancellable child tool call
+    and terminal right before the parent's `idle`, so the TCK's requests for them are still
+    unanswered when the cascade ends. The TCK waits for the answers instead of reporting the items
+    as already final: both item rows PASS (a SKIP would hide a missing response)."""
+    statuses, stdout = _child_control_statuses("child_items_cancellable_at_cascade_end.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_background_child_announced_after_the_last_snapshot_is_not_judged():
+    """`announces_background_child_after_snapshot.py` adds a third child, announced after the
+    parent's last `state_update` (no list names it yet, and re-sending the state is only a SHOULD)
+    and left running when the parent is cancelled, as background work may be. It cannot be told from
+    foreground work, so `-202` is judged on the other two children only and PASSes, as do all the
+    rows."""
+    statuses, stdout = _child_control_statuses("announces_background_child_after_snapshot.py", timeout="2")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_asks_after_the_parent_turn_ended_is_still_answered():
+    """`child_asks_after_turn_ends.py` ends the parent's turn on the child's cancel and only then
+    asks permission for the child's work, confirming `cancelled` only if the TCK answers it
+    `cancelled` (the child was cancelled). The request is read after the turn ended: `-016` and
+    `-017` PASS, so it was answered, and answered `cancelled` and not allowed. No descendant is left
+    for the parent's cascade (`-202` SKIPs)."""
+    statuses, stdout = _child_control_statuses("child_asks_after_turn_ends.py", timeout="2")
+    for req_id, status in statuses.items():
+        assert status == ("SKIPPED" if req_id == "ACP-SUBAGENT-202" else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
+    """The per-child `cancel` capability does not prevent the Agent from cancelling its own
+    delegated work (RFD:1071-1073), which is indistinguishable from a leaked cancel, so
+    `child_cancel_stops_sibling_too.py` PASSes `-016`/`-017` and the sibling is only recorded.
+    Nothing is left running for the parent's cascade (`-202` SKIPs)."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "child_cancel_stops_sibling_too.py",
+        protocol_version=2,
+        k="test_subagent_controls",
+        cancel_prompt="__hang__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in sorted(_CHILD_CONTROL_IDS):
+        expected = "SKIPPED" if req_id == "ACP-SUBAGENT-202" else "PASS"
+        assert statuses[req_id] == expected, f"{req_id}:\n{result.stdout}"
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (test,) = by_id["ACP-SUBAGENT-017"]["tests"]
+    assert test["properties"]["acp_tck_cancelled_siblings"].endswith("-child-b"), test
+
+
+def test_child_control_rows_skip_without_a_cancellable_child():
+    """`exposes_subagent.py` exposes a child that advertises no `cancel` and ends with the turn,
+    `conforming_full.py` none: nothing cancellable is running, so every row SKIPs."""
+    for fixture in ("exposes_subagent.py", "conforming_full.py"):
+        statuses, stdout = _child_control_statuses(fixture)
+        assert set(statuses.values()) == {"SKIPPED"}, f"{fixture}:\n{stdout}"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing", "skipped"),
+    [
+        ("child_cancel_ignored.py", "ACP-SUBAGENT-016", set()),
+        ("child_cancel_cancels_parent.py", "ACP-SUBAGENT-017", {"ACP-SUBAGENT-202"}),
+        ("parent_cancel_leaves_child_running.py", "ACP-SUBAGENT-202", set()),
+        ("child_tool_call_cancel_errors.py", "ACP-TOOLCANCEL-203", set()),
+        ("child_terminal_cancel_never_exits.py", "ACP-TERMCANCEL-203", set()),
+    ],
+)
+def test_child_control_defect_fails_its_row_only(fixture: str, failing: str, skipped: set[str]):
+    """Each defect trips its own row: a child that ignores its cancel fails `-016`; a cancel that
+    also ends the parent's turn fails `-017` (the parent's turn is over before the TCK cancels it,
+    so `-202` SKIPs); a parent cancel that leaves the child it waits on running fails `-202`; a
+    child's item whose cancel errors, or is accepted but never confirmed, fails its item row.
+    Every other row PASSes, except where the same defect left it nothing to judge."""
+    statuses, stdout = _child_control_statuses(fixture)
+    for req_id, status in statuses.items():
+        expected = "FAIL" if req_id == failing else "SKIPPED" if req_id in skipped else "PASS"
+        assert status == expected, f"{req_id}:\n{stdout}"
 
 
 def test_permission_before_requires_action_judges_cancel_while_blocked():
@@ -4313,10 +5113,23 @@ def test_adddirs_accepts_relative_fails_adddirs_203_only():
 
 
 def test_mcp_unsupported_transport_fixtures_fail_mcp_203_only():
-    """One fixture per probe: `sse` accepted, or a `_`-prefixed custom type accepted."""
-    for fixture in ("accepts_sse_mcp.py", "accepts_custom_mcp_transport.py"):
+    """One fixture per probe: `sse` accepted, a `_`-prefixed custom type accepted, or an `acp`
+    declaration accepted by an agent that does not advertise `capabilities.session.mcp.acp`."""
+    for fixture in (
+        "accepts_sse_mcp.py",
+        "accepts_custom_mcp_transport.py",
+        "accepts_unadvertised_acp_mcp.py",
+    ):
         fails, _statuses, out = _fails_for(fixture, _SETUP_K)
         assert fails == {"ACP-MCP-203"}, f"{fixture}:\n{out}"
+
+
+def test_advertising_acp_mcp_agent_is_not_sent_the_acp_probe():
+    """`advertises_acp_mcp.py` accepts an `acp` declaration because it advertises
+    `capabilities.session.mcp.acp`; `ACP-MCP-203` skips its `acp` probe and PASSes."""
+    fails, statuses, out = _fails_for("advertises_acp_mcp.py", _SETUP_K)
+    assert fails == set(), out
+    assert statuses.get("ACP-MCP-203") == "PASS", out
 
 
 def test_accepts_duplicate_mcp_names_fails_mcp_204_advisory_only():

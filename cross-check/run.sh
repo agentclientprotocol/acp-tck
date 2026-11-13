@@ -14,10 +14,14 @@
 # pinned SHA is reused). This is a manual/CI cross-check, NOT part of `uv run pytest` -- it needs
 # a Rust toolchain and network access. See `README.md` in this directory.
 #
-# Set ACP_CROSS_CHECK_V2=0 to skip both v2 legs and run only the v1 comparison (e.g. if the
-# local Rust toolchain lacks the v2 feature, or to keep a quick v1-only smoke run).
+# Usage: run.sh [LEG ...], where LEG is testy, echo_agent, testy_v2 or python_v2_agent.
+#   - No LEG: run every leg, then print the comparison table and check the expected baseline.
+#     Set ACP_CROSS_CHECK_V2=0 to skip both v2 legs (e.g. if the local Rust toolchain lacks the
+#     v2 feature, or for a quick v1-only run).
+#   - LEGs given: run only those and write their JSON reports, with no table or baseline check.
+#     CI runs each leg on its own runner and checks the baseline over all four reports at the end.
 #
-# Exits 0 iff the script itself completed (every enabled agent run happened and its JSON report
+# Exits 0 iff the script itself completed (every selected agent run happened and its JSON report
 # was written). The agents' own conformance verdicts are data, not the script's success -- read
 # the printed table(s) and verdict lines.
 set -euo pipefail
@@ -29,6 +33,30 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/sdk-pins.sh"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/scratch/cross-check}"
 CROSS_CHECK_V2="${ACP_CROSS_CHECK_V2:-1}"
+
+ALL_LEGS="testy echo_agent testy_v2 python_v2_agent"
+if [ $# -gt 0 ]; then
+  for leg in "$@"; do
+    case " $ALL_LEGS " in
+      *" $leg "*) ;;
+      *)
+        echo "error: unknown leg '$leg' (expected one of: $ALL_LEGS)" >&2
+        exit 2
+        ;;
+    esac
+  done
+  LEGS="$*"
+  RUN_SUMMARY=0
+elif [ "$CROSS_CHECK_V2" = "1" ]; then
+  LEGS="$ALL_LEGS"
+  RUN_SUMMARY=1
+else
+  echo "== ACP_CROSS_CHECK_V2=0 -- skipping the v2 legs ==" >&2
+  LEGS="testy echo_agent"
+  RUN_SUMMARY=1
+fi
+# wants LEG: whether LEG runs this time.
+wants() { case " $LEGS " in *" $1 "*) return 0 ;; *) return 1 ;; esac }
 
 # Sync both envs once up front and run everything with --no-sync, so uv never touches a venv
 # while the TCK is using it. --inexact keeps the root sync from pruning other workspace members.
@@ -62,49 +90,62 @@ fetch_sdk() {
 }
 
 # ACP_RUST_SDK / ACP_PYTHON_SDK are explicit opt-in overrides (e.g. to try a local SDK change).
-if [ -n "${ACP_RUST_SDK:-}" ]; then
-  echo "warning: using ACP_RUST_SDK=$ACP_RUST_SDK; the baseline is defined for the pinned Rust SDK $RUST_SDK_TAG ($RUST_SDK_SHA)" >&2
-else
-  ACP_RUST_SDK="$OUT_DIR/sdks/rust-sdk"
-  fetch_sdk "$ACP_RUST_SDK" "$RUST_SDK_URL" "$RUST_SDK_SHA"
+# Each SDK is fetched only if a selected leg needs it.
+if wants testy || wants testy_v2; then
+  if [ -n "${ACP_RUST_SDK:-}" ]; then
+    echo "warning: using ACP_RUST_SDK=$ACP_RUST_SDK; the baseline is defined for the pinned Rust SDK $RUST_SDK_TAG ($RUST_SDK_SHA)" >&2
+  else
+    ACP_RUST_SDK="$OUT_DIR/sdks/rust-sdk"
+    fetch_sdk "$ACP_RUST_SDK" "$RUST_SDK_URL" "$RUST_SDK_SHA"
+  fi
 fi
-if [ -n "${ACP_PYTHON_SDK:-}" ]; then
-  echo "warning: using ACP_PYTHON_SDK=$ACP_PYTHON_SDK; the baseline is defined for the pinned Python SDK $PYTHON_SDK_TAG ($PYTHON_SDK_SHA)" >&2
-else
-  ACP_PYTHON_SDK="$OUT_DIR/sdks/python-sdk"
-  fetch_sdk "$ACP_PYTHON_SDK" "$PYTHON_SDK_URL" "$PYTHON_SDK_SHA"
-fi
-
-echo "== Building testy (--no-default-features) from $ACP_RUST_SDK ==" >&2
-(
-  cd "$ACP_RUST_SDK"
-  cargo build -p agent-client-protocol-test --bin testy --no-default-features
-)
-
-TESTY="$ACP_RUST_SDK/target/debug/testy"
-if [ ! -x "$TESTY" ]; then
-  echo "error: expected testy binary at $TESTY after build, not found" >&2
-  exit 1
+if wants echo_agent; then
+  if [ -n "${ACP_PYTHON_SDK:-}" ]; then
+    echo "warning: using ACP_PYTHON_SDK=$ACP_PYTHON_SDK; the baseline is defined for the pinned Python SDK $PYTHON_SDK_TAG ($PYTHON_SDK_SHA)" >&2
+  else
+    ACP_PYTHON_SDK="$OUT_DIR/sdks/python-sdk"
+    fetch_sdk "$ACP_PYTHON_SDK" "$PYTHON_SDK_URL" "$PYTHON_SDK_SHA"
+  fi
 fi
 
-echo "== Running acp-tck against testy ($TESTY) ==" >&2
-set +e
-"${TCK[@]}" --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/testy.json" -- "$TESTY"
-TESTY_EXIT=$?
-set -e
-echo "testy exit code: $TESTY_EXIT" >&2
+# run_tck LABEL ARGS...: run the TCK and record its exit code for the closing lines. A FAIL
+# verdict is data, so a non-zero exit never stops the script.
+EXIT_LINES=""
+run_tck() {
+  local label="$1" code
+  shift
+  set +e
+  "${TCK[@]}" "$@"
+  code=$?
+  set -e
+  echo "$label exit code: $code" >&2
+  EXIT_LINES="${EXIT_LINES}${label} exit code: ${code}"$'\n'
+}
 
-echo "== Running acp-tck against echo_agent.py ==" >&2
-set +e
-"${TCK[@]}" --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/echo_agent.json" -- \
-  "${AGENT_PYTHON[@]}" "$ACP_PYTHON_SDK/examples/echo_agent.py"
-ECHO_EXIT=$?
-set -e
-echo "echo_agent exit code: $ECHO_EXIT" >&2
+if wants testy; then
+  echo "== Building testy (--no-default-features) from $ACP_RUST_SDK ==" >&2
+  (
+    cd "$ACP_RUST_SDK"
+    cargo build -p agent-client-protocol-test --bin testy --no-default-features
+  )
 
-TESTY_V2_EXIT=""
-PYTHON_V2_EXIT=""
-if [ "$CROSS_CHECK_V2" = "1" ]; then
+  TESTY="$ACP_RUST_SDK/target/debug/testy"
+  if [ ! -x "$TESTY" ]; then
+    echo "error: expected testy binary at $TESTY after build, not found" >&2
+    exit 1
+  fi
+
+  echo "== Running acp-tck against testy ($TESTY) ==" >&2
+  run_tck testy --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/testy.json" -- "$TESTY"
+fi
+
+if wants echo_agent; then
+  echo "== Running acp-tck against echo_agent.py ==" >&2
+  run_tck echo_agent --cancel-prompt wait_for_cancel --report-json "$OUT_DIR/echo_agent.json" -- \
+    "${AGENT_PYTHON[@]}" "$ACP_PYTHON_SDK/examples/echo_agent.py"
+fi
+
+if wants testy_v2; then
   # Built into an isolated --target-dir, never the checkout's own target/debug/testy: a
   # *dual*-feature build (v1 + unstable_protocol_v2, picking the route per-connection from the
   # client's own `initialize`) does NOT reproduce the v1-only build's ACP-INIT-003 baseline
@@ -129,92 +170,83 @@ if [ "$CROSS_CHECK_V2" = "1" ]; then
   fi
 
   echo "== Running acp-tck --protocol-version 2 against testy ($TESTY_V2) ==" >&2
-  set +e
-  "${TCK[@]}" --protocol-version 2 --cancel-prompt wait_for_cancel \
+  run_tck "testy (v2)" --protocol-version 2 --cancel-prompt wait_for_cancel \
     --report-json "$OUT_DIR/testy-v2.json" -- "$TESTY_V2"
-  TESTY_V2_EXIT=$?
-  set -e
-  echo "testy (v2) exit code: $TESTY_V2_EXIT" >&2
+fi
 
+if wants python_v2_agent; then
   echo "== Running acp-tck --protocol-version 2 against python_v2_agent.py ==" >&2
-  set +e
-  "${TCK[@]}" --protocol-version 2 --cancel-prompt wait_for_cancel \
+  run_tck python_v2_agent --protocol-version 2 --cancel-prompt wait_for_cancel \
     --report-json "$OUT_DIR/python-v2.json" -- \
     "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/python_v2_agent.py"
-  PYTHON_V2_EXIT=$?
+fi
+
+if [ "$RUN_SUMMARY" = "1" ]; then
+  echo
+  echo "== Comparison table =="
+  set +e
+  if [ "$CROSS_CHECK_V2" = "1" ]; then
+    # Baselines (MANDATORY FAILs only), observed against the SDKs pinned in `sdk-pins.sh`.
+    # Every expected FAIL is a genuine upstream deviation from the cited rule, not a TCK bug.
+    #
+    # echo_agent ACP-INIT-003: it echoes the client's unsupported probe version (65535) verbatim
+    # instead of returning its own latest supported version. testy (v1) answers 1, so it is
+    # fully conformant.
+    #
+    # testy_v2: built with `unstable_protocol_v2`, testy serves v1 and v2 behind a protocol router
+    # that hands anything not requesting v2 (a version below v1, or a first `initialize` without a
+    # valid `protocolVersion`) to its v1 implementation, which then owns the connection
+    # (rust-sdk `AgentProtocolRouter` docs). That is deliberate v1 compatibility, and it breaks
+    # two v2 rules:
+    #   - ACP-INIT-205: `initialize(0)` gets a v1 result selecting 1; v2 requires -32022 when no
+    #     supported version is <= the request (a result must not select a higher version).
+    #   - ACP-INIT-211: after a rejected `initialize` (no `protocolVersion`), the corrected retry
+    #     requesting 2 is answered by the v1 implementation selecting 1 instead of 2.
+    # Both are deterministic (6/6 runs). The old ACP-INIT-205/206 flakiness (testy exiting before
+    # flushing its error reply) is gone: the router keeps the connection open after a rejection.
+    #
+    # python_v2_agent (repo-authored fixture, see `python_v2_agent.py` docstring), all from the
+    # Python SDK's v2 runtime, which the fixture delegates framing and validation to:
+    #   - ACP-INIT-003/205/214: the SDK rejects every `protocolVersion` other than 2 with -32602.
+    #     65535 must select 2 (and keep ignoring unparseable params such as `capabilities: 42`,
+    #     ACP-INIT-214), and 0 must get -32022 with `{requested, supported}` data.
+    #   - ACP-INIT-202: `initialize(1)` is validated as v2 params first and gets -32602 (missing
+    #     `info`); an unsupported-but-well-formed version must get -32022.
+    #   - ACP-INIT-206: the SDK coerces a string `protocolVersion` such as "2" to an integer and
+    #     accepts it, where a non-integer value must get -32602.
+    #   - ACP-INIT-212: the SDK rejects a repeated `initialize` with -32600 ("may only be
+    #     initialized once"); the spec has the agent handle each repeat like the first.
+    #   Not in the MANDATORY-only `--expect` set below: the SDK no longer crashes on JSON arrays
+    #   (ACP-JSONRPC-001/003 now PASS), but still never answers one (ADVISORY ACP-BATCH-209), and
+    #   the SDK's default-on-error `replayFrom` parsing lets a malformed value through (CAPABILITY
+    #   ACP-RESUME-208). The fixture itself skips validation the spec requires (CAPABILITY
+    #   ACP-ERROR-003/004, ACP-LIST-003/205, ACP-MCP-203, ACP-PROMPT-211, ACP-PROMPTCAP-201,
+    #   ACP-SESSION-204, ADVISORY ACP-RESUME-214), so those FAIL too.
+    "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
+      "$OUT_DIR/testy.json" testy \
+      "$OUT_DIR/echo_agent.json" echo_agent \
+      --report "$OUT_DIR/testy-v2.json" testy_v2 \
+      --report "$OUT_DIR/python-v2.json" python_v2_agent \
+      --expect "testy=" \
+      --expect "echo_agent=ACP-INIT-003" \
+      --expect "testy_v2=ACP-INIT-205,ACP-INIT-211" \
+      --expect "python_v2_agent=ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-INIT-212,ACP-INIT-214"
+  else
+    # Baselines: see the matching comment in the CROSS_CHECK_V2 branch above.
+    "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
+      "$OUT_DIR/testy.json" testy \
+      "$OUT_DIR/echo_agent.json" echo_agent \
+      --expect "testy=" \
+      --expect "echo_agent=ACP-INIT-003"
+  fi
+  SUMMARY_EXIT=$?
   set -e
-  echo "python_v2_agent exit code: $PYTHON_V2_EXIT" >&2
-else
-  echo "== ACP_CROSS_CHECK_V2=0 -- skipping the v2 legs ==" >&2
 fi
 
 echo
-echo "== Comparison table =="
-set +e
-if [ "$CROSS_CHECK_V2" = "1" ]; then
-  # Baselines (MANDATORY FAILs only), observed against the SDKs pinned in `sdk-pins.sh`.
-  # Every expected FAIL is a genuine upstream deviation from the cited rule, not a TCK bug.
-  #
-  # echo_agent ACP-INIT-003: it echoes the client's unsupported probe version (65535) verbatim
-  # instead of returning its own latest supported version. testy (v1) answers 1, so it is
-  # fully conformant.
-  #
-  # testy_v2: built with `unstable_protocol_v2`, testy serves v1 and v2 behind a protocol router
-  # that hands anything not requesting v2 (a version below v1, or a first `initialize` without a
-  # valid `protocolVersion`) to its v1 implementation, which then owns the connection
-  # (rust-sdk `AgentProtocolRouter` docs). That is deliberate v1 compatibility, and it breaks
-  # two v2 rules:
-  #   - ACP-INIT-205: `initialize(0)` gets a v1 result selecting 1; v2 requires -32022 when no
-  #     supported version is <= the request (a result must not select a higher version).
-  #   - ACP-INIT-211: after a rejected `initialize` (no `protocolVersion`), the corrected retry
-  #     requesting 2 is answered by the v1 implementation selecting 1 instead of 2.
-  # Both are deterministic (6/6 runs). The old ACP-INIT-205/206 flakiness (testy exiting before
-  # flushing its error reply) is gone: the router keeps the connection open after a rejection.
-  #
-  # python_v2_agent (repo-authored fixture, see `python_v2_agent.py` docstring), all from the
-  # Python SDK's v2 runtime, which the fixture delegates framing and validation to:
-  #   - ACP-INIT-003/205/214: the SDK rejects every `protocolVersion` other than 2 with -32602.
-  #     65535 must select 2 (and keep ignoring unparseable params such as `capabilities: 42`,
-  #     ACP-INIT-214), and 0 must get -32022 with `{requested, supported}` data.
-  #   - ACP-INIT-202: `initialize(1)` is validated as v2 params first and gets -32602 (missing
-  #     `info`); an unsupported-but-well-formed version must get -32022.
-  #   - ACP-INIT-206: the SDK coerces a string `protocolVersion` such as "2" to an integer and
-  #     accepts it, where a non-integer value must get -32602.
-  #   - ACP-INIT-212: the SDK rejects a repeated `initialize` with -32600 ("may only be
-  #     initialized once"); the spec has the agent handle each repeat like the first.
-  #   Not in the MANDATORY-only `--expect` set below: the SDK no longer crashes on JSON arrays
-  #   (ACP-JSONRPC-001/003 now PASS), but still never answers one (ADVISORY ACP-BATCH-209), and
-  #   the SDK's default-on-error `replayFrom` parsing lets a malformed value through (CAPABILITY
-  #   ACP-RESUME-208). The fixture itself skips validation the spec requires (CAPABILITY
-  #   ACP-ERROR-003/004, ACP-LIST-003/205, ACP-MCP-203, ACP-PROMPT-211, ACP-PROMPTCAP-201,
-  #   ACP-SESSION-204, ADVISORY ACP-RESUME-214), so those FAIL too.
-  "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
-    "$OUT_DIR/testy.json" testy \
-    "$OUT_DIR/echo_agent.json" echo_agent \
-    --report "$OUT_DIR/testy-v2.json" testy_v2 \
-    --report "$OUT_DIR/python-v2.json" python_v2_agent \
-    --expect "testy=" \
-    --expect "echo_agent=ACP-INIT-003" \
-    --expect "testy_v2=ACP-INIT-205,ACP-INIT-211" \
-    --expect "python_v2_agent=ACP-INIT-003,ACP-INIT-202,ACP-INIT-205,ACP-INIT-206,ACP-INIT-212,ACP-INIT-214"
-else
-  # Baselines: see the matching comment in the CROSS_CHECK_V2 branch above.
-  "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
-    "$OUT_DIR/testy.json" testy \
-    "$OUT_DIR/echo_agent.json" echo_agent \
-    --expect "testy=" \
-    --expect "echo_agent=ACP-INIT-003"
+printf '%s' "$EXIT_LINES"
+if [ "$RUN_SUMMARY" = "1" ]; then
+  echo "summary.py expectations exit code: $SUMMARY_EXIT"
 fi
-SUMMARY_EXIT=$?
-set -e
-
-echo
-echo "testy exit code: $TESTY_EXIT"
-echo "echo_agent exit code: $ECHO_EXIT"
-if [ "$CROSS_CHECK_V2" = "1" ]; then
-  echo "testy (v2) exit code: $TESTY_V2_EXIT"
-  echo "python_v2_agent exit code: $PYTHON_V2_EXIT"
-fi
-echo "summary.py expectations exit code: $SUMMARY_EXIT"
 
 exit 0

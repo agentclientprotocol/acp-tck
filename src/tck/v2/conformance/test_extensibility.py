@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from tck.common.harness import AgentExited, AgentTimeout, Direction
+from tck.common.plugin import capability_is_supported
 from tck.v2 import SPEC, validation
 from tck.v2.protocol import W3C_META_KEYS, is_namespaced_meta_key, judge_w3c_meta
 
@@ -284,6 +285,39 @@ async def test_unrecognized_custom_notification_produces_no_response(agent_launc
             f"agent responded to an unrecognized `_`-prefixed notification (should be ignored "
             f"silently): {entry.text!r}"
         )
+
+
+@pytest.mark.requirement("ACP-EXT-002")
+async def test_unadvertised_mcp_message_notification_does_not_crash_the_agent(
+    agent_launch, agent_initialize_result
+):
+    """ACP-EXT-002 (ADVISORY), probed with `mcp/message` notifications (the unstable MCP-over-ACP
+    envelope) for an agent that does not advertise `capabilities.session.mcp.acp`: it has not
+    recognized the method, so it SHOULD ignore it like any notification it does not recognize,
+    "whether it is custom or from a later ACP version" (extensibility.mdx:231). A well-formed
+    envelope for a request nothing is waiting on, and one missing the required `requestId` and
+    `method`; both break client rules (the envelope is for an active request on a declared `acp`
+    server, sent to an agent that advertised `acp`) on purpose, because the spec defines how an
+    agent treats a notification it does not recognize. An agent that exits FAILs. A reply is
+    `ACP-JSONRPC-003`'s concern. SKIPs when the agent advertises `acp`: it recognizes the method
+    then, and no rule says more about a malformed envelope than that it gets no reply."""
+    if capability_is_supported(agent_initialize_result.result, "capabilities.session.mcp.acp"):
+        pytest.skip("the agent advertises capabilities.session.mcp.acp, so mcp/message is recognized")
+    async with connected_agent(agent_launch) as agent:
+        await agent.send_notification(
+            "mcp/message",
+            {
+                "serverId": "tck-acp-1",
+                "requestId": "tck-mcp-request-1",
+                "method": "notifications/progress",
+                "params": {"progressToken": "tck-progress", "progress": 1, "total": 2},
+            },
+        )
+        await agent.send_notification("mcp/message", {"serverId": "tck-acp-1"})
+        try:
+            await first_response_within(agent, quiet_period(agent_launch.default_timeout))
+        except AgentExited:
+            pytest.fail("agent exited after receiving an `mcp/message` notification it does not recognize")
 
 
 @pytest.mark.requirement("ACP-EXT-202")

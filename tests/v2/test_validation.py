@@ -239,7 +239,7 @@ def test_enum_sets_match_the_schema():
     """`tck.v2.protocol`'s hand-copied `TOOL_KIND`/`TOOL_CALL_STATUS`/`PLAN_ENTRY_PRIORITY`/
     `PLAN_ENTRY_STATUS`/`SESSION_UPDATE_KIND`/`STATE_UPDATE_STATE`/`TOOL_CALL_CONTENT_TYPE`/
     `PERMISSION_OPTION_KIND`/`STOP_REASONS`/`PLAN_CONTENT_TYPE`/`DIFF_OPERATION`/
-    `DIFF_FILE_TYPE`/`DIFF_PATCH_FORMAT`/`AVAILABLE_COMMAND_TYPE` sets must exactly match the defined `const` branches `schema.unstable.json`
+    `DIFF_FILE_TYPE`/`DIFF_PATCH_FORMAT`/`AVAILABLE_COMMAND_TYPE`/`BACKGROUND_WORK_TYPE` sets must exactly match the defined `const` branches `schema.unstable.json`
     itself declares for `ToolKind`/`ToolCallStatus`/`PlanEntryPriority`/`PlanEntryStatus`/
     `SessionUpdate.sessionUpdate`/`StateUpdate.state`/`ToolCallContent.type`/
     `PermissionOptionKind`/`IdleStateUpdate.stopReason` -- so a schema refresh that adds, removes, or renames a branch fails this test instead of
@@ -264,6 +264,7 @@ def test_enum_sets_match_the_schema():
     assert protocol.AVAILABLE_COMMAND_TYPE == _consts_from_schema(
         "AvailableCommand", discriminator="type"
     )
+    assert protocol.BACKGROUND_WORK_TYPE == _consts_from_schema("BackgroundWork", discriminator="type")
 
 
 def test_error_codes_are_the_ones_error_mdx_lists():

@@ -21,6 +21,10 @@
 #   statement  the spec rule, in one sentence
 #   reason     why the TCK does not test it (not observable, unsafe, out of scope, ...)
 
+# Optional top-level `rfd_audit = "<spec commit>"` (put it above the first table; absent until the first
+# full RFD audit): the spec revision at which every tracked RFD was last audited in full. `spec-impact`
+# reports a missing marker; the update process sets it after a full RFD audit.
+
 # Schema `$defs` whose changes are treated like a core doc change.
 core_defs = [
     "ErrorCode",
@@ -145,32 +149,32 @@ statement = "Archive state persists across connections and restarts; closing, lo
 reason = "Out of scope for now: it needs a two-process test against the agent's real persistent store, and `session/load`/`session/resume` of an archived session MAY be rejected (line 257), which makes the load half inconclusive."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:297 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Calling `auth/status` MUST NOT modify any agent state."
 reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007 only checks the answer."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:291 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:291 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
 reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD list the accounts and credentials they have configured in `auth/status` `accounts`, and SHOULD mark the ones in effect with `active: true`."
 reason = "Not observable: the TCK cannot know which accounts the agent has configured, so an empty or unmarked list proves nothing."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:295,301 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:295,301 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
 reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:307 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:307 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD send `auth/status_update` when their status changes (including after `authenticate` or `logout`), and only when it differs from the last one sent on the connection."
 reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
 
@@ -190,19 +194,6 @@ reason = "Out of scope: the combinations are combinatorial. The TCK exercises th
 citation = "docs/protocol/v1/draft/initialization.mdx:246 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD specify whether they support each of the listed agent capabilities."
 reason = "Not observable: an omitted capability is defined as unsupported (line 109), so an agent that omits one cannot be told apart from one that sets it to false or null."
-
-
-# --- prompt-turn.mdx ---
-
-[[not_requirement]]
-citation = "docs/protocol/v1/draft/prompt-turn.mdx:106-111 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Agents SHOULD report the task a parent gives a subagent as an incoming `session_message` in the child's transcript, with `senderSessionId` set to the parent, and SHOULD NOT report it as a `user_message_chunk`."
-reason = "Not observable: it needs the unstable `clientCapabilities.subagents`, which the TCK never advertises, and an agent that actually delegates, which no prompt can force."
-
-[[not_requirement]]
-citation = "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A `subagent_update`'s `cwd` and each `additionalDirectories` entry must be absolute paths."
-reason = "Out of scope: `subagent_update` is only legitimate when `clientCapabilities.subagents` is advertised, which the TCK never does; any `subagent_update` it sees already fails ACP-CLIENTCAP-007."
 
 
 # --- extensibility.mdx and transports.mdx ---
@@ -295,11 +286,6 @@ citation = "docs/protocol/v1/draft/tool-calls.mdx:377-381; docs/protocol/v1/draf
 statement = "`ToolCallLocation.line` is a 1-based line number."
 reason = "Not enforced: the statement carries no RFC 2119 keyword and the v1 schema deliberately keeps `minimum: 0`, so a `0` is schema-valid and the TCK does not fail it."
 
-[[not_requirement]]
-citation = "docs/protocol/v1/draft/tool-calls.mdx:349-351; docs/rfds/subagents.mdx:636-638 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A `session` tool-call reference names a session already known through ordinary session setup or a prior `subagent_update`."
-reason = "Out of scope: it applies only when the client advertises `subagents`, which the TCK never does, and provoking subagent spawns is model-driven. Revisit if a `subagents`-advertising test is added."
-
 
 # --- agent-plan.mdx ---
 
@@ -330,6 +316,89 @@ statement = "Agents treat a `null` in a client-authored list field marked `x-des
 reason = "Out of scope: it is a receiver hint, not a stated agent MUST, and the field type is still `array`, so a TCK sending `null` would itself emit schema-invalid traffic."
 
 
+# --- subagents (docs/rfds/subagents.mdx, Active RFD) ---
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:322-326 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "An Agent reports a child directory that differs from the parent's before it sends child traffic that depends on it (MUST), and does not expose a child whose directories it cannot determine as sharing the parent's workspace (SHOULD NOT)."
+reason = "Unobservable: a client cannot know where the agent actually placed a child, whether that differs from the parent's directories, or whether the agent could determine them, so a child reported with no directories cannot be told from one that really shares the parent's. ACP-SUBAGENT-006 judges only that reported paths are absolute."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:381-382,387-390 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents report the narrowest directories a child needs (SHOULD), send current directory values after reconnecting when they differ (SHOULD), and report a new value or `null` when a child's directory no longer exists (MUST)."
+reason = "Unobservable: what a child needs, and whether its directory still exists or has changed since the recorded context, is known only to the agent; the client sees only the values it chooses to report."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:198-199,939-940 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "An Agent does not guess a child's parentage, and does not temporarily announce a nested child under the root, whether live or when a replay cannot reconstruct the association truthfully (MUST NOT)."
+reason = "Unobservable: a child's true parent is known only to the agent, so a guessed parent cannot be told from a recovered one. A later announcement of the same child under a different parent is judged by ACP-SUBAGENT-005."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:203-206 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "An Agent that keeps an operation unexposed does not later move an already-issued interaction to a different session, and once a child is exposed its new interactions use the child's session ID rather than falling back to the root (MUST NOT / MUST)."
+reason = "Unobservable: which session an interaction belongs to is known only to the agent, so a request sent under the root cannot be told from one that really belongs to the root."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:223-226 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "After announcing a child the Agent sends its events automatically, without waiting for another Client request, and with no `session/attach`, `session/subscribe` or per-child opt-in."
+reason = "Unobservable: a quiet child cannot be told from one whose events the agent is withholding, so the absence of events proves nothing. Events the agent does send are judged by the announcement rows from ACP-SUBAGENT-001."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:576-577 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "An Agent reports each side of a session-directed message only when it can observe that side, and does not manufacture an incoming entry from an outgoing one."
+reason = "Unobservable: whether the agent observed the recipient's receipt is internal, and an incoming entry looks the same whether it was observed or derived."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:831-841 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "When the Agent observes a child's foreground work starting, resuming or stopping it reports `running` or `idle` in the parent's `subagent_update.state` (MUST), reports `requires_action` while observed work is blocked on user action (SHOULD), and includes `stopReason` when the reason for stopping is known (SHOULD)."
+reason = "Unobservable: the rule binds only work the agent observes, and a client cannot tell work the agent did not observe from a report that went missing, so a missing or late `running`/`idle`/`requires_action`/`stopReason` is not a violation it can prove. The cancellation confirmation (`idle` with `stopReason: \"cancelled\"`) is judged by ACP-SUBAGENT-016."
+
+[[not_requirement]]
+citation = "schema/v1/schema.unstable.json#/$defs/UnknownStateUpdate; docs/rfds/subagents.mdx:855-860 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "When observability of a child's foreground work is actually lost the Agent reports the `unknown` state on the parent's `subagent_update.state` (MUST), and not merely because the child has been quiet."
+reason = "Unobservable: whether the agent has lost sight of a child's work is internal, and a child that is only quiet looks the same from outside, so neither a missing `unknown` nor a spurious one can be judged."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:1117-1121 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Closing a parent session cancels all of its active descendant work, background children included, and releases the associated active resources, without requiring a new terminal-state notification."
+reason = "Not observable as a violation: the rule requires no wire signal, so a descendant that stopped looks like one with nothing to report, and releasing resources is internal to the agent."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:1151-1153 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A late response still resolves its original request, but the Agent does not use it to restart cancelled or otherwise abandoned work, or to authorize a new assignment to the same child (MUST NOT)."
+reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt. Provoking it also needs a non-`cancelled` answer to a request of cancelled work, which breaks the client rule at :1126-1128."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:999-1001 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Replay (v1 `session/load` with history) does not reissue recorded permission, elicitation or other Agent-to-Client requests (MUST NOT)."
+reason = "Unobservable: a request sent during replay cannot be told from a newly issued live request, which the RFD allows, and whether it was recorded is internal to the agent."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:942-949 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "When replaying a recorded directed message the Agent does not invent either participant ID, and does not reinterpret its content as an ordinary message to or from the human user (MUST NOT)."
+reason = "Unobservable: a replayed participant address is historical and need not be announced (:945), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:1024-1028 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "The Agent does not manufacture a failure, cancellation or permanent orphan outcome for a child solely because the persisted history lacks a final update or a runtime could not be restored (MUST NOT)."
+reason = "Unobservable: whether the stored history lacked a final update, or a runtime could be restored, is internal to the agent, so a reported failure or cancellation looks like a real outcome."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:1168-1170 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "Agents do not fabricate an exclusive parent or child cost amount from incomplete token counts or an aggregate total (MUST NOT)."
+reason = "Unobservable: a client cannot know the provider's true cost or token counts, so a fabricated amount cannot be told from a real one."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:439-441 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "A session-directed message's `messageId` is unique within the enclosing session's transcript and identifies that entry, not a shared message or either participant."
+reason = "Unobservable: a `session_message` that repeats a `messageId` is an upsert of the same entry, so reuse for a different message cannot be told from a legitimate update."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:361-363 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "In v1 an Agent passes an explicit `cwd` on a child's `terminal/create` request, even though the Client uses the child's effective `cwd` when it is omitted (SHOULD)."
+reason = "Deferred: the mock client implements no `terminal` capability (it advertises none and answers `terminal/*` with `-32601`), so an agent never sends `terminal/create`. It would be unblocked by a mock client that advertises `terminal` together with `subagents` and answers `terminal/create`, so the request a child sends could be checked for an explicit `cwd`."
+
+
 # --- deferred unstable methods and rules ---
 
 [[not_requirement]]
@@ -338,16 +407,16 @@ statement = "`session/archive` of a loaded session cancels any ongoing work and 
 reason = "Deferred (unstable archive): needs a prompt still in flight when the session is archived, which is race-prone against a real agent, and it is not yet tested."
 
 [[not_requirement]]
-citation = "docs/protocol/v1/draft/session-list.mdx:259; docs/protocol/v1/draft/error.mdx:66; docs/rfds/session-status.mdx:126,130; schema/v1/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v1/draft/session-list.mdx:259; docs/protocol/v1/draft/error.mdx:66; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v1/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "`session/status` reports an archived session as `saved`, answers an unknown session with `-32002` and the requested `sessionId` in `data`, and MUST NOT have side effects."
 reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
 
 [[not_requirement]]
-citation = "docs/rfds/session-set-title.mdx:178-179; docs/protocol/v1/draft/error.mdx:68; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/session-set-title.mdx:178-179 (Draft RFD); docs/protocol/v1/draft/error.mdx:68; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
 reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
 
 [[not_requirement]]
-citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents receive `initialize` and are terminal; only a conductor sends `proxy/initialize`, and `proxy/successor` is exchanged only between a conductor and its proxies."
 reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediary-only methods of a Draft RFD that the TCK does not exercise; an agent that sends one is still caught by ACP-SCHEMA-001 as an unknown method."

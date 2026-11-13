@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `exposes_subagent.py`'s child traffic, but without ever sending the
-`subagent_update` that must announce the child first. FAILs exactly `ACP-PROMPT-002`.
+`subagent_update` that must announce the child first. The defect is inside the turn, so it FAILs
+both `ACP-PROMPT-002` (in-turn notifications) and `ACP-SUBAGENT-001` (the whole connection) and
+nothing else.
 """
 
 import sys

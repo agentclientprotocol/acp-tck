@@ -1,11 +1,11 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-001/002/202/204..210/
-212..214/216, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
+212..214/216/217, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
 `session/close`'s own contract (ACP-CLOSE-001/003/203/204/206 -- `ACP-CLOSE-002` is covered by
 `test_cancel.py`'s `test_close_cancels_foreground_work`, see its row text), `session/delete`
 (ACP-DELETE-001..003/204/205), `session/archive`/`session/unarchive` (ACP-ARCHIVE-002..006,
 201), the `additionalDirectories` carrier on `session/new`/`session/resume`
 (ACP-ADDDIRS-001/202/203), the MCP-server rows (ACP-MCP-201..204 and ACP-SESSION-006), and the
-`session/fork` (ACP-FORK-201..205) and `systemPrompt` (ACP-SYSPROMPT-001/202, and the error paths
+`session/fork` (ACP-FORK-201..206) and `systemPrompt` (ACP-SYSPROMPT-001/202, and the error paths
 ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-003`/`204`, `ACP-DELETE-002`,
@@ -50,6 +50,7 @@ from ._helpers import (
     drain_quiet,
     is_active_state,
     iter_messages,
+    last_known_background,
     list_sessions,
     background_keys,
     new_session,
@@ -60,9 +61,9 @@ from ._helpers import (
     resume_session,
     run_prompt,
     same_dir,
+    session_state_update,
     skip_if_auth_gated,
     skip_if_turn_end_race_not_exercised,
-    update_of,
 )
 
 _HISTORY_KINDS = {"user_message", "agent_message", "agent_thought"}
@@ -191,7 +192,9 @@ async def test_resume_with_replay_from_start_replays_before_responding(
 @pytest.mark.capability("capabilities.session")
 async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_path, record_property):
     """ACP-RESUME-002. Vacuous -- and recorded, never FAILed on that account -- for an agent
-    that retains no history to replay. The mandatory current-state snapshot is not history."""
+    that retains no history to replay. The mandatory current-state snapshot is not history.
+    Filtered to the resumed session: live child-session traffic may legally arrive before a
+    no-replay resume response (Active Subagents RFD)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -203,7 +206,9 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
         history_updates = [
             update
             for _, entry in updates
-            if (update := update_of(entry)) is not None
+            for msg in iter_messages(entry)
+            if msg.get("method") == "session/update"
+            and (update := _update_for(msg, session_id)) is not None
             and update.get("sessionUpdate") in _REPLAYED_HISTORY_KINDS
         ]
         record_property("acp_tck_resume_no_replay_history_update_count", len(history_updates))
@@ -218,7 +223,8 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
 async def test_resume_replays_retained_user_message_with_same_message_id(agent_launch, tmp_path):
     """ACP-RESUME-204. Absence of the message from replay is itself conforming (R5) -- SKIPs
     this check rather than FAILing it. A replayed message only violates the requirement if its
-    *content* matches this test's own nonce-carrying prompt but its `messageId` differs."""
+    *content* matches this test's own nonce-carrying prompt but its `messageId` differs.
+    Filtered to the resumed session: a child's own `user_message` is not that prompt."""
     prompt_text = f"remember this {uuid.uuid4().hex}"
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
@@ -239,8 +245,8 @@ async def test_resume_replays_retained_user_message_with_same_message_id(agent_l
         )
         matching_updates = [
             update
-            for _, entry in updates
-            if (update := update_of(entry)) is not None
+            for _, msg in _session_update_messages(updates)
+            if (update := _update_for(msg, session_id)) is not None
             and update.get("sessionUpdate") in ("user_message", "user_message_chunk")
         ]
         if not matching_updates:
@@ -277,7 +283,8 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
     """ACP-RESUME-205. Accepts any preceding same-kind, same-`messageId` whole-message update
     with a `content` array: `[]` (rebuild from the beginning) and full content (chunks append)
     are wire-indistinguishable. Vacuous -- recorded, never FAILed -- for an agent whose replay
-    uses only whole-message updates (`_base.ConformingAgent`'s own case)."""
+    uses only whole-message updates (`_base.ConformingAgent`'s own case). Filtered to the
+    resumed session: live child chunks may accompany a replay (Active Subagents RFD)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -289,7 +296,11 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
             replay_from={"type": "start"},
             timeout=agent_launch.default_timeout,
         )
-        replayed = [update for _, entry in updates if (update := update_of(entry)) is not None]
+        replayed = [
+            update
+            for _, msg in _session_update_messages(updates)
+            if (update := _update_for(msg, session_id)) is not None
+        ]
         chunk_count = 0
         for index, update in enumerate(replayed):
             kind = update.get("sessionUpdate")
@@ -412,11 +423,17 @@ async def test_resume_with_malformed_replay_from_is_rejected(agent_launch, tmp_p
 @pytest.mark.capability("capabilities.session")
 async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, record_property):
     """ACP-RESUME-209. Covers every `session/update` read while waiting for the
-    `session/resume` response -- replay and snapshot alike."""
+    `session/resume` response -- replay and snapshot alike. Each carries the resumed `sessionId`
+    or that of a child session announced earlier in this resume exchange, in wire order, by a
+    `subagent_update` on a known session (nested children included); an update for a session not
+    announced within the exchange FAILs, even if an earlier turn announced it."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
         await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        # Child output may trail the turn just run (Active Subagents RFD: child work outlives the parent's
+        # turn); settle it first so it is not read as part of the resume exchange.
+        await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
         response_entry, updates = await resume_session(
             agent,
             session_id,
@@ -425,16 +442,41 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
             timeout=agent_launch.default_timeout,
         )
         _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
-        messages = [msg for _, msg in _session_update_messages(updates)]
-        record_property("acp_tck_resume_update_count", len(messages))
+        resume_lines = {line_index for line_index, _ in updates}
+        record_property("acp_tck_resume_update_count", len(_session_update_messages(updates)))
+        known = {session_id}
         problems = []
-        for msg in messages:
-            issues = validate_agent_message(msg)
-            if issues:
-                problems.append((msg, issues))
-            params = msg.get("params")
-            if not isinstance(params, dict) or params.get("sessionId") != session_id:
-                problems.append((msg, f"sessionId is not the resumed {session_id!r}"))
+        for line_index, entry in enumerate(agent.transcript):
+            # Only the resume exchange counts: a client resuming on a fresh connection has not
+            # seen announcements made by earlier turns.
+            if line_index not in resume_lines or entry.direction is not Direction.RECEIVED:
+                continue
+            for msg in iter_messages(entry):
+                if msg.get("method") != "session/update":
+                    continue
+                params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+                carried = params.get("sessionId")
+                issues = validate_agent_message(msg)
+                if issues:
+                    problems.append((msg, issues))
+                if carried not in known:
+                    problems.append(
+                        (
+                            msg,
+                            f"sessionId is neither the resumed {session_id!r} nor a child "
+                            f"announced earlier in this resume via subagent_update (known: "
+                            f"{sorted(known)!r}; Active Subagents RFD: child announcements "
+                            "precede child traffic within the load/resume)",
+                        )
+                    )
+                update = params.get("update")
+                if (
+                    carried in known
+                    and isinstance(update, dict)
+                    and update.get("sessionUpdate") == "subagent_update"
+                    and isinstance(update.get("sessionId"), str)
+                ):
+                    known.add(update["sessionId"])
         assert not problems, (
             f"session/update(s) sent during session/resume are invalid: {problems!r}"
         )
@@ -577,6 +619,43 @@ async def test_resume_announces_background_items_before_the_snapshot(agent_launc
         assert not unannounced, (
             f"the resume snapshot lists background item(s) {unannounced} that no update sent "
             f"before it announced: {[update for _, update in ordered]!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-RESUME-217")
+@pytest.mark.capability("capabilities.session")
+async def test_resume_snapshot_keeps_the_background_list(agent_launch, tmp_path):
+    """ACP-RESUME-217. An agent that reported a `background` list for the session on the test's
+    connection before the resume (the turn the test runs first and any earlier snapshot) carries
+    one on the resume's current-state snapshot too: an omitted or `null` list means "not reported"
+    (prompt-lifecycle.mdx:204; session-setup.mdx:346). SKIPs when no list was reported."""
+    async with obtain_resumable_session(
+        agent_launch, tmp_path, timeout=agent_launch.default_timeout
+    ) as (agent, session_id, _entry, resume_cwd):
+        await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
+        reported = any(
+            entry.direction is Direction.RECEIVED
+            and (update := session_state_update(msg, session_id)) is not None
+            and isinstance(update.get("background"), list)
+            for entry in agent.transcript
+            for msg in iter_messages(entry)
+        )
+        response_entry, updates = await resume_session(
+            agent, session_id, resume_cwd, timeout=agent_launch.default_timeout
+        )
+        _assert_resume_succeeded(response_entry, "session/resume")
+        snapshots = [
+            update
+            for _, update in _resume_updates_for(updates, session_id)
+            if update.get("sessionUpdate") == "state_update"
+        ]
+        if not reported:
+            pytest.skip("the agent reported no background list for this session before the resume")
+        if not snapshots:
+            pytest.skip("session/resume sent no current-state snapshot (ACP-RESUME-206 judges that)")
+        assert isinstance(snapshots[-1].get("background"), list), (
+            "the agent reported a background list for this session before the resume, but the "
+            f"resume's current-state snapshot omits it or sends a non-array: {snapshots[-1]!r}"
         )
 
 
@@ -1699,12 +1778,17 @@ def _stdio_server(name: str = "tck-stdio", **extra: Any) -> dict[str, Any]:
 
 @pytest.mark.requirement("ACP-MCP-203")
 @pytest.mark.capability("capabilities.session")
-async def test_new_session_with_unsupported_mcp_transport_is_rejected(agent_launch, tmp_path):
-    """ACP-MCP-203. Two probes on one connection, each must get `-32602`: v1's `sse`, which
-    the spec names (`session-setup.mdx:545`), and `_tck_unsupported_transport`, which no agent
-    supports (`_`-prefixed types are implementation-specific, `:553`). Both break the client
-    rule to send only advertised transports on purpose: the spec defines the agent's answer to
-    exactly these inputs. A success or another code on either FAILs; both are reported."""
+async def test_new_session_with_unsupported_mcp_transport_is_rejected(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-MCP-203. Up to three probes on one connection, each must get `-32602`: v1's `sse`,
+    which the spec names (`session-setup.mdx:545`), `_tck_unsupported_transport`, which no agent
+    supports (`_`-prefixed types are implementation-specific, `:553`), and `acp`, the real but
+    unstable transport a draft-aware agent may parse without advertising it (`:545` covers "a
+    transport they did not advertise"). The `acp` probe is not sent when the agent advertises
+    `capabilities.session.mcp.acp`: it supports the transport then. All break the client rule
+    to send only advertised transports on purpose: the spec defines the agent's answer to
+    exactly these inputs. A success or another code on any probe FAILs; all are reported."""
     probes = {
         "sse": {
             "type": "sse",
@@ -1717,6 +1801,8 @@ async def test_new_session_with_unsupported_mcp_transport_is_rejected(agent_laun
             "name": "tck-unsupported",
         },
     }
+    if not capability_is_supported(agent_initialize_result.result, "capabilities.session.mcp.acp"):
+        probes["acp"] = {"type": "acp", "name": "tck-acp", "serverId": "tck-acp-1"}
     problems = []
     async with connected_agent(agent_launch) as agent:
         for transport, server in probes.items():
@@ -2014,6 +2100,54 @@ async def _new_session_with_system_prompt(agent, cwd: Any, mode: str, *, timeout
     assert isinstance(session_id, str) and session_id, (
         f"session/new with a {mode!r} systemPrompt returned no sessionId: {entry.text!r}"
     )
+
+
+@pytest.mark.requirement("ACP-FORK-206")
+@pytest.mark.capability("capabilities.session.fork")
+async def test_fork_does_not_inherit_background_work(agent_launch, tmp_path):
+    """ACP-FORK-206. When the source session's latest `background` list is non-empty at fork
+    time, no state snapshot of the fork lists one of those items: a fork starts with no
+    background work and reports `background: []` until it starts its own
+    (session-setup.mdx:49). The fork is prompted once so that it reports its state. Definitional
+    (no RFC keyword), like `ACP-FORK-202`. SKIPs when the source has no listed work, or the fork
+    fails or its turn never ends and no snapshot shows a copied item (`ACP-FORK-201`/`202` judge
+    those)."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        source_id = await new_session(agent, tmp_path, timeout=timeout)
+        await run_prompt(agent, source_id, [{"type": "text", "text": "hi"}], timeout=timeout)
+        await drain_quiet(agent, quiet_period(timeout))
+        inherited = last_known_background(agent, source_id)
+        if not inherited:
+            pytest.skip("the source session had no listed background work at fork time")
+        entry = await _fork_session(agent, source_id, tmp_path, timeout=timeout)
+        msg = entry.parsed
+        result = msg.get("result") if isinstance(msg, dict) else None
+        forked_id = result.get("sessionId") if isinstance(result, dict) else None
+        if not isinstance(forked_id, str) or not forked_id or forked_id == source_id:
+            pytest.skip("prerequisite not met: session/fork gave no new sessionId -- see ACP-FORK-201")
+        turn_ended = True
+        try:
+            await run_prompt(agent, forked_id, [{"type": "text", "text": "hi"}], timeout=timeout)
+        except AgentTimeout:
+            turn_ended = False  # the snapshots received so far are still judged below
+        await drain_quiet(agent, quiet_period(timeout))
+        copied = sorted(
+            {
+                key
+                for transcript_entry in agent.transcript
+                if transcript_entry.direction is Direction.RECEIVED
+                for message in iter_messages(transcript_entry)
+                if (update := session_state_update(message, forked_id)) is not None
+                for key in (background_keys(update) or set()) & inherited
+            }
+        )
+        assert not copied, (
+            f"the forked session's state snapshots list background item(s) {copied} that the "
+            f"source session had running at fork time (source list {sorted(inherited)})"
+        )
+        if not turn_ended:
+            pytest.skip("the forked session's turn never ended -- see ACP-FORK-202")
 
 
 @pytest.mark.requirement("ACP-SYSPROMPT-001")

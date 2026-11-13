@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "agents" / "v1"
 FIXTURES_DIR_V2 = Path(__file__).parent.parent / "fixtures" / "agents" / "v2"
 CLI_SUBPROCESS_TIMEOUT = 60
@@ -57,7 +59,18 @@ _MANDATORY_IDS = {
     "ACP-PLAN-001",
     "ACP-EXT-001",
 }
-_ADVISORY_IDS = {
+# The subagent rows judge a connection that advertises `clientCapabilities.subagents`. They are
+# gated by what the agent exposes (`inferred:subagents`, or a self-SKIP for the ADVISORY ones),
+# so every one SKIPs against a fixture that exposes no child, including `conforming.py`.
+_SUBAGENT_CAPABILITY_IDS = {f"ACP-SUBAGENT-{n:03}" for n in (*range(1, 10), 15)}
+_SUBAGENT_ADVISORY_IDS = {f"ACP-SUBAGENT-{n:03}" for n in range(11, 15)}
+_SUBAGENT_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS
+# The child-cancel rows need a running child that advertises `capabilities.cancel` in the driven
+# `--cancel-prompt` turn, which only `cancellable_subagent.py` and its siblings offer. Every other
+# fixture SKIPs them, `exposes_subagent.py` included.
+_SUBAGENT_CANCEL_IDS = {"ACP-SUBAGENT-016", "ACP-SUBAGENT-017"}
+
+_ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | {
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-005",
     "ACP-INIT-004",
@@ -93,7 +106,7 @@ _INFORMATIONAL_IDS = {
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
 }
-_CAPABILITY_IDS = {
+_CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
     "ACP-LOAD-001",
     "ACP-LOAD-002",
     "ACP-RESUME-001",
@@ -137,7 +150,7 @@ immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
 `ACP-JSONRPC-007`'s `$/cancel_request`) always loses the race and the cancel tests SKIP with
 "cancellation not exercised" rather than PASS or FAIL."""
 
-_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
+_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS | {
     "ACP-LOAD-003",
     "ACP-LIST-003",
     "ACP-DELETE-002",
@@ -150,7 +163,8 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | {
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
-(including `ACP-AUTH-003`, `capability="inferred:authMethods"`), plus the nine ADVISORY ids
+(including `ACP-AUTH-003`, `capability="inferred:authMethods"` and the `inferred:subagents` rows),
+plus the ADVISORY `ACP-SUBAGENT-011..014` and the nine ADVISORY ids
 (`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-AUTH-008`, `ACP-ERROR-004`, `ACP-ERROR-007`,
 `ACP-PERM-001`, `ACP-PERM-002`) whose tests are still gated (by a `@pytest.mark.capability(...)`
 marker, for `ACP-ERROR-004`/`007` by what `session/new` returned, for `ACP-PERM-*` by the agent
@@ -506,7 +520,7 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-PLAN-002",
         "ACP-PERM-001",
         "ACP-PERM-002",
-    }:
+    } | _SUBAGENT_ADVISORY_IDS:
         assert statuses.get(req_id) == "SKIPPED", f"{req_id}: {result.stdout}"
 
 
@@ -822,7 +836,9 @@ def test_conforming_full_agent_passes_everything_with_cancel_prompt_hang():
     assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
         f"requirement table missing/extra ids: {result.stdout}"
     )
-    not_applicable = {"ACP-AUTH-005", "ACP-ERROR-006"}
+    # The subagent rows SKIP too: `conforming_full.py` exposes no child (`exposes_subagent.py`
+    # and `replays_subagent_history.py` exercise them, `cancellable_subagent.py` the cancel rows).
+    not_applicable = {"ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS | _SUBAGENT_CANCEL_IDS
     for req_id, status in statuses.items():
         if req_id in not_applicable:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED (not applicable):\n{result.stdout}"
@@ -850,7 +866,7 @@ def test_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
         f"requirement table missing/extra ids: {result.stdout}"
     )
-    expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005", "ACP-ERROR-006"}
+    expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS | _SUBAGENT_CANCEL_IDS
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -1229,6 +1245,42 @@ def test_answers_custom_notifications_fails_jsonrpc_003_only():
     assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
 
 
+@pytest.mark.parametrize(
+    "fixture", ["answers_mcp_notification.py", "answers_malformed_mcp_notification.py"]
+)
+def test_answers_mcp_notification_fails_jsonrpc_003_only(fixture: str):
+    """Each fixture advertises `mcpCapabilities.acp` and replies to one `mcp/message` probe only
+    (`answers_mcp_notification.py` the well-formed one, `answers_malformed_mcp_notification.py`
+    the one missing `requestId`/`method`); the other probes stay silent, so that probe alone fails
+    ACP-JSONRPC-003 and each probe is pinned."""
+    result = _run_cli(fixture, k="test_jsonrpc")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-JSONRPC-003"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-006") == "PASS", result.stdout
+
+
+def test_exit_on_malformed_mcp_message_fails_ext_002_only():
+    """`exits_on_malformed_mcp_message.py` does not advertise `mcpCapabilities.acp` and exits on an
+    `mcp/message` notification missing `requestId`. It sent no reply, so ACP-JSONRPC-003 PASSes;
+    the crash on a notification it does not recognize is ACP-EXT-002's finding."""
+    result = _run_cli("exits_on_malformed_mcp_message.py", k="test_jsonrpc or test_extensibility")
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    assert _fail_ids(statuses) == {"ACP-EXT-002"}, result.stdout
+    assert statuses.get("ACP-JSONRPC-003") == "PASS", result.stdout
+
+
+def test_acp_advertising_agent_is_not_sent_the_ext_002_mcp_probe():
+    """`answers_mcp_notification.py` advertises `mcpCapabilities.acp`, so ACP-EXT-002's `mcp/message`
+    probe is skipped for it; the `_tck/notify` probe still PASSes the row."""
+    result = _run_cli("answers_mcp_notification.py", k="test_extensibility")
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-EXT-002") == "PASS", result.stdout
+
+
 def test_answers_cancel_request_fails_jsonrpc_003_only():
     """`answers_cancel_request.py` replies to `$/cancel_request`; the connection stays usable,
     so ACP-JSONRPC-006 still PASSes."""
@@ -1516,6 +1568,253 @@ def test_client_gated_update_fixtures_fail_only_their_own_clientcap_id():
         result = _run_cli(fixture)
         assert result.returncode != 0, f"{fixture}:\n{result.stdout}"
         assert _output_fail_ids(result.stdout) == {expected}, f"{fixture}:\n{result.stdout}"
+
+
+# --- subagents: a connection that advertises `clientCapabilities.subagents` ---
+
+_SUBAGENT_K = "test_subagents or test_client_capabilities"
+"""The subagent rows plus `ACP-CLIENTCAP-007` (the default connection, which never advertises
+`subagents`), so a fixture that sends child traffic only to a client that asked for it is
+shown to stay clean there."""
+
+
+def test_exposes_subagent_passes_everything():
+    """`exposes_subagent.py` sends subagent traffic only to a client that advertised `subagents`:
+    an announced child with nested child, both views of a `session_message`, a streamed follow-up,
+    `session` content, a child permission request, the parent-reported work state and a child chunk
+    after the turn. It stays silent on the default connection, so `ACP-CLIENTCAP-007` PASSes, and
+    it advertises nothing else, so the outcome is `conforming.py`'s except that every
+    `_SUBAGENT_IDS` row PASSes instead of SKIPping."""
+    result = _run_cli("exposes_subagent.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    statuses = _table_statuses(result.stdout)
+    assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
+        f"requirement table missing/extra ids: {result.stdout}"
+    )
+    skip_ids = (_CANCEL_IDS | _CAPABILITY_GATED_IDS) - _SUBAGENT_IDS
+    for req_id, status in statuses.items():
+        expected = "SKIPPED" if req_id in skip_ids else "PASS"
+        assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
+    assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("fixture", ["replays_subagent_history.py", "replays_historical_addresses.py"])
+def test_replays_subagent_history_passes_every_subagent_row(fixture):
+    """`replays_subagent_history.py` advertises `loadSession` and, on `session/load` to a client that
+    advertised `subagents`, replays its announcements and child updates before the response: the
+    replay is judged on its own terms and every subagent row PASSes. `replays_historical_addresses.py`
+    also replays a `session_message` participant and a `session` reference that name a session
+    nothing announced: historical addresses, not judged."""
+    result = _run_cli(fixture, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    for req_id in _SUBAGENT_IDS | {"ACP-CLIENTCAP-007"}:
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_subagent_rows_skip_without_a_child():
+    """`conforming.py` exposes no child even to a client that advertised `subagents`, so every row
+    SKIPs rather than PASSing vacuously."""
+    result = _run_cli("conforming.py", k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    for req_id in _SUBAGENT_IDS:
+        assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        # Announcement ordering, over requests (incl. `fs/*`), `session_message` participants,
+        # traffic after the turn and replay on `session/load`.
+        ("unannounced_child_update.py", "ACP-SUBAGENT-001"),
+        ("child_permission_before_announce.py", "ACP-SUBAGENT-001"),
+        # unadvertised too, so `ACP-CLIENTCAP-001` (which judges this connection) FAILs as well
+        ("child_fs_request_before_announce.py", {"ACP-SUBAGENT-001", "ACP-CLIENTCAP-001"}),
+        ("child_fs_request_after_announce.py", "ACP-CLIENTCAP-001"),
+        ("session_message_unknown_participant.py", "ACP-SUBAGENT-001"),
+        ("child_update_after_turn_unannounced.py", "ACP-SUBAGENT-001"),
+        ("replays_unannounced_child.py", "ACP-SUBAGENT-001"),
+        ("replays_child_without_announcement.py", "ACP-SUBAGENT-001"),
+        # `session` content references are not child traffic
+        ("session_content_unknown_session.py", "ACP-SUBAGENT-002"),
+        ("session_content_unknown_in_permission.py", "ACP-SUBAGENT-002"),
+        # association integrity and directories
+        ("self_parented_subagent.py", "ACP-SUBAGENT-003"),
+        ("subagent_reuses_session_id.py", "ACP-SUBAGENT-004"),
+        ("reparents_subagent.py", "ACP-SUBAGENT-005"),
+        ("relative_subagent_cwd.py", "ACP-SUBAGENT-006"),
+        # `session_message` consistency
+        ("session_message_same_participants.py", "ACP-SUBAGENT-007"),
+        ("session_message_foreign_outer_session.py", "ACP-SUBAGENT-008"),
+        ("session_message_mismatched_views.py", "ACP-SUBAGENT-009"),
+        # schema validity of the subagent shapes, including the `state` snapshot
+        ("malformed_subagent_directories.py", "ACP-SUBAGENT-015"),
+        ("malformed_subagent_state.py", "ACP-SUBAGENT-015"),
+        # the SHOULDs (ADVISORY)
+        ("child_task_as_user_message.py", "ACP-SUBAGENT-011"),
+        ("child_task_after_output.py", "ACP-SUBAGENT-012"),
+        ("session_message_without_participants.py", "ACP-SUBAGENT-012"),
+        ("session_message_chunk_before_participants.py", "ACP-SUBAGENT-013"),
+        ("child_select_with_choices.py", "ACP-SUBAGENT-014"),
+    ],
+)
+def test_subagent_violators_fail_exactly_their_row(fixture, failing):
+    """Each violator is `exposes_subagent.py` with one defect, sent only to a client that
+    advertised `subagents`: exactly the intended row(s) FAIL, and `ACP-CLIENTCAP-007` PASSes (the
+    default connection never sees subagent traffic). The ADVISORY ones leave the verdict alone."""
+    result = _run_cli(fixture, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    expected = {failing} if isinstance(failing, str) else failing
+    assert _output_fail_ids(result.stdout) == expected, f"{fixture}:\n{result.stdout}"
+    assert statuses["ACP-CLIENTCAP-007"] == "PASS", result.stdout
+
+
+_CHILD_STOP_K = "test_subagent_controls"
+
+
+def _child_stop_statuses(fixture: str, timeout: str = "1") -> tuple[dict[str, str], str]:
+    """Run only `test_subagent_controls.py` against `fixture` with the `__hang__` cancel prompt,
+    which is what makes the cancellable child appear."""
+    result = _run_cli(fixture, k=_CHILD_STOP_K, cancel_prompt="__hang__", timeout=timeout)
+    statuses = _table_statuses(result.stdout)
+    return {r: statuses.get(r) for r in sorted(_SUBAGENT_CANCEL_IDS)}, result.stdout
+
+
+def test_cancellable_child_passes_the_child_cancel_rows():
+    """`cancellable_subagent.py` advertises `capabilities.cancel` on a running child, stops it on
+    `session/cancel` for it (idle/cancelled on the parent snapshot) and leaves the parent and the
+    sibling running: both rows PASS."""
+    statuses, stdout = _child_stop_statuses("cancellable_subagent.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():
+    """`child_ends_before_cancel.py`'s child finishes (`end_turn`) as the cancel arrives: a cancel
+    racing with ended work is not judged, so both rows SKIP and nothing FAILs."""
+    statuses, stdout = _child_stop_statuses("child_ends_before_cancel.py")
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+    assert "FAIL" not in set(_table_statuses(stdout).values()), stdout
+
+
+def test_child_that_asks_after_the_parent_turn_ended_is_still_answered():
+    """`child_asks_after_turn_ends.py` ends the parent's turn on the child's cancel and only then
+    asks permission for the child's work, confirming `cancelled` only if the TCK answers it
+    `cancelled` (the child was cancelled). The request is read after the turn ended: both rows
+    PASS, so it was answered, and answered `cancelled` and not allowed."""
+    statuses, stdout = _child_stop_statuses("child_asks_after_turn_ends.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_that_ignores_cancel_and_ends_later_fails_the_confirmation_row():
+    """`child_ignores_cancel_then_ends.py` reports `end_turn` about 1.5 s after the cancel, past the
+    race window (`--timeout 4`: 0.5 s) but inside the wait for the confirmation. It is no
+    cancel racing with ended work, so `-016` FAILs, and `-017` is still judged and PASSes."""
+    statuses, stdout = _child_stop_statuses("child_ignores_cancel_then_ends.py", timeout="4")
+    assert statuses == {"ACP-SUBAGENT-016": "FAIL", "ACP-SUBAGENT-017": "PASS"}, stdout
+
+
+def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
+    """The per-child `cancel` capability does not prevent the Agent from cancelling its own
+    delegated work (RFD:1071-1073), which is indistinguishable from a leaked cancel, so
+    `child_cancel_stops_sibling_too.py` PASSes both rows and the sibling is only recorded."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "child_cancel_stops_sibling_too.py",
+        k=_CHILD_STOP_K,
+        cancel_prompt="__hang__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-016"] == statuses["ACP-SUBAGENT-017"] == "PASS", result.stdout
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (test,) = by_id["ACP-SUBAGENT-017"]["tests"]
+    assert test["properties"]["acp_tck_cancelled_siblings"].endswith("-child-b"), test
+
+
+def test_child_cancel_rows_skip_without_a_cancellable_child():
+    """`exposes_subagent.py` exposes a child that advertises no `cancel`, and `conforming.py` none:
+    nothing is cancelled, so both rows SKIP."""
+    for fixture in ("exposes_subagent.py", "conforming.py"):
+        statuses, stdout = _child_stop_statuses(fixture)
+        assert set(statuses.values()) == {"SKIPPED"}, f"{fixture}:\n{stdout}"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("child_cancel_ignored.py", "ACP-SUBAGENT-016"),
+        ("child_cancel_cancels_parent.py", "ACP-SUBAGENT-017"),
+    ],
+)
+def test_child_cancel_defect_fails_its_row_only(fixture: str, failing: str):
+    """Each defect trips its own row: a child that ignores its cancel fails the confirmation row
+    (`-016`); a cancel that also ends the parent's turn fails `-017`, whose child still confirmed
+    its own cancellation."""
+    statuses, stdout = _child_stop_statuses(fixture)
+    for req_id, status in statuses.items():
+        assert status == ("FAIL" if req_id == failing else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_subagent_rows_are_judged_on_the_turn_when_the_load_never_answers():
+    """`session/load` is never answered, so the connection has no replay to judge. That is
+    `ACP-LOAD-001`'s finding: every subagent row is still judged on the turn's traffic and PASSes,
+    none FAILs for the missing answer."""
+    result = _run_cli("subagents_load_never_answers.py", k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    for req_id in _SUBAGENT_IDS:
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_invalid_tool_call_status_fails_the_turn_schema_rows_not_subagent_015():
+    """Every tool call of `invalid_tool_call_status.py` has an invalid `status`, the spawn tool call
+    that carries a `session` item included. Only the rows that validate a turn's updates FAIL
+    (`ACP-PROMPT-002`, and `ACP-SCHEMA-001` over the basic exchange): `ACP-SUBAGENT-015`
+    validates the `session` item, not the tool call carrying it."""
+    result = _run_cli("invalid_tool_call_status.py")
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == {"ACP-PROMPT-002", "ACP-SCHEMA-001"}, result.stdout
+    assert statuses["ACP-SUBAGENT-015"] == "PASS", result.stdout
+
+
+def test_user_message_task_gives_subagent_012_nothing_to_judge():
+    """The child's task came as a `user_message_chunk`: `ACP-SUBAGENT-011` FAILs it, and `-012`
+    SKIPs instead of PASSing a child it did not judge."""
+    result = _run_cli("child_task_as_user_message.py", k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-011"] == "FAIL", result.stdout
+    assert statuses["ACP-SUBAGENT-012"] == "SKIPPED", result.stdout
+
+
+def test_session_message_rows_skip_when_they_judge_nothing():
+    """A `session_message` that names no participant and no view leaves `ACP-SUBAGENT-007..009`
+    nothing to judge: each SKIPs, none PASSes vacuously."""
+    result = _run_cli("session_message_without_participants.py", k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    for req_id in ("ACP-SUBAGENT-007", "ACP-SUBAGENT-008", "ACP-SUBAGENT-009"):
+        assert statuses[req_id] == "SKIPPED", result.stdout
+    assert statuses["ACP-SUBAGENT-001"] == "PASS", result.stdout
+
+
+def test_malformed_subagent_directories_fail_015_not_006():
+    """A non-string `cwd` and a non-array `additionalDirectories` are schema defects: only
+    `ACP-SUBAGENT-015` FAILs, and `ACP-SUBAGENT-006` judges the later well-typed values instead."""
+    result = _run_cli("malformed_subagent_directories.py", k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-015"] == "FAIL", result.stdout
+    assert statuses["ACP-SUBAGENT-006"] == "PASS", result.stdout
+
+
+def test_subagent_traffic_is_only_sent_to_a_client_that_advertised_subagents():
+    """The default connections advertise no `subagents`: a fixture that sends child traffic only
+    to a client that asked for it leaves `ACP-CLIENTCAP-007` and `ACP-PROMPT-002` PASSing, while
+    `emits_subagent_update_unadvertised.py` (which sends it regardless) FAILs the former."""
+    for fixture, expected in (("exposes_subagent.py", "PASS"), ("emits_subagent_update_unadvertised.py", "FAIL")):
+        result = _run_cli(fixture, k="test_client_capabilities or test_prompt")
+        assert _table_statuses(result.stdout)["ACP-CLIENTCAP-007"] == expected, result.stdout
+        assert _table_statuses(result.stdout)["ACP-PROMPT-002"] == "PASS", result.stdout
 
 
 def test_relative_plan_file_uri_fails_plan_001_only():

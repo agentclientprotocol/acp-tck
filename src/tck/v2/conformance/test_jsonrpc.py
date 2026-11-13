@@ -23,7 +23,7 @@ import contextlib
 
 import pytest
 
-from tck.common.harness import AgentTimeout
+from tck.common.harness import AgentExited, AgentProcess, AgentTimeout
 from tck.v2 import SPEC
 from tck.v2.protocol import METHOD_NOT_FOUND
 from tck.v2.validation import is_valid_request_id, validate_response_envelope
@@ -97,6 +97,18 @@ async def test_response_envelope_is_result_xor_error_with_valid_shape(agent_laun
         _assert_valid_response_envelope(bad_entry, what=what)
 
 
+async def _assert_no_reply_to_notification(agent: AgentProcess, timeout: float, what: str) -> None:
+    """Shared by the notification probes below. An agent that exits instead of replying sent no
+    reply, so only a reply fails ACP-JSONRPC-003 here. An exit after `mcp/message` is
+    `ACP-EXT-002`'s concern; one after `session/cancel` is only recorded (`ACP-INFO-CANCEL-201`)
+    and judged by no row."""
+    try:
+        entry = await first_response_within(agent, quiet_period(timeout))
+    except AgentExited:
+        return
+    assert entry is None, f"agent replied to {what}: {entry.text!r}"
+
+
 @pytest.mark.requirement("ACP-JSONRPC-003")
 async def test_notification_receives_no_response(agent_launch, agent_initialize_result, tmp_path):
     """ACP-JSONRPC-003. `session/cancel` with no prompt in flight is a pure notification; an
@@ -113,8 +125,39 @@ async def test_notification_receives_no_response(agent_launch, agent_initialize_
         else:
             await agent.send_notification("_tck/notify", {})
 
-        entry = await first_response_within(agent, quiet_period(agent_launch.default_timeout))
-        assert entry is None, f"agent replied to a notification: {entry.text!r}"
+        await _assert_no_reply_to_notification(
+            agent, agent_launch.default_timeout, "a notification"
+        )
+
+
+@pytest.mark.requirement("ACP-JSONRPC-003")
+async def test_mcp_message_notification_receives_no_response(agent_launch):
+    """ACP-JSONRPC-003, probed with `mcp/message` notifications (the unstable MCP-over-ACP
+    envelope, `schema/v2/schema.unstable.json#/$defs/MessageMcpNotification`): a well-formed one
+    for a request nothing is waiting on, and one missing the required `requestId` and `method`.
+    Both break client rules on purpose: the envelope is sent only for an active request on a
+    declared `acp` MCP server and only to an agent that advertised `acp`, and `requestId` and
+    `method` are required. The spec defines the agent's answer to exactly these inputs:
+    `overview.mdx:227` says notifications never receive responses, and the (Active)
+    MCP-over-ACP RFD repeats it for this envelope (`mcp-over-acp.mdx:225,257`: no response,
+    "malformed notifications do not receive synthetic replies"). Sent whether or not the agent
+    advertises `capabilities.session.mcp.acp`: an agent that does not know the method must stay
+    silent too. Only a reply fails this (`_helpers.is_response_line`); an agent that exits
+    sent no reply, and `ACP-EXT-002` judges a crash."""
+    async with connected_agent(agent_launch) as agent:
+        await agent.send_notification(
+            "mcp/message",
+            {
+                "serverId": "tck-acp-1",
+                "requestId": "tck-mcp-request-1",
+                "method": "notifications/progress",
+                "params": {"progressToken": "tck-progress", "progress": 1, "total": 2},
+            },
+        )
+        await agent.send_notification("mcp/message", {"serverId": "tck-acp-1"})
+        await _assert_no_reply_to_notification(
+            agent, agent_launch.default_timeout, "an `mcp/message` notification"
+        )
 
 
 @pytest.mark.requirement("ACP-JSONRPC-004")

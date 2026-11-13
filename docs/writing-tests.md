@@ -13,9 +13,11 @@ the same for v1 and v2; substitute the version package (`src/tck/v1/` or `src/tc
 2. Write the test under `src/tck/v{1,2}/conformance/`, marked `@pytest.mark.requirement("ACP-...")`, with a
    docstring that starts with the id(s). Use `connected_agent()` from `_helpers.py` to spawn the agent; `async def`
    tests work without extra setup.
-3. If the row applies only when the agent advertises a capability, add `@pytest.mark.capability(path)` (below).
+3. If the row applies only when the agent advertises a capability in `initialize`, add `@pytest.mark.capability(path)`
+   (below). If the feature has no `initialize` marker, use an [`inferred:` gate](requirements.md#inferredfeature-gates)
+   instead: no marker, and the test skips itself.
 4. If the test sends a probe the agent is not expected to recognize, follow the [probe rules](#probes).
-5. Run `uv run pytest`. The registry tests (`tests/v{1,2}/test_registry.py`) fail if the id is not referenced by a
+5. Run the [tests](testing.md). The registry tests (`tests/v{1,2}/test_registry.py`) fail if the id is not referenced by a
    test, if a test references an unregistered id, and, because they pin the id set and the per-tier id sets by
    hand, if you did not update those. `tests/v{1,2}/test_cli.py` keeps hand-written tier sets that must match the
    registry too.
@@ -36,6 +38,11 @@ row's `capability` field names the same path.
 
 See `capability_is_supported()` in `src/tck/common/plugin.py`. If `initialize` itself failed, a capability-gated
 test FAILs rather than SKIPs, so a broken agent cannot score well by never advertising anything.
+
+**Never pass an `inferred:<feature>` path to the marker.** That string is documentation only
+([`inferred:` gates](requirements.md#inferredfeature-gates)); the marker would SKIP on every agent and the run would
+false-PASS. `pytest.skip` inside the test instead, when the agent shows no use of the feature.
+`tests/common/test_capability_markers.py` fails if a conformance test does it.
 
 ### `revokes`
 

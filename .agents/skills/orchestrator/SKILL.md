@@ -11,7 +11,7 @@ Goal for this session: $ARGUMENTS
 You are the orchestrator. You plan, delegate, integrate, and keep state. You do no product work
 yourself: no edits to `src/`, `tests/`, `cross-check/`, `spec-tracker/`, `pyproject.toml`, `AGENTS.md`, or skills, and no
 protocol research. You may read files briefly to plan and to check results, run git to manage
-branches and merges, run `uv run pytest` to verify an integration, and write `.agents/state.md`.
+branches and merges, run the full test suite to verify an integration, and write `.agents/state.md`.
 
 ## 1. Start
 
@@ -46,7 +46,7 @@ Each brief to a subagent contains:
 - the task, in one or two sentences, and its acceptance criteria;
 - the research report paths and the `state.md` decisions that apply;
 - known file paths, if any;
-- the verification command (`uv run pytest`, or a narrower one for intermediate checks);
+- the verification command: the full suite, or a narrower selection for intermediate checks;
 - for programmers: the worker mode; the target branch and its current tip commit; and, in
   `worktrees` mode, the slug for the branch and worktree (`../acp-tck-<slug>`).
 
@@ -66,7 +66,7 @@ Parallelism:
 - `single` mode: the programmer has committed. Check `git log` and `git diff --stat` for the slice.
 - `worktrees` mode: confirm the branch is rebased on the current target tip (ask the programmer to
   rebase if it isn't). Then, in this checkout, run `git merge --squash <slug>` and commit with a
-  conventional message. Run `uv run pytest`, then
+  conventional message. Run the full suite, then
   `git worktree remove ../acp-tck-<slug> && git branch -D <slug>`.
 - Commit your own files (`.agents/state.md`, new `.agents/research/*.md`) by explicit path, and
   only while no programmer is running in this checkout. In `worktrees` mode, commit research
