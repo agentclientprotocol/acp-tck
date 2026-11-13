@@ -73,4 +73,7 @@ the tests assert on the per-id statuses, not the verdict (see [Writing tests](wr
   each running the TCK against it on its own runner, then a `cross-check` job that runs the cross-check tests and
   checks the four reports against the expected baseline.
 
+The workflow's token is read-only. Non-GitHub actions are pinned to commit SHAs, with the version in a
+comment. Dependabot (`.github/dependabot.yml`) opens one weekly PR to bump them.
+
 Each project's README says what its CI step checks.
