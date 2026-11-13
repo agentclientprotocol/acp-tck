@@ -138,6 +138,14 @@ def main(argv: list[str] | None = None) -> int:
         plugin_module,
         "-p",
         "no:cacheprovider",
+        # The TCK's report only works in a single process; this makes a stray `-n` fail loudly.
+        "-p",
+        "no:xdist",
+        # Explicit config: discovery would treat option values that are existing paths (agent
+        # command, `--agent-cwd`, ...) as path args, since the plugin options are not registered
+        # yet when pytest resolves its config, and could walk up to an outer project's config.
+        "-c",
+        str(conformance_dir / "pytest.ini"),
         "--rootdir",
         str(conformance_dir),
         "--tck-agent-cmd",

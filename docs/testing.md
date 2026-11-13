@@ -29,11 +29,16 @@ spreads the end-to-end CLI tests, which mostly wait on agent subprocesses, acros
 serial run, which you want when debugging with `pdb` or reading interleaved output.
 
 The addopts apply only to the repo's own tests. The TCK's own conformance runs (`acp-tck`, and plain pytest on
-`src/tck/v{1,2}/conformance`) never inherit them, or any other outer pytest config: pytest finds config by walking
-up from its arguments, so each conformance suite ships a `pytest.ini` that stops the walk. Without it, the repo's
-addopts (or, in an installed copy, whatever project surrounds the virtual environment) would leak into the run.
-`tests/common/test_cli_isolation.py` pins this. The `PYTEST_ADDOPTS` environment variable is explicit and still
-applies.
+`src/tck/v{1,2}/conformance`) never inherit them, or any other outer pytest config. `acp-tck` passes the
+conformance `pytest.ini` explicitly with `-c`; do the same for plain pytest (see
+[Development](development.md#running-the-tck-from-source)). Relying on pytest's config discovery is not enough:
+it resolves the config before the plugin registers its `--tck-*` options, so option values that are existing paths
+(an agent command that is a single file, `--tck-agent-cwd`) count as path arguments, and a path inside the repo (or,
+in an installed copy, inside the project around the virtual environment) pulls in that project's config. The
+`pytest.ini` files also stop the upward walk as a second line of defense.
+`tests/common/test_cli_isolation.py` pins this. The `PYTEST_ADDOPTS` environment variable still applies, but
+`acp-tck` blocks xdist (`-p no:xdist`) because its report needs a single process, so `-n` in `PYTEST_ADDOPTS` makes
+it fail with a usage error instead of reporting nothing.
 
 ## Narrow runs
 

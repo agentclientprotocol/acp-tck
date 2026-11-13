@@ -63,12 +63,13 @@ uv run acp-tck --protocol-version 2 -- python tests/fixtures/agents/v2/conformin
 To add pytest's own flags, run a suite with plain pytest:
 
 ```
-uv run pytest src/tck/v1/conformance -p tck.v1.plugin --tck-agent-cmd 'python tests/fixtures/agents/v1/conforming.py'
+uv run pytest src/tck/v1/conformance -c src/tck/v1/conformance/pytest.ini -p tck.v1.plugin --tck-agent-cmd 'python tests/fixtures/agents/v1/conforming.py'
 ```
 
 The plugin shims are deliberately not auto-registered through `pytest11` entry points, so always pass
-`-p tck.v1.plugin` or `-p tck.v2.plugin`. Either way the run uses the `pytest.ini` beside the conformance suite,
-not the repo's pytest config (see [Testing](testing.md#parallel-by-default)).
+`-p tck.v1.plugin` or `-p tck.v2.plugin`, and pass `-c src/tck/vN/conformance/pytest.ini` so the run uses the
+conformance suite's own pytest config, not the repo's (see [Testing](testing.md#parallel-by-default)). `acp-tck`
+does this for you.
 
 ## Tests and CI
 
