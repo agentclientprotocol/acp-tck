@@ -25,9 +25,10 @@ jobs:
       - name: Sync dependencies
         run: uv sync --locked
 
-      # The end-to-end CLI tests mostly wait on agent subprocesses, so they parallelize well.
+      # The end-to-end CLI tests mostly wait on agent subprocesses, so they parallelize well
+      # (pytest's addopts in pyproject.toml runs them in parallel).
       - name: Run test suite
-        run: uv run pytest -q -n auto
+        run: uv run pytest -q
 
       # spec-tracker's tests check the spec maps against the spec docs at each version's vendored
       # schema revision (SCHEMA_REVISION in protocol.py); under CI they fail, not skip, if this

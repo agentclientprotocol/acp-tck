@@ -27,6 +27,9 @@ module-name = "tck"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Parallel by default; `-n 0` for a serial run. acp-tck's own conformance runs ignore this
+# (they use the pytest.ini next to each version's conformance suite).
+addopts = ["-n", "auto"]
 markers = [
     "requirement(*ids): bind this test to one or more ids in the active protocol version's requirement registry (see the version's plugin shim, e.g. tck.v1.plugin).",
     "capability(path, boolean=False): skip this test unless the cached initialize result advertises the capability at this dotted JSON path.",
