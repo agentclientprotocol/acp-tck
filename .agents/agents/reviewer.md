@@ -34,7 +34,7 @@ to judge it. Look for:
 - **Conventions and scope.** v1/v2 cross-imports, plugin-shim footguns, comments and code that cite
   `.agents/research/`, and changes the milestone goal didn't call for.
 
-You may run `uv run pytest` or a narrower command to confirm a finding. Never edit product files
+You may run the tests, full or narrowed, to confirm a finding. Never edit product files
 and never run git commands that write.
 
 ## Output

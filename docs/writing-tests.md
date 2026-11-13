@@ -17,7 +17,7 @@ the same for v1 and v2; substitute the version package (`src/tck/v1/` or `src/tc
    (below). If the feature has no `initialize` marker, use an [`inferred:` gate](requirements.md#inferredfeature-gates)
    instead: no marker, and the test skips itself.
 4. If the test sends a probe the agent is not expected to recognize, follow the [probe rules](#probes).
-5. Run `uv run pytest`. The registry tests (`tests/v{1,2}/test_registry.py`) fail if the id is not referenced by a
+5. Run the [tests](testing.md). The registry tests (`tests/v{1,2}/test_registry.py`) fail if the id is not referenced by a
    test, if a test references an unregistered id, and, because they pin the id set and the per-tier id sets by
    hand, if you did not update those. `tests/v{1,2}/test_cli.py` keeps hand-written tier sets that must match the
    registry too.

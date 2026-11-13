@@ -128,4 +128,4 @@ Last, because a changed requirement set can move what the upstream agents score.
   should pass, investigate against the spec first: fix the TCK, or record the deliberate known limitation with its
   explanation above the `--expect` lines. A baseline that hides a TCK bug defeats the check.
 
-Then run the full suites (`uv run pytest`, the spec-tracker tests, the cross-check tests) before finishing.
+Then run all three [test suites](testing.md) (product, spec-tracker, cross-check) before finishing.
