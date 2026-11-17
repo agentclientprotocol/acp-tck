@@ -17,15 +17,12 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
 ## Next
-- Step 4 impact research: all researchers launched. Done so far: v1 session-list-delete, tools-terminals-fs, auth-elicitation-security,
-  session-setup, initialization; rfd-plan-operations; v2 extensibility, overview-error. Running: v1 core, prompt-turn,
-  content-plan-commands, config-options, subagents-doc, rfd-subagents, schema; v2 transports-security-content, initialization,
-  session-setup, session-list-delete, prompt-lifecycle, cancellation-elicitation, authentication, tool-calls, plan-commands-config,
-  subagents-doc, rfd-subagents, schema.
+- Step 4 impact research DONE: 27 reports in .agents/research/impact-*.md (13 v1 incl. plan-operations, 14 v2).
+- Step 5 running: one researcher consolidates all reports -> .agents/research/plan-consolidated.md (deduped changes,
+  decisions, slice plan). Then present it to the user and wait for decisions.
 - Side question DONE (scope of formerly-Active, never-backfilled RFDs; all Draft at target), reports scope-rfds-*.md:
   13 rfds/v2/* -> 0 RFD-sourced rows (all doc-stated; doc gaps go to doc audit). mcp-over-acp remainder -> M per version
   (~7-8 rows, 6-7 fixtures each, shared MCP provider module, mock client answers mcp/message), Draft-RFD citation justified
   for RFD-only rules. streamable-http-websocket-transport -> recommend out of scope (needs HTTP/WS harness, L-XL).
   Awaiting the user's call on whether to include mcp-over-acp in this PR.
-- Then step 5: consolidate into plan + decisions for the user.
 ## Open questions (waiting on the user)
