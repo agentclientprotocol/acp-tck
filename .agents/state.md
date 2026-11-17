@@ -3,7 +3,7 @@
 mode: single · branch: pr10-follow-ups · reviews: on
 ## Decisions (final)
 - Untracked Active/Preview RFDs (incl. the post-pin Subagents RFD rule) go in a separate PR; out of scope here.
-- Out of this PR: MCP stub servers (3b); `--workers N` (5) pending discussion with the user, not in scope unless they add it.
+- Out of this PR: MCP stub servers (3b); `--workers N` (5), skipped for now by the user.
 - (1) Add `--subagent-prompt` (drives the subagents-connection turn; default None keeps today's text per version) and `--subagent-cancel-prompt` (replaces `--cancel-prompt` in the child-cancel turn: SUBAGENT-016/017, v2 202, TOOLCANCEL-203/TERMCANCEL-203; falls back to `--cancel-prompt` when unset). Runs stay independent one-shot turns (no chaining). No child despite a prompt stays SKIPPED. The `--subagent-prompt` turn gets one `--timeout` (whole-turn deadline, like root turns; no multiplier); README documents raising it and notes v1 CLIENTCAP-001..003 also judge that connection. Same slice fixes README `--timeout` wording (whole-turn deadline for prompt turns in v1 and v2, not per-response) and the v2 `run_prompt` docstring ("Every wait is bounded by `timeout`"). The drivers' existing `timeout * 3` stays. Research: followup-subagent-prompt.md.
 - (2) New v2 row ACP-STATE-210 (ADVISORY, gated like 209): start-side half of prompt-lifecycle.mdx:205. Caveat in row text about visible housekeeping tool calls; judge only the first state_update after announcement; a listed tool call counts as listing its terminal. Reword 209 + docstrings; narrow ledger v2.toml:188-191 to :207. Research: followup-state-209-start-side.md.
 - (3a) Reword all 7 MCP ledger reasons (v1.toml:127; v2.toml:267,363,445,450,465,521) as "Deferred" entries naming the real blocker; fix the two that wrongly say no MCP server exists. No code. Research: followup-mcp-stub.md.
@@ -15,6 +15,6 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - M2 v2 background-work rows: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209).
 - M3 MCP ledger: S5 (3a).
 ## Next
-- User approves plan; discuss `--workers` (user has questions about parallel agent processes).
+- User approves plan, then S1.
 ## Open questions (waiting on the user)
-- Plan approval; `--workers` discussion.
+- Plan approval (incl. whether S5 goes first / folds into M2's review).
