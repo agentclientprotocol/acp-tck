@@ -2,6 +2,7 @@
 ## Settings
 mode: single · branch: pr10-follow-ups · reviews: on
 ## Decisions (final)
+- M2 review: fix all five findings (S6 = 1+2, S7 = 3+4+5).
 - Untracked Active/Preview RFDs (incl. the post-pin Subagents RFD rule) go in a separate PR; out of scope here.
 - Out of this PR: MCP stub servers (3b); `--workers N` (5), skipped for now by the user.
 - (1) Add `--subagent-prompt` (drives the subagents-connection turn; default None keeps today's text per version) and `--subagent-cancel-prompt` (replaces `--cancel-prompt` in the child-cancel turn: SUBAGENT-016/017, v2 202, TOOLCANCEL-203/TERMCANCEL-203; falls back to `--cancel-prompt` when unset). Runs stay independent one-shot turns (no chaining). No child despite a prompt stays SKIPPED. The `--subagent-prompt` turn gets one `--timeout` (whole-turn deadline, like root turns; no multiplier); README documents raising it and notes v1 CLIENTCAP-001..003 also judge that connection. Same slice fixes README `--timeout` wording (whole-turn deadline for prompt turns in v1 and v2, not per-response) and the v2 `run_prompt` docstring ("Every wait is bounded by `timeout`"). The drivers' existing `timeout * 3` stays. Research: followup-subagent-prompt.md.
@@ -22,6 +23,6 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- Fix slices per user choice: proposed S6 probe target exclusion (findings 1+2, opus), S7 nits (3+4+5).
+- S6 (running): probe target exclusion, review findings 1+2. Then S7: nits 3+4+5. Then full suites.
 ## Open questions (waiting on the user)
-- Which M2 review findings to fix.
+- None.
