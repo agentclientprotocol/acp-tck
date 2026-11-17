@@ -18,11 +18,12 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - S5 MCP ledger reasons — 42cd99a — 7 reasons reworded as "Deferred: <blocker>" (stdio-only stub, no tools, argv-only recording, no HTTP stub); v2 capability name fixed to `capabilities.session.mcp.http`; spec-tracker 120 passed. Not changed: section comment v2.toml:358 (optional per research). M2 slices done; .agents grep clean.
 - Full suites at 42cd99a (orchestrator run): 1025 passed, spec-tracker 120 passed.
 - M2 review — .agents/research/review-m2.md — 0 blockers, 1 should-fix (main probe can re-cancel follow-up's in-flight target → false FAIL TOOLCANCEL-201, confirmed), 4 nits (uncancellable target ignores main.tried; 210 lacks idle-omits-item FAIL test; 210 citation missing prompt-lifecycle.mdx:208; conforming_full docstring stale).
+- S6 probe target exclusion — 51444c4 — main probe skips items any follow-up already sent to (`claimed`); 208 probe skips `main.tried`; 208 row text reworded; fixtures rejects_repeat_cancel_while_cancelling / cancel_never_final_accepts_repeat (both reproduce pre-fix); withdraws_cancel_on_request 208/209 PASS→SKIP (intended); no FAIL-set changes; 1027 + 120 passed.
 ## Plan
 - M1 Subagent prompt options: S1 (1).
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- S6 (running): probe target exclusion, review findings 1+2. Then S7: nits 3+4+5. Then full suites.
+- S7 (running): nits 3+4+5, plus exact SKIP wording for 201 (item claimed by a follow-up) and 208 (only candidate already tried by main) — S6 follow-ups. Then full suites.
 ## Open questions (waiting on the user)
 - None.
