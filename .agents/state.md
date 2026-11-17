@@ -19,11 +19,13 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - Full suites at 42cd99a (orchestrator run): 1025 passed, spec-tracker 120 passed.
 - M2 review — .agents/research/review-m2.md — 0 blockers, 1 should-fix (main probe can re-cancel follow-up's in-flight target → false FAIL TOOLCANCEL-201, confirmed), 4 nits (uncancellable target ignores main.tried; 210 lacks idle-omits-item FAIL test; 210 citation missing prompt-lifecycle.mdx:208; conforming_full docstring stale).
 - S6 probe target exclusion — 51444c4 — main probe skips items any follow-up already sent to (`claimed`); 208 probe skips `main.tried`; 208 row text reworded; fixtures rejects_repeat_cancel_while_cancelling / cancel_never_final_accepts_repeat (both reproduce pre-fix); withdraws_cancel_on_request 208/209 PASS→SKIP (intended); no FAIL-set changes; 1027 + 120 passed.
+- S7 review nits — 889932d — 210 idle-omits FAIL fixture + two unjudged-guard fixtures (guard test runs `-k test_background`: the late `running` in background_start_then_running.py can FAIL ACP-RESUME-212 in a whole-suite run); 210 cites prompt-lifecycle.mdx:208; conforming_full docstring; exact SKIP messages via outcomes `claimed` (201/202) and `tried` (208); no FAIL-set changes.
+- Final verification at 889932d (orchestrator): 1031 passed, spec-tracker 120 passed; .agents grep clean. GOAL DONE.
 ## Plan
 - M1 Subagent prompt options: S1 (1).
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- S7 (running): nits 3+4+5, plus exact SKIP wording for 201 (item claimed by a follow-up) and 208 (only candidate already tried by main) — S6 follow-ups. Then full suites.
+- Nothing. Push/PR only when the user asks. Before merge, delete .agents/prompt.md, .agents/state.md, .agents/research/ (also put this reminder in the PR description).
 ## Open questions (waiting on the user)
 - None.
