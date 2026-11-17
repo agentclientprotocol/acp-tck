@@ -2417,7 +2417,9 @@ class ItemCancel:
     rightly answered `-32602` (tool-calls.mdx:440,459,605). `rejected`: any other error, or a
     `-32602` for an item that stayed live and kept advertising `cancel`. `unanswered`: no
     response in time. `unconfirmed`: an empty result, but no final status or `exitStatus` in
-    time. `confirmed`: a result, then the final update (tool-calls.mdx:458,604)."""
+    time. `confirmed`: a result, then the final update (tool-calls.mdx:458,604). `claimed`: like
+    `none`, but an item did advertise `cancel` while live; every such item had already been sent
+    a further request (`_ItemProbe.claimed`), which the main request never repeats."""
     item_id: str | None = None
     result: Any = None
     """The response's `result`, for `unconfirmed`/`confirmed`."""
@@ -2433,9 +2435,11 @@ class FollowUpCancel:
     `cancel`."""
 
     outcome: str = "none"
-    """`none`: not sent (no such target). `error`: answered with an error (`error`). `result`:
-    answered with a result (`result`). `raced`: a result, but the live item started advertising
-    `cancel` as the request crossed, so it was legitimate. `unanswered`: no response in time."""
+    """`none`: not sent (no such target). `tried`: not sent, because every live item that did not
+    advertise `cancel` had already been sent the main request (`_ItemProbe.tried`), which this
+    request never repeats. `error`: answered with an error (`error`). `result`: answered with a
+    result (`result`). `raced`: a result, but the live item started advertising `cancel` as the
+    request crossed, so it was legitimate. `unanswered`: no response in time."""
     item_id: str | None = None
     result: Any = None
     error: dict[str, Any] | None = None
@@ -2473,6 +2477,9 @@ class _ItemProbe:
         self.claimed: set[str] = set()
         """Ids a follow-up probe sent a request for. The main probe never targets them, so it never
         judges the answer to a repeat request the TCK itself caused."""
+        self.shadowed = False
+        """Some item advertised `cancel` while live but was in `claimed`, so the main probe had
+        nothing to send a request for."""
         self.request_id: Any = None
         self.sent_at = 0.0
         self.response: TranscriptEntry | None = None
@@ -2483,18 +2490,19 @@ class _ItemProbe:
         self.grace_until: float | None = None
         self.done = False
 
-    def _live(self, tracker: PatchTracker) -> list[str]:
-        """The items that advertise `cancel` and are not final, in first-report order, except those
-        a follow-up probe already sent a request for."""
+    def _advertising(self, tracker: PatchTracker) -> list[str]:
+        """The items that advertise `cancel` and are not final, in first-report order."""
         if self.kind == "tool_call":
-            live = [
+            return [
                 item_id
                 for item_id, item in tracker.tool_calls.items()
                 if item.cancel and item.status not in FINAL_TOOL_CALL_STATUSES
             ]
-        else:
-            live = [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
-        return [item_id for item_id in live if item_id not in self.claimed]
+        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
+
+    def _live(self, tracker: PatchTracker) -> list[str]:
+        """`_advertising`, except the items a follow-up probe already sent a request for."""
+        return [item_id for item_id in self._advertising(tracker) if item_id not in self.claimed]
 
     def _is_final(self, tracker: PatchTracker) -> bool:
         item_id = self.result.item_id
@@ -2531,7 +2539,10 @@ class _ItemProbe:
         if self.done:
             return
         if self.request_id is None:
-            for item_id in self._live(tracker):
+            live = self._live(tracker)
+            if not live and self._advertising(tracker):
+                self.shadowed = True
+            for item_id in live:
                 if item_id not in self.tried:
                     self.tried.add(item_id)
                     self.result.item_id = item_id
@@ -2685,6 +2696,8 @@ class _UncancellableProbe(_FollowUpProbe):
         self.gained = False
         """The target advertised `cancel` after the request was sent."""
         self.grace_until: float | None = None
+        self.skipped_tried = False
+        """A live item without `cancel` was passed over because the main probe had tried it."""
 
     def _items(self, tracker: PatchTracker) -> dict[str, TrackedToolCall] | dict[str, TrackedTerminal]:
         return tracker.tool_calls if self.main.kind == "tool_call" else tracker.terminals
@@ -2704,8 +2717,10 @@ class _UncancellableProbe(_FollowUpProbe):
             candidates = [
                 item_id for item_id, item in tracker.terminals.items() if not item.cancel and not item.exited
             ]
-        candidates = [item_id for item_id in candidates if item_id not in self.main.tried]
-        return candidates[0] if candidates else None
+        untried = [item_id for item_id in candidates if item_id not in self.main.tried]
+        if candidates and not untried:
+            self.skipped_tried = True
+        return untried[0] if untried else None
 
     def observe(self, entry: TranscriptEntry, tracker: PatchTracker) -> None:
         super().observe(entry, tracker)
@@ -2870,7 +2885,13 @@ async def drive_item_cancel(
     for probe in probes:
         if probe.result.outcome == "none" and probe.tried:
             probe.result.outcome = "raced"
+        elif probe.result.outcome == "none" and probe.shadowed:
+            probe.result.outcome = "claimed"
         results.append(probe.result)
+    for follow_up in follow_ups:
+        if isinstance(follow_up, _UncancellableProbe):
+            if follow_up.result.outcome == "none" and follow_up.skipped_tried:
+                follow_up.result.outcome = "tried"
     return ItemCancelRun(
         turn=turn,
         tool_call=results[0],

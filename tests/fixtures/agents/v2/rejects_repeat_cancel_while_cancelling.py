@@ -24,6 +24,9 @@ from _base import ConformingAgent  # noqa: E402
 
 
 class RejectsRepeatCancelWhileCancellingAgent(ConformingAgent):
+    start_replacement = True
+    """Whether accepting a request also starts a new cancellable item."""
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._cancelling: dict[Any, list[tuple[str, str]]] = {}
@@ -54,7 +57,7 @@ class RejectsRepeatCancelWhileCancellingAgent(ConformingAgent):
     def _cancel_fixed(self, msg_id: Any, session_id: Any, item_id: str) -> bool:
         """Answer a request for a fixed item; `False` for any other id."""
         cancelling = self._cancelling.setdefault(session_id, [])
-        if any(item_id == cancelling_id for _kind, cancelling_id in cancelling):
+        if any(item_id == entry[1] for entry in cancelling):
             self._error(msg_id, -32602, "Already being cancelled")
             return True
         items = self._fixed_items.get(session_id, [])
@@ -65,6 +68,8 @@ class RejectsRepeatCancelWhileCancellingAgent(ConformingAgent):
             cancelling.append((kind, item_id))
             self._send_update(session_id, {**self._update(kind, item_id), "capabilities": {"cancel": {}}})
             self._reply(msg_id, {})
+            if not self.start_replacement:
+                return True
             if kind == "tool_call":
                 self._tool_call_count += 1
                 new_id = f"tool-live-{self._tool_call_count:04d}"

@@ -923,7 +923,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "of background work."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:152,184,186,205; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:152,184,186,205,208; "
             "docs/rfds/v2/background-work.mdx:193 (Active RFD)"
         ),
     ),

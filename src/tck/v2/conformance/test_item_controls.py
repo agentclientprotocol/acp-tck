@@ -36,9 +36,10 @@ is `-32601` (error.mdx:44), so the rows SKIP.
 Under the same gate, the run sends one request for the first live item (not final, no `exitStatus`)
 that does not currently advertise `cancel` and that the `-201` request did not go to: `-208` judges
 that it is rejected, `-209` (ADVISORY) the code. Likewise the `-201` request never goes to an item
-a further request went to, so no row judges the answer to a repeat request. The item may turn final as the request crosses; `-32602` is still the answer. It may also
-start advertising `cancel` before the agent reads the request, so a result that comes with such an
-advertisement is a race and SKIPs.
+a further request went to, so no row judges the answer to a repeat request; a row left without a
+target for that reason SKIPs and says so. The item may turn final as the request crosses; `-32602`
+is still the answer. It may also start advertising `cancel` before the agent reads the request, so
+a result that comes with such an advertisement is a race and SKIPs.
 
 The module and its tests are named without "cancel": the CLI self-tests select the cancellation
 suite with `-k cancel`, and a defect fixture that hangs on `session/cancel` must not be judged here.
@@ -93,6 +94,11 @@ async def _item_cancel_run(
 def _skip_unless_exercised(result: ItemCancel, noun: str) -> None:
     if result.outcome == "none":
         pytest.skip(f"no {noun} advertised capabilities.cancel while still live during the driven turn")
+    if result.outcome == "claimed":
+        pytest.skip(
+            f"every {noun} that advertised capabilities.cancel while still live had already been "
+            f"sent a further cancel request, which this row does not repeat"
+        )
     if result.outcome == "raced":
         pytest.skip(
             f"every {noun} that advertised capabilities.cancel was already final, or had stopped "
@@ -217,6 +223,11 @@ def _judge_uncancellable_rejected(probe: FollowUpCancel, noun: str, method: str,
         pytest.skip(
             f"{noun} {probe.item_id!r} started advertising capabilities.cancel as {method} for it "
             f"crossed, so the agent could accept it"
+        )
+    if probe.outcome == "tried":
+        pytest.skip(
+            f"every {noun} live without advertising capabilities.cancel had already been sent "
+            f"the main {method} request, which this row does not repeat"
         )
     if cancel_seen:
         not_sent = (
