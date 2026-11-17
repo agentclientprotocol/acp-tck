@@ -21,7 +21,7 @@ other's constant.
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "3961af94fa62d2386d993cadf1afc8b146fc799a"
+SCHEMA_REVISION = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 """The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every requirement
 citation in `tck.v1.requirements` -- are pinned to (see `schema/VENDORED.md`). Single source of
 truth: `tck.v1.requirements.SPEC_REVISION` and `Report.schema_revision` both read it from here."""

@@ -328,7 +328,7 @@ def _sent_cancels(agent) -> list[Any]:
 
 def test_requests_after_a_drivers_own_cancel_are_answered_cancelled_not_allowed():
     """The driver's `session/cancel` for the prompted session or for a subagent resolves that
-    session's later permission requests `cancelled` (prompt-turn.mdx:641); a request of a session
+    session's later permission requests `cancelled` (prompt-turn.mdx:851); a request of a session
     nobody cancelled is still answered per the policy."""
     steps = [
         _UPDATE,

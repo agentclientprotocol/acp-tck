@@ -614,7 +614,7 @@ async def test_archive_and_unarchive_are_idempotent(agent_launch, agent_initiali
 @pytest.mark.capability(_ARCHIVE_PATH)
 async def test_archive_unknown_session_is_an_error(agent_launch):
     """ACP-ARCHIVE-005. Unlike `session/delete`, these do not succeed silently for a session
-    that does not exist (`error.mdx:67`). The doc gives the code (`-32002`) without a
+    that does not exist (`error.mdx:69`). The doc gives the code (`-32002`) without a
     requirement keyword, so only error-vs-success is asserted. No `session/new` is ever sent."""
     async with connected_agent(agent_launch) as agent:
         for method in ("session/archive", "session/unarchive"):
@@ -930,7 +930,7 @@ async def _assert_existing_session_refused_with_system_prompt(
     agent_launch, agent_initialize_result, tmp_path, record_property, *, method, system_prompt, what, kind
 ):
     """Create a session on one connection, then on a fresh one send `method` for it with a
-    `systemPrompt` the agent cannot apply (`session-setup.mdx:422`). The reply must be an error
+    `systemPrompt` the agent cannot apply (`session-setup.mdx:431`). The reply must be an error
     (its code is recorded, not asserted: `-32602` is only RECOMMENDED), and a `session/prompt`
     on that id must then not succeed, since the session was not loaded or resumed. An error
     answer to the prompt (e.g. `-32002`) is fine.
@@ -1002,7 +1002,7 @@ async def test_load_with_unsupported_system_prompt_mode_errors(
 ):
     """ACP-SYSPROMPT-002 for `session/load`. Also gated on `systemPrompt` (checked in the helper).
     Breaks the client rule to use only an advertised mode on purpose: the spec defines the
-    agent's answer (`session-setup.mdx:415,422`)."""
+    agent's answer (`session-setup.mdx:424,431`)."""
     await _assert_existing_session_refused_with_system_prompt(
         agent_launch,
         agent_initialize_result,
@@ -1040,7 +1040,7 @@ async def test_load_with_non_text_system_prompt_content_errors(
     agent_launch, agent_initialize_result, tmp_path, record_property
 ):
     """ACP-SYSPROMPT-003 for `session/load`. Also gated on `systemPrompt` (checked in the helper).
-    Breaks the client rule to send only text blocks on purpose (`session-setup.mdx:418,422`)."""
+    Breaks the client rule to send only text blocks on purpose (`session-setup.mdx:427,431`)."""
     await _assert_existing_session_refused_with_system_prompt(
         agent_launch,
         agent_initialize_result,

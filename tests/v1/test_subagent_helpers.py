@@ -418,7 +418,7 @@ def test_conflicting_view_references_are_judged_only_as_unlinked_views():
     ):
         found = session_messages(_traffic(out, incoming), {"p"})
         assert _problems(found) == (0, 0, 1), found.unlinked_views
-        assert "(Active RFD)" in found.unlinked_views[0]
+        assert "(Preview RFD)" in found.unlinked_views[0]
     late = session_messages(
         _traffic(
             out,
@@ -540,7 +540,7 @@ def test_participants_before_the_first_chunk_are_conforming():
 def test_participants_supplied_only_after_the_first_chunk_are_flagged():
     found = session_message_streams(_traffic(_chunk("p", "m"), _msg("p", "m", senderSessionId="p")), {"p"})
     assert found.streamed == 1 and len(found.late_participants) == 1
-    assert "(Active RFD)" in found.late_participants[0]
+    assert "(Preview RFD)" in found.late_participants[0]
     cleared = _traffic(
         _msg("p", "m", senderSessionId="p"),
         _msg("p", "m", senderSessionId=None),
@@ -580,7 +580,7 @@ def test_a_child_select_with_other_values_is_flagged():
     for option in (_select("a", "a", "b"), _select("a", "a", "b", group=True), _select("a", "b")):
         found = child_config_selects(_traffic(_ANNOUNCE, _config("c", option)), {"p"})
         assert found.selects == 1 and len(found.with_choices) == 1, option
-        assert "(Active RFD)" in found.with_choices[0]
+        assert "(Preview RFD)" in found.with_choices[0]
 
 
 def test_a_grouped_select_counts_values_across_its_groups():

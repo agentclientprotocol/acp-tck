@@ -10,14 +10,14 @@ optional for agents, but any an agent uses are validated against their draft sha
 files are deliberately not vendored. The upstream file names are kept as-is.
 
 - **Source repo:** https://github.com/agentclientprotocol/agent-client-protocol
-  (copied from a local clone, `<spec-repo>` below)
-- **Commit:** `3961af94fa62d2386d993cadf1afc8b146fc799a`
-- **Date vendored:** 2026-11-10
+  (read from a local clone, `<spec-repo>` below)
+- **Commit:** `3ea94133bb4e7cfdb1105df75660ff83e66acf62`
+- **Date vendored:** 2026-11-18
 - **Copy commands used:**
 
   ```
-  cp <spec-repo>/schema/v1/schema.unstable.json src/tck/v1/schema/schema.unstable.json
-  cp <spec-repo>/schema/v1/meta.unstable.json   src/tck/v1/schema/meta.unstable.json
+  git -C <spec-repo> show <commit>:schema/v1/schema.unstable.json > src/tck/v1/schema/schema.unstable.json
+  git -C <spec-repo> show <commit>:schema/v1/meta.unstable.json   > src/tck/v1/schema/meta.unstable.json
   ```
 
 ## Refreshing
@@ -25,7 +25,8 @@ files are deliberately not vendored. The upstream file names are kept as-is.
 1. Confirm the spec repo checkout's current HEAD: `git -C <spec-repo> rev-parse HEAD`.
    Before step 3 bumps the pin, run `uv run --package spec-tracker spec-impact <pinned> <new> --version v1 --spec-repo <spec-repo> --fix`
    to remap the doc line citations.
-2. Re-run the two `cp` commands above with the new checkout path.
+2. Re-run the two `git show` commands above with the new commit (reading by ref, so the checkout's working tree
+   and branch do not matter).
 3. Update the commit hash and date in this file, and `SCHEMA_REVISION` in
    `src/tck/v1/protocol.py`.
 4. Re-run `uv run pytest` -- `tests/v1/test_validation.py` will catch any shape the new schema

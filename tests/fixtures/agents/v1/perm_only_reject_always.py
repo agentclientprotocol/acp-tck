@@ -2,7 +2,7 @@
 """Conforming fixture: `asks_permission.py`, but every permission request offers a single
 `reject_always` option. The TCK's default `allow` policy must not select a `*_always` it was
 not asked for (it would store a standing deny in a real agent): it sends `session/cancel` and
-answers `cancelled` instead (`docs/protocol/v1/draft/prompt-turn.mdx:641`), so every prompt
+answers `cancelled` instead (`docs/protocol/v1/draft/prompt-turn.mdx:851`), so every prompt
 turn ends `cancelled`. ACP-PERM-001 SKIPs (no `reject_once`); nothing FAILs.
 """
 

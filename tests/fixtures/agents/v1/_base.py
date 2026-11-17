@@ -100,7 +100,7 @@ class ConformingAgent:
     gets `-32602`).
 
     `session/load` and `session/resume` validate a supplied `systemPrompt` like `session/new`
-    does and answer `-32602` without loading the session (`session-setup.mdx:422`). With
+    does and answer `-32602` without loading the session (`session-setup.mdx:431`). With
     `_persist_sessions` on, sessions are also kept in `<cwd>/.tck-fixture-sessions.json`, so a
     later connection to a fresh process can load or resume one (off by default: it writes a
     file into the session's `cwd`).
