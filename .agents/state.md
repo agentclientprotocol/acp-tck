@@ -12,9 +12,8 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - Assessment of five follow-ups — reports in .agents/research/followup-*.md.
 ## Plan
 - M1 Subagent prompt options: S1 (1).
-- M2 v2 background-work rows: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209).
-- M3 MCP ledger: S5 (3a).
+- M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
+- Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- User approves plan, then S1.
+- S1 (programmer).
 ## Open questions (waiting on the user)
-- Plan approval (incl. whether S5 goes first / folds into M2's review).
