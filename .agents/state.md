@@ -26,6 +26,6 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- Nothing. Push/PR only when the user asks. Before merge, delete .agents/prompt.md, .agents/state.md, .agents/research/ (also put this reminder in the PR description).
+- PR opened: https://github.com/agentclientprotocol/acp-tck/pull/12 (head origin/eugenethedev/pr10-follow-ups). Nothing else pending. Before merge, delete .agents/prompt.md, .agents/state.md, .agents/research/ (also put this reminder in the PR description).
 ## Open questions (waiting on the user)
 - None.
