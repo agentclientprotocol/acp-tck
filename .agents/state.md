@@ -4,6 +4,13 @@ mode: single · branch: pr10-follow-ups · reviews: on
 ## Decisions (final)
 - Untracked Active/Preview RFDs (incl. the post-pin Subagents RFD rule) go in a separate PR; out of scope here.
 ## Done
+- Assessment of five follow-ups — reports in .agents/research/followup-*.md:
+  - subagent-prompt: S (~200-300 LOC), scope B (subagents connection only)
+  - state-209-start-side: S (~150-180 LOC), new ADVISORY row ACP-STATE-210
+  - mcp-stub: scope (a) ledger rewording S (~20 lines, 7 entries); stdio stub b1 M; HTTP stub b2 M-L; b3 blocked; b4 out (Active RFD)
+  - not-cancellable-probes: unknown-id half S (~250-350); not-cancellable half M (~450-550); both M (~700-900)
+  - workers: M (~250-350), two slices (plugin aggregation, then CLI/deps/docs)
 ## Next
-- Assess follow-ups: (1) `--subagent-prompt` option; (2) six MCP ledger reasons / stub MCP provider; (3) "not cancellable" -32602 probes; (4) start-side half of ACP-STATE-209; (5) opt-in `acp-tck --workers N`.
+- User picks the PR scope and answers each item's design questions; then plan milestones/slices.
 ## Open questions (waiting on the user)
+- Scope selection; per-item design questions (see reports).
