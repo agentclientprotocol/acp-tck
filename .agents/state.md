@@ -11,11 +11,12 @@ mode: single · branch: pr10-follow-ups · reviews: on
 ## Done
 - Assessment of five follow-ups — reports in .agents/research/followup-*.md.
 - S1 subagent prompt options — 9813646 — `--subagent-prompt`/`--subagent-cancel-prompt` (v1+v2, fallback to `--cancel-prompt`), `--timeout` wording fixed; new fixtures `exposes_subagent_on_request.py`; 1011 passed. M1 done.
+- S2 ACP-STATE-210 — e2de37f — ADVISORY row gated like 209; fixtures starts_background_after_idle / background_start_not_resent; ledger narrowed to :207; 1014 passed. Unjudged paths (running next state, idle w/o list, item ends first) not unit-tested — flag for M2 review.
 ## Plan
 - M1 Subagent prompt options: S1 (1).
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- S2 ACP-STATE-210 (programmer), then S3→S4→S5, then one M2 review.
+- S3 unknown-id probes 206/207 (programmer), then S4→S5, then one M2 review.
 ## Open questions (waiting on the user)
 - None.
