@@ -10,11 +10,12 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - (4) Both halves of the v2 -32602 probes: TOOLCANCEL/TERMCANCEL-206 (unknown id rejected, CAPABILITY), 207 (code -32602, ADVISORY), 208 (live non-cancellable item rejected, CAPABILITY), 209 (code, ADVISORY). Gates inferred:toolCallCancel / inferred:terminalCancel, defined as "agent advertised `cancel` at any point in the driven turn". Delete ledger v2.toml:605-608, 615-618. Research: followup-not-cancellable-probes.md.
 ## Done
 - Assessment of five follow-ups — reports in .agents/research/followup-*.md.
+- S1 subagent prompt options — 9813646 — `--subagent-prompt`/`--subagent-cancel-prompt` (v1+v2, fallback to `--cancel-prompt`), `--timeout` wording fixed; new fixtures `exposes_subagent_on_request.py`; 1011 passed. M1 done.
 ## Plan
 - M1 Subagent prompt options: S1 (1).
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- S1 (programmer), once the user gives the go-ahead. Nothing started yet.
+- S2 ACP-STATE-210 (programmer), then S3→S4→S5, then one M2 review.
 ## Open questions (waiting on the user)
-- Go-ahead to start S1.
+- None.
