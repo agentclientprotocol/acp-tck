@@ -16,13 +16,13 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
 ## Next
-- Step 4 impact research running: v1 core, initialization, session-setup, session-list-delete, prompt-turn, content-plan-commands,
-  config-options, tools-terminals-fs, auth-elicitation-security, subagents-doc, rfd-subagents, schema; rfd-plan-operations (v1+v2);
-  v2 overview-error, extensibility, transports-security-content.
-- Step 4 still to launch (20-agent concurrency cap) — report names `impact-v2-<slug>.md`: initialization, session-setup,
-  session-list-delete, prompt-lifecycle, cancellation-elicitation, authentication, tool-calls, plan-commands-config,
+- Step 4 impact research: all researchers launched. Done so far: v1 session-list-delete, tools-terminals-fs, auth-elicitation-security,
+  session-setup, initialization; rfd-plan-operations; v2 extensibility, overview-error. Running: v1 core, prompt-turn,
+  content-plan-commands, config-options, subagents-doc, rfd-subagents, schema; v2 transports-security-content, initialization,
+  session-setup, session-list-delete, prompt-lifecycle, cancellation-elicitation, authentication, tool-calls, plan-commands-config,
   subagents-doc, rfd-subagents, schema.
-- Side question from the user: scope of testing the formerly-Active, never-backfilled RFDs (13 rfds/v2/* minus background-work,
-  mcp-over-acp beyond part 1, streamable-http-websocket-transport). 4 scope researchers running ->
-  .agents/research/scope-rfds-{v2-prompt-session,v2-updates,v2-tools-plan,mcp-transport}.md. All are Draft at target.
+- Side question (scope of formerly-Active, never-backfilled RFDs; all Draft at target): done for rfds/v2 tools-plan, updates,
+  prompt-session -> all 13 rfds/v2/* need 0 RFD-sourced rows (every rule doc-stated; doc gaps routed to doc researchers).
+  Running: scope-rfds-mcp-transport.
+- Then step 5: consolidate into plan + decisions for the user.
 ## Open questions (waiting on the user)
