@@ -4,7 +4,9 @@ once the requests arrive (like `races_cancel_with_completion.py`), but the agent
 `tool_call/cancel` nor `terminal/cancel`: it answers both `-32601` after the final updates.
 Only `-32602` is the documented answer for an item that is already final (tool-calls.mdx:459,605),
 so the race excuse does not apply and the missing methods are not hidden: FAILs
-`ACP-TOOLCANCEL-201` and `ACP-TERMCANCEL-201` (`-202` SKIP: nothing was accepted). Within the
+`ACP-TOOLCANCEL-201` and `ACP-TERMCANCEL-201` (`-202` SKIP: nothing was accepted). The same
+`-32601` answers the unknown-id requests, a rejection with the wrong code: `-206` PASS and the
+ADVISORY `ACP-TOOLCANCEL-207` and `ACP-TERMCANCEL-207` FAIL too. Within the
 `-k` scope of the `test_item_controls.py` module, with `--cancel-prompt __hang__`.
 """
 

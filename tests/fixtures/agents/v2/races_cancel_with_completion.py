@@ -5,7 +5,8 @@ TCK's `tool_call/cancel` and `terminal/cancel` have arrived unanswered, so they 
 before the TCK has seen a final update, however slow the machine. It answers them `-32602`, as
 tool-calls.mdx:459,605 require for an item that is already final, after the final updates, so the
 driver reads the final update before the response and the `-32602` is a race:
-`ACP-TOOLCANCEL-*` and `ACP-TERMCANCEL-*` all SKIP and nothing FAILs. The deterministic version of
+`ACP-TOOLCANCEL-*` and `ACP-TERMCANCEL-*` SKIP and nothing FAILs, except the unknown-id rows
+(`-206/207`), which PASS. The deterministic version of
 `completes_before_cancel.py`, whose updates are written in one burst, so the driver usually sees
 the final update before it sends anything. Within the `-k` scope of the `test_item_controls.py`
 module, with `--cancel-prompt __hang__`.

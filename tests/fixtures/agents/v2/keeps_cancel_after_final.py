@@ -4,8 +4,8 @@
 is final (a final status, an `exitStatus`) it keeps advertising `cancel` (the patch omits
 `capabilities`). It should have stopped (tool-calls.mdx:440,600, a SHOULD that
 `ACP-PATCH-212` judges), so the client may still send a request, and the agent answers it
-`-32602` as tool-calls.mdx:459,605 say: `ACP-TOOLCANCEL-201/202/204/205` and
-`ACP-TERMCANCEL-201/202/204/205` all PASS. Within the `-k` scope of the `test_item_controls.py`
+`-32602` as tool-calls.mdx:459,605 say: `ACP-TOOLCANCEL-201/202/204-207` and
+`ACP-TERMCANCEL-201/202/204-207` all PASS. Within the `-k` scope of the `test_item_controls.py`
 module, with `--cancel-prompt __hang__`. `ACP-PATCH-212` FAILs outside it.
 """
 

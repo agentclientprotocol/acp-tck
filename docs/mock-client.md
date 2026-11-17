@@ -134,6 +134,10 @@ prompt essentially never does) and reads the turn in wire order, tracking each t
   live item is tried after such a race;
 - for the first item that is final yet still advertises `cancel`, it sends one further request, which must be rejected
   (`-204`/`-205` rows);
+- once an item of a kind has advertised `cancel` at any point in the turn, it sends one request of that kind for an id
+  no update announced (`_tck_unknown_tool_call` / `_tck_unknown_terminal`), which must be rejected (`-206`/`-207`
+  rows). This breaks the client rule, which the [probe rules](writing-tests.md#probes) allow because the spec defines
+  the answer (`-32602`). An agent that never advertises `cancel` gets no such request;
 - once nothing more is live (nothing new for `max(quiet_period(timeout), timeout / 4)`, `quiet_period(timeout)` after
   the turn's idle, or `timeout` since the prompt), it sends its own `session/cancel` for the turn.
 
