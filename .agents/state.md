@@ -23,11 +23,12 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
 - R-V1 — 5495e0f — v1 vendored at 3ea94133, citations remapped, subagents -> Preview RFD, JSONRPC-003 off mcp-over-acp; PLAN-001 temporarily -> PlanUpdateContent; suite green (1031)
 - R-V2 — 7254513 — v2 vendored at 3ea94133 (alpha.16), citations remapped (61 needs-review by hand, 187 code/test refs), Draft-RFD citations dropped, enum sets follow schema (ENUM-201 effect noted in commit), spec-tracker PL map test leaves prompt-suggestions/cursors sections out of core; suite green (1031)
+- V1-PLAN — 1c04f52 — -PLAN-001 (+helper, fixture); +PLAN-003 (abs markdown path), +PLAN-004 (plan update shape), MANDATORY vacuous; suite green (1026)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE: reviewer running on 6bce0b3..7254513 -> .agents/research/review-revendor.md. Findings go to the user; fixes become slices.
-- V1-PLAN (slice 1): in progress alongside the review. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
+- V2-PLAN (slice 2): in progress alongside the review. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
 - none
