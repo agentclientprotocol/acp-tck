@@ -14,17 +14,17 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - Depth: full audit (user asked `full`; v2 schema alpha.14 -> alpha.16; no `rfd_audit` in either map).
 - Upstream removed the RFD Active stage at target: tracked RFDs are only `subagents` (Preview) and `plan-operations` (Preview), both versions.
 - Impact research grouped by area (one researcher per doc group, one per tracked RFD); common brief `.agents/research/impact-brief.md`.
+- Plan: `.agents/research/plan-consolidated.md`. User accepted ALL recommended options for D1-D13 (2026-11-18):
+  D1(a) delete PLAN-001, add PLAN-003 + PLAN-004; D2(a); D3(a); D4(a); D5 literal; D6 INFORMATIONAL; D7 as recommended;
+  D8 all; D9 all; D10(a) now, (b) follow-up; D11 backfill slice INCLUDED (slice 27), row candidates follow-up;
+  D12(a) mcp-over-acp deferred to a follow-up PR, transport RFD out of scope, no ledger entries for either; D13 all defaults.
+- No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
 ## Next
-- Step 4 impact research DONE: 27 reports in .agents/research/impact-*.md (13 v1 incl. plan-operations, 14 v2).
-- Step 5: consolidated plan written -> .agents/research/plan-consolidated.md (sections: 1 changes, 2 conflicts,
-  3 decisions D1-D13, 4 upstream discrepancies U1-U18, 5 slice plan R-V1, R-V2, 28 area slices, id alignment, cross-check).
-  Presented to the user; waiting for answers on D1-D13. Then start R-V1 (programmer, single mode).
-- Side question DONE (scope of formerly-Active, never-backfilled RFDs; all Draft at target), reports scope-rfds-*.md:
-  13 rfds/v2/* -> 0 RFD-sourced rows (all doc-stated; doc gaps go to doc audit). mcp-over-acp remainder -> M per version
-  (~7-8 rows, 6-7 fixtures each, shared MCP provider module, mock client answers mcp/message), Draft-RFD citation justified
-  for RFD-only rules. streamable-http-websocket-transport -> recommend out of scope (needs HTTP/WS harness, L-XL).
-  Awaiting the user's call on whether to include mcp-over-acp in this PR.
+- Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
+  -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
+  alignment + cross-check).
+- R-V1: in progress.
 ## Open questions (waiting on the user)
-- D1-D13 in plan-consolidated.md section 3 (D12 = mcp-over-acp in this PR or follow-up; recommended follow-up).
+- none
