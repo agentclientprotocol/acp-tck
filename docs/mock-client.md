@@ -12,7 +12,7 @@ Each version's conformance suite drives `session/prompt` through its own `run_pr
   because the mock client advertises no `fs`, `terminal` or elicitation capability, and records it in
   `PromptTurn.client_requests_seen`. Two v1 connections advertise one unrelated feature and nothing else, so
   those requests are still answered `-32601` there: the plan rows (`test_plan.py`, `plan`) and the subagent rows
-  (`_subagents_connection.py`, `subagents`);
+  (`_subagents_connection.py`, `subagents`, one turn of `--subagent-prompt`);
 - records `session/update` notifications in wire order;
 - optionally fires a trigger mid-turn (`on_cancel` sends `session/cancel`, `on_action` sends another request,
   for example `session/close`);
@@ -146,7 +146,7 @@ per the `allow` policy (`cancelled` for a session the TCK cancelled), anything e
 ## Cancelling a subagent (`drive_child_cancel`)
 
 `ACP-SUBAGENT-016`/`017` (v1 and v2), `ACP-SUBAGENT-202` and the child-item rows `ACP-TOOLCANCEL-203` /
-`ACP-TERMCANCEL-203` (v2 only) share one driven turn of `--cancel-prompt` (`_child_cancel.py`), so a real agent needs
+`ACP-TERMCANCEL-203` (v2 only) share one driven turn of `--subagent-cancel-prompt`, or `--cancel-prompt` when unset (`_child_cancel.py`), so a real agent needs
 a prompt that makes it delegate to a child that can still be cancelled: one that advertises `capabilities.cancel`, or
 whose tool call or terminal does. Otherwise the rows SKIP ("no child advertised `capabilities.cancel` while reported
 running"). In v1 the connection advertises `subagents` and nothing else, and a child's state is only the parent's

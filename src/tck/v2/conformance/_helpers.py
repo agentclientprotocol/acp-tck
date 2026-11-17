@@ -1676,8 +1676,9 @@ async def run_prompt(
     """Drive one v2 `session/prompt` turn to its end, acting as a minimal mock client.
 
     The response is only an acceptance receipt; the turn's end is learned from `state_update`s
-    for `session_id` (a child session's states never count). Every wait is bounded by `timeout`;
-    an agent that never reaches a turn end raises `AgentTimeout`.
+    for `session_id` (a child session's states never count). The whole turn has
+    one deadline of `timeout`, not one per wait; an agent that does not reach a turn end within
+    it raises `AgentTimeout`.
 
     **Turn-end predicate.** `active` starts as "the session's last known state is `running` or
     `requires_action`" and becomes true on either state during the turn. Then, once the response

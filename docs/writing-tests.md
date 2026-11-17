@@ -88,7 +88,7 @@ A SKIP says "nothing was judged", so it must be honest.
 - **Unavoidable races** SKIP rather than guess. A cancellation that could not land (the turn ended before
   `session/cancel` was sent, or a plausible self-reached stop reason arrived within the race window) SKIPs with
   "cancellation not exercised"; see [mock-client.md](mock-client.md#cancel-races). `--cancel-prompt` makes this
-  less likely against a real agent.
+  less likely against a real agent (the child-cancel rows use `--subagent-cancel-prompt`, falling back to it).
 - **`AUTH-GATED:`** in a SKIP message marks a test the agent's authentication requirement kept from running
   (`skip_if_auth_gated`, and `skip_if_login_times_out` for a login that never answers). It sets
   `blocked_by_auth`, which forces the run NOT CONFORMANT. A failed login inside an authentication row does not

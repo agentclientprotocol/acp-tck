@@ -501,6 +501,8 @@ def _run_cli(
     startup_timeout: str = "1",
     report_json: str | None = None,
     cancel_prompt: str | None = None,
+    subagent_prompt: str | None = None,
+    subagent_cancel_prompt: str | None = None,
     auth_method: str | None = None,
     allow_logout: bool = False,
     close_grace: str | None = None,
@@ -514,6 +516,10 @@ def _run_cli(
         cmd += ["--report-json", report_json]
     if cancel_prompt is not None:
         cmd += ["--cancel-prompt", cancel_prompt]
+    if subagent_prompt is not None:
+        cmd += ["--subagent-prompt", subagent_prompt]
+    if subagent_cancel_prompt is not None:
+        cmd += ["--subagent-cancel-prompt", subagent_cancel_prompt]
     if auth_method is not None:
         cmd += ["--auth-method", auth_method]
     if allow_logout:
@@ -4401,6 +4407,98 @@ def test_cancellable_children_pass_the_child_control_rows():
     `sessionId` and leave it running; cancelling the parent then stops it. All five rows PASS."""
     statuses, stdout = _child_control_statuses("cancellable_subagent.py")
     assert set(statuses.values()) == {"PASS"}, stdout
+
+
+@pytest.mark.parametrize(
+    ("cancel_prompt", "subagent_cancel_prompt", "expected"),
+    [
+        (None, "__hang__", "PASS"),
+        ("__hang__", None, "PASS"),
+        ("something else", "__hang__", "PASS"),
+        ("__hang__", "something else", "SKIPPED"),
+    ],
+    ids=["subagent-only", "falls-back-to-cancel-prompt", "overrides-cancel-prompt", "replaces-cancel-prompt"],
+)
+def test_subagent_cancel_prompt_drives_the_child_control_turn(
+    cancel_prompt, subagent_cancel_prompt, expected
+):
+    """The child-cancel turn sends `--subagent-cancel-prompt`, or `--cancel-prompt` when unset:
+    `cancellable_subagent.py` shows cancellable children only for `__hang__`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "cancellable_subagent.py",
+        protocol_version=2,
+        k="test_subagent_controls",
+        cancel_prompt=cancel_prompt,
+        subagent_cancel_prompt=subagent_cancel_prompt,
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in sorted(_CHILD_CONTROL_IDS):
+        assert statuses[req_id] == expected, f"{req_id}:\n{result.stdout}"
+
+
+def test_subagent_prompt_does_not_drive_the_child_control_turn():
+    """`--subagent-prompt __hang__` is not the child-cancel prompt: the rows SKIP."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "cancellable_subagent.py",
+        protocol_version=2,
+        k="test_subagent_controls",
+        subagent_prompt="__hang__",
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in sorted(_CHILD_CONTROL_IDS):
+        assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
+
+
+_SUBAGENT_ROW_IDS = {f"ACP-SUBAGENT-{n:03}" for n in (*range(1, 10), *range(11, 15))} | {"ACP-SUBAGENT-201"}
+
+
+def test_subagent_prompt_reaches_the_subagents_turn():
+    """`--subagent-prompt __subagent__` is the text the subagents connection sends, so
+    `exposes_subagent_on_request.py` exposes its child there and every subagent row PASSes."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "exposes_subagent_on_request.py",
+        protocol_version=2,
+        k="test_subagents",
+        subagent_prompt="__subagent__",
+    )
+    statuses = _table_statuses(result.stdout)
+    assert "FAIL" not in set(statuses.values()), result.stdout
+    for req_id in _SUBAGENT_ROW_IDS:
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"cancel_prompt": "__subagent__"},
+        {"subagent_cancel_prompt": "__subagent__"},
+    ],
+    ids=["default", "cancel_prompt", "subagent_cancel_prompt"],
+)
+def test_subagents_turn_keeps_its_built_in_text_without_subagent_prompt(options):
+    """Without `--subagent-prompt` the subagents turn sends the built-in text, whatever the
+    cancel prompts say, so a fixture that exposes a child only for `__subagent__` shows none."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "exposes_subagent_on_request.py",
+        protocol_version=2,
+        k="test_subagents",
+        **options,
+    )
+    statuses = _table_statuses(result.stdout)
+    for req_id in _SUBAGENT_ROW_IDS:
+        assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
+    assert "FAIL" not in set(statuses.values()), result.stdout
+
+
+def test_help_mentions_subagent_prompt_options():
+    result = subprocess.run([sys.executable, "-m", "tck", "--help"], capture_output=True, text=True, timeout=10)
+    assert "--subagent-prompt" in result.stdout
+    assert "--subagent-cancel-prompt" in result.stdout
 
 
 def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():

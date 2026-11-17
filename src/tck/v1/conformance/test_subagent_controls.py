@@ -11,8 +11,8 @@ documentation-only `inferred:subagentCancel` string, the tests carry no
 `@pytest.mark.capability(...)` marker and SKIP themselves when nothing was exercised. Subagent
 traffic reaches only a client that advertised `clientCapabilities.subagents`, so the driven turn
 runs on its own connection that does (`subagents: {}` and nothing else, as
-`_subagents_connection.py` does). One driven turn (`drive_child_cancel`: the cancel prompt, so a
-real agent still has a running child) serves both rows, made by the first test that asks and
+`_subagents_connection.py` does). One driven turn (`drive_child_cancel`: `--subagent-cancel-prompt`,
+else the cancel prompt, so a real agent still has a running child) serves both rows, made by the first test that asks and
 reused by the rest. The request goes only to a child that advertises `cancel` and was last
 reported running, since a client MUST NOT cancel one that does not; a cancel that races with work
 that has already ended does not rewrite its outcome, so a child that ends otherwise within the
@@ -44,7 +44,7 @@ _RUN_KEY = pytest.StashKey[dict[str, Any]]()
 
 
 async def _child_run(
-    request: pytest.FixtureRequest, agent_launch, agent_initialize_result, tmp_path, cancel_prompt_text: str
+    request: pytest.FixtureRequest, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text: str
 ) -> ChildCancelRun:
     """An agent that did not negotiate v1 SKIPs (`VERSION-MISMATCH:`): its subagent shapes are not
     v1's. The first test that asks makes the run, a SKIP or error that ended it is re-raised for
@@ -60,7 +60,7 @@ async def _child_run(
             async with connected_agent(agent_launch, client_capabilities={"subagents": {}}) as agent:
                 session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
                 run = await drive_child_cancel(
-                    agent, session_id, cancel_prompt_text, timeout=agent_launch.default_timeout
+                    agent, session_id, subagent_cancel_prompt_text, timeout=agent_launch.default_timeout
                 )
                 cache.update(agent=agent, run=run)
         except BaseException as exc:
@@ -82,13 +82,13 @@ def _skip_unless_child_cancelled(run: ChildCancelRun) -> None:
 
 @pytest.mark.requirement("ACP-SUBAGENT-016")
 async def test_child_stop_is_confirmed_by_the_child(
-    request, agent_launch, agent_initialize_result, tmp_path, cancel_prompt_text
+    request, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text
 ):
     """ACP-SUBAGENT-016 (CAPABILITY, `inferred:subagentCancel`). After `session/cancel` for a
     running child that advertises `capabilities.cancel`, the parent's snapshot of the child
     (`subagent_update.state`) becomes `idle` with `stopReason: "cancelled"`. SKIPs when no such
     child was running or it ended on its own within the race window."""
-    run = await _child_run(request, agent_launch, agent_initialize_result, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
     assert run.outcome != "not_cancelled", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
@@ -104,7 +104,7 @@ async def test_child_stop_is_confirmed_by_the_child(
 
 @pytest.mark.requirement("ACP-SUBAGENT-017")
 async def test_child_stop_leaves_the_parent_running(
-    request, agent_launch, agent_initialize_result, tmp_path, cancel_prompt_text, record_property
+    request, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text, record_property
 ):
     """ACP-SUBAGENT-017 (CAPABILITY, `inferred:subagentCancel`). `session/cancel` for a child
     cancels that child's work, not its parent: the parent's prompt is not answered `cancelled`
@@ -113,7 +113,7 @@ async def test_child_stop_leaves_the_parent_running(
     from a leaked cancel; a sibling reported `idle`/`cancelled` is recorded as
     `acp_tck_cancelled_siblings`. SKIPs when no such child was running or it ended on its own
     within the race window."""
-    run = await _child_run(request, agent_launch, agent_initialize_result, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
     if run.cancelled_siblings:
         record_property("acp_tck_cancelled_siblings", ", ".join(run.cancelled_siblings))
