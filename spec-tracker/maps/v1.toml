@@ -124,7 +124,7 @@ reason = "Unobservable from a client (model context, disk persistence, logs othe
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/session-setup.mdx:661 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD send `headers` only to the configured origin."
-reason = "Out of scope: it needs the agent to advertise `mcpCapabilities.http` and an HTTP MCP test server with a cross-origin redirect probe, which the TCK does not host."
+reason = "Deferred: the TCK does not yet ship an HTTP MCP stub server (its MCP stub is stdio-only). The check needs one that answers with a cross-origin redirect and records whether the configured `headers` reach the second origin, and it applies only when the agent advertises `mcpCapabilities.http`. An agent whose HTTP client never follows the redirect would pass vacuously."
 
 # --- session-list.mdx ---
 

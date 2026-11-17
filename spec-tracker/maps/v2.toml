@@ -264,7 +264,7 @@ reason = "Not observable: it concerns the agent's internal interpretation. The o
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/extensibility.mdx:102 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents preserve the `_meta` keys and prefixes that MCP reserves when forwarding MCP content."
-reason = "Out of scope: it needs a live MCP server whose content flows back to the client, which the TCK does not host."
+reason = "Deferred: needs the agent's model to call a tool on a TCK-supplied MCP server and to relay the tool's content in a tool call. No prompt can force either, and the TCK's stdio MCP stub exposes no tools."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/extensibility.mdx:102,259 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -360,7 +360,7 @@ reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:54 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "An Agent that forwards elicitation for an MCP server MUST NOT copy the Client's capability object to that server unchanged."
-reason = "Out of scope: it concerns the agent-to-MCP-server side and needs a TCK-supplied MCP server that reports what it was offered."
+reason = "Deferred: observable once the TCK's stdio MCP stub records the `capabilities` of the MCP `initialize` it receives and the mock client advertises an elicitation mode (it advertises none, and would then have to answer `elicitation/create`). Neither is built yet."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:56-57 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -442,12 +442,12 @@ reason = "Unobservable from a client: it needs the model to attempt out-of-root 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:549 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "On `session/resume` and `session/fork`, `mcpServers` is the complete set of Client-provided servers, and Agents SHOULD NOT restore servers from earlier requests."
-reason = "Out of scope: absence of a restored server is only negative evidence, and the TCK's MCP stub has no bounded way to show that an agent did not launch it."
+reason = "Deferred: a relaunch of a server from an earlier request after `session/resume` with `mcpServers: []` would be positive evidence, but the TCK's stdio MCP stub records only its first launch, not every one. Absence of a launch is only negative evidence, and `session/fork` may reuse the source session's connection without a new launch."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:607,626 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD launch stdio MCP servers in the session's `cwd`, with `env` entries added to the inherited environment (the last of duplicate names winning), and use the transport's own values for the headers it owns."
-reason = "Not tested: the TCK's MCP stub records only the `argv` it was launched with (ACP-SESSION-006), not its working directory, environment or the headers it received."
+reason = "Deferred: the TCK's stdio MCP stub could record its working directory and the environment it was launched with, but records only its `argv` (ACP-SESSION-006) so far. The transport-owned-headers half needs an HTTP MCP stub server, which the TCK does not yet ship. Whether the base environment is the one the Agent would otherwise give the process is internal to the agent."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:693 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
@@ -462,7 +462,7 @@ reason = "Unobservable from a client (model context, disk persistence, logs othe
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:696 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents SHOULD send `headers` only to the configured origin."
-reason = "Out of scope: it needs the agent to advertise `mcpCapabilities.http` and an HTTP MCP test server with a cross-origin redirect probe, which the TCK does not host."
+reason = "Deferred: the TCK does not yet ship an HTTP MCP stub server (its MCP stub is stdio-only). The check needs one that answers with a cross-origin redirect and records whether the configured `headers` reach the second origin, and it applies only when the agent advertises `capabilities.session.mcp.http`. An agent whose HTTP client never follows the redirect would pass vacuously."
 
 # --- session-list.mdx ---
 
@@ -518,7 +518,7 @@ reason = "Out of scope: whether a session can be active on several connections i
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/content.mdx:18,20 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Agents forward content from MCP tool outputs unchanged, and convert or omit a content type from a later MCP revision that ACP does not define."
-reason = "Not observable: the TCK cannot feed MCP tool output to the agent. The wire shape of what the agent emits is checked by schema validation."
+reason = "Deferred: needs the agent's model to call a tool on a TCK-supplied MCP server and to relay its output in a tool call. No prompt can force that, and the TCK's stdio MCP stub exposes no tools. The wire shape of what the agent emits is checked by schema validation."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/content.mdx:24 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
