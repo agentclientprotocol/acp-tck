@@ -34,8 +34,9 @@ answer. An agent that never advertises `cancel` may not implement the method, an
 is `-32601` (error.mdx:44), so the rows SKIP.
 
 Under the same gate, the run sends one request for the first live item (not final, no `exitStatus`)
-that does not currently advertise `cancel`: `-208` judges that it is rejected, `-209` (ADVISORY)
-the code. The item may turn final as the request crosses; `-32602` is still the answer. It may also
+that does not currently advertise `cancel` and that the `-201` request did not go to: `-208` judges
+that it is rejected, `-209` (ADVISORY) the code. Likewise the `-201` request never goes to an item
+a further request went to, so no row judges the answer to a repeat request. The item may turn final as the request crosses; `-32602` is still the answer. It may also
 start advertising `cancel` before the agent reads the request, so a result that comes with such an
 advertisement is a race and SKIPs.
 

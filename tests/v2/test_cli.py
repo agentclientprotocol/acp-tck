@@ -4374,14 +4374,12 @@ def test_legitimate_invalid_params_is_not_a_rejection(fixture: str, tmp_path):
     (`finalizes_after_rejecting_cancel.py`), or the agent stopped advertising `cancel`
     (`withdraws_cancel_on_request.py`). Every row SKIPs for the `raced` reason, never for "nothing
     advertised", and nothing FAILs. The unknown-id rows are judged apart from the race and PASS.
-    `withdraws_cancel_on_request.py` leaves its items live without `cancel`, so the not-cancellable
-    request goes to them and, answered `-32602`, `-208/209` PASS there too."""
+    `withdraws_cancel_on_request.py` leaves its items live without `cancel`, but the TCK already
+    sent them the main request, so the not-cancellable request does not repeat it and `-208/209`
+    SKIP too."""
     statuses, by_id, stdout = _item_cancel_run(fixture, tmp_path)
-    judged = _UNKNOWN_CANCEL_IDS
-    if fixture == "withdraws_cancel_on_request.py":
-        judged = judged | _UNCANCELLABLE_CANCEL_IDS
     for req_id, status in statuses.items():
-        assert status == ("PASS" if req_id in judged else "SKIPPED"), f"{req_id}:\n{stdout}"
+        assert status == ("PASS" if req_id in _UNKNOWN_CANCEL_IDS else "SKIPPED"), f"{req_id}:\n{stdout}"
     for req_id in ("ACP-TOOLCANCEL-201", "ACP-TERMCANCEL-201"):
         assert "had stopped advertising it" in _skip_message(by_id, req_id), f"{req_id}:\n{stdout}"
 
@@ -4524,6 +4522,39 @@ def test_item_that_becomes_cancellable_as_the_request_crosses_is_a_race(tmp_path
         assert status == expected, f"{req_id}:\n{stdout}"
     for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
         assert "started advertising capabilities.cancel as" in _skip_message(by_id, req_id), (
+            f"{req_id}:\n{stdout}"
+        )
+
+
+def test_main_request_does_not_repeat_the_not_cancellable_request(tmp_path):
+    """`rejects_repeat_cancel_while_cancelling.py` advertises `cancel` on its not-cancellable items
+    when the request for them arrives, accepts, and answers a repeat request for them `-32602`
+    while they stay live and advertised; then it starts a new cancellable item. The main request
+    goes to the new item, not to the one the not-cancellable request already went to, so `-201/202`
+    PASS rather than judging the TCK's own repeat request, `-208/209` SKIP for the race, and
+    nothing FAILs."""
+    statuses, by_id, stdout = _item_cancel_run("rejects_repeat_cancel_while_cancelling.py", tmp_path)
+    for req_id, status in statuses.items():
+        expected = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        assert status == expected, f"{req_id}:\n{stdout}"
+    for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
+        assert "started advertising capabilities.cancel as" in _skip_message(by_id, req_id), (
+            f"{req_id}:\n{stdout}"
+        )
+
+
+def test_not_cancellable_request_does_not_repeat_the_main_request(tmp_path):
+    """`cancel_never_final_accepts_repeat.py` accepts the main request, stops advertising `cancel`
+    and gives no final update in time, and would accept a repeat request too. The cancelled item is
+    then live without `cancel`, but the not-cancellable request does not go to it, so the one defect
+    fails `-202` only: `-208/209` SKIP for want of a target."""
+    statuses, by_id, stdout = _item_cancel_run("cancel_never_final_accepts_repeat.py", tmp_path)
+    expected = {"ACP-TOOLCANCEL-202": "FAIL", "ACP-TERMCANCEL-202": "FAIL"}
+    for req_id, status in statuses.items():
+        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
+    for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
+        assert "was live without advertising capabilities.cancel while" in _skip_message(by_id, req_id), (
             f"{req_id}:\n{stdout}"
         )
 

@@ -2470,6 +2470,9 @@ class _ItemProbe:
         explains it."""
         self.result = ItemCancel()
         self.tried: set[str] = set()
+        self.claimed: set[str] = set()
+        """Ids a follow-up probe sent a request for. The main probe never targets them, so it never
+        judges the answer to a repeat request the TCK itself caused."""
         self.request_id: Any = None
         self.sent_at = 0.0
         self.response: TranscriptEntry | None = None
@@ -2481,14 +2484,17 @@ class _ItemProbe:
         self.done = False
 
     def _live(self, tracker: PatchTracker) -> list[str]:
-        """The items that advertise `cancel` and are not final, in first-report order."""
+        """The items that advertise `cancel` and are not final, in first-report order, except those
+        a follow-up probe already sent a request for."""
         if self.kind == "tool_call":
-            return [
+            live = [
                 item_id
                 for item_id, item in tracker.tool_calls.items()
                 if item.cancel and item.status not in FINAL_TOOL_CALL_STATUSES
             ]
-        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
+        else:
+            live = [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
+        return [item_id for item_id in live if item_id not in self.claimed]
 
     def _is_final(self, tracker: PatchTracker) -> bool:
         item_id = self.result.item_id
@@ -2574,7 +2580,7 @@ class _ItemProbe:
 class _FollowUpProbe:
     """One further cancel request beside a kind's main probe, sent at most once and only while
     the main probe has no request in flight; judged on its response alone. Subclasses choose the
-    target."""
+    target, which the main probe then never targets (`_ItemProbe.claimed`)."""
 
     def __init__(self, main: _ItemProbe) -> None:
         self.main = main
@@ -2607,6 +2613,7 @@ class _FollowUpProbe:
             target = self._target(tracker)
             if target is not None:
                 self.result.item_id = target
+                self.main.claimed.add(target)
                 self.sent_at = now
                 self.request_id = await agent.send_request(
                     self.main.method, {"sessionId": session_id, self.main.id_field: target}
@@ -2664,7 +2671,8 @@ class _UncancellableProbe(_FollowUpProbe):
     """The first live item (not final, no `exitStatus`) that does not currently advertise
     `cancel`, which the agent must answer `-32602` (tool-calls.mdx:440,459,587,605). It breaks the
     client rule at :456/:602, which the probe rules allow because the spec defines the answer.
-    Gated like `_UnknownProbe`.
+    Gated like `_UnknownProbe`. An item the main probe already sent a request for is skipped: the
+    agent may be cancelling it, and a repeat request would judge the main row's finding again.
 
     An item that turns final as the request crosses is still answered `-32602` ("already final"),
     so it needs no excuse. One that starts advertising `cancel` before the agent reads the request
@@ -2696,6 +2704,7 @@ class _UncancellableProbe(_FollowUpProbe):
             candidates = [
                 item_id for item_id, item in tracker.terminals.items() if not item.cancel and not item.exited
             ]
+        candidates = [item_id for item_id in candidates if item_id not in self.main.tried]
         return candidates[0] if candidates else None
 
     def observe(self, entry: TranscriptEntry, tracker: PatchTracker) -> None:
@@ -2761,7 +2770,10 @@ async def drive_item_cancel(
     only to an item that does. Further requests go to the first item that is final yet still
     advertises `cancel` (`_StaleProbe`) and, once an item of the kind advertised `cancel`, to an
     id no update announced (`_UnknownProbe`) and to the first live item that does not advertise
-    `cancel` (`_UncancellableProbe`): probes the spec defines the answer to.
+    `cancel` (`_UncancellableProbe`): probes the spec defines the answer to. The main request
+    never goes to an item a further request went to, nor the not-cancellable one to an item the
+    main request went to: neither row judges the answer to a repeat request for an item the agent
+    may still be cancelling.
 
     A candidate is judged on what the TCK had read when it chose it. A `-32602` is the documented
     answer for an item that is already final or not cancellable (:459,605), so it is `raced`
