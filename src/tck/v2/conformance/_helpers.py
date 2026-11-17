@@ -1676,8 +1676,9 @@ async def run_prompt(
     """Drive one v2 `session/prompt` turn to its end, acting as a minimal mock client.
 
     The response is only an acceptance receipt; the turn's end is learned from `state_update`s
-    for `session_id` (a child session's states never count). Every wait is bounded by `timeout`;
-    an agent that never reaches a turn end raises `AgentTimeout`.
+    for `session_id` (a child session's states never count). The whole turn has
+    one deadline of `timeout`, not one per wait; an agent that does not reach a turn end within
+    it raises `AgentTimeout`.
 
     **Turn-end predicate.** `active` starts as "the session's last known state is `running` or
     `requires_action`" and becomes true on either state during the turn. Then, once the response
@@ -2222,7 +2223,13 @@ class PatchTracker:
     """A status back to `pending`, or a change after a final status (tool-calls.mdx:421,423)."""
     cancel_violations: list[str] = field(default_factory=list)
     """`cancel` still advertised by a final tool call or an exited terminal (:440,600)."""
-    cancel_seen: bool = False
+    tool_call_cancel_seen: bool = False
+    """Some tool call advertised `cancel` at some point."""
+    terminal_cancel_seen: bool = False
+
+    @property
+    def cancel_seen(self) -> bool:
+        return self.tool_call_cancel_seen or self.terminal_cancel_seen
 
     def apply(self, kind: str, payload: dict[str, Any]) -> None:
         report = tool_call_report(kind, payload)
@@ -2267,7 +2274,7 @@ class PatchTracker:
             tool_call.status = new
         if "capabilities" in fields:
             tool_call.cancel = _advertises_cancel(fields["capabilities"])
-            self.cancel_seen = self.cancel_seen or tool_call.cancel
+            self.tool_call_cancel_seen = self.tool_call_cancel_seen or tool_call.cancel
         if tool_call.cancel and tool_call.status in FINAL_TOOL_CALL_STATUSES:
             self.cancel_violations.append(
                 f"tool call {tool_call_id!r} still advertises capabilities.cancel with final "
@@ -2282,7 +2289,7 @@ class PatchTracker:
             terminal.exited = isinstance(update["exitStatus"], dict)
         if "capabilities" in update:
             terminal.cancel = _advertises_cancel(update["capabilities"])
-            self.cancel_seen = self.cancel_seen or terminal.cancel
+            self.terminal_cancel_seen = self.terminal_cancel_seen or terminal.cancel
         if terminal.cancel and terminal.exited:
             self.cancel_violations.append(
                 f"terminal {terminal_id!r} still advertises capabilities.cancel after reporting "
@@ -2410,7 +2417,9 @@ class ItemCancel:
     rightly answered `-32602` (tool-calls.mdx:440,459,605). `rejected`: any other error, or a
     `-32602` for an item that stayed live and kept advertising `cancel`. `unanswered`: no
     response in time. `unconfirmed`: an empty result, but no final status or `exitStatus` in
-    time. `confirmed`: a result, then the final update (tool-calls.mdx:458,604)."""
+    time. `confirmed`: a result, then the final update (tool-calls.mdx:458,604). `claimed`: like
+    `none`, but an item did advertise `cancel` while live; every such item had already been sent
+    a further request (`_ItemProbe.claimed`), which the main request never repeats."""
     item_id: str | None = None
     result: Any = None
     """The response's `result`, for `unconfirmed`/`confirmed`."""
@@ -2419,14 +2428,18 @@ class ItemCancel:
 
 
 @dataclass
-class StaleCancel:
-    """What a further cancel request showed for an item that was final yet still advertised
-    `capabilities.cancel` (the agent SHOULD have stopped, tool-calls.mdx:440,600)."""
+class FollowUpCancel:
+    """What one further cancel request beside the main one showed, for a target the agent must
+    reject with `-32602` (tool-calls.mdx:459,605): an item that was final yet still advertised
+    `capabilities.cancel`, an id no update announced, or a live item that did not advertise
+    `cancel`."""
 
     outcome: str = "none"
-    """`none`: no item was final and still advertising `cancel`. `error`: answered with an
-    error (`error`). `result`: answered with a result (`result`). `unanswered`: no response in
-    time."""
+    """`none`: not sent (no such target). `tried`: not sent, because every live item that did not
+    advertise `cancel` had already been sent the main request (`_ItemProbe.tried`), which this
+    request never repeats. `error`: answered with an error (`error`). `result`: answered with a
+    result (`result`). `raced`: a result, but the live item started advertising `cancel` as the
+    request crossed, so it was legitimate. `unanswered`: no response in time."""
     item_id: str | None = None
     result: Any = None
     error: dict[str, Any] | None = None
@@ -2440,8 +2453,15 @@ class ItemCancelRun:
     """The driven turn, or `None` when it did not end in time (the turn is not judged here)."""
     tool_call: ItemCancel
     terminal: ItemCancel
-    tool_call_stale: StaleCancel = field(default_factory=StaleCancel)
-    terminal_stale: StaleCancel = field(default_factory=StaleCancel)
+    tool_call_stale: FollowUpCancel = field(default_factory=FollowUpCancel)
+    terminal_stale: FollowUpCancel = field(default_factory=FollowUpCancel)
+    tool_call_unknown: FollowUpCancel = field(default_factory=FollowUpCancel)
+    terminal_unknown: FollowUpCancel = field(default_factory=FollowUpCancel)
+    tool_call_uncancellable: FollowUpCancel = field(default_factory=FollowUpCancel)
+    terminal_uncancellable: FollowUpCancel = field(default_factory=FollowUpCancel)
+    tool_call_cancel_seen: bool = False
+    """Some tool call advertised `cancel` at some point in the turn (the follow-up gate)."""
+    terminal_cancel_seen: bool = False
 
 
 class _ItemProbe:
@@ -2454,6 +2474,12 @@ class _ItemProbe:
         explains it."""
         self.result = ItemCancel()
         self.tried: set[str] = set()
+        self.claimed: set[str] = set()
+        """Ids a follow-up probe sent a request for. The main probe never targets them, so it never
+        judges the answer to a repeat request the TCK itself caused."""
+        self.shadowed = False
+        """Some item advertised `cancel` while live but was in `claimed`, so the main probe had
+        nothing to send a request for."""
         self.request_id: Any = None
         self.sent_at = 0.0
         self.response: TranscriptEntry | None = None
@@ -2464,7 +2490,7 @@ class _ItemProbe:
         self.grace_until: float | None = None
         self.done = False
 
-    def _live(self, tracker: PatchTracker) -> list[str]:
+    def _advertising(self, tracker: PatchTracker) -> list[str]:
         """The items that advertise `cancel` and are not final, in first-report order."""
         if self.kind == "tool_call":
             return [
@@ -2473,6 +2499,10 @@ class _ItemProbe:
                 if item.cancel and item.status not in FINAL_TOOL_CALL_STATUSES
             ]
         return [item_id for item_id, item in tracker.terminals.items() if item.cancel and not item.exited]
+
+    def _live(self, tracker: PatchTracker) -> list[str]:
+        """`_advertising`, except the items a follow-up probe already sent a request for."""
+        return [item_id for item_id in self._advertising(tracker) if item_id not in self.claimed]
 
     def _is_final(self, tracker: PatchTracker) -> bool:
         item_id = self.result.item_id
@@ -2509,7 +2539,10 @@ class _ItemProbe:
         if self.done:
             return
         if self.request_id is None:
-            for item_id in self._live(tracker):
+            live = self._live(tracker)
+            if not live and self._advertising(tracker):
+                self.shadowed = True
+            for item_id in live:
                 if item_id not in self.tried:
                     self.tried.add(item_id)
                     self.result.item_id = item_id
@@ -2555,30 +2588,25 @@ class _ItemProbe:
         return self.request_id is None and not any(i not in self.tried for i in self._live(tracker))
 
 
-class _StaleProbe:
-    """A further cancel request for the first item that is final yet still advertises `cancel`.
-    Such an item is not live, but the client may send the request while the advertisement
-    stands, and the agent must answer `-32602` (tool-calls.mdx:440,459,600,605). Sent only
-    while the kind's main probe has no request in flight."""
+class _FollowUpProbe:
+    """One further cancel request beside a kind's main probe, sent at most once and only while
+    the main probe has no request in flight; judged on its response alone. Subclasses choose the
+    target, which the main probe then never targets (`_ItemProbe.claimed`)."""
 
     def __init__(self, main: _ItemProbe) -> None:
         self.main = main
-        self.result = StaleCancel()
+        self.result = FollowUpCancel()
         self.request_id: Any = None
         self.sent_at = 0.0
         self.response: TranscriptEntry | None = None
         self.done = False
 
-    def _candidates(self, tracker: PatchTracker) -> list[str]:
-        if self.main.kind == "tool_call":
-            return [
-                item_id
-                for item_id, item in tracker.tool_calls.items()
-                if item.cancel and item.status in FINAL_TOOL_CALL_STATUSES
-            ]
-        return [item_id for item_id, item in tracker.terminals.items() if item.cancel and item.exited]
+    def _target(self, tracker: PatchTracker) -> str | None:
+        """The id to send the request for now, or `None` while there is none."""
+        raise NotImplementedError
 
-    def observe(self, entry: TranscriptEntry) -> None:
+    def observe(self, entry: TranscriptEntry, tracker: PatchTracker) -> None:
+        """Called after `tracker` applied `entry`."""
         if self.request_id is not None and self.response is None and entry.matches_id(self.request_id):
             self.response = entry
 
@@ -2591,12 +2619,15 @@ class _StaleProbe:
         if self.done:
             return
         if self.request_id is None:
-            candidates = self._candidates(tracker)
-            if candidates and not self.main.in_flight():
-                self.result.item_id = candidates[0]
+            if self.main.in_flight():
+                return
+            target = self._target(tracker)
+            if target is not None:
+                self.result.item_id = target
+                self.main.claimed.add(target)
                 self.sent_at = now
                 self.request_id = await agent.send_request(
-                    self.main.method, {"sessionId": session_id, self.main.id_field: candidates[0]}
+                    self.main.method, {"sessionId": session_id, self.main.id_field: target}
                 )
             return
         if self.response is not None:
@@ -2608,6 +2639,107 @@ class _StaleProbe:
             self.done = True
         elif now - self.sent_at > window:
             self.result.outcome, self.done = "unanswered", True
+
+
+class _StaleProbe(_FollowUpProbe):
+    """The first item that is final yet still advertises `cancel`. Such an item is not live, but
+    the client may send the request while the advertisement stands, and the agent must answer
+    `-32602` (tool-calls.mdx:440,459,600,605)."""
+
+    def _target(self, tracker: PatchTracker) -> str | None:
+        if self.main.kind == "tool_call":
+            candidates = [
+                item_id
+                for item_id, item in tracker.tool_calls.items()
+                if item.cancel and item.status in FINAL_TOOL_CALL_STATUSES
+            ]
+        else:
+            candidates = [item_id for item_id, item in tracker.terminals.items() if item.cancel and item.exited]
+        return candidates[0] if candidates else None
+
+
+class _UnknownProbe(_FollowUpProbe):
+    """An id no update announced, in the prompted session, which the agent must answer `-32602`
+    (tool-calls.mdx:459,605). It breaks the client rule at :456/:602 (nothing advertises `cancel`
+    for it), which the probe rules allow because the spec defines the answer. Sent only once an
+    item of the kind advertised `cancel` during the turn: an agent that never does may not
+    implement the method, and then `-32601` is its answer (error.mdx:44)."""
+
+    def _target(self, tracker: PatchTracker) -> str | None:
+        if self.main.kind == "tool_call":
+            seen, known = tracker.tool_call_cancel_seen, tracker.tool_calls
+        else:
+            seen, known = tracker.terminal_cancel_seen, tracker.terminals
+        if not seen:
+            return None
+        item_id = f"_tck_unknown_{self.main.kind}"
+        while item_id in known:
+            item_id += "_"
+        return item_id
+
+
+class _UncancellableProbe(_FollowUpProbe):
+    """The first live item (not final, no `exitStatus`) that does not currently advertise
+    `cancel`, which the agent must answer `-32602` (tool-calls.mdx:440,459,587,605). It breaks the
+    client rule at :456/:602, which the probe rules allow because the spec defines the answer.
+    Gated like `_UnknownProbe`. An item the main probe already sent a request for is skipped: the
+    agent may be cancelling it, and a repeat request would judge the main row's finding again.
+
+    An item that turns final as the request crosses is still answered `-32602` ("already final"),
+    so it needs no excuse. One that starts advertising `cancel` before the agent reads the request
+    may rightly be accepted: a result is `raced` when the advertisement arrives after the request
+    was sent, up to `grace` after the response."""
+
+    def __init__(self, main: _ItemProbe, *, grace: float) -> None:
+        super().__init__(main)
+        self.grace = grace
+        self.gained = False
+        """The target advertised `cancel` after the request was sent."""
+        self.grace_until: float | None = None
+        self.skipped_tried = False
+        """A live item without `cancel` was passed over because the main probe had tried it."""
+
+    def _items(self, tracker: PatchTracker) -> dict[str, TrackedToolCall] | dict[str, TrackedTerminal]:
+        return tracker.tool_calls if self.main.kind == "tool_call" else tracker.terminals
+
+    def _target(self, tracker: PatchTracker) -> str | None:
+        if self.main.kind == "tool_call":
+            if not tracker.tool_call_cancel_seen:
+                return None
+            candidates = [
+                item_id
+                for item_id, item in tracker.tool_calls.items()
+                if not item.cancel and item.status not in FINAL_TOOL_CALL_STATUSES
+            ]
+        else:
+            if not tracker.terminal_cancel_seen:
+                return None
+            candidates = [
+                item_id for item_id, item in tracker.terminals.items() if not item.cancel and not item.exited
+            ]
+        untried = [item_id for item_id in candidates if item_id not in self.main.tried]
+        if candidates and not untried:
+            self.skipped_tried = True
+        return untried[0] if untried else None
+
+    def observe(self, entry: TranscriptEntry, tracker: PatchTracker) -> None:
+        super().observe(entry, tracker)
+        if self.in_flight() and self._items(tracker)[self.result.item_id].cancel:
+            self.gained = True
+
+    async def step(
+        self, agent: AgentProcess, session_id: str, tracker: PatchTracker, now: float, window: float
+    ) -> None:
+        if self.in_flight() and self.response is not None and "error" not in self.response.parsed:
+            if self.gained:
+                self.result.outcome, self.result.result = "raced", self.response.parsed.get("result")
+                self.done = True
+                return
+            if self.grace_until is None:
+                self.grace_until = now + self.grace
+            if now < self.grace_until:
+                return
+        await super().step(agent, session_id, tracker, now, window)
 
 
 async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry, *, since: int) -> None:
@@ -2649,9 +2781,14 @@ async def drive_item_cancel(
     """Drive one turn of `prompt_text` and, for the first tool call and the first terminal that
     advertise `capabilities.cancel` while still live, send `tool_call/cancel` / `terminal/cancel`
     and watch for the confirming final update (tool-calls.mdx:440,456-459,600-605). The client
-    MUST NOT send either unless the item currently advertises `cancel`, so nothing is sent for an
-    item that does not. A further request goes to the first item that is final yet still
-    advertises `cancel` (`_StaleProbe`).
+    MUST NOT send either unless the item currently advertises `cancel`, so the main request goes
+    only to an item that does. Further requests go to the first item that is final yet still
+    advertises `cancel` (`_StaleProbe`) and, once an item of the kind advertised `cancel`, to an
+    id no update announced (`_UnknownProbe`) and to the first live item that does not advertise
+    `cancel` (`_UncancellableProbe`): probes the spec defines the answer to. The main request
+    never goes to an item a further request went to, nor the not-cancellable one to an item the
+    main request went to: neither row judges the answer to a repeat request for an item the agent
+    may still be cancelling.
 
     A candidate is judged on what the TCK had read when it chose it. A `-32602` is the documented
     answer for an item that is already final or not cancellable (:459,605), so it is `raced`
@@ -2676,7 +2813,9 @@ async def drive_item_cancel(
         _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=grace),
         _ItemProbe("terminal", "terminal/cancel", "terminalId", grace=grace),
     ]
-    stale = [_StaleProbe(probe) for probe in probes]
+    follow_ups: list[_FollowUpProbe] = [_StaleProbe(probe) for probe in probes]
+    follow_ups += [_UnknownProbe(probe) for probe in probes]
+    follow_ups += [_UncancellableProbe(probe, grace=grace) for probe in probes]
     tracker = PatchTracker()
     cursor = since = len(agent.transcript)
     started = last_activity = loop.time()
@@ -2711,13 +2850,13 @@ async def drive_item_cancel(
                         tracker.apply("permission", params)
                 for probe in probes:
                     probe.observe(index, entry, tracker)
-                for probe in stale:
-                    probe.observe(entry)
+                for follow_up in follow_ups:
+                    follow_up.observe(entry, tracker)
             now = loop.time()
             for probe in probes:
                 await probe.step(agent, session_id, tracker, now, window)
-            for probe in stale:
-                await probe.step(agent, session_id, tracker, now, window)
+            for follow_up in follow_ups:
+                await follow_up.step(agent, session_id, tracker, now, window)
             error = turn_task.exception() if turn_done else None
             if error is not None and not isinstance(error, AgentTimeout):
                 raise error
@@ -2725,7 +2864,7 @@ async def drive_item_cancel(
             search_over = (turn_done and quiet > grace) or now - started > timeout or quiet > silence
             settled = all(
                 probe.done or (probe.idle(tracker) and search_over) for probe in probes
-            ) and not any(probe.in_flight() for probe in stale)
+            ) and not any(follow_up.in_flight() for follow_up in follow_ups)
             if settled and not cancel_sent and (not turn_done or error is not None):
                 await agent.send_notification("session/cancel", {"sessionId": session_id})
                 cancel_sent = True
@@ -2746,13 +2885,25 @@ async def drive_item_cancel(
     for probe in probes:
         if probe.result.outcome == "none" and probe.tried:
             probe.result.outcome = "raced"
+        elif probe.result.outcome == "none" and probe.shadowed:
+            probe.result.outcome = "claimed"
         results.append(probe.result)
+    for follow_up in follow_ups:
+        if isinstance(follow_up, _UncancellableProbe):
+            if follow_up.result.outcome == "none" and follow_up.skipped_tried:
+                follow_up.result.outcome = "tried"
     return ItemCancelRun(
         turn=turn,
         tool_call=results[0],
         terminal=results[1],
-        tool_call_stale=stale[0].result,
-        terminal_stale=stale[1].result,
+        tool_call_stale=follow_ups[0].result,
+        terminal_stale=follow_ups[1].result,
+        tool_call_unknown=follow_ups[2].result,
+        terminal_unknown=follow_ups[3].result,
+        tool_call_uncancellable=follow_ups[4].result,
+        terminal_uncancellable=follow_ups[5].result,
+        tool_call_cancel_seen=tracker.tool_call_cancel_seen,
+        terminal_cancel_seen=tracker.terminal_cancel_seen,
     )
 
 

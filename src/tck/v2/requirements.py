@@ -894,13 +894,37 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "session is `idle`, a later `state_update` for the session drops it from the list: "
             "the Agent SHOULD re-send the state with the updated list when background work "
             "ends. Judged over one prompt turn plus a quiet drain after it. The start of "
-            "background work is not judged here, nor is an end during active work (the next "
-            "snapshot follows anyway). SKIPPED when no listed item ends while idle. The test is gated "
-            "on `capabilities.session`."
+            "background work is judged by ACP-STATE-210; an end during active work is not judged "
+            "(the next snapshot follows anyway). SKIPPED when no listed item ends while idle. "
+            "The test is gated on `capabilities.session`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:205-206; "
             "docs/rfds/v2/background-work.mdx:193-194 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-210",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When a `terminal` (no `exitStatus`) or `tool_call` (no final status) is first "
+            "announced for the session while it is `idle` and its latest `background` list is "
+            "reported, the next `state_update` for the session is an `idle` that lists it, "
+            "directly or through a tool call and the terminal it references (either one stands "
+            "for the other): the Agent SHOULD re-send the state with the updated list when background work starts. "
+            "Foreground work reports `running` when it starts, so an item announced while idle "
+            "is background work. Only the first `state_update` after the announcement is judged, "
+            "and not when it is not an `idle` with a list (foreground work may have started) "
+            "nor when the item ends before any `state_update`. A visible housekeeping tool "
+            "call, which the Agent SHOULD NOT list, cannot be told apart and fails. Judged over "
+            "one prompt turn plus a quiet drain after it. SKIPPED when no item starts while "
+            "idle. The test is gated on `capabilities.session`; ACP-STATE-209 judges the end "
+            "of background work."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:152,184,186,205,208; "
+            "docs/rfds/v2/background-work.mdx:193 (Active RFD)"
         ),
     ),
     Requirement(
@@ -3292,6 +3316,84 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
     ),
     Requirement(
+        id="ACP-TOOLCANCEL-206",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` with the prompted session's `sessionId` and a `toolCallId` no "
+            "update announced (`_tck_unknown_tool_call`) is rejected with an error, not answered "
+            "with a result (\"The Agent responds with `-32602` if the tool call is unknown, "
+            "already final, or not cancellable\"; declarative, no RFC keyword). The code is judged "
+            "separately (`ACP-TOOLCANCEL-207`). The probe breaks the client rule that the request "
+            "is sent only for a tool call that currently advertises `capabilities.cancel`, "
+            "because the spec defines the agent's answer to it. Gated by "
+            "`inferred:toolCallCancel` (documentation-only): sent during the "
+            "`ACP-TOOLCANCEL-201` driven turn, and the test SKIPs itself unless some tool call "
+            "advertised `cancel` at any point in that turn (an agent that never does may not "
+            "implement the method, and then answers `-32601`). No response within half the "
+            "run's per-response timeout FAILs. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:456,459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
+            "docs/rfds/v2/background-work.mdx:126 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `tool_call/cancel` for an unknown tool call (`ACP-TOOLCANCEL-206`'s "
+            "request) uses `-32602` (Invalid params). The sentence naming the code carries no RFC "
+            "keyword, so the code is ADVISORY while the rejection itself is not. SKIPs when that "
+            "request was not made or was not rejected (`ACP-TOOLCANCEL-206`'s concern). v2-only "
+            "(`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-208",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` with the prompted session's `sessionId` for a tool call that is "
+            "not final and does not currently advertise `capabilities.cancel` (never advertised, "
+            "or cleared with an omitted or `null` `cancel`) is rejected with an error, not "
+            "answered with a result (\"The Agent responds with `-32602` if the tool call is "
+            "unknown, already final, or not cancellable\"; declarative, no RFC keyword). The code "
+            "is judged separately (`ACP-TOOLCANCEL-209`). The probe breaks the client rule that "
+            "the request is sent only for a tool call that currently advertises "
+            "`capabilities.cancel`, because the spec defines the agent's answer to it. Gated by "
+            "`inferred:toolCallCancel` (documentation-only): sent during the "
+            "`ACP-TOOLCANCEL-201` driven turn, for the first such tool call that request did not "
+            "already go to, once some tool call advertised `cancel` in that turn (an agent that "
+            "never does may not implement the method, and then answers `-32601`), and SKIPPED "
+            "when the gate does not hold or no such tool call was live. A result is a race, and "
+            "SKIPPED, when the tool call started advertising `cancel` after the request was sent, "
+            "up to a short grace period after the response; a tool call that turned final "
+            "meanwhile is still rejected (\"already final\"). A result otherwise, or no response "
+            "within half the run's per-response timeout, FAILs. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:440,456,459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `tool_call/cancel` for a live tool call that does not advertise "
+            "`cancel` (`ACP-TOOLCANCEL-208`'s request) uses `-32602` (Invalid params). The "
+            "sentence naming the code carries no RFC keyword, so the code is ADVISORY while the "
+            "rejection itself is not. SKIPs when that request was not made or was not rejected "
+            "(`ACP-TOOLCANCEL-208`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
+    ),
+    Requirement(
         id="ACP-TOOLCANCEL-203",
         tier=Tier.CAPABILITY,
         capability="inferred:toolCallCancel",
@@ -3388,6 +3490,81 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "params). The sentence naming the code carries no RFC keyword, so the code is "
             "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
             "or was not rejected (`ACP-TERMCANCEL-204`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-206",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` with the prompted session's `sessionId` and a `terminalId` no "
+            "update announced (`_tck_unknown_terminal`) is rejected with an error, not answered "
+            "with a result (\"The Agent responds with `-32602` if the terminal is unknown, has "
+            "already exited, or is not cancellable\"; declarative, no RFC keyword). The code is "
+            "judged separately (`ACP-TERMCANCEL-207`). Same encoding as `ACP-TOOLCANCEL-206`: the "
+            "probe breaks the client rule that the request is sent only for a terminal that "
+            "currently advertises `capabilities.cancel`, because the spec defines the agent's "
+            "answer to it; gated by `inferred:terminalCancel` (documentation-only), sent during "
+            "the `ACP-TERMCANCEL-201` driven turn, and SKIPPED unless some terminal advertised "
+            "`cancel` at any point in that turn. No response within half the run's per-response "
+            "timeout FAILs. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:602,605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
+            "docs/rfds/v2/background-work.mdx:165 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `terminal/cancel` for an unknown terminal (`ACP-TERMCANCEL-206`'s "
+            "request) uses `-32602` (Invalid params). The sentence naming the code carries no RFC "
+            "keyword, so the code is ADVISORY while the rejection itself is not. SKIPs when that "
+            "request was not made or was not rejected (`ACP-TERMCANCEL-206`'s concern). v2-only "
+            "(`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-208",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` with the prompted session's `sessionId` for a terminal that has "
+            "not reported `exitStatus` and does not currently advertise `capabilities.cancel` "
+            "is rejected with an error, not answered with a result (\"The Agent responds with "
+            "`-32602` if the terminal is unknown, has already exited, or is not cancellable\"; "
+            "declarative, no RFC keyword). The code is judged separately (`ACP-TERMCANCEL-209`). "
+            "Same encoding as `ACP-TOOLCANCEL-208`: the probe breaks the client rule that the "
+            "request is sent only for a terminal that currently advertises `capabilities.cancel`, "
+            "because the spec defines the agent's answer to it; gated by "
+            "`inferred:terminalCancel` (documentation-only), sent during the "
+            "`ACP-TERMCANCEL-201` driven turn for the first such terminal that request did not "
+            "already go to, once some terminal advertised `cancel` in that turn, and SKIPPED "
+            "when the gate does not hold, no such terminal was running, or the terminal started "
+            "advertising `cancel` as the request crossed (a result is then legitimate). A result "
+            "otherwise, or no response within half the run's per-response timeout, FAILs. "
+            "v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:587,600,602,605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of `terminal/cancel` for a running terminal that does not advertise "
+            "`cancel` (`ACP-TERMCANCEL-208`'s request) uses `-32602` (Invalid params). The "
+            "sentence naming the code carries no RFC keyword, so the code is ADVISORY while the "
+            "rejection itself is not. SKIPs when that request was not made or was not rejected "
+            "(`ACP-TERMCANCEL-208`'s concern). v2-only (`2xx`)."
         ),
         citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
     ),

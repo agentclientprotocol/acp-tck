@@ -8,7 +8,7 @@ agent shows no use of the feature (001: no child session appears; 002: no `sessi
 content item appears). Same encoding as `test_slash_commands.py`, hence the same `v2_only_agent`
 connection.
 
-The connection is one `session/new`, one prompt turn and a quiet period after it (child traffic
+The connection is one `session/new`, one prompt turn (`--subagent-prompt`, else `hi`) and a quiet period after it (child traffic
 may trail the turn), judged in wire order over everything the agent sent. `session/resume`
 replay is not part of it: `ACP-RESUME-209` judges that window, so one defect never FAILs both.
 All tests judge the same connection, made once per run (`_connection_transcript`), so an agent
@@ -53,7 +53,7 @@ from ._helpers import (
     v2_only_agent,
 )
 
-_PROMPT_TEXT = "hi"
+_DEFAULT_PROMPT_TEXT = "hi"
 
 _CONNECTION_KEY = pytest.StashKey[dict[str, Any]]()
 """The run's one connection, in `config.stash`: `agent`, `transcript` and `session_id` once it
@@ -70,6 +70,7 @@ async def _connection_transcript(
     re-raised for each row. Each test registers the agent process, so a FAIL attaches its
     transcript."""
     cache = request.config.stash.setdefault(_CONNECTION_KEY, {})
+    prompt_text = request.config.getoption("tck_subagent_prompt") or _DEFAULT_PROMPT_TEXT
     if "error" in cache:
         raise cache["error"]
     if "agent" in cache:
@@ -81,7 +82,7 @@ async def _connection_transcript(
             await run_prompt(
                 agent,
                 session_id,
-                [{"type": "text", "text": _PROMPT_TEXT}],
+                [{"type": "text", "text": prompt_text}],
                 timeout=agent_launch.default_timeout,
             )
             await drain_quiet(agent, quiet_period(agent_launch.default_timeout))

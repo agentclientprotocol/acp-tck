@@ -2,9 +2,9 @@
 (every `ACP-SUBAGENT-*` row) and `test_client_capabilities.py` (`ACP-CLIENTCAP-001`..`003` also
 judge what an agent sends on it).
 
-`subagents: {}` and nothing else, `session/new`, one prompt turn, a quiet drain, `session/load` of
-that session when `loadSession` is advertised (replay is part of what the agent sends) and a
-second quiet period (child traffic may trail the turn). It is made once per run and every row
+`subagents: {}` and nothing else, `session/new`, one prompt turn (`--subagent-prompt`, else a short
+built-in text), a quiet drain, `session/load` of that session when `loadSession` is advertised
+(replay is part of what the agent sends) and a second quiet period (child traffic may trail the turn). It is made once per run and every row
 judges the same traffic, so an agent whose turns vary is judged on one turn by every row.
 """
 
@@ -20,7 +20,7 @@ from tck.common.plugin import capability_is_supported, register_active_process
 
 from ._helpers import connected_agent, new_session, quiet_period, run_prompt, skip_if_version_mismatch
 
-_PROMPT_TEXT = "Summarize what you can help me with in this project."
+_DEFAULT_PROMPT_TEXT = "Summarize what you can help me with in this project."
 
 _CONNECTION_KEY = pytest.StashKey[dict[str, Any]]()
 """The run's one connection, in `config.stash`: `agent`, `transcript`, `session_id` and `replay`
@@ -60,6 +60,7 @@ async def subagents_connection(
     if init_result is not None:
         skip_if_version_mismatch(init_result)
     cache = request.config.stash.setdefault(_CONNECTION_KEY, {})
+    prompt_text = request.config.getoption("tck_subagent_prompt") or _DEFAULT_PROMPT_TEXT
     if "error" in cache:
         raise cache["error"]
     if "agent" not in cache:
@@ -68,7 +69,7 @@ async def subagents_connection(
                 agent_launch, client_capabilities={"subagents": {}}
             ) as agent:
                 try:
-                    await _run(agent, agent_launch, init_result, tmp_path, cache)
+                    await _run(agent, agent_launch, init_result, tmp_path, prompt_text, cache)
                 except BaseException:
                     cache["transcript"] = list(agent.transcript)
                     raise
@@ -79,10 +80,12 @@ async def subagents_connection(
     return SubagentsConnection(list(cache["transcript"]), cache["session_id"], cache["replay"])
 
 
-async def _run(agent, agent_launch, init_result, tmp_path, cache: dict[str, Any]) -> None:
+async def _run(
+    agent, agent_launch, init_result, tmp_path, prompt_text: str, cache: dict[str, Any]
+) -> None:
     timeout = agent_launch.default_timeout
     session_id = await new_session(agent, tmp_path, timeout=timeout)
-    await run_prompt(agent, session_id, [{"type": "text", "text": _PROMPT_TEXT}], timeout=timeout)
+    await run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout)
     replay = None
     if init_result is not None and capability_is_supported(
         init_result, "agentCapabilities.loadSession", boolean=True

@@ -50,7 +50,7 @@ Run the v1 suite against an agent from inside its own project directory, using d
 uvx --from git+https://github.com/agentclientprotocol/acp-tck@<release tag> acp-tck -- node ./dist/index.js
 ```
 
-Run the v2 suite with a scratch working directory for the agent, longer per-response and per-test timeouts (real
+Run the v2 suite with a scratch working directory for the agent, longer timeouts (real
 agents are slower than the TCK's own fixtures), and the full JSON report written for later inspection:
 
 ```bash
@@ -83,8 +83,9 @@ several.
 
 ### `--timeout S`
 
-Per-response deadline in seconds (default `30`). Bounds how long the harness waits for any single response from the
-agent before treating it as unresponsive.
+Deadline in seconds (default `30`). A prompt turn gets it as a whole-turn deadline: the turn must end within it, however
+much the agent streams. Any other request gets it as the wait for its single response. An agent that misses it is
+treated as unresponsive.
 
 ### `--startup-timeout S`
 
@@ -109,17 +110,39 @@ failure.
 Protocol version 2 also uses it for the `tool_call/cancel` and `terminal/cancel` tests (`ACP-TOOLCANCEL-*`,
 `ACP-TERMCANCEL-*`), which judge only an agent that advertises `capabilities.cancel` on a tool call or terminal that is
 still running. The TCK sends this prompt, watches for such an item (for up to `--timeout` seconds, or until the turn
-ends), cancels the first tool call and the first terminal it finds, then sends `session/cancel` for the turn. With the
-default essay prompt an agent essentially never has such an item, so those tests report `SKIPPED` ("no tool call
-advertised `capabilities.cancel` while still live"). To exercise them, choose a prompt that makes the agent start a
-long-running cancellable command or background task.
+ends), cancels the first tool call and the first terminal it finds, then sends `session/cancel` for the turn. Once a
+tool call (or terminal) has advertised `cancel`, it also sends one `tool_call/cancel` (`terminal/cancel`) for an id no
+update announced and one for the first live item of that kind that does not advertise `cancel`, which the agent must
+reject. With the default essay prompt an agent essentially never has such an
+item, so those tests report `SKIPPED` ("no tool call advertised `capabilities.cancel` while still live"). To exercise
+them, choose a prompt that makes the agent start a long-running cancellable command or background task.
 
-The subagent cancellation tests also use it: `ACP-SUBAGENT-016`/`017` (both versions), `ACP-SUBAGENT-202` and, in
-version 2, the child tool call and terminal rows `ACP-TOOLCANCEL-203`/`ACP-TERMCANCEL-203`. They judge an agent that
-exposes a child that advertises `capabilities.cancel` (or has a tool call or terminal that does). The TCK sends this
-prompt, cancels such a child with `session/cancel` for its `sessionId`, then cancels the turn itself. For these rows
-choose a prompt that makes the agent delegate to a long-running subagent; with the default essay prompt they report
-`SKIPPED` ("no child advertised `capabilities.cancel` while reported running").
+The subagent cancellation tests use it too unless `--subagent-cancel-prompt` is given (below).
+
+### `--subagent-cancel-prompt TEXT`
+
+Prompt text for the child-cancel turn, replacing `--cancel-prompt` there (default: `--cancel-prompt`). It drives
+`ACP-SUBAGENT-016`/`017` (both versions), `ACP-SUBAGENT-202` and, in version 2, the child tool call and terminal rows
+`ACP-TOOLCANCEL-203`/`ACP-TERMCANCEL-203`. They judge an agent that exposes a child that advertises
+`capabilities.cancel` (or has a tool call or terminal that does). The TCK sends this prompt, cancels such a child with
+`session/cancel` for its `sessionId`, then cancels the turn itself. Choose a prompt that makes the agent delegate to a
+long-running subagent; with the default essay prompt they report `SKIPPED` ("no child advertised `capabilities.cancel`
+while reported running"). A prompt that produces no child leaves them `SKIPPED`.
+
+### `--subagent-prompt TEXT`
+
+Prompt text for the turn on the connection that advertises `clientCapabilities.subagents`, replacing a short built-in
+text (default: unchanged). That one turn is what the `ACP-SUBAGENT-*` rows judge (in version 1 also `session/load`
+replay when the agent supports it): without a child they report `SKIPPED`, so pick a prompt that makes the agent
+delegate to a subagent. A prompt that produces no child leaves them `SKIPPED`, since exposing subagents is optional.
+
+The turn must finish within `--timeout` as a whole, like any prompt turn, and an agent that does not fails the dependent
+rows instead of skipping them. A real delegating turn is often slower than the default, so raise `--timeout` (and
+`--test-timeout`, which also bounds it) when you use this option.
+
+In version 1 the same connection and turn also judge `ACP-CLIENTCAP-001`..`003`. A prompt that makes the agent do real
+work there may provoke `fs/*`, `terminal/*` or elicitation requests the connection never advertised, which fails those
+rows.
 
 ### `--auth-method ID`
 

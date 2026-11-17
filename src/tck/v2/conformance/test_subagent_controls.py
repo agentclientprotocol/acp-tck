@@ -13,8 +13,8 @@ No `initialize` marker announces any of this (the per-child capability is not an
 capability), so each `Requirement.capability` is a documentation-only `inferred:` string
 (`subagentCancel`, `subagents`, `toolCallCancel`, `terminalCancel`), the tests carry no
 `@pytest.mark.capability(...)` marker and SKIP themselves when nothing was exercised. One driven
-turn (`drive_child_cancel`: the cancel prompt, so a real agent still has a running child) serves
-every row, made by the first test that asks and reused by the rest. The request goes only to a
+turn (`drive_child_cancel`: `--subagent-cancel-prompt`, else the cancel prompt, so a real agent
+still has a running child) serves every row, made by the first test that asks and reused by the rest. The request goes only to a
 child that advertises `cancel` and was last reported running, since a client MUST NOT cancel one
 that does not; a cancel that races with work that has already ended does not rewrite its outcome,
 so a child that ends otherwise within the race window (`quiet_period`, as for `ACP-CANCEL-*`) is not
@@ -44,7 +44,7 @@ _RUN_KEY = pytest.StashKey[dict[str, Any]]()
 
 
 async def _child_run(
-    request: pytest.FixtureRequest, agent_launch, tmp_path, cancel_prompt_text: str
+    request: pytest.FixtureRequest, agent_launch, tmp_path, subagent_cancel_prompt_text: str
 ) -> ChildCancelRun:
     cache = request.config.stash.setdefault(_RUN_KEY, {})
     if "error" in cache:
@@ -56,7 +56,7 @@ async def _child_run(
         async with v2_only_agent(agent_launch, require_session=True) as agent:
             session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
             run = await drive_child_cancel(
-                agent, session_id, cancel_prompt_text, timeout=agent_launch.default_timeout
+                agent, session_id, subagent_cancel_prompt_text, timeout=agent_launch.default_timeout
             )
             cache.update(agent=agent, run=run)
     except BaseException as exc:
@@ -76,12 +76,12 @@ def _skip_unless_child_cancelled(run: ChildCancelRun) -> None:
 
 
 @pytest.mark.requirement("ACP-SUBAGENT-016")
-async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_path, cancel_prompt_text):
+async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_path, subagent_cancel_prompt_text):
     """ACP-SUBAGENT-016 (CAPABILITY, `inferred:subagentCancel`). After `session/cancel` for a
     running child that advertises `capabilities.cancel`, the child reports `idle` with
     `stopReason: "cancelled"` (on its own session or mirrored on its parent association). SKIPs
     when no such child was running or it ended on its own within the race window."""
-    run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
     assert run.outcome != "not_cancelled", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
@@ -97,7 +97,7 @@ async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_p
 
 @pytest.mark.requirement("ACP-SUBAGENT-017")
 async def test_child_stop_leaves_the_parent_running(
-    request, agent_launch, tmp_path, cancel_prompt_text, record_property
+    request, agent_launch, tmp_path, subagent_cancel_prompt_text, record_property
 ):
     """ACP-SUBAGENT-017 (CAPABILITY, `inferred:subagentCancel`). `session/cancel` for a child
     cancels that child's work, not its parent: the parent does not report `idle`/`cancelled`
@@ -106,7 +106,7 @@ async def test_child_stop_leaves_the_parent_running(
     from a leaked cancel; a sibling that reports `idle`/`cancelled` is recorded as
     `acp_tck_cancelled_siblings`. SKIPs when no such child was running or it ended on its own
     within the race window."""
-    run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
     if run.cancelled_siblings:
         record_property("acp_tck_cancelled_siblings", ", ".join(run.cancelled_siblings))
@@ -117,14 +117,14 @@ async def test_child_stop_leaves_the_parent_running(
 
 @pytest.mark.requirement("ACP-SUBAGENT-202")
 async def test_parent_stop_reaches_the_children_it_waits_on(
-    request, agent_launch, tmp_path, cancel_prompt_text
+    request, agent_launch, tmp_path, subagent_cancel_prompt_text
 ):
     """ACP-SUBAGENT-202 (CAPABILITY, `inferred:subagents`). Cancelling the parent's turn also
     cancels a descendant it is waiting on: each descendant that was running when the TCK sent
     `session/cancel` and is not in its parent's latest `background` list reaches `idle`. SKIPs
     when the parent's turn did not end `cancelled`, or no such descendant was running (an agent
     that reports no `background` list leaves every child unclassified)."""
-    run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     if run.cascade_skip is not None:
         pytest.skip(run.cascade_skip)
     if not run.cascade_judged:
@@ -163,14 +163,14 @@ def _judge_child_item(
 
 @pytest.mark.requirement("ACP-TOOLCANCEL-203")
 async def test_child_tool_call_request_is_accepted_and_confirmed(
-    request, agent_launch, tmp_path, cancel_prompt_text
+    request, agent_launch, tmp_path, subagent_cancel_prompt_text
 ):
     """ACP-TOOLCANCEL-203 (CAPABILITY, `inferred:toolCallCancel`). `tool_call/cancel` sent with
     the child's `sessionId` for a child tool call that advertises `capabilities.cancel` and is not
     final gets an empty result, then a `tool_call_update` to a final status, even when the child
     itself advertises no `cancel` (tool-calls.mdx:457-459). SKIPs when no child tool call
     advertises `cancel` while live."""
-    run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     _judge_child_item(
         run.tool_call,
         run.tool_call_child,
@@ -183,14 +183,14 @@ async def test_child_tool_call_request_is_accepted_and_confirmed(
 
 @pytest.mark.requirement("ACP-TERMCANCEL-203")
 async def test_child_terminal_request_is_accepted_and_confirmed(
-    request, agent_launch, tmp_path, cancel_prompt_text
+    request, agent_launch, tmp_path, subagent_cancel_prompt_text
 ):
     """ACP-TERMCANCEL-203 (CAPABILITY, `inferred:terminalCancel`). `terminal/cancel` sent with the
     child's `sessionId` for a child terminal that advertises `capabilities.cancel` and has no
     `exitStatus` gets an empty result, then a `terminal_update` that sets `exitStatus`, even when
     the child itself advertises no `cancel` (tool-calls.mdx:603-605). SKIPs when no child terminal
     advertises `cancel` while running."""
-    run = await _child_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     _judge_child_item(
         run.terminal,
         run.terminal_child,

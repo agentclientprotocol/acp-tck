@@ -4,7 +4,8 @@
 `capabilities`), so nothing is cancellable by the time the client could act. `tool_call/cancel`
 and `terminal/cancel` for them are answered `-32602`, as tool-calls.mdx:459,605 require for an
 item that is already final. `ACP-TOOLCANCEL-201/202` and `ACP-TERMCANCEL-201/202` judge nothing
-and SKIP; nothing FAILs. Within the `-k` scope of the `test_item_controls.py` module, with
+and SKIP; nothing FAILs. The items did advertise `cancel`, so the unknown-id rows
+(`-206/207`) are judged and PASS. Within the `-k` scope of the `test_item_controls.py` module, with
 `--cancel-prompt __hang__`.
 """
 

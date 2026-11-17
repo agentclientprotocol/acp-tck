@@ -86,7 +86,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         type=float,
         default=30.0,
-        help="Per-response deadline in seconds (default: 30).",
+        help="Deadline in seconds: a whole prompt turn, or a single response to any other request "
+        "(default: 30).",
     )
     group.addoption(
         "--tck-startup-timeout",
@@ -106,6 +107,26 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "flight (default: %(default)r). A SKIPPED cancel test means cancellation was not "
         "exercised (the turn finished before or shortly after cancel was sent), not that the "
         "agent failed conformance.",
+    )
+    group.addoption(
+        "--tck-subagent-prompt",
+        action="store",
+        default=None,
+        metavar="TEXT",
+        help="Prompt text for the turn on the connection that advertises "
+        "`clientCapabilities.subagents`, which the ACP-SUBAGENT-* rows (and v1's "
+        "ACP-CLIENTCAP-001..003) judge. Pick something that makes a real agent delegate to a "
+        "subagent; rows SKIP when no child appears. Default: each version's built-in short text.",
+    )
+    group.addoption(
+        "--tck-subagent-cancel-prompt",
+        action="store",
+        default=None,
+        metavar="TEXT",
+        help="Prompt text for the child-cancel turn (ACP-SUBAGENT-016/017, and in v2 ACP-SUBAGENT-202 "
+        "and the child ACP-TOOLCANCEL-203/ACP-TERMCANCEL-203), instead of --tck-cancel-prompt. "
+        "Pick something that makes a real agent delegate to a long-running subagent "
+        "(default: --tck-cancel-prompt).",
     )
     group.addoption(
         "--tck-test-timeout",
@@ -313,6 +334,21 @@ def cancel_prompt_text(request: pytest.FixtureRequest) -> str:
     they act (cancellation, close mid-turn, a prompt during active work) -- every other prompt
     test keeps its own short, deterministic text."""
     return request.config.getoption("tck_cancel_prompt")
+
+
+@pytest.fixture
+def subagent_prompt_text(request: pytest.FixtureRequest) -> str | None:
+    """The `--tck-subagent-prompt` text, or `None` for the version's built-in text."""
+    return request.config.getoption("tck_subagent_prompt")
+
+
+@pytest.fixture
+def subagent_cancel_prompt_text(request: pytest.FixtureRequest) -> str:
+    """The `--tck-subagent-cancel-prompt` text for the child-cancel turn, falling back to
+    `--tck-cancel-prompt` when unset."""
+    return request.config.getoption("tck_subagent_cancel_prompt") or request.config.getoption(
+        "tck_cancel_prompt"
+    )
 
 
 # --- auth-method context, for _helpers.connected_agent's auto-authenticate step ---

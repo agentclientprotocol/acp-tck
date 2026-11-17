@@ -29,7 +29,10 @@ lets the update-shape/enum tests PASS here instead of SKIPping "no <variant> obs
 `cancellable_work=True` makes a `__hang__` turn also start one tool call and one terminal that
 advertise `capabilities.cancel` and stay open, and implements `tool_call/cancel`/`terminal/cancel`
 for them (`_base.ConformingAgent._start_cancellable_work`), so `ACP-TOOLCANCEL-201/202` and
-`ACP-TERMCANCEL-201/202` PASS under `--cancel-prompt __hang__` instead of SKIPping.
+`ACP-TERMCANCEL-201/202` PASS under `--cancel-prompt __hang__` instead of SKIPping. Any other id
+gets `-32602`, so the unknown-id rows (`-206/207`) PASS too. `uncancellable_work=True` adds a live
+tool call and terminal that advertise no `cancel` (`_base.ConformingAgent._start_uncancellable_work`),
+which the cancel methods also answer `-32602`, so the not-cancellable rows (`-208/209`) PASS.
 
 `terminal_auth_method` gives ACP-AUTH-006's dedicated `capabilities.auth.terminal: {}`
 connection a well-formed `type: "terminal"` descriptor to see (ACP-AUTH-002 still PASSes: the
@@ -93,6 +96,7 @@ def main() -> None:
         },
         emit_rich_turn_updates=True,
         cancellable_work=True,
+        uncancellable_work=True,
         persist_sessions=True,
         permission_tool_call=True,
     ).run()

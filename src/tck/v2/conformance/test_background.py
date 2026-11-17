@@ -1,4 +1,4 @@
-"""Background-work conformance: ACP-STATE-206..209, ACP-INFO-BACKGROUND-201/202.
+"""Background-work conformance: ACP-STATE-206..210, ACP-INFO-BACKGROUND-201/202.
 
 `running`/`requires_action`/`idle`/`unknown` state updates may carry a `background` snapshot of
 work running independently of foreground work (prompt-lifecycle.mdx:188-210). Each test drives
@@ -87,6 +87,22 @@ def _is_final(update: dict[str, Any]) -> bool:
     if kind == "tool_call_update":
         return update.get("status") in _FINAL_TOOL_CALL_STATUSES
     return kind == "terminal_update" and update.get("exitStatus") is not None
+
+
+def _is_listed(key: tuple[str, str], keys: set[tuple[str, str]], tracker: PatchTracker) -> bool:
+    """Whether `keys` lists `key`, or the other half of a tool call and the terminal it references
+    (prompt-lifecycle.mdx:208)."""
+    if key in keys:
+        return True
+    item_type, item_id = key
+    if item_type == "tool_call":
+        tool_call = tracker.tool_calls.get(item_id)
+        return tool_call is not None and any(("terminal", t) in keys for t in tool_call.terminal_ids)
+    return any(
+        (tc := tracker.tool_calls.get(i)) is not None and item_id in tc.terminal_ids
+        for t, i in keys
+        if t == "tool_call"
+    )
 
 
 @pytest.mark.requirement("ACP-STATE-206")
@@ -189,8 +205,8 @@ async def test_background_list_is_resent_when_work_ends_while_idle(agent_launch,
     """ACP-STATE-209 (ADVISORY). When a listed `terminal`/`tool_call` item reaches its final
     status while the session is `idle`, a later `state_update` drops it from the list
     (prompt-lifecycle.mdx:205). Only an end while idle is judged: during active work the next
-    snapshot follows anyway. The start half is not judged: an item announced but not yet listed
-    cannot be told from foreground work. SKIPs when no listed item ends while idle."""
+    snapshot follows anyway. The start half is `ACP-STATE-210`. SKIPs when no listed item ends
+    while idle."""
     updates = await _session_updates(agent_launch, tmp_path)
     state: Any = None
     listed: set[tuple[str, str]] = set()
@@ -217,6 +233,70 @@ async def test_background_list_is_resent_when_work_ends_while_idle(agent_launch,
     assert not unresent, (
         f"{sorted(unresent)!r} reached its final status while the session was idle and was never "
         "dropped from the background list by a later state_update"
+    )
+
+
+@pytest.mark.requirement("ACP-STATE-210")
+@pytest.mark.capability("capabilities.session")
+async def test_background_list_is_resent_when_work_starts_while_idle(
+    agent_launch, tmp_path, record_property
+):
+    """ACP-STATE-210 (ADVISORY). When a live `terminal`/`tool_call` item is first announced while
+    the session is `idle` and its latest `background` list is reported, the next `state_update`
+    for the session is an `idle` that lists it (prompt-lifecycle.mdx:205). Foreground work
+    reports `running` when it starts (:152), so an item announced while idle is background work.
+    A tool call and the terminal it references stand for each other in the list (:208). Only that
+    next `state_update` is judged: a `running`/`requires_action`/`unknown`/custom state, an
+    `idle` without a list, or the item ending first leave it unjudged. A visible housekeeping tool
+    call (:186) cannot be told apart and FAILs. The end half is `ACP-STATE-209`. SKIPs when no
+    item starts while idle."""
+    updates = await _session_updates(agent_launch, tmp_path)
+    tracker = PatchTracker()
+    state: Any = None
+    latest: set[tuple[str, str]] | None = None
+    announced: set[tuple[str, str]] = set()
+    pending: set[tuple[str, str]] = set()
+    unresent: set[tuple[str, str]] = set()
+    unjudged: set[tuple[str, str]] = set()
+    judged = False
+    for update in updates:
+        tracker.apply("update", update)
+        key = _key_of(update)
+        if key is not None and key[0] != "subagent":
+            if key in pending and _is_final(update):
+                pending.discard(key)
+                unjudged.add(key)
+            if key not in announced:
+                announced.add(key)
+                if state == "idle" and latest is not None and not _is_final(update):
+                    pending.add(key)
+        if update.get("sessionUpdate") != "state_update":
+            continue
+        state = update.get("state")
+        keys = background_keys(update) if _is_background_state(update) else None
+        if pending:
+            if state == "idle" and keys is not None:
+                judged = True
+                unresent |= {k for k in pending if not _is_listed(k, keys, tracker)}
+            else:
+                unjudged |= pending
+            pending = set()
+        if _is_background_state(update):
+            latest = keys
+    if pending:
+        judged = True
+        unresent |= pending
+    if unjudged - unresent:
+        record_property(
+            "acp_tck_unjudged_background_starts", [f"{t}:{i}" for t, i in sorted(unjudged - unresent)]
+        )
+    if not judged:
+        pytest.skip("no terminal/tool_call item started while the session was idle")
+    assert not unresent, (
+        f"{sorted(unresent)!r} started while the session was idle and the next state_update did "
+        "not list it as background work (or none followed); the Agent SHOULD re-send the state "
+        "with the updated list when background work starts (prompt-lifecycle.mdx:205). A visible "
+        "housekeeping tool call (:186) cannot be told apart"
     )
 
 

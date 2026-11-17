@@ -40,7 +40,13 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="KEY=VAL",
         help="Environment variable to overlay on the agent's process; repeatable.",
     )
-    parser.add_argument("--timeout", type=float, default=30.0, metavar="S", help="Per-response timeout in seconds.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        metavar="S",
+        help="Deadline in seconds: a whole prompt turn, or a single response to any other request.",
+    )
     parser.add_argument(
         "--startup-timeout", type=float, default=30.0, metavar="S", help="Startup timeout in seconds."
     )
@@ -62,6 +68,26 @@ def _build_parser() -> argparse.ArgumentParser:
         "for session/cancel to land while the turn is still in flight -- otherwise those tests "
         "SKIP with reason 'cancellation not exercised', which means what it says, not that the "
         "agent failed conformance. Default: a long free-form writing prompt.",
+    )
+    parser.add_argument(
+        "--subagent-prompt",
+        default=None,
+        metavar="TEXT",
+        help="Prompt text for the turn on the connection that advertises "
+        "`clientCapabilities.subagents`, which the ACP-SUBAGENT-* rows (and v1's "
+        "ACP-CLIENTCAP-001..003) judge, passed through as --tck-subagent-prompt. Pick something "
+        "that makes the agent delegate to a subagent -- otherwise those rows SKIP. The turn gets "
+        "one --timeout as a whole, so raise it for a delegating turn. Default: a short built-in "
+        "text.",
+    )
+    parser.add_argument(
+        "--subagent-cancel-prompt",
+        default=None,
+        metavar="TEXT",
+        help="Prompt text for the child-cancel turn (ACP-SUBAGENT-016/017 and, in v2, "
+        "ACP-SUBAGENT-202 and the child ACP-TOOLCANCEL-203/ACP-TERMCANCEL-203), passed through "
+        "as --tck-subagent-cancel-prompt. Pick something that makes the agent delegate to a "
+        "long-running subagent. Default: --cancel-prompt.",
     )
     parser.add_argument(
         "--auth-method",
@@ -165,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
         pytest_args += ["--tck-agent-env", env]
     if args.cancel_prompt is not None:
         pytest_args += ["--tck-cancel-prompt", args.cancel_prompt]
+    if args.subagent_prompt is not None:
+        pytest_args += ["--tck-subagent-prompt", args.subagent_prompt]
+    if args.subagent_cancel_prompt is not None:
+        pytest_args += ["--tck-subagent-cancel-prompt", args.subagent_cancel_prompt]
     if args.auth_method is not None:
         pytest_args += ["--tck-auth-method", args.auth_method]
     if args.allow_logout:
