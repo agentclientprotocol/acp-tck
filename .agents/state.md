@@ -18,11 +18,13 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
 ## Next
 - Step 4 impact research DONE: 27 reports in .agents/research/impact-*.md (13 v1 incl. plan-operations, 14 v2).
-- Step 5 running: one researcher consolidates all reports -> .agents/research/plan-consolidated.md (deduped changes,
-  decisions, slice plan). Then present it to the user and wait for decisions.
+- Step 5: consolidated plan written -> .agents/research/plan-consolidated.md (sections: 1 changes, 2 conflicts,
+  3 decisions D1-D13, 4 upstream discrepancies U1-U18, 5 slice plan R-V1, R-V2, 28 area slices, id alignment, cross-check).
+  Presented to the user; waiting for answers on D1-D13. Then start R-V1 (programmer, single mode).
 - Side question DONE (scope of formerly-Active, never-backfilled RFDs; all Draft at target), reports scope-rfds-*.md:
   13 rfds/v2/* -> 0 RFD-sourced rows (all doc-stated; doc gaps go to doc audit). mcp-over-acp remainder -> M per version
   (~7-8 rows, 6-7 fixtures each, shared MCP provider module, mock client answers mcp/message), Draft-RFD citation justified
   for RFD-only rules. streamable-http-websocket-transport -> recommend out of scope (needs HTTP/WS harness, L-XL).
   Awaiting the user's call on whether to include mcp-over-acp in this PR.
 ## Open questions (waiting on the user)
+- D1-D13 in plan-consolidated.md section 3 (D12 = mcp-over-acp in this PR or follow-up; recommended follow-up).
