@@ -22,10 +22,12 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
 - R-V1 — 5495e0f — v1 vendored at 3ea94133, citations remapped, subagents -> Preview RFD, JSONRPC-003 off mcp-over-acp; PLAN-001 temporarily -> PlanUpdateContent; suite green (1031)
+- R-V2 — 7254513 — v2 vendored at 3ea94133 (alpha.16), citations remapped (61 needs-review by hand, 187 code/test refs), Draft-RFD citations dropped, enum sets follow schema (ENUM-201 effect noted in commit), spec-tracker PL map test leaves prompt-suggestions/cursors sections out of core; suite green (1031)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
-- R-V2: in progress. Left over from R-V1 for later slices: PLAN-001 `agent-plan.mdx:127`/`plan-operations.mdx:63` (V1-PLAN deletes the row); cost entry and "stated only by the Subagents RFD" text (V1-SA1); `src/tck/common/plugin.py:446` (R-V2).
+- Milestone 1 (re-vendor) DONE: reviewer running on 6bce0b3..7254513 -> .agents/research/review-revendor.md. Findings go to the user; fixes become slices.
+- V1-PLAN (slice 1): in progress alongside the review. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
 - none
