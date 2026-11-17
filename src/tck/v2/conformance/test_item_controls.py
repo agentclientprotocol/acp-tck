@@ -1,5 +1,5 @@
-"""Cancelling a tool call or a terminal on its own: ACP-TOOLCANCEL-201/202/204-207 and
-ACP-TERMCANCEL-201/202/204-207.
+"""Cancelling a tool call or a terminal on its own: ACP-TOOLCANCEL-201/202/204-209 and
+ACP-TERMCANCEL-201/202/204-209.
 
 A tool call (or terminal) that advertises `capabilities.cancel` may be cancelled with
 `tool_call/cancel` (`terminal/cancel`) without cancelling the session's other work. The agent
@@ -13,7 +13,7 @@ SKIP themselves when no item advertises `cancel` while live (same encoding as `t
 hence `v2_only_agent`).
 
 One driven turn (`drive_item_cancel`: the cancel prompt, so a real agent is still working) serves
-all twelve rows, made by the first test that asks and reused by the rest. The request is sent only
+all sixteen rows, made by the first test that asks and reused by the rest. The request is sent only
 for an item that advertises `cancel` and is not final, since a client MUST NOT send it otherwise.
 `-32602` is the documented answer for an item that is unknown, already final or not cancellable
 (tool-calls.mdx:459,605), so one for an item the agent finalized or stopped advertising `cancel`
@@ -31,8 +31,13 @@ Once an item of a kind advertised `cancel` at any point in the turn, the run als
 for an id no update announced: `-206` judges that it is rejected, `-207` (ADVISORY) the code. It
 breaks the client rule at :456/:602, which the probe rules allow because :459/:605 define the
 answer. An agent that never advertises `cancel` may not implement the method, and then its answer
-is `-32601` (error.mdx:44), so the rows SKIP. A live item that does not advertise `cancel` is not
-probed.
+is `-32601` (error.mdx:44), so the rows SKIP.
+
+Under the same gate, the run sends one request for the first live item (not final, no `exitStatus`)
+that does not currently advertise `cancel`: `-208` judges that it is rejected, `-209` (ADVISORY)
+the code. The item may turn final as the request crosses; `-32602` is still the answer. It may also
+start advertising `cancel` before the agent reads the request, so a result that comes with such an
+advertisement is a race and SKIPs.
 
 The module and its tests are named without "cancel": the CLI self-tests select the cancellation
 suite with `-k cancel`, and a defect fixture that hangs on `session/cancel` must not be judged here.
@@ -163,7 +168,7 @@ async def test_stopped_terminal_reports_exit_status(
 
 
 def _judge_rejected(probe: FollowUpCancel, method: str, target: str, case: str, not_sent: str) -> None:
-    """A further request (`-204`/`-206`) must get an error. `target` names what it was for,
+    """A further request (`-204`/`-206`/`-208`) must get an error. `target` names what it was for,
     `case` why the agent must reject it, `not_sent` why it was not made."""
     if probe.outcome == "none":
         pytest.skip(not_sent)
@@ -175,7 +180,7 @@ def _judge_rejected(probe: FollowUpCancel, method: str, target: str, case: str, 
 
 
 def _judge_code(probe: FollowUpCancel, method: str, target: str) -> None:
-    """The ADVISORY code row (`-205`/`-207`) of a further request."""
+    """The ADVISORY code row (`-205`/`-207`/`-209`) of a further request."""
     if probe.outcome != "error":
         pytest.skip(f"{method} for {target} was not rejected -- see its rejection row")
     code = probe.error.get("code") if isinstance(probe.error, dict) else None
@@ -203,6 +208,31 @@ def _judge_unknown_rejected(unknown: FollowUpCancel, noun: str, method: str) -> 
         f"an unknown {noun}",
         f"no {noun} advertised capabilities.cancel during the driven turn, so the agent may not "
         f"implement {method}",
+    )
+
+
+def _judge_uncancellable_rejected(probe: FollowUpCancel, noun: str, method: str, cancel_seen: bool) -> None:
+    if probe.outcome == "raced":
+        pytest.skip(
+            f"{noun} {probe.item_id!r} started advertising capabilities.cancel as {method} for it "
+            f"crossed, so the agent could accept it"
+        )
+    if cancel_seen:
+        not_sent = (
+            f"no {noun} was live without advertising capabilities.cancel while the request could be "
+            f"sent during the driven turn"
+        )
+    else:
+        not_sent = (
+            f"no {noun} advertised capabilities.cancel during the driven turn, so the agent may not "
+            f"implement {method}"
+        )
+    _judge_rejected(
+        probe,
+        method,
+        f"{noun} {probe.item_id!r}, live without advertising capabilities.cancel,",
+        f"a {noun} that is not cancellable",
+        not_sent,
     )
 
 
@@ -290,3 +320,57 @@ async def test_unknown_terminal_request_gets_invalid_params(
     was not made or not rejected."""
     run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
     _judge_code(run.terminal_unknown, "terminal/cancel", "an unknown terminal")
+
+
+@pytest.mark.requirement("ACP-TOOLCANCEL-208")
+async def test_uncancellable_tool_call_request_is_rejected(
+    request, agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-TOOLCANCEL-208 (CAPABILITY, `inferred:toolCallCancel`). `tool_call/cancel` for a tool
+    call that is not final and does not advertise `capabilities.cancel` gets an error, not a
+    result (tool-calls.mdx:440,459, declarative; the code is `ACP-TOOLCANCEL-209`). The probe
+    breaks the client rule at :456 because :459 defines the answer. SKIPs unless some tool call
+    advertised `cancel` during the driven turn and such a tool call was live, or when it started
+    advertising `cancel` as the request crossed."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_uncancellable_rejected(
+        run.tool_call_uncancellable, "tool call", "tool_call/cancel", run.tool_call_cancel_seen
+    )
+
+
+@pytest.mark.requirement("ACP-TOOLCANCEL-209")
+async def test_uncancellable_tool_call_request_gets_invalid_params(
+    request, agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-TOOLCANCEL-209 (ADVISORY). The rejection of `tool_call/cancel` for a live tool call that
+    does not advertise `cancel` (`ACP-TOOLCANCEL-208`'s request) uses `-32602`
+    (tool-calls.mdx:459). SKIPs when that request was not made or not rejected."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_code(run.tool_call_uncancellable, "tool_call/cancel", "a tool call that is not cancellable")
+
+
+@pytest.mark.requirement("ACP-TERMCANCEL-208")
+async def test_uncancellable_terminal_request_is_rejected(
+    request, agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-TERMCANCEL-208 (CAPABILITY, `inferred:terminalCancel`). `terminal/cancel` for a
+    terminal that has no `exitStatus` and does not advertise `capabilities.cancel` gets an error,
+    not a result (tool-calls.mdx:587,605, declarative; the code is `ACP-TERMCANCEL-209`). The probe
+    breaks the client rule at :602 because :605 defines the answer. SKIPs unless some terminal
+    advertised `cancel` during the driven turn and such a terminal was running, or when it started
+    advertising `cancel` as the request crossed."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_uncancellable_rejected(
+        run.terminal_uncancellable, "terminal", "terminal/cancel", run.terminal_cancel_seen
+    )
+
+
+@pytest.mark.requirement("ACP-TERMCANCEL-209")
+async def test_uncancellable_terminal_request_gets_invalid_params(
+    request, agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-TERMCANCEL-209 (ADVISORY). The rejection of `terminal/cancel` for a running terminal
+    that does not advertise `cancel` (`ACP-TERMCANCEL-208`'s request) uses `-32602`
+    (tool-calls.mdx:605). SKIPs when that request was not made or not rejected."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_code(run.terminal_uncancellable, "terminal/cancel", "a terminal that is not cancellable")

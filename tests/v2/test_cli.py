@@ -187,6 +187,8 @@ _CAPABILITY_IDS = {
     "ACP-TERMCANCEL-204",
     "ACP-TOOLCANCEL-206",
     "ACP-TERMCANCEL-206",
+    "ACP-TOOLCANCEL-208",
+    "ACP-TERMCANCEL-208",
     "ACP-SUBAGENT-016",
     "ACP-SUBAGENT-017",
     "ACP-SUBAGENT-202",
@@ -237,6 +239,8 @@ _ADVISORY_IDS = {
     "ACP-TERMCANCEL-205",
     "ACP-TOOLCANCEL-207",
     "ACP-TERMCANCEL-207",
+    "ACP-TOOLCANCEL-209",
+    "ACP-TERMCANCEL-209",
     "ACP-META-001",
     "ACP-META-201",
     "ACP-META-202",
@@ -312,11 +316,19 @@ _BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
 # advertises `cancel` (`keeps_cancel_after_final.py` and its defect siblings), so they also SKIP for
 # `conforming_full.py`, whose items stop advertising it. The `-206`/`-207` unknown-id rows judge
 # a request sent once an item of the kind advertised `cancel` during the turn, so they SKIP
-# wherever nothing advertises it.
+# wherever nothing advertises it. The `-208`/`-209` not-cancellable rows also need a live item
+# without `cancel`, which only `uncancellable_work` (`conforming_full.py`, the `*uncancellable*`
+# fixtures) or an agent that withdraws `cancel` from a live item offers.
 _ITEM_ACCEPT_IDS = {"ACP-TOOLCANCEL-201", "ACP-TOOLCANCEL-202", "ACP-TERMCANCEL-201", "ACP-TERMCANCEL-202"}
 _STALE_CANCEL_IDS = {"ACP-TOOLCANCEL-204", "ACP-TOOLCANCEL-205", "ACP-TERMCANCEL-204", "ACP-TERMCANCEL-205"}
 _UNKNOWN_CANCEL_IDS = {"ACP-TOOLCANCEL-206", "ACP-TOOLCANCEL-207", "ACP-TERMCANCEL-206", "ACP-TERMCANCEL-207"}
-_ITEM_CANCEL_IDS = _ITEM_ACCEPT_IDS | _STALE_CANCEL_IDS | _UNKNOWN_CANCEL_IDS
+_UNCANCELLABLE_CANCEL_IDS = {
+    "ACP-TOOLCANCEL-208",
+    "ACP-TOOLCANCEL-209",
+    "ACP-TERMCANCEL-208",
+    "ACP-TERMCANCEL-209",
+}
+_ITEM_CANCEL_IDS = _ITEM_ACCEPT_IDS | _STALE_CANCEL_IDS | _UNKNOWN_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS
 
 # The child-stop rows judge only a running child that advertises `capabilities.cancel` (or a child's
 # own cancellable tool call or terminal) in the `__hang__` turn: only `cancellable_subagent.py` and
@@ -4289,7 +4301,8 @@ def test_cancellable_items_pass_the_cancel_rows(tmp_path):
     """`conforming_full.py` advertises `capabilities.cancel` on a tool call and a terminal that
     stay open on a `__hang__` turn and implements both cancel methods. It stops advertising `cancel`
     once they are final, so no already-final request is made: `-201/202` PASS, `-204/205` SKIP.
-    It answers an unknown id `-32602`: `-206/207` PASS."""
+    It answers an unknown id, and its live items that advertise no `cancel`, `-32602`: `-206-209`
+    PASS."""
     statuses, stdout = _item_cancel_statuses("conforming_full.py", tmp_path)
     for req_id, status in statuses.items():
         assert status == ("SKIPPED" if req_id in _STALE_CANCEL_IDS else "PASS"), f"{req_id}:\n{stdout}"
@@ -4298,9 +4311,15 @@ def test_cancellable_items_pass_the_cancel_rows(tmp_path):
 def test_agent_that_keeps_advertising_cancel_gets_a_further_request(tmp_path):
     """`keeps_cancel_after_final.py` leaves `cancel` advertised on its final items (an
     `ACP-PATCH-212` finding) and answers the further requests `-32602`, as tool-calls.mdx:459,605
-    say: all twelve rows PASS (the unknown-id requests get `-32602` too)."""
-    statuses, stdout = _item_cancel_statuses("keeps_cancel_after_final.py", tmp_path)
-    assert set(statuses.values()) == {"PASS"}, stdout
+    say: the twelve rows up to `-207` PASS (the unknown-id requests get `-32602` too). It has no
+    live item without `cancel`, so the not-cancellable rows SKIP although the gate holds."""
+    statuses, by_id, stdout = _item_cancel_run("keeps_cancel_after_final.py", tmp_path)
+    for req_id, status in statuses.items():
+        assert status == ("SKIPPED" if req_id in _UNCANCELLABLE_CANCEL_IDS else "PASS"), f"{req_id}:\n{stdout}"
+    for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
+        assert "was live without advertising capabilities.cancel" in _skip_message(by_id, req_id), (
+            f"{req_id}:\n{stdout}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -4321,10 +4340,12 @@ def test_agent_that_keeps_advertising_cancel_gets_a_further_request(tmp_path):
 def test_already_final_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str, str], tmp_path):
     """An accepted request for an already-final item fails `-204` (and leaves the code row nothing
     to judge); a rejection with the wrong code fails only the ADVISORY `-205`. The other kind of
-    item, and the happy-path rows, still PASS."""
+    item, and the happy-path rows, still PASS; nothing is live without `cancel`, so `-208/209`
+    SKIP."""
     statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
     for req_id, status in statuses.items():
-        assert status == expected.get(req_id, "PASS"), f"{req_id}:\n{stdout}"
+        default = "SKIPPED" if req_id in _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
 
 
 def test_items_that_finish_first_leave_the_cancel_rows_nothing_to_judge(tmp_path):
@@ -4352,10 +4373,15 @@ def test_legitimate_invalid_params_is_not_a_rejection(fixture: str, tmp_path):
     (`races_cancel_with_completion.py`), arrives right after it
     (`finalizes_after_rejecting_cancel.py`), or the agent stopped advertising `cancel`
     (`withdraws_cancel_on_request.py`). Every row SKIPs for the `raced` reason, never for "nothing
-    advertised", and nothing FAILs. The unknown-id rows are judged apart from the race and PASS."""
+    advertised", and nothing FAILs. The unknown-id rows are judged apart from the race and PASS.
+    `withdraws_cancel_on_request.py` leaves its items live without `cancel`, so the not-cancellable
+    request goes to them and, answered `-32602`, `-208/209` PASS there too."""
     statuses, by_id, stdout = _item_cancel_run(fixture, tmp_path)
+    judged = _UNKNOWN_CANCEL_IDS
+    if fixture == "withdraws_cancel_on_request.py":
+        judged = judged | _UNCANCELLABLE_CANCEL_IDS
     for req_id, status in statuses.items():
-        assert status == ("PASS" if req_id in _UNKNOWN_CANCEL_IDS else "SKIPPED"), f"{req_id}:\n{stdout}"
+        assert status == ("PASS" if req_id in judged else "SKIPPED"), f"{req_id}:\n{stdout}"
     for req_id in ("ACP-TOOLCANCEL-201", "ACP-TERMCANCEL-201"):
         assert "had stopped advertising it" in _skip_message(by_id, req_id), f"{req_id}:\n{stdout}"
 
@@ -4424,10 +4450,10 @@ def test_unknown_id_cancel_defect_fails_its_row_only(fixture: str, expected: dic
     """A result for an id no update announced fails `-206` (and leaves the code row nothing to
     judge); a rejection with the wrong code fails only the ADVISORY `-207`. The other kind of item
     and the happy-path rows still PASS, and the already-final rows SKIP (these items stop
-    advertising `cancel`)."""
+    advertising `cancel`), as do the not-cancellable rows (nothing is live without `cancel`)."""
     statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
     for req_id, status in statuses.items():
-        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS else "PASS"
+        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
         assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
 
 
@@ -4451,11 +4477,67 @@ def test_item_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str,
     `-32602` for a terminal that neither exits nor stops advertising `cancel`) fails the
     acceptance row (and leaves the confirmation row nothing to judge); an accepted cancel with no
     final update fails the confirmation row. The other kind of item still PASSes, and the
-    already-final rows SKIP (these items stop advertising `cancel`)."""
+    already-final rows SKIP (these items stop advertising `cancel`), as do the not-cancellable rows
+    (nothing is live without `cancel`)."""
+    statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
+    for req_id, status in statuses.items():
+        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "expected"),
+    [
+        (
+            "accepts_cancel_for_uncancellable_tool_call.py",
+            {"ACP-TOOLCANCEL-208": "FAIL", "ACP-TOOLCANCEL-209": "SKIPPED"},
+        ),
+        (
+            "accepts_cancel_for_uncancellable_terminal.py",
+            {"ACP-TERMCANCEL-208": "FAIL", "ACP-TERMCANCEL-209": "SKIPPED"},
+        ),
+        ("uncancellable_tool_call_cancel_wrong_code.py", {"ACP-TOOLCANCEL-209": "FAIL"}),
+        ("uncancellable_terminal_cancel_wrong_code.py", {"ACP-TERMCANCEL-209": "FAIL"}),
+        # The item finishes before the `-32602` response: still the right answer, no false FAIL.
+        ("uncancellable_finishes_first.py", {}),
+    ],
+)
+def test_uncancellable_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str, str], tmp_path):
+    """A result for a live item that advertises no `cancel` fails `-208` (and leaves the code row
+    nothing to judge); a rejection with the wrong code fails only the ADVISORY `-209`. The other
+    kind of item and the happy-path rows still PASS, and the already-final rows SKIP (these items
+    stop advertising `cancel`)."""
     statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
     for req_id, status in statuses.items():
         default = "SKIPPED" if req_id in _STALE_CANCEL_IDS else "PASS"
         assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
+
+
+def test_item_that_becomes_cancellable_as_the_request_crosses_is_a_race(tmp_path):
+    """`uncancellable_becomes_cancellable.py` advertises `cancel` on its not-cancellable items when
+    the request arrives (the tool call before the response, the terminal just after it) and accepts.
+    The result is legitimate, so `-208` SKIPs for the race rather than FAILing, `-209` SKIPs, and
+    the other rows are judged as for `conforming_full.py`."""
+    statuses, by_id, stdout = _item_cancel_run("uncancellable_becomes_cancellable.py", tmp_path)
+    for req_id, status in statuses.items():
+        expected = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        assert status == expected, f"{req_id}:\n{stdout}"
+    for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
+        assert "started advertising capabilities.cancel as" in _skip_message(by_id, req_id), (
+            f"{req_id}:\n{stdout}"
+        )
+
+
+def test_uncancellable_items_are_not_probed_without_the_gate(tmp_path):
+    """`uncancellable_work_only.py` keeps a tool call and a terminal live without `cancel` but
+    never advertises `cancel`, so it may not implement either method (error.mdx:44): no request is
+    sent, every row SKIPs, and `-208` names the gate."""
+    statuses, by_id, stdout = _item_cancel_run("uncancellable_work_only.py", tmp_path)
+    assert set(statuses.values()) == {"SKIPPED"}, stdout
+    for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
+        assert "advertised capabilities.cancel during the driven turn" in _skip_message(by_id, req_id), (
+            f"{req_id}:\n{stdout}"
+        )
 
 
 def _child_control_statuses(fixture: str, timeout: str = "1") -> tuple[dict[str, str], str]:

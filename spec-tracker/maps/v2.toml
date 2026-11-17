@@ -603,19 +603,9 @@ statement = "A `git_patch` diff's paths (including `rename`/`copy` lines) MUST b
 reason = "Deferred: a passive check of agent-emitted `diff` content is possible but not yet built, and it is vacuous against agents that emit no diff in a short turn."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:459; schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`tool_call/cancel` is answered with `-32602` if the tool call is unknown or not cancellable."
-reason = "Deferred: the unknown case needs a request for an id no update announced, and the not-cancellable case a request for a live tool call that does not advertise `cancel`, which on a defective agent would cancel real work. Both break the client rule at :456, which the probe rules allow only where the spec defines the agent's answer, as it does here, but neither probe is built. The already-final case is `ACP-TOOLCANCEL-204`/`205`."
-
-[[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:460 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
 statement = "Cancelling a tool call does not change the foreground state by itself."
 reason = "Unobservable: a foreground state change after the cancel cannot be attributed to the cancel rather than to the agent finishing, ending or continuing its work on its own."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:605; schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "`terminal/cancel` is answered with `-32602` if the terminal is unknown or not cancellable."
-reason = "Deferred: the unknown case needs a request for an id no update announced, and the not-cancellable case a request for a running terminal that does not advertise `cancel`, which on a defective agent would stop a real process. Both break the client rule at :602, which the probe rules allow only where the spec defines the agent's answer, as it does here, but neither probe is built. The already-exited case is `ACP-TERMCANCEL-204`/`205`."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:606 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"

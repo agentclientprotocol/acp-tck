@@ -112,7 +112,8 @@ Protocol version 2 also uses it for the `tool_call/cancel` and `terminal/cancel`
 still running. The TCK sends this prompt, watches for such an item (for up to `--timeout` seconds, or until the turn
 ends), cancels the first tool call and the first terminal it finds, then sends `session/cancel` for the turn. Once a
 tool call (or terminal) has advertised `cancel`, it also sends one `tool_call/cancel` (`terminal/cancel`) for an id no
-update announced, which the agent must reject. With the default essay prompt an agent essentially never has such an
+update announced and one for the first live item of that kind that does not advertise `cancel`, which the agent must
+reject. With the default essay prompt an agent essentially never has such an
 item, so those tests report `SKIPPED` ("no tool call advertised `capabilities.cancel` while still live"). To exercise
 them, choose a prompt that makes the agent start a long-running cancellable command or background task.
 

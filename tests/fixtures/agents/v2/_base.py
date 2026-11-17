@@ -115,6 +115,11 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   any other id (tool-calls.mdx:458-459,604-605). Whatever is still open when the turn ends
   (`session/cancel`, close) is finalized first (`_finish_cancellable_work`). Without the option
   both methods are `-32601`.
+- `uncancellable_work` (opt-in, default `False`; `conforming_full.py` and the `*uncancellable*`
+  fixtures set it): a `__hang__` turn also starts one tool call (`tool-fixed-*`) and one terminal
+  (`term-fixed-*`) that advertise no `capabilities` and stay live until the turn ends
+  (`_start_uncancellable_work`), when they complete. With `cancellable_work`, the cancel methods
+  answer them `-32602` like any other id that is not open and cancellable.
 - `auth/status` (only when `capabilities.auth.status` is advertised, else `-32601`): a pure
   query answered with or without a login (`_handle_auth_status`), the hook the `auth_status_*.py`
   defect fixtures override.
@@ -193,6 +198,7 @@ class ConformingAgent:
         available_commands: list[dict[str, Any]] | None = None,
         background_on_resume: bool = False,
         cancellable_work: bool = False,
+        uncancellable_work: bool = False,
         background_outlives_turn: str | None = None,
         background_after_idle: bool = False,
     ) -> None:
@@ -203,6 +209,8 @@ class ConformingAgent:
         self._cancellable_work = cancellable_work
         self._open_tool_calls: dict[Any, list[str]] = {}  # sessionId -> cancellable, not final
         self._open_terminals: dict[Any, list[str]] = {}  # sessionId -> cancellable, running
+        self._uncancellable_work = uncancellable_work
+        self._fixed_items: dict[Any, list[tuple[str, str]]] = {}  # sessionId -> (kind, id), live
         self._available_commands: list[dict[str, Any]] = [dict(cmd) for cmd in (available_commands or [])]
         self._background_on_resume = background_on_resume
         self._session_count = 0
@@ -949,6 +957,7 @@ class ConformingAgent:
             # `session/close`) arrives for this session -- see `_handle_cancel`/
             # `_handle_close_session`. Preempts `_mid_turn_action` for this one prompt only.
             self._start_cancellable_work(session_id)
+            self._start_uncancellable_work(session_id)
             self._hanging_sessions[session_id] = True
             return
         if self._mid_turn_action(session_id):
@@ -1197,6 +1206,46 @@ class ConformingAgent:
         self._open_tool_calls.setdefault(session_id, []).append(tool_call_id)
         self._open_terminals.setdefault(session_id, []).append(terminal_id)
 
+    def _start_uncancellable_work(self, session_id: Any) -> None:
+        """For `uncancellable_work`: one tool call and one terminal that do not advertise
+        `capabilities.cancel` and stay live until the turn ends."""
+        if not self._uncancellable_work:
+            return
+        self._tool_call_count += 1
+        tool_call_id = f"tool-fixed-{self._tool_call_count:04d}"
+        self._terminal_count += 1
+        terminal_id = f"term-fixed-{self._terminal_count:04d}"
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": tool_call_id,
+                "title": "Applying a migration",
+                "kind": "execute",
+                "status": "in_progress",
+            },
+        )
+        self._send_update(
+            session_id,
+            {"sessionUpdate": "terminal_update", "terminalId": terminal_id, "command": "make", "cwd": "/tmp"},
+        )
+        self._fixed_items.setdefault(session_id, []).extend(
+            [("tool_call", tool_call_id), ("terminal", terminal_id)]
+        )
+
+    def _finish_fixed_item(self, session_id: Any, item_id: str) -> None:
+        """Complete a live `uncancellable_work` item (no-op once it is finished)."""
+        items = self._fixed_items.get(session_id, [])
+        for kind, fixed_id in list(items):
+            if fixed_id != item_id:
+                continue
+            items.remove((kind, fixed_id))
+            if kind == "tool_call":
+                update = {"sessionUpdate": "tool_call_update", "toolCallId": item_id, "status": "completed"}
+            else:
+                update = {"sessionUpdate": "terminal_update", "terminalId": item_id, "exitStatus": {"exitCode": 0}}
+            self._send_update(session_id, update)
+
     def _handle_tool_call_cancel(self, msg_id: Any, params: dict[str, Any]) -> None:
         """`tool_call/cancel` (tool-calls.mdx:458-459): `{}` once accepted, then the
         confirmation; `-32602` for an id that is not an open cancellable tool call."""
@@ -1250,11 +1299,14 @@ class ConformingAgent:
         )
 
     def _finish_cancellable_work(self, session_id: Any) -> None:
-        """The turn ends: whatever `_start_cancellable_work` left open is finalized first."""
+        """The turn ends: whatever `_start_cancellable_work` or `_start_uncancellable_work` left
+        open is finalized first."""
         for tool_call_id in list(self._open_tool_calls.get(session_id, [])):
             self._close_tool_call(session_id, tool_call_id)
         for terminal_id in list(self._open_terminals.get(session_id, [])):
             self._close_terminal(session_id, terminal_id)
+        for _kind, item_id in list(self._fixed_items.get(session_id, [])):
+            self._finish_fixed_item(session_id, item_id)
 
     def _run_background_work(self, session_id: Any) -> None:
         """One background tool call: announced, listed on a repeated `running` snapshot, then

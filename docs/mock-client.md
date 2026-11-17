@@ -128,7 +128,7 @@ prompt essentially never does) and reads the turn in wire order, tracking each t
 `capabilities.cancel` with the patch rules. Then:
 
 - for the first tool call and the first terminal that advertise `cancel` while not final, it sends `tool_call/cancel` /
-  `terminal/cancel` (never for an item that does not currently advertise it) and waits `timeout / 2` for the response
+  `terminal/cancel` (this main request never goes to an item that does not currently advertise it) and waits `timeout / 2` for the response
   and the confirming final update. A `-32602` is not a rejection when the item's final update, or the agent's
   withdrawal of `cancel`, arrives before it or within `quiet_period(timeout)` after it; any other error is. The next
   live item is tried after such a race;
@@ -138,6 +138,10 @@ prompt essentially never does) and reads the turn in wire order, tracking each t
   no update announced (`_tck_unknown_tool_call` / `_tck_unknown_terminal`), which must be rejected (`-206`/`-207`
   rows). This breaks the client rule, which the [probe rules](writing-tests.md#probes) allow because the spec defines
   the answer (`-32602`). An agent that never advertises `cancel` gets no such request;
+- under the same condition, for the first item of that kind that is live (not final, no `exitStatus`) but does not
+  currently advertise `cancel`, it sends one request, which must be rejected (`-208`/`-209` rows), on the same
+  grounds. A result is not judged when that item's advertisement of `cancel` arrives after the request was sent, up to
+  `quiet_period(timeout)` after the response: the agent may rightly accept once the item became cancellable;
 - once nothing more is live (nothing new for `max(quiet_period(timeout), timeout / 4)`, `quiet_period(timeout)` after
   the turn's idle, or `timeout` since the prompt), it sends its own `session/cancel` for the turn.
 
