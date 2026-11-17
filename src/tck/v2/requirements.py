@@ -894,13 +894,37 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "session is `idle`, a later `state_update` for the session drops it from the list: "
             "the Agent SHOULD re-send the state with the updated list when background work "
             "ends. Judged over one prompt turn plus a quiet drain after it. The start of "
-            "background work is not judged here, nor is an end during active work (the next "
-            "snapshot follows anyway). SKIPPED when no listed item ends while idle. The test is gated "
-            "on `capabilities.session`."
+            "background work is judged by ACP-STATE-210; an end during active work is not judged "
+            "(the next snapshot follows anyway). SKIPPED when no listed item ends while idle. "
+            "The test is gated on `capabilities.session`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:205-206; "
             "docs/rfds/v2/background-work.mdx:193-194 (Active RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-STATE-210",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When a `terminal` (no `exitStatus`) or `tool_call` (no final status) is first "
+            "announced for the session while it is `idle` and its latest `background` list is "
+            "reported, the next `state_update` for the session is an `idle` that lists it, "
+            "directly or through a tool call and the terminal it references (either one stands "
+            "for the other): the Agent SHOULD re-send the state with the updated list when background work starts. "
+            "Foreground work reports `running` when it starts, so an item announced while idle "
+            "is background work. Only the first `state_update` after the announcement is judged, "
+            "and not when it is not an `idle` with a list (foreground work may have started) "
+            "nor when the item ends before any `state_update`. A visible housekeeping tool "
+            "call, which the Agent SHOULD NOT list, cannot be told apart and fails. Judged over "
+            "one prompt turn plus a quiet drain after it. SKIPPED when no item starts while "
+            "idle. The test is gated on `capabilities.session`; ACP-STATE-209 judges the end "
+            "of background work."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:152,184,186,205; "
+            "docs/rfds/v2/background-work.mdx:193 (Active RFD)"
         ),
     ),
     Requirement(

@@ -207,6 +207,7 @@ _ADVISORY_IDS = {
     "ACP-SUBAGENT-201",
     "ACP-STATE-204",
     "ACP-STATE-209",
+    "ACP-STATE-210",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
@@ -330,11 +331,12 @@ _RESUME_BACKGROUND_SKIP_IDS = {"ACP-RESUME-213"}
 
 # The other background rows judge only an agent that reports a `background` list, and
 # `ACP-STATE-209` needs one of its items to end while idle (`background_outlives_turn="finish"`),
-# `ACP-INFO-BACKGROUND-202` a list that is non-empty when `session/cancel` lands. A fixture that
+# `ACP-STATE-210` one to start while idle (`background_after_idle`), `ACP-INFO-BACKGROUND-202` a list that is non-empty when `session/cancel` lands. A fixture that
 # merely reports lists (`reports_background_work.py`) PASSes `ACP-RESUME-217` and
-# `ACP-INFO-BACKGROUND-201` and SKIPs the other two.
+# `ACP-INFO-BACKGROUND-201` and SKIPs the other three.
 _BACKGROUND_OTHER_SKIP_IDS = {
     "ACP-STATE-209",
+    "ACP-STATE-210",
     "ACP-INFO-BACKGROUND-201",
     "ACP-INFO-BACKGROUND-202",
     "ACP-RESUME-217",
@@ -1714,6 +1716,31 @@ def test_background_end_not_resent_fails_only_state_209(tmp_path):
     statuses, _by_id, stdout = _full_run("background_end_not_resent.py", tmp_path)
     assert _fails(statuses) == {"ACP-STATE-209"}, stdout
     assert statuses["ACP-STATE-208"] == "SKIPPED", stdout
+
+
+def test_starts_background_after_idle_passes_state_210(tmp_path):
+    """The positive control: a background tool call starts after the turn's idle and the agent
+    re-sends the idle with it listed, then again without it. `ACP-STATE-210` PASSes, and so does
+    `ACP-STATE-209` (the item ends while idle and the next snapshot drops it)."""
+    statuses, _by_id, stdout = _full_run("starts_background_after_idle.py", tmp_path)
+    assert _fails(statuses) == set(), stdout
+    for req_id in ("ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208", "ACP-STATE-209", "ACP-STATE-210"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_background_start_not_resent_fails_only_state_210(tmp_path):
+    """The item is announced after the idle and never listed, and stays live. `ACP-STATE-209`
+    SKIPs: no listed item ends while idle."""
+    statuses, _by_id, stdout = _full_run("background_start_not_resent.py", tmp_path)
+    assert _fails(statuses) == {"ACP-STATE-210"}, stdout
+    assert statuses["ACP-STATE-209"] == "SKIPPED", stdout
+
+
+def test_background_without_start_while_idle_skips_state_210(tmp_path):
+    """The gated case: `finishes_background_after_idle.py` reports lists, but its item is
+    announced during the turn, so no item starts while idle and `ACP-STATE-210` SKIPs."""
+    statuses, _by_id, stdout = _full_run("finishes_background_after_idle.py", tmp_path)
+    assert statuses["ACP-STATE-210"] == "SKIPPED", stdout
 
 
 def test_resume_snapshot_omits_background_fails_only_resume_217(tmp_path):

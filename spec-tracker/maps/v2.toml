@@ -186,9 +186,9 @@ statement = "When the Agent knows a tool call's work continues after the call re
 reason = "Unobservable: depends on what the agent knows about its own work and on why it started it."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:205,207 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "When background work starts, the Agent re-sends the current state with the updated `background` list, and when it knows finished work starts follow-up foreground work it reports `running` no later than the snapshot that removes the item (SHOULD)."
-reason = "Deferred: the start-side re-send (a non-final tool call or running terminal announced while the session is `idle`, with neither a `running` state nor a list that names it afterwards) is observable but not yet built. Whether the agent already knows of follow-up foreground work when it removes an item is internal to the agent. The re-send when work ends is judged by ACP-STATE-209."
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:207 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+statement = "When the Agent knows finished work starts follow-up foreground work, it reports `running` no later than the snapshot that removes the item (SHOULD)."
+reason = "Unobservable: whether the agent already knows of follow-up foreground work when it removes an item is internal to the agent."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:208 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"

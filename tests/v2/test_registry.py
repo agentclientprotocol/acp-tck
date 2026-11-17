@@ -98,6 +98,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-STATE-207",
         "ACP-STATE-208",
         "ACP-STATE-209",
+        "ACP-STATE-210",
         "ACP-PERM-201",
         "ACP-PERM-202",
         "ACP-PERM-203",
@@ -317,6 +318,7 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-LIST-207",
         "ACP-SHUTDOWN-001",
         "ACP-STATE-209",
+        "ACP-STATE-210",
         "ACP-STATE-204",
     }
 
