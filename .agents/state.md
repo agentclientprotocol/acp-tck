@@ -14,11 +14,12 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - S2 ACP-STATE-210 — e2de37f — ADVISORY row gated like 209; fixtures starts_background_after_idle / background_start_not_resent; ledger narrowed to :207; 1014 passed. Unjudged paths (running next state, idle w/o list, item ends first) not unit-tested — flag for M2 review.
 - S3 unknown-id probes — d315fb7 — TOOLCANCEL/TERMCANCEL-206 (CAPABILITY) + 207 (ADVISORY); `_FollowUpProbe` base (S4 subclasses it), per-kind cancel_seen gates; `cancel_missing_after_completion.py` now also FAILs both 207s (documented cascade); 1018 passed + spec-tracker 120. Ledger entries v2.toml:605-608/615-618 are single entries covering both halves → S4 deletes them.
 - S4 not-cancellable probes — aa8049f — TOOLCANCEL/TERMCANCEL-208 (CAPABILITY) + 209 (ADVISORY); `_UncancellableProbe` with race grace (mutation-checked); opt-in fixture knob `uncancellable_work` (set in conforming_full); ledger entries deleted; no FAIL-set changes; 1025 passed + spec-tracker 120. Programmer's calls to surface in review: knob opt-in (avoids churn); a result for a finished-but-never-cancellable item FAILs 208; main probe may pick an item that gains cancel mid-flight (worst case SKIP raced). Not done (out of scope): child-session variant, unknown-session -32002 probe.
+- S5 MCP ledger reasons — 42cd99a — 7 reasons reworded as "Deferred: <blocker>" (stdio-only stub, no tools, argv-only recording, no HTTP stub); v2 capability name fixed to `capabilities.session.mcp.http`; spec-tracker 120 passed. Not changed: section comment v2.toml:358 (optional per research). M2 slices done; .agents grep clean.
 ## Plan
 - M1 Subagent prompt options: S1 (1).
 - M2 v2 background-work rows + MCP ledger: S2 ACP-STATE-210; S3 unknown-id probes (206/207); S4 not-cancellable probes (208/209); S5 MCP ledger reasons (3a). One review for M2.
 - Order: S1→S2→S3→S4→S5. Plan approved by the user.
 ## Next
-- S5 MCP ledger reasons (programmer; line numbers have shifted — locate entries by content), then one M2 review (range ca66fe2..HEAD).
+- M2 review (reviewer) over ca66fe2..42cd99a, alongside an orchestrator full-suite run. Then show findings to the user; fixes become new slices.
 ## Open questions (waiting on the user)
 - None.
