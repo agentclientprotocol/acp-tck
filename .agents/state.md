@@ -21,8 +21,10 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
   content-plan-commands, config-options, subagents-doc, rfd-subagents, schema; v2 transports-security-content, initialization,
   session-setup, session-list-delete, prompt-lifecycle, cancellation-elicitation, authentication, tool-calls, plan-commands-config,
   subagents-doc, rfd-subagents, schema.
-- Side question (scope of formerly-Active, never-backfilled RFDs; all Draft at target): done for rfds/v2 tools-plan, updates,
-  prompt-session -> all 13 rfds/v2/* need 0 RFD-sourced rows (every rule doc-stated; doc gaps routed to doc researchers).
-  Running: scope-rfds-mcp-transport.
+- Side question DONE (scope of formerly-Active, never-backfilled RFDs; all Draft at target), reports scope-rfds-*.md:
+  13 rfds/v2/* -> 0 RFD-sourced rows (all doc-stated; doc gaps go to doc audit). mcp-over-acp remainder -> M per version
+  (~7-8 rows, 6-7 fixtures each, shared MCP provider module, mock client answers mcp/message), Draft-RFD citation justified
+  for RFD-only rules. streamable-http-websocket-transport -> recommend out of scope (needs HTTP/WS harness, L-XL).
+  Awaiting the user's call on whether to include mcp-over-acp in this PR.
 - Then step 5: consolidate into plan + decisions for the user.
 ## Open questions (waiting on the user)
