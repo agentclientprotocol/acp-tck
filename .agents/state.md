@@ -3,6 +3,7 @@
 mode: single · branch: pr10-follow-ups · reviews: on
 ## Decisions (final)
 - Untracked Active/Preview RFDs (incl. the post-pin Subagents RFD rule) go in a separate PR; out of scope here.
+- Follow-up (1): add both `--subagent-prompt` (drives the subagents-connection turn) and `--subagent-cancel-prompt` (replaces `--cancel-prompt` in the child-cancel turn: SUBAGENT-016/017, v2 202, TOOLCANCEL-203/TERMCANCEL-203), mirroring `--cancel-prompt` for root sessions. Runs stay independent one-shot turns (no chaining).
 ## Done
 - Assessment of five follow-ups — reports in .agents/research/followup-*.md:
   - subagent-prompt: S (~200-300 LOC), scope B (subagents connection only)
@@ -14,3 +15,4 @@ mode: single · branch: pr10-follow-ups · reviews: on
 - User picks the PR scope and answers each item's design questions; then plan milestones/slices.
 ## Open questions (waiting on the user)
 - Scope selection; per-item design questions (see reports).
+- (1): default/fallback of `--subagent-cancel-prompt` (recommended: falls back to `--cancel-prompt` when unset); timeout budget for the subagents-connection turn.
