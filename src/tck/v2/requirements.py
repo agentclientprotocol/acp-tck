@@ -3116,6 +3116,27 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PLAN-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A markdown plan's `path`, when it is a string, is an absolute path in the native "
+            "syntax of the agent's machine (POSIX `/...`, a Windows drive path or a UNC path) "
+            "and not a URI: `PLAN.md`, `./PLAN.md` and `file:///tmp/PLAN.md` fail. `null` and "
+            "an omitted `path` mean the plan has no file and are not judged; a `path` of the "
+            "wrong type is a schema defect (`ACP-SCHEMA-001`'s). Unstable feature: conditional "
+            "on at least one markdown `plan_update` with a string `path` being observed, else "
+            "SKIP."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/agent-plan.mdx:104-109; "
+            "docs/protocol/v2/draft/overview.mdx:222; "
+            "schema/v2/schema.unstable.json#/$defs/PlanMarkdown/properties/path; "
+            "schema/v2/schema.unstable.json#/$defs/AbsolutePath; "
+            "docs/rfds/plan-operations.mdx:64,196 (Preview RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-PATCH-206",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",

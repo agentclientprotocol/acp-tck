@@ -1,4 +1,5 @@
-"""Patch/upsert semantics: ACP-PATCH-201, ACP-PATCH-203..212.
+"""Patch/upsert semantics: ACP-PATCH-201, ACP-PATCH-203..212, and ACP-PLAN-003 (a markdown plan's
+`path` is read from the same driven turn as ACP-PATCH-205).
 
 `ACP-PATCH-202` (the `session/prompt` result's `messageId` matches the `user_message`/
 `user_message_chunk` updates' own `messageId`) is deliberately **not** registered here: it is
@@ -32,6 +33,7 @@ from ._helpers import (
     PatchTracker,
     background_keys,
     connected_agent,
+    is_absolute_path,
     new_session,
     permission_subject_keys,
     run_prompt,
@@ -178,6 +180,33 @@ async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
         assert isinstance(plan_id, str) and plan_id, (
             f"plan_update.plan missing/empty planId: {update!r}"
         )
+
+
+@pytest.mark.requirement("ACP-PLAN-003")
+@pytest.mark.capability("capabilities.session")
+async def test_markdown_plan_path_is_an_absolute_native_path(agent_launch, tmp_path):
+    """ACP-PLAN-003 (CAPABILITY). Only a string `path` is judged: `null` and omission mean no
+    file, and a non-string `path` is `ACP-SCHEMA-001`'s (`agent-plan.mdx:104-109`;
+    `schema/v2/schema.unstable.json#/$defs/PlanMarkdown/properties/path`). `AbsolutePath` is a bare
+    string in the schema, so a relative path or a URI is only caught here."""
+    turn = await _drive_one_turn(agent_launch, tmp_path)
+    paths = []
+    for update in _update_dicts(turn):
+        plan = update.get("plan")
+        if (
+            update.get("sessionUpdate") == "plan_update"
+            and isinstance(plan, dict)
+            and plan.get("type") == "markdown"
+            and isinstance(plan.get("path"), str)
+        ):
+            paths.append(plan["path"])
+    if not paths:
+        pytest.skip("no markdown plan_update with a string path observed during this turn")
+    not_absolute = [path for path in paths if not is_absolute_path(path)]
+    assert not not_absolute, (
+        f"ACP-PLAN-003: markdown plan path is not an absolute native path: {not_absolute!r} "
+        "(a relative path or a URI such as `file:///...` is not one)"
+    )
 
 
 @pytest.mark.requirement("ACP-PATCH-206")

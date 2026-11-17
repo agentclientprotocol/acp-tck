@@ -174,6 +174,7 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-203",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
+    "ACP-PLAN-003",
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-210",
@@ -403,6 +404,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-META-204",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
+    "ACP-PLAN-003",
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-208",
@@ -640,6 +642,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-META-204",
     "ACP-PATCH-204",
     "ACP-PATCH-205",
+    "ACP-PLAN-003",
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-208",
@@ -1451,6 +1454,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -1624,6 +1628,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -2363,6 +2368,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -2483,6 +2489,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -2591,6 +2598,7 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -2972,6 +2980,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
     _RICH_TURN_SKIP_IDS = {
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -4227,6 +4236,24 @@ def test_plan_missing_plan_id_fails_patch_205_and_schema_001():
     statuses = _table_statuses(result.stdout)
     fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
     assert fails == {"ACP-PATCH-205", "ACP-SCHEMA-001", "ACP-PROMPT-002"}, result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_relative_markdown_plan_path_fails_plan_003():
+    """`relative_markdown_plan_path.py` emits one schema-valid markdown `plan_update` with a
+    relative `path` -- FAILs `ACP-PLAN-003` only (`AbsolutePath` is a bare string in the schema),
+    while `conforming_full.py` (absolute `path`) PASSes it."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "relative_markdown_plan_path.py",
+        protocol_version=2,
+        k="test_patches or initialize or (test_prompt and not capabilities)",
+    )
+    assert result.returncode != 0
+
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-PLAN-003"}, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 

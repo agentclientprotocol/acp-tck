@@ -616,11 +616,6 @@ reason = "Unobservable: a change of the foreground state or of a referencing too
 # --- agent-plan.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/agent-plan.mdx:119 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Plan file URIs MUST be absolute."
-reason = "Deferred: the `file` plan variant is unstable, and a passive check of it is not yet built and would be vacuous against agents that send no file plans."
-
-[[not_requirement]]
 citation = "docs/protocol/v2/draft/agent-plan.mdx:131 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send `plan_removed` when a plan is cancelled, for example when the user rejects it or the Agent abandons it."
 reason = "Not observable: no protocol event marks a plan as rejected or abandoned, and `session/cancel` cancels a turn, not a plan."

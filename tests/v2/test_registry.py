@@ -225,6 +225,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",

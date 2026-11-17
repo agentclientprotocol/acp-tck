@@ -84,8 +84,8 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
 - `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
   `_send_rich_turn_updates` fires once per turn after the running update, emitting two
   `agent_message_chunk`s sharing a `messageId`, a `tool_call_update` create plus a content patch,
-  a one-entry `plan_update`, a `terminal_update` + `terminal_output_chunk` sharing a
-  `terminalId`, and an `available_commands_update` -- the content patch also carries a `diff`
+  a one-entry items `plan_update`, a markdown `plan_update` with an absolute `path`, a
+  `terminal_update` + `terminal_output_chunk` sharing a `terminalId`, and an `available_commands_update` -- the content patch also carries a `diff`
   item -- so the patch/enum requirements observe something instead of SKIPping.
   `AsksPermissionAgent` also reports `requires_action`/`running` around its permission request.
 - `report_background_work` (opt-in, default `False`; only `reports_background_work.py` and the
@@ -1059,6 +1059,20 @@ class ConformingAgent:
                             "status": "completed",
                         }
                     ],
+                },
+            },
+        )
+        # One markdown plan with an absolute native `path` (ACP-PLAN-003).
+        self._plan_count += 1
+        self._send_update(
+            session_id,
+            {
+                "sessionUpdate": "plan_update",
+                "plan": {
+                    "type": "markdown",
+                    "planId": f"plan-{self._plan_count:04d}",
+                    "content": "## Steps\n- [x] Check the file",
+                    "path": "/tmp/plan.md",
                 },
             },
         )
