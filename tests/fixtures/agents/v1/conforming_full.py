@@ -15,8 +15,8 @@ even though it *does* have a boolean option, as long as the TCK's own probe conn
 that capability (see `test_session_config.py`).
 
 For a client that advertised `clientCapabilities.plan` (only the `ACP-PLAN-*` tests do), each
-prompt turn also sends two `plan_update` messages -- an item plan and a file plan with an
-absolute `uri` -- so ACP-PLAN-001/002 PASS non-vacuously. Without `plan`, no plan is sent.
+prompt turn also sends two `plan_update` messages -- an item plan and a markdown plan with an
+absolute `path` -- so ACP-PLAN-002/003/004 PASS non-vacuously. Without `plan`, no plan is sent.
 It also inherits `HonorsPermissionAgent`'s permission probe, so ACP-PERM-001/002 PASS
 non-vacuously; ordinary prompts never request permission.
 """
@@ -97,7 +97,12 @@ PLANS = [
         "planId": "steps",
         "entries": [{"content": "Read the code", "priority": "medium", "status": "pending"}],
     },
-    {"type": "file", "planId": "design-doc", "uri": "file:///tmp/plan.md"},
+    {
+        "type": "markdown",
+        "planId": "design-doc",
+        "content": "## Steps\n- [ ] Read the code",
+        "path": "/tmp/plan.md",
+    },
 ]
 
 

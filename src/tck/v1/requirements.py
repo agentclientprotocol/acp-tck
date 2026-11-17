@@ -1515,24 +1515,6 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/rfds/subagents.mdx:1113-1117 (Preview RFD)"),
     ),
     Requirement(
-        id="ACP-PLAN-001",
-        tier=Tier.MANDATORY,
-        capability=None,
-        text=(
-            "When the client advertised `clientCapabilities.plan`, every `plan_update` whose "
-            "`plan.type` is `\"file\"` carries an absolute `plan.uri`. The spec does not define "
-            "\"absolute\"; the TCK reads it as an RFC 3986 URI with a scheme and, for `file:`, "
-            "an RFC 8089 absolute path (`file:///tmp/plan.md`, `file:/tmp/plan.md`), so "
-            "`plan.md`, `/tmp/plan.md` and `file:plan.md` fail. Unstable feature: an agent that "
-            "sends no file plan passes vacuously."
-        ),
-        citation=_cite(
-            "docs/protocol/v1/draft/agent-plan.mdx:127; "
-            "docs/rfds/plan-operations.mdx:63 (Preview RFD); "
-            "schema/v1/schema.unstable.json#/$defs/PlanUpdateContent"
-        ),
-    ),
-    Requirement(
         id="ACP-PLAN-002",
         tier=Tier.ADVISORY,
         capability=None,
@@ -1546,6 +1528,42 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v1/draft/agent-plan.mdx:57; "
             "docs/protocol/v1/draft/initialization.mdx:172-179; "
             "schema/v1/schema.unstable.json#/$defs/PlanCapabilities"
+        ),
+    ),
+    Requirement(
+        id="ACP-PLAN-003",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.plan`, a markdown plan's `path`, "
+            "when it is a string, is an absolute path in the native syntax of the agent's "
+            "machine (POSIX `/...`, a Windows drive path or a UNC path) and not a URI: "
+            "`PLAN.md`, `./PLAN.md` and `file:///tmp/PLAN.md` fail. `null` and an omitted "
+            "`path` mean the plan has no file and are not judged; a `path` of the wrong type "
+            "is a schema defect, `ACP-PLAN-004`'s. Unstable feature: an agent that sends no "
+            "markdown plan with a `path` passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:112-117; "
+            "docs/protocol/v1/draft/overview.mdx:233; "
+            "schema/v1/schema.unstable.json#/$defs/PlanMarkdown/properties/path; "
+            "docs/rfds/plan-operations.mdx:64,196 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-PLAN-004",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.plan`, every `plan_update` and "
+            "`plan_removed` the agent sends validates against the v1 schema's `SessionUpdate`: "
+            "a plan of `type` `items` (with `entries`) or `markdown` (with `content`), each "
+            "with a `planId`. A legacy `file` plan, which the protocol no longer defines, fails. "
+            "Unstable feature: an agent that sends neither update passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:55,108-117; "
+            "schema/v1/schema.unstable.json#/$defs/SessionUpdate"
         ),
     ),
     Requirement(

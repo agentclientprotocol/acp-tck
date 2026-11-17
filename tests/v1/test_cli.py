@@ -56,7 +56,8 @@ _MANDATORY_IDS = {
     "ACP-CLIENTCAP-005",
     "ACP-CLIENTCAP-006",
     "ACP-CLIENTCAP-007",
-    "ACP-PLAN-001",
+    "ACP-PLAN-003",
+    "ACP-PLAN-004",
     "ACP-EXT-001",
 }
 # The subagent rows judge a connection that advertises `clientCapabilities.subagents`. They are
@@ -522,8 +523,9 @@ def test_v2_only_agent_under_protocol_version_1_is_blocked_by_version_mismatch()
         "ACP-SESSION-006",
         "ACP-LIST-003",
         "ACP-AUTH-008",
-        "ACP-PLAN-001",
         "ACP-PLAN-002",
+        "ACP-PLAN-003",
+        "ACP-PLAN-004",
         "ACP-PERM-001",
         "ACP-PERM-002",
     } | _SUBAGENT_ADVISORY_IDS:
@@ -1892,22 +1894,34 @@ def test_subagent_traffic_is_only_sent_to_a_client_that_advertised_subagents():
         assert _table_statuses(result.stdout)["ACP-PROMPT-002"] == "PASS", result.stdout
 
 
-def test_relative_plan_file_uri_fails_plan_001_only():
-    """`emits_relative_plan_file_uri.py` sends a relative file-plan `uri`, only to a client that
-    advertised `plan` -- so ACP-CLIENTCAP-006's `plan`-less connection stays clean."""
-    result = _run_cli("emits_relative_plan_file_uri.py")
+def test_relative_plan_markdown_path_fails_plan_003_only():
+    """`emits_relative_plan_markdown_path.py` sends a markdown plan with a relative `path`, only to
+    a client that advertised `plan` -- so ACP-CLIENTCAP-006's `plan`-less connection stays clean."""
+    result = _run_cli("emits_relative_plan_markdown_path.py")
     assert result.returncode != 0
-    assert _output_fail_ids(result.stdout) == {"ACP-PLAN-001"}, result.stdout
+    assert _output_fail_ids(result.stdout) == {"ACP-PLAN-003"}, result.stdout
     assert _table_statuses(result.stdout).get("ACP-CLIENTCAP-006") == "PASS", result.stdout
 
 
+def test_file_plan_fails_plan_004_only():
+    """`emits_file_plan.py` sends a legacy `file` plan, which no longer validates against the
+    schema: ACP-PLAN-004 FAILs and ACP-PLAN-003 (markdown paths only) stays PASS."""
+    result = _run_cli("emits_file_plan.py")
+    assert result.returncode != 0
+    assert _output_fail_ids(result.stdout) == {"ACP-PLAN-004"}, result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-PLAN-003") == "PASS", result.stdout
+    assert statuses.get("ACP-CLIENTCAP-006") == "PASS", result.stdout
+
+
 def test_plan_turn_outlasting_the_timeout_is_judged_on_the_updates_seen():
-    """`plan_turn_never_ends.py` sends a valid file plan and never resolves the prompt: the turn
-    timeout is cancelled and judged on what arrived, so ACP-PLAN-001/002 PASS instead of FAILing."""
+    """`plan_turn_never_ends.py` sends a valid markdown plan and never resolves the prompt: the
+    turn timeout is cancelled and judged on what arrived, so ACP-PLAN-002/003/004 PASS instead of
+    FAILing."""
     result = _run_cli("plan_turn_never_ends.py", k="plan")
     statuses = _table_statuses(result.stdout)
-    assert statuses.get("ACP-PLAN-001") == "PASS", result.stdout
-    assert statuses.get("ACP-PLAN-002") == "PASS", result.stdout
+    for req_id in ("ACP-PLAN-002", "ACP-PLAN-003", "ACP-PLAN-004"):
+        assert statuses.get(req_id) == "PASS", result.stdout
     assert _output_fail_ids(result.stdout) == set(), result.stdout
 
 
@@ -1919,7 +1933,8 @@ def test_plan_despite_plan_capability_fails_plan_002_advisory_only():
     assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
     assert _output_fail_ids(result.stdout) == {"ACP-PLAN-002"}, result.stdout
     statuses = _table_statuses(result.stdout)
-    assert statuses.get("ACP-PLAN-001") == "PASS", result.stdout
+    assert statuses.get("ACP-PLAN-003") == "PASS", result.stdout
+    assert statuses.get("ACP-PLAN-004") == "PASS", result.stdout
     assert statuses.get("ACP-CLIENTCAP-006") == "PASS", result.stdout
 
 

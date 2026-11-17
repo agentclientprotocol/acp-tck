@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Conforming fixture: when the client advertised `clientCapabilities.plan`, sends a valid file
-`plan_update` and then never resolves the prompt (a long real turn outlasting `--timeout`).
-ACP-PLAN-001/002 judge the updates seen so far and PASS rather than FAIL on the timeout. Prompts
-on connections without `plan` are answered normally.
+"""Conforming fixture: when the client advertised `clientCapabilities.plan`, sends a valid markdown
+`plan_update` with an absolute `path` and then never resolves the prompt (a long real turn
+outlasting `--timeout`). ACP-PLAN-002/003/004 judge the updates seen so far and PASS rather than
+FAIL on the timeout. Prompts on connections without `plan` are answered normally.
 """
 
 import sys
@@ -26,7 +26,12 @@ class PlanTurnNeverEndsAgent(ConformingAgent):
                 "sessionId": session_id,
                 "update": {
                     "sessionUpdate": "plan_update",
-                    "plan": {"type": "file", "planId": "p", "uri": "file:///tmp/plan.md"},
+                    "plan": {
+                        "type": "markdown",
+                        "planId": "p",
+                        "content": "## Steps",
+                        "path": "/tmp/plan.md",
+                    },
                 },
             },
         )
