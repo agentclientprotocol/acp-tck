@@ -55,7 +55,7 @@ _MESSAGE_KINDS = frozenset(
 
 def _update_dicts(turn) -> list[dict[str, Any]]:
     """The inner `update` objects of `turn`'s `session/update`s for the prompted session, in wire
-    order. Entity ids are unique per session (prompt-lifecycle.mdx:65-67), so a child session's
+    order. Entity ids are unique per session (prompt-lifecycle.mdx:68-70), so a child session's
     updates must not be mixed in."""
     result: list[dict[str, Any]] = []
     for _, entry in turn.updates:
@@ -88,7 +88,7 @@ async def _drive_one_turn(agent_launch, tmp_path):
 async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path):
     """ACP-PATCH-201 (CAPABILITY). Every `*_message*`/`*_thought*` update carries a non-empty
     string `messageId` -- the keyed-upsert identity the whole message-patch family hinges on
-    (`prompt-lifecycle.mdx:484`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
+    (`prompt-lifecycle.mdx:567`; `schema/v2/schema.unstable.json#/$defs/ContentChunk`,
     `schema/v2/schema.unstable.json#/$defs/UserMessage`,
     `schema/v2/schema.unstable.json#/$defs/AgentMessage`,
     `schema/v2/schema.unstable.json#/$defs/AgentThought`)."""
@@ -107,7 +107,7 @@ async def test_every_message_update_carries_a_message_id(agent_launch, tmp_path)
 @pytest.mark.capability("capabilities.session")
 async def test_two_prompts_receive_distinct_message_ids(agent_launch, tmp_path):
     """ACP-PATCH-203 (CAPABILITY). Two `session/prompt`s with identical content receive two
-    distinct `messageId`s (`prompt-lifecycle.mdx:368`) -- the v2 analogue of v1's
+    distinct `messageId`s (`prompt-lifecycle.mdx:384`) -- the v2 analogue of v1's
     `duplicate_session_id.py` defect pattern, applied to message ids instead of session ids."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -166,7 +166,7 @@ async def test_tool_call_updates_carry_tool_call_id(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
     """ACP-PATCH-205 (CAPABILITY). Every `plan_update.plan`, including an unknown/`_`-prefixed
-    variant, carries `planId` (`agent-plan.mdx:147`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
+    variant, carries `planId` (`agent-plan.mdx:139`; `schema/v2/schema.unstable.json#/$defs/PlanUpdateContent`)."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     plan_updates = [u for u in _update_dicts(turn) if u.get("sessionUpdate") == "plan_update"]
     if not plan_updates:
@@ -275,9 +275,9 @@ async def test_first_tool_call_report_carries_title(agent_launch, tmp_path):
 async def test_requires_action_reported_around_permission_request(agent_launch, tmp_path):
     """ACP-PATCH-209 (ADVISORY). When the agent sends `session/request_permission` for the
     prompted session during the turn, it reports `requires_action` for that session at some
-    point in the turn (prompt-lifecycle.mdx:153,845; tool-calls.mdx:209). A request whose
+    point in the turn (prompt-lifecycle.mdx:163,1118; tool-calls.mdx:209). A request whose
     `subject` references an item of the latest reported `background` list is for background
-    work, which may leave the session `idle` (tool-calls.mdx:268; prompt-lifecycle.mdx:174), so
+    work, which may leave the session `idle` (tool-calls.mdx:268; prompt-lifecycle.mdx:184), so
     it is not counted. What follows `requires_action` is `ACP-STATE-205`'s concern."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     background = None
@@ -314,7 +314,7 @@ async def _tracked_turn(agent_launch, tmp_path):
 async def test_tool_call_status_never_regresses(agent_launch, tmp_path):
     """ACP-PATCH-210 (CAPABILITY). Per `toolCallId`, the effective status never goes back to
     `pending` and never changes once `completed`/`failed`/`cancelled` (`tool-calls.mdx:421,423`;
-    `prompt-lifecycle.mdx:184`: a final tool call is not reopened). `status: null` resets it to
+    `prompt-lifecycle.mdx:194`: a final tool call is not reopened). `status: null` resets it to
     `pending` (tool-calls.mdx:102-108), so it counts as a step back too."""
     _, tracker = await _tracked_turn(agent_launch, tmp_path)
     if not tracker.tool_calls:
@@ -329,8 +329,8 @@ async def test_foreground_tool_calls_are_final_at_idle(agent_launch, tmp_path):
     turn has a final status, unless a `background` list reported during the turn named it, or the
     idle's own list names a terminal it references that has not reported `exitStatus`: tool calls
     in that list are not part of the foreground work (`tool-calls.mdx:423`), and the docs treat a
-    tool call that references a listed terminal as live too (`prompt-lifecycle.mdx:216,998,1175`;
-    `session-setup.mdx:391`), as Codex's command items that stay `in_progress` until the process
+    tool call that references a listed terminal as live too (`prompt-lifecycle.mdx:226,1271,1450`;
+    `session-setup.mdx:476`), as Codex's command items that stay `in_progress` until the process
     exits. A terminal that exited, or left the list, no longer keeps its tool call live."""
     turn = await _drive_one_turn(agent_launch, tmp_path)
     if turn.idle_update is None:

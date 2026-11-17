@@ -4,7 +4,7 @@ Walks the agent-authored values the suite can see in one turn -- `session/update
 `session/request_permission` params -- and checks each open-enum site against its defined
 constants (`tck.v2.protocol`). A site's value is legal when it is a defined constant or begins
 with `_`: the schema's own `other` fallback accepts any string, so only this check catches a
-custom non-underscore value (`extensibility.mdx:237-240`). A curated subset of the schema's
+custom non-underscore value (`extensibility.mdx:240-243`). A curated subset of the schema's
 open-enum sites (`subject.type` is deliberately not checked).
 """
 

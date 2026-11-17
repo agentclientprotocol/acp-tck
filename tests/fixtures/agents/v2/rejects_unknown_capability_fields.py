@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: rejects `initialize` with `-32602` when the client's `capabilities`
 (at the root or under `auth`) or `info` carry a property it does not recognize, instead of
-ignoring it (initialization.mdx:134; extensibility.mdx:148). FAILs exactly `ACP-EXT-204`.
+ignoring it (initialization.mdx:134; extensibility.mdx:160). FAILs exactly `ACP-EXT-204`.
 """
 
 import sys

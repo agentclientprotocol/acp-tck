@@ -11,7 +11,7 @@ Each test instead performs its own `session/new` and manually `pytest.skip`s wit
 Must NOT assert that a `configId`'s value scheme means anything beyond schema validity, or that
 `session/set_config_option`'s *new* value is reflected anywhere besides its own response/an
 observed `config_option_update` (the spec lets the response report a different `currentValue`
-than the one requested, `session-config-options.mdx:236`).
+than the one requested, `session-config-options.mdx:251`).
 
 Only the `configOptions` items are schema-validated (against `SessionConfigOption`), and only by
 the shape rows (`ACP-CONFIG-201`/`203`): an unrelated violation elsewhere in `session/new`'s result
@@ -439,7 +439,7 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
     whose only option is the follow-up's has nothing to observe through and SKIPs. Only rejected
     probes are judged: after an accepted one (`207`/`208`'s FAIL) the baseline is re-taken. SKIPs
     if a `config_option_update` arrived before a follow-up: the agent may change its own
-    configuration (`session-config-options.mdx:459-463`)."""
+    configuration (`session-config-options.mdx:474-478`)."""
     async with v2_only_agent(agent_launch, require_session=True) as agent:
         session_id, config_options = await _advertised_config(
             agent, tmp_path, timeout=agent_launch.default_timeout

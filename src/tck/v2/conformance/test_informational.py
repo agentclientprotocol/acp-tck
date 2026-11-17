@@ -68,7 +68,7 @@ async def test_concurrent_prompt_behaviour(
     prompt on the first `running`/`requires_action` of a cancel-prompt turn, then
     `session/cancel`) and records whether the second prompt was inserted right away, rejected,
     or held, and how a held one was answered after the cancel. Which of these the agent does is
-    up to it (prompt-lifecycle.mdx:382). Never asserts; SKIPs when not exercised."""
+    up to it (prompt-lifecycle.mdx:400). Never asserts; SKIPs when not exercised."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)

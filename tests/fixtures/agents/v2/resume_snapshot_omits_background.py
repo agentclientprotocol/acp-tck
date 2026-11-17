@@ -2,7 +2,7 @@
 """Non-conforming fixture: `reports_background_work.py`, except the current-state snapshot of
 `session/resume` leaves out `background`. Live updates carry the list, so the agent reports
 background work and MUST carry the list on every `state_update`, the resume snapshot included
-(session-setup.mdx:346; prompt-lifecycle.mdx:204).
+(session-setup.mdx:431; prompt-lifecycle.mdx:214).
 
 FAILs exactly `ACP-RESUME-217` (`ACP-RESUME-213` SKIPs: the snapshot lists nothing).
 """

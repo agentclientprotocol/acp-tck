@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: sends one more `session/update` for the session after its successful
-`session/close` response (session-setup.mdx:395). FAILs exactly `ACP-CLOSE-206`.
+`session/close` response (session-setup.mdx:480). FAILs exactly `ACP-CLOSE-206`.
 """
 
 import sys

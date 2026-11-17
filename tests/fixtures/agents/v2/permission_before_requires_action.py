@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Conforming fixture: `asks_permission.py`, but it sends `session/request_permission` before
-reporting `requires_action`, the order of the spec's own diagram (prompt-lifecycle.mdx:246-247).
+reporting `requires_action`, the order of the spec's own diagram (prompt-lifecycle.mdx:256-257).
 `run_prompt`'s hold mode cancels while the session is still `running`, so `ACP-CANCEL-209`/
 `ACP-CANCEL-213` are judged (and PASS) rather than SKIPped. FAILs nothing.
 """

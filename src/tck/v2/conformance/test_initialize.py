@@ -539,7 +539,7 @@ def _is_error(entry) -> bool:
 async def test_request_before_initialize_gets_invalid_request(
     agent_launch, agent_initialize_result, tmp_path
 ):
-    """ACP-ERROR-005 (error.mdx:29,60; initialization.mdx:90). `session/new` -- a standard
+    """ACP-ERROR-005 (error.mdx:29,62; initialization.mdx:90). `session/new` -- a standard
     method, so the only thing wrong with it is the connection state -- is sent on three
     connections: a fresh one, one after an `initialize` without `protocolVersion`, and one after
     `initialize(0)`. Each MUST answer `-32600`. A leg whose `initialize` is not rejected has no
@@ -697,7 +697,7 @@ async def _initialize_after_request(agent_launch):
 
 @pytest.mark.requirement("ACP-INIT-213")
 async def test_initialize_repeated_after_another_request_is_rejected(agent_launch, agent_initialize_result):
-    """ACP-INIT-213 (error.mdx:29,60; initialization.mdx:139). An `initialize` sent after another
+    """ACP-INIT-213 (error.mdx:29,62; initialization.mdx:139). An `initialize` sent after another
     request ("any request": here an unknown `_`-prefixed method, answered `-32601` by a
     conforming agent) MUST be rejected: a result FAILs. The TCK deliberately breaks the client's
     MUST NOT here, as `ACP-INIT-206` does with malformed versions. The exact code is
@@ -713,7 +713,7 @@ async def test_initialize_repeated_after_another_request_is_rejected(agent_launc
 async def test_initialize_repeated_after_another_request_gets_invalid_request(
     agent_launch, agent_initialize_result
 ):
-    """ACP-INIT-215 (ADVISORY; error.mdx:29,60). The rejection of an `initialize` repeated after
+    """ACP-INIT-215 (ADVISORY; error.mdx:29,62). The rejection of an `initialize` repeated after
     another request carries `-32600`. A reply that is not an error is `ACP-INIT-213`'s FAIL and
     SKIPs here."""
     _skip_unless_v2_endpoint(agent_initialize_result)

@@ -443,7 +443,7 @@ class InitializeOutcome:
 
 
 UNSUPPORTED_PROTOCOL_VERSION = -32022
-"""Error code for "no supported version <= requested" (v2 draft initialization.mdx:100). Version
+"""Error code for "no supported version <= requested" (v2 draft initialization.mdx:112). Version
 agnostic: a v2-only agent answers a v1 client's `initialize` with it too."""
 
 AGENT_INIT_KEY = pytest.StashKey[InitializeOutcome]()

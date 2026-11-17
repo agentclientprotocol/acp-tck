@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises no `capabilities.session.prompt.*` capability, yet accepts
 `image`, `audio` and `resource` blocks instead of rejecting them with `-32602`
-(prompt-lifecycle.mdx:313). An unknown `_tck_unknown` block is still rejected. FAILs
+(prompt-lifecycle.mdx:323). An unknown `_tck_unknown` block is still rejected. FAILs
 `ACP-PROMPTCAP-201` only (its `image`, `audio` and `resource` cases).
 """
 

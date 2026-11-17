@@ -291,7 +291,7 @@ async def test_prompt_during_active_work_is_not_rejected(
     """ACP-PROMPT-209. A second prompt sent on the first `running`/`requires_action` of a
     cancel-prompt turn is not rejected before the TCK's `session/cancel`: it is inserted right
     away (a success) or held (no response yet). Agents MUST NOT reject a prompt only because
-    foreground work is active (prompt-lifecycle.mdx:382); a plain text prompt has no other
+    foreground work is active (prompt-lifecycle.mdx:400); a plain text prompt has no other
     plausible cause for rejection. An error before the cancel FAILs, `-32800` included. How a held
     prompt is answered after the cancel is `ACP-CANCEL-214`'s. SKIPs when the first work may have
     ended before the agent read the second prompt (see `prompt_during_active_work`)."""
@@ -319,7 +319,7 @@ async def test_prompt_during_active_work_is_not_rejected(
 @pytest.mark.capability("capabilities.session")
 async def test_unknown_content_block_is_rejected_without_insertion(agent_launch, tmp_path):
     """ACP-PROMPT-211. A prompt with a content block of a type the agent cannot understand is
-    answered `-32602` and not inserted (prompt-lifecycle.mdx:313; content.mdx:22). A client never
+    answered `-32602` and not inserted (prompt-lifecycle.mdx:323; content.mdx:24). A client never
     sends such a block (it sends only baseline and advertised types); the probe breaks that rule
     on purpose because the spec defines the agent's answer, and its `_tck_unknown` type is
     `_`-prefixed, the extensibility rule's form for custom types. "Not inserted" means no

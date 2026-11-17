@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/new` accepts an MCP server of the unstable `acp` transport
 although it never advertises `capabilities.session.mcp.acp`, while still rejecting `sse` and
-every other unsupported transport with `-32602` (session-setup.mdx:545). FAILs exactly
+every other unsupported transport with `-32602` (session-setup.mdx:634). FAILs exactly
 `ACP-MCP-203` (its `acp` probe).
 """
 

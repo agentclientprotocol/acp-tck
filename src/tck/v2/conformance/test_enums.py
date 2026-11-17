@@ -2,7 +2,7 @@
 
 v2's schema is open at nearly every scalar enum and tagged-union discriminator -- the closed
 sites are `ElicitationSchema.type`, embedded resource contents, select config option `options`,
-the elicitation scope (`extensibility.mdx:242-247`), and the JSON-RPC `jsonrpc` literal -- but
+the elicitation scope (`extensibility.mdx:245-250`), and the JSON-RPC `jsonrpc` literal -- but
 prose still binds the *emitter*: a value must be a defined constant OR begin with `_`.
 `tck.v2.protocol.is_valid_open_enum_value` is the hand-written check that enforces this
 (the schema itself would happily accept `"kind": "sorcery"` via its own `other`-branch
@@ -18,13 +18,13 @@ is deliberately **not** re-registered here: it is already fully covered by `ACP-
 already combines "carries a `stopReason`" with exactly this value-legality check.
 
 `ACP-ENUM-201` applies the extensibility rule ("extensions MUST NOT define custom non-underscore
-values", extensibility.mdx:235-240) to every explicit-MUST open-enum site observable in one turn
+values", extensibility.mdx:238-243) to every explicit-MUST open-enum site observable in one turn
 (the site list is `tck.v2.open_enums.OpenEnumScan`'s and the registry text's). Turn-observable,
 so `Tier.CAPABILITY`, `capability="capabilities.session"` per the session-baseline tiering rule.
 
 `ACP-ENUM-203` is the receiver-tolerance direction (client sends a `_`-prefixed value, agent must
 not crash/`-32602`): receivers MUST accept unknown discriminator values where the schema has a
-fallback (extensibility.mdx:51-55), so `Tier.CAPABILITY`, `capability="capabilities.session"`.
+fallback (extensibility.mdx:54-58), so `Tier.CAPABILITY`, `capability="capabilities.session"`.
 It drives its own minimal turn by hand, so a crash or a `-32602` on the prompt is judged here
 rather than surfacing as `run_prompt`'s error turn end. Whether the agent treats the value as
 approval is `ACP-PERM-204`'s concern (`run_prompt(permission="unknown_outcome")`).
@@ -221,7 +221,7 @@ async def test_agent_tolerates_underscore_prefixed_permission_outcome(agent_laun
 @pytest.mark.requirement("ACP-ENUM-204")
 @pytest.mark.capability("capabilities.session.prompt.embeddedContext")
 async def test_embedded_resource_without_text_or_blob_is_rejected(agent_launch, tmp_path):
-    """ACP-ENUM-204 (ADVISORY, `extensibility.mdx:242-245`, `error.mdx:31`). Embedded resource
+    """ACP-ENUM-204 (ADVISORY, `extensibility.mdx:245-248`, `error.mdx:31`). Embedded resource
     contents are a closed site (text or blob), so a `resource` block carrying neither is
     rejected with `-32602` rather than accepted. A client never sends such a block; the probe
     breaks that client rule on purpose because the spec defines the agent's answer, and uses a

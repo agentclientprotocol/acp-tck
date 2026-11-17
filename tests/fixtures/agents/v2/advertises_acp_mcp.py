@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conforming fixture: advertises `capabilities.session.mcp.acp` and so accepts an `acp` MCP
 server declaration. `ACP-MCP-203` must therefore not send its `acp` probe, which this agent would
-accept (session-setup.mdx:545); the run has no FAIL.
+accept (session-setup.mdx:634); the run has no FAIL.
 """
 
 import sys

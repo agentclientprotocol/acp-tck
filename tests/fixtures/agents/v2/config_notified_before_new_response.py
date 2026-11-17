@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: sends a `config_option_update` before the `session/new` response,
-although the response carries the same `configOptions` too (session-setup.mdx:103). FAILs
+although the response carries the same `configOptions` too (session-setup.mdx:105). FAILs
 exactly `ACP-SESSION-207` (ADVISORY); `ACP-SESSION-208` PASSes since the response has the list.
 """
 

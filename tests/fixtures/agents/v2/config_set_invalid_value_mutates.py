@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: an invalid value for a known option is stored and only then rejected
 with `-32602`, so the configuration changes although the request failed
-(session-config-options.mdx:234). Advertises two options so the TCK can observe the damage
+(session-config-options.mdx:249). Advertises two options so the TCK can observe the damage
 through the other one. FAILs exactly `ACP-CONFIG-209`; the code is right, so `ACP-CONFIG-208`
 PASSes.
 """

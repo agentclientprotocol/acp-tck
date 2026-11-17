@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: validates `session/prompt`'s `_meta` strictly and rejects a non-object
-value with `-32602`, instead of treating it as omitted (`extensibility.mdx:74`).
+value with `-32602`, instead of treating it as omitted (`extensibility.mdx:77`).
 
 FAILs `ACP-META-202` only; a prompt with an object `_meta` (`ACP-META-001`) is still accepted.
 """

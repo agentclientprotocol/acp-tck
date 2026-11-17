@@ -24,10 +24,10 @@ child (its `capabilities.cancel`, its latest state from its own `state_update` o
    descendant that was running and that the cancelled work waits on must reach `idle`. A
    descendant counts as waited on only when its parent's latest `state_update` reported a
    `background` list that does not name it *and* arrived after the descendant was announced: an
-   agent announces a background item before listing it (prompt-lifecycle.mdx:206) and re-sends
-   the state when the list changes only as a SHOULD (:205), so a descendant announced after the
+   agent announces a background item before listing it (prompt-lifecycle.mdx:216) and re-sends
+   the state when the list changes only as a SHOULD (:215), so a descendant announced after the
    latest list may be background work no list names yet, and a list never reported leaves the
-   TCK unable to tell (:204). Nothing is judged for those.
+   TCK unable to tell (:214). Nothing is judged for those.
 
 Every wait is bounded per step (`timeout` to find something to cancel, `timeout / 2` for each
 response or state), never by one overall deadline that a long turn could exhaust, so a slow or

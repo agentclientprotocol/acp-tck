@@ -9,7 +9,7 @@ A non-error `session/prompt` result is sufficient for 001..003: `run_prompt`'s t
 receipt, `ACP-PROMPT-201`).
 
 `ACP-PROMPTCAP-201` is the inverse: an agent MUST reject a content type that is neither baseline
-nor advertised with `-32602`, without inserting it (prompt-lifecycle.mdx:313). It is a runtime
+nor advertised with `-32602`, without inserting it (prompt-lifecycle.mdx:323). It is a runtime
 negative gate -- each block type is probed only when its capability is *not* advertised.
 """
 
@@ -157,7 +157,7 @@ async def test_unadvertised_content_block_is_rejected_without_insertion(
 ):
     """ACP-PROMPTCAP-201. A well-formed `image`/`audio`/`resource` block the agent did not
     advertise under `capabilities.session.prompt` is answered `-32602` and not inserted
-    (prompt-lifecycle.mdx:313; content.mdx:22). The gate is inverted -- the case runs only for a
+    (prompt-lifecycle.mdx:323; content.mdx:24). The gate is inverted -- the case runs only for a
     capability that is *absent* -- so it is computed here from the cached `initialize` result
     (`_advertised`) instead of by a capability marker, which only gates on presence; the marker
     above is the baseline `session` one. Only an object value counts as advertised: `true` is

@@ -439,7 +439,7 @@ async def _route_from_list(
 ) -> str:
     """Route (3), tried last: a `session/list` entry whose `cwd` is the TCK's own `cwd`, resumed
     with that same `cwd` (resume is only defined when the request `cwd` matches the session's,
-    session-setup.mdx:439).
+    session-setup.mdx:524).
 
     Safety: `cwd` is a per-test temporary directory, so a session listed under it was created by
     the TCK. Entries with any other `cwd` -- possibly the operator's own saved sessions -- are
@@ -487,7 +487,7 @@ async def _attempt_resumable_route(
 
     A `-32601` from `session/resume` itself is not a route failure to record and move past:
     `session/resume` is part of the baseline once `capabilities.session` is advertised at all
-    (session-setup.mdx:144-145), so this is unconditionally a conformance failure and is
+    (session-setup.mdx:146-147), so this is unconditionally a conformance failure and is
     raised via `pytest.fail(...)` immediately, regardless of which route surfaced it.
     """
     attempt_stack = contextlib.AsyncExitStack()
@@ -642,7 +642,7 @@ def _wire_messages(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> Iterator[tuple[dict[str, Any], str, dict[str, Any], set[str]]]:
     """Walk the agent's requests and notifications in wire order, tracking which sessions are
-    known (Active Subagents RFD; `SubagentUpdate`): the client's own, plus every child a
+    known (Preview Subagents RFD; `SubagentUpdate`): the client's own, plus every child a
     `subagent_update` sent on an already-known session announces. Yields `(msg, method, params,
     known)` per message with a `method`; `known` is the set *before* the message, and the message's
     own announcement is applied once the consumer resumes. Responses are skipped."""
@@ -671,7 +671,7 @@ def child_session_traffic(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> tuple[set[str], list[str]]:
     """Replay the agent's traffic in wire order and judge the subagent announcement rule
-    (Active Subagents RFD; `SubagentUpdate`): a child's announcing `subagent_update`, sent on a
+    (Preview Subagents RFD; `SubagentUpdate`): a child's announcing `subagent_update`, sent on a
     known session, precedes every live request or notification bearing the child's session ID.
 
     `client_sessions` are the sessions the client created; they start out known. Returns
@@ -719,7 +719,7 @@ def session_content_references(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> tuple[list[str], list[str]]:
     """Replay the agent's traffic in wire order and judge the `session` content rule
-    (`docs/protocol/v2/draft/tool-calls.mdx` `SessionReference`; Active Subagents RFD): a
+    (`docs/protocol/v2/draft/tool-calls.mdx` `SessionReference`; Preview Subagents RFD): a
     `session` `ToolCallContent` item names a session already known, through ordinary session
     setup (`client_sessions`) or a `subagent_update` announcement on a known session.
 
@@ -793,7 +793,7 @@ def subagent_updates(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> SubagentUpdates:
     """Replay the agent's traffic in wire order and judge the `subagent_update` association
-    rules (`SubagentUpdate`; Active Subagents RFD): the outer `sessionId` is the immediate parent
+    rules (`SubagentUpdate`; Preview Subagents RFD): the outer `sessionId` is the immediate parent
     of `update.sessionId`.
 
     The three association rules are disjoint by construction, so one defect FAILs one row. A
@@ -818,12 +818,12 @@ def subagent_updates(
         if child == outer:
             result.self_parented.append(
                 f"subagent_update on session {outer!r} announces that same session as its own child; "
-                f"the association cannot refer to itself (Active RFD)"
+                f"the association cannot refer to itself (Preview RFD)"
             )
         elif child in client_sessions:
             result.client_sessions_announced.append(
                 f"subagent_update on session {outer!r} announces session {child!r}, which the "
-                f"client created, as a child; a child's ID is unique to its session (Active RFD)"
+                f"client created, as a child; a child's ID is unique to its session (Preview RFD)"
             )
         elif outer in known:
             old = parents.setdefault(child, outer)
@@ -836,7 +836,7 @@ def subagent_updates(
                     f"subagent_update on session {outer!r} announces {child!r}, already a child "
                     f"of {old!r}"
                     + (" (the new parent descends from it: a cycle)" if cycle else "")
-                    + "; a child keeps one immediate parent (Active RFD)"
+                    + "; a child keeps one immediate parent (Preview RFD)"
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
@@ -886,7 +886,7 @@ def session_messages(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> SessionMessages:
     """Replay the agent's `session_message` upserts in wire order and judge the participant and
-    link consistency rules (Active Subagents RFD, "Session-directed messages"). A message is the
+    link consistency rules (Preview Subagents RFD, "Session-directed messages"). A message is the
     transcript entry `(params.sessionId, messageId)`, and its participants and references follow
     the patch convention across upserts (omitted keeps, `null` clears, a value replaces).
 
@@ -932,14 +932,14 @@ def session_messages(
                 result.same_participants.append(
                     f"session_message {message_id!r} on session {outer!r} has {sender!r} as both "
                     f"senderSessionId and recipientSessionId; they must identify different "
-                    f"sessions (Active RFD)"
+                    f"sessions (Preview RFD)"
                 )
         elif outer not in (sender, recipient) and ("foreign", outer, message_id) not in seen:
             seen.add(("foreign", outer, message_id))
             result.foreign_outer.append(
                 f"session_message {message_id!r} is sent on session {outer!r}, which is neither "
                 f"its sender {sender!r} nor its recipient {recipient!r}; the outer sessionId "
-                f"must be one of them (Active RFD)"
+                f"must be one of them (Preview RFD)"
             )
 
     result.participants_judged = len(with_participants)
@@ -961,7 +961,7 @@ def session_messages(
             result.unlinked_views.append(
                 f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
                 f"session {target_session!r} as its other view, but that view's {back_name} "
-                f"is {other[back_ref]!r}; the two views must name each other (Active RFD)"
+                f"is {other[back_ref]!r}; the two views must name each other (Preview RFD)"
             )
     return result
 
@@ -1048,7 +1048,7 @@ class ChildTasks:
 
 def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[str]) -> ChildTasks:
     """Replay the agent's traffic in wire order and judge how each announced child is told its
-    task (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session-directed messages"; Active
+    task (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session-directed messages"; Preview
     Subagents RFD, "Delegated tasks"). The task starts the child's work, so only what the child's
     transcript holds before its first agent output (`agent_message`, `agent_thought` or a chunk of
     either) is judged.
@@ -1161,7 +1161,7 @@ def session_message_streams(
             result.late_participants.append(
                 f"session_message {key[1]!r} on session {key[0]!r} was streamed with "
                 f"`session_message_chunk` before any `session_message` upsert named its participants; "
-                f"participant IDs go on the first message when available (Active RFD)"
+                f"participant IDs go on the first message when available (Preview RFD)"
             )
     return result
 
@@ -1178,7 +1178,7 @@ class ChildConfigSelects:
 def child_config_selects(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> ChildConfigSelects:
-    """Replay the agent's traffic in wire order and judge the child configuration rule (Active
+    """Replay the agent's traffic in wire order and judge the child configuration rule (Preview
     Subagents RFD, "Child configuration"): a select option in a `config_option_update` for an
     announced child offers only its current value, because no Client-initiated configuration
     change is permitted on a child. Values are counted across option groups. Updates for a
@@ -1213,7 +1213,7 @@ def child_config_selects(
                 result.with_choices.append(
                     f"config_option_update for child {outer!r}: select {option.get('configId')!r} "
                     f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
-                    f"a child permits no Client-initiated configuration change (Active RFD)"
+                    f"a child permits no Client-initiated configuration change (Preview RFD)"
                 )
     return result
 
@@ -1412,8 +1412,8 @@ def skip_if_turn_end_race_not_exercised(
 
 
 ACTIVE_STATES = frozenset({"running", "requires_action"})
-"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:152,1073). Work may
-start directly in `requires_action` (:1080-1082), so both count as "active"."""
+"""The foreground-active `state_update.state` values (prompt-lifecycle.mdx:162,1346). Work may
+start directly in `requires_action` (:1353-1355), so both count as "active"."""
 
 
 def is_active_state(state: Any) -> bool:
@@ -1442,7 +1442,7 @@ BACKGROUND_ID_FIELDS = {"terminal": "terminalId", "tool_call": "toolCallId", "su
 def background_keys(update: dict[str, Any]) -> set[tuple[str, str]] | None:
     """`(type, id)` of every defined-type item in a `state_update`'s `background` list, or
     `None` when the list is omitted, `null` or not an array: not reported
-    (prompt-lifecycle.mdx:203-204). Items of other types, or without a string id, are left out."""
+    (prompt-lifecycle.mdx:213-214). Items of other types, or without a string id, are left out."""
     items = update.get("background")
     if not isinstance(items, list):
         return None
@@ -1684,27 +1684,27 @@ async def run_prompt(
     `requires_action`" and becomes true on either state during the turn. Then, once the response
     has been read:
     - the first `idle` after an active state ends the turn, whatever its `stopReason` (it is
-      SHOULD, and may be omitted; prompt-lifecycle.mdx:936) -- `terminated_by="idle"`. The idle
-      may arrive before or after the response (:372). One read before the response is only a
+      SHOULD, and may be omitted; prompt-lifecycle.mdx:1209) -- `terminated_by="idle"`. The idle
+      may arrive before or after the response (:388). One read before the response is only a
       candidate: it ends the turn once `quiet_period(timeout)` passes after the response with no
       active state, and an active state voids it, because it may end earlier work rather than
       this prompt's (a prompt sent during active work may be held until that work ends,
-      :382-384);
+      :400-404);
     - an error response with no active state ends the turn after a short peek finds none
-      (a rejection with no foreground work needs no state transition, :390) --
+      (a rejection with no foreground work needs no state transition, :415) --
       `terminated_by="error"`. If work is active, the driver keeps waiting for the idle the
-      agent still owes (:390,969);
+      agent still owes (:415,1242);
     - fallback for agents that never report an active state: an `idle` carrying a `stopReason`
       ends the turn once `quiet_period(timeout)` passes with no active state after it and after
       the response -- `terminated_by="idle_without_active"`. An active state inside that window
-      voids it, since repeated idle snapshots may carry the previous stopReason (:1084-1087).
+      voids it, since repeated idle snapshots may carry the previous stopReason (:1357-1360).
     `unknown` and custom states are recorded but neither start nor end a turn.
 
     The trigger (`on_cancel`/`on_action`) fires on the first transition to an active state, after
     a short race-aware peek, or once `cancel_wait` elapses. With `hold_permission=True` (needs a
     trigger), it instead fires when the first `session/request_permission` for `session_id`
     arrives, and that request is held: left unanswered, because after `session/cancel` the agent
-    must stop waiting for it (prompt-lifecycle.mdx:1177,1188-1189). It is answered `cancelled`
+    must stop waiting for it (prompt-lifecycle.mdx:1452,1463-1464). It is answered `cancelled`
     only when the agent withdraws it with `$/cancel_request` (the client then answers it,
     cancellation.mdx:20; tool-calls.mdx:326), when the turn ends (after `quiet_period(timeout)`
     for a late `$/cancel_request`), or when `timeout` expires with the turn still open: then the
@@ -1722,12 +1722,12 @@ async def run_prompt(
     prompted session once the trigger has fired; any other
     agent -> client request gets `-32601` (the mock client advertises no capabilities).
     A request whose `subject` names an item in the session's latest `background` list is
-    background work, which `session/cancel` does not cover (prompt-lifecycle.mdx:1173,1177;
+    background work, which `session/cancel` does not cover (prompt-lifecycle.mdx:1446,1452;
     tool-calls.mdx:268): it is never held and is always answered per `permission`, and if the
     policy's kinds are not offered it is answered `cancelled` without `session/cancel`. A
-    `state_update` that omits the list leaves none known (:204).
+    `state_update` that omits the list leaves none known (:214).
 
-    v2 lets a client prompt in any state (prompt-lifecycle.mdx:382), but `run_prompt` cannot
+    v2 lets a client prompt in any state (prompt-lifecycle.mdx:400), but `run_prompt` cannot
     attribute an idle to one of several outstanding prompts, so callers serialize prompts per
     session. A second prompt during the turn is sent raw, as `on_action` (see
     `prompt_during_active_work`).
@@ -1970,27 +1970,28 @@ async def run_prompt(
                 )
             ) or (not for_this_session and isinstance(target, str) and client_cancelled(agent, target, turn_start))
             # A request of a session the TCK cancelled (this turn's trigger, or a driver on the
-            # same connection) is answered `cancelled` (prompt-lifecycle.mdx:1177; Active
-            # Subagents RFD, "Pending permission and elicitation requests").
+            # same connection) is answered `cancelled` (prompt-lifecycle.mdx:1452: the Client
+            # MAY answer a request it knows belongs to the cancelled work; Preview Subagents
+            # RFD, subagents.mdx:1268).
             if cancelled:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
                 outcome, note = _answer_permission(req_params.get("options"), permission)
                 if note is not None and outcome["outcome"] == "cancelled" and for_background:
                     # `session/cancel` does not cover listed background work
-                    # (prompt-lifecycle.mdx:1173,1177), so only this request is declined
+                    # (prompt-lifecycle.mdx:1446,1452), so only this request is declined
                     # (tool-calls.mdx:340).
                     permission_fallbacks.append(note)
                 elif note is not None and outcome["outcome"] == "cancelled" and not for_this_session:
                     # No option can be selected. A client MUST NOT cancel a subagent that does
-                    # not advertise `capabilities.cancel` (Active Subagents RFD, "Cancellation
+                    # not advertise `capabilities.cancel` (Preview Subagents RFD, "Cancellation
                     # and resource ownership"), and this client does not track which do, so it
                     # sends no `session/cancel` for a subagent and declines only this request.
                     permission_fallbacks.append(f"{note}; answered cancelled for session {target!r}")
                 elif note is not None and outcome["outcome"] == "cancelled":
                     # The policy's option kinds were not offered: cancel this turn's session
                     # first, then answer `cancelled` without waiting for `$/cancel_request`
-                    # (prompt-lifecycle.mdx:1177). The turn then drains to its `idle` like any
+                    # (prompt-lifecycle.mdx:1452). The turn then drains to its `idle` like any
                     # other cancelled turn.
                     await agent.send_notification("session/cancel", {"sessionId": session_id})
                     cancelled_at_index = len(agent.transcript) - 1
@@ -2329,7 +2330,7 @@ async def prompt_during_active_work(
     agent: AgentProcess, session_id: str, first_text: str, *, timeout: float
 ) -> ActiveWorkPrompt:
     """Send a second `session/prompt` while the first prompt's foreground work is active, then
-    `session/cancel` (prompt-lifecycle.mdx:382-384,1173).
+    `session/cancel` (prompt-lifecycle.mdx:400-404,1446).
 
     The first prompt (`first_text`, normally the cancel prompt) runs through `run_prompt`. The
     second (`SECOND_PROMPT_TEXT`) is its `on_action`, sent raw on the first `running`/
@@ -2919,12 +2920,12 @@ async def assert_prompt_rejected_not_inserted(
     timeout: float,
 ) -> None:
     """Send a prompt the agent must refuse and assert it was answered `-32602` and not inserted
-    (prompt-lifecycle.mdx:313,388). Shared by `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`.
+    (prompt-lifecycle.mdx:323,413). Shared by `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`.
 
     The prompt goes through `run_prompt` on a fresh session, so any `user_message`/
     `user_message_chunk` or `running`/`requires_action` update for that session means it was
     inserted (an accepted prompt also fails the "error" check; both are reported). A
-    rejection owes no state transition (:390), so a short `quiet_period` after the response
+    rejection owes no state transition (:415), so a short `quiet_period` after the response
     catches late updates too. `what` names the probe in the failure message."""
     turn = await run_prompt(agent, session_id, blocks, timeout=timeout)
     entry = turn.response_entry

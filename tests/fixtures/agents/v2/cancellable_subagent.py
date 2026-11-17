@@ -41,7 +41,7 @@ class CancellableSubagentAgent(ConformingAgent):
         self._spawn_child(session_id, child_b, cancellable=False)
         self._start_child_items(child_b)
         # The children are announced after the turn's first snapshot, so the agent re-sends the
-        # state with its (still empty) `background` list (prompt-lifecycle.mdx:205): a client may
+        # state with its (still empty) `background` list (prompt-lifecycle.mdx:215): a client may
         # tell from it that they are foreground work.
         self._send_update(session_id, {"sessionUpdate": "state_update", "state": "running"})
 

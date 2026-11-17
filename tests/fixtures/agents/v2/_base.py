@@ -13,7 +13,7 @@ Negotiates as a v2-only endpoint (`_handle_initialize`): a malformed `protocolVe
 selects 2. A failed `initialize` leaves the connection uninitialized: every other request gets
 `-32600` and notifications are ignored (`_require_initialize`), until a retried `initialize`
 succeeds. A second `initialize` is handled like the first until another request arrives; after
-that it gets `-32600` (initialization.mdx:135-141, error.mdx:60). The agent sends nothing while
+that it gets `-32600` (initialization.mdx:135-141, error.mdx:62). The agent sends nothing while
 uninitialized.
 
 Implements the full `capabilities.session` baseline (advertising `session`, even as `{}`, commits
@@ -61,17 +61,17 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   a copy of the source's history; a source it never created is `-32002` via `_unknown_session`.
   `systemPrompt` on `session/new` and `session/resume` is
   accepted only in an advertised mode with text content, else `-32602` and the session is
-  neither created nor resumed (session-setup.mdx:481).
+  neither created nor resumed (session-setup.mdx:566).
 - `persist_sessions` (opt-in, default `False`): each created session's `cwd` is also written to
   `<cwd>/.tck-fixture-sessions.json`, so `session/resume` on a fresh process can restore it
   (`_restore`; history and closed state are not persisted). Off by default because it writes a
   file into the session's `cwd`.
 - `session/new`/`session/resume` params are validated by `_setup_rejection`, each rule an
   overridable hook so a defect fixture can drop exactly one: a relative `cwd` (`_cwd_rejection`,
-  session-setup.mdx:524), a relative `additionalDirectories` entry when the capability is
-  advertised (`_additional_directories_rejection`, :443), an MCP transport that is not
-  advertised under `session.mcp` (`_mcp_transport_rejection`, :545) and duplicate MCP server
-  names (`_mcp_duplicate_name_rejection`, :547) -- all `-32602`. Stdio MCP servers of a
+  session-setup.mdx:613), a relative `additionalDirectories` entry when the capability is
+  advertised (`_additional_directories_rejection`, :528), an MCP transport that is not
+  advertised under `session.mcp` (`_mcp_transport_rejection`, :634) and duplicate MCP server
+  names (`_mcp_duplicate_name_rejection`, :636) -- all `-32602`. Stdio MCP servers of a
   successful `session/new` are launched and sent an MCP `initialize` (`_launch_mcp_servers`), so
   the TCK's stub server can observe the connection.
 - `session/set_config_option` rejects an unknown `configId` or an invalid value with `-32602`
@@ -79,7 +79,7 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `config_option_update`, and replies with the complete list (`_reply_config_set`);
   `session/new`/`session/resume`/`session/fork` include `configOptions` (and `availableCommands`,
   from the opt-in `available_commands` argument) whenever any are configured
-  (`_initial_state_fields`, session-setup.mdx:108).
+  (`_initial_state_fields`, session-setup.mdx:110).
   A valid `additionalDirectories`/`mcpServers` is accepted and otherwise ignored.
 - `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
   `_send_rich_turn_updates` fires once per turn after the running update, emitting two
@@ -92,21 +92,21 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `background_*.py` defect fixtures set it): every `state_update` carries the session's
   `background` list (`_with_background`), and each turn that does not end `cancelled` runs one
   background tool call (`_run_background_work`): announced, listed on a repeated `running`
-  snapshot, then finalized, so the turn-ending idle removes it (prompt-lifecycle.mdx:203-206).
+  snapshot, then finalized, so the turn-ending idle removes it (prompt-lifecycle.mdx:213-216).
 - `background_on_resume` (opt-in, default `False`, needs `report_background_work`): every
   resume leaves the session with one unfinished background tool call, listed on the snapshot and
-  announced by a `tool_call_update` before it (`_resume_background`, session-setup.mdx:346).
+  announced by a `tool_call_update` before it (`_resume_background`, session-setup.mdx:431).
 - `background_outlives_turn` (opt-in, default `None`, needs `report_background_work`): the turn's
   background tool call is still listed on the turn-ending idle instead of finished before it.
   `"finish"` then finalizes it, takes it off the list and re-sends the idle snapshot
-  (`_finish_outlasting_background`, prompt-lifecycle.mdx:205); `"keep"` leaves it listed for the
+  (`_finish_outlasting_background`, prompt-lifecycle.mdx:215); `"keep"` leaves it listed for the
   rest of the session (one item per session), through a `__hang__` turn's cancel too
-  (`_start_hung_background_work`, prompt-lifecycle.mdx:1173), so a fork has live source work to
-  not inherit (`_fork_background`, session-setup.mdx:49).
+  (`_start_hung_background_work`, prompt-lifecycle.mdx:1446), so a fork has live source work to
+  not inherit (`_fork_background`, session-setup.mdx:50).
 - `background_after_idle` (opt-in, default `False`, needs `report_background_work`): after each
   turn that does not end `cancelled`, once the idle is out, one more background tool call starts
   while the session is `idle`: announced, listed on a repeated idle, then finalized and taken off
-  the list on another (`_start_background_after_idle`, prompt-lifecycle.mdx:205).
+  the list on another (`_start_background_after_idle`, prompt-lifecycle.mdx:215).
 - `cancellable_work` (opt-in, default `False`; `conforming_full.py` and the `*_cancel_*` defect
   fixtures set it): a `__hang__` turn also starts one tool call and one terminal that advertise
   `capabilities.cancel` and stay live (`_start_cancellable_work`). `tool_call/cancel` and
@@ -162,9 +162,9 @@ class ConformingAgent:
     """
 
     # A request other than `initialize` before initialization completes gets `-32600`
-    # (error.mdx:60). `serves_before_initialize.py` switches it off.
+    # (error.mdx:62). `serves_before_initialize.py` switches it off.
     _require_initialize = True
-    # A repeated `initialize` after another request gets `-32600` (error.mdx:60).
+    # A repeated `initialize` after another request gets `-32600` (error.mdx:62).
     # `accepts_initialize_after_request.py` switches it off.
     _reject_late_initialize = True
     # A repeated `initialize` before any other request is handled like the first
@@ -310,13 +310,13 @@ class ConformingAgent:
 
     def _prompt_while_busy(self, msg_id: Any, params: dict[str, Any]) -> None:
         """A prompt for a session whose `__hang__` prompt is still running: held until the hang
-        ends (prompt-lifecycle.mdx:382-384). The hang only ends by cancel or close, which answer
+        ends (prompt-lifecycle.mdx:400-404). The hang only ends by cancel or close, which answer
         it `-32800`, so a held prompt is never inserted."""
         self._held_prompts.setdefault(params.get("sessionId"), []).append((msg_id, params))
 
     def _cancel_held_prompts(self, session_id: Any) -> None:
         """Answer every prompt held for `session_id` `-32800`: `session/cancel` and
-        `session/close` cover prompts not yet inserted (prompt-lifecycle.mdx:384,1173)."""
+        `session/close` cover prompts not yet inserted (prompt-lifecycle.mdx:403,1446)."""
         for msg_id, _ in self._held_prompts.pop(session_id, []):
             self._error(msg_id, -32800, "Request cancelled")
 
@@ -473,7 +473,7 @@ class ConformingAgent:
 
     def _system_prompt_rejection(self, system_prompt: Any) -> str | None:
         """Why `systemPrompt` cannot be applied, or `None` if it can (or is absent). Only an
-        advertised mode with text-only content is accepted (session-setup.mdx:474-481)."""
+        advertised mode with text-only content is accepted (session-setup.mdx:559-566)."""
         if system_prompt is None:
             return None
         advertised = self._session_capability("systemPrompt")
@@ -508,7 +508,7 @@ class ConformingAgent:
 
     def _additional_directories_rejection(self, directories: Any) -> str | None:
         """Agents that advertise `session.additionalDirectories` reject a non-absolute entry;
-        the field is ignored otherwise (session-setup.mdx:443)."""
+        the field is ignored otherwise (session-setup.mdx:528)."""
         if self._session_capability("additionalDirectories") is None:
             return None
         if isinstance(directories, list) and any(
@@ -519,7 +519,7 @@ class ConformingAgent:
 
     def _mcp_transport_rejection(self, servers: Any) -> str | None:
         """Only `stdio`, `http` and `acp`, each only when advertised under `session.mcp`, are
-        supported; anything else (`sse`, an unadvertised or reserved type) is rejected (:545)."""
+        supported; anything else (`sse`, an unadvertised or reserved type) is rejected (:634)."""
         advertised = self._session_capability("mcp")
         supported = {
             transport
@@ -580,14 +580,14 @@ class ConformingAgent:
 
     def _before_new_response(self, session_id: str) -> None:
         """Hook: runs after the session exists and before the `session/new` response. Nothing is
-        sent by default (session-setup.mdx:103)."""
+        sent by default (session-setup.mdx:105)."""
 
     def _new_session_result(self, session_id: str) -> dict[str, Any]:
         return {"sessionId": session_id, **self._initial_state_fields()}
 
     def _initial_state_fields(self) -> dict[str, Any]:
         """`configOptions`/`availableCommands` for a setup response, each only when the session
-        has any (session-setup.mdx:108, 134)."""
+        has any (session-setup.mdx:110, 134)."""
         fields: dict[str, Any] = {}
         if self._config_options:
             fields["configOptions"] = self._current_config_options()
@@ -736,7 +736,7 @@ class ConformingAgent:
     def _replay_from_rejection(replay_from: Any) -> str | None:
         """Omitted/`null` (no replay) and `{"type": "start"}` are the only cursors this agent
         supports; any other well-formed cursor is unsupported and anything else is malformed --
-        both `-32602` (session-setup.mdx:211-215)."""
+        both `-32602` (session-setup.mdx:218-222)."""
         if replay_from is None:
             return None
         if not isinstance(replay_from, dict) or not isinstance(replay_from.get("type"), str):
@@ -757,7 +757,7 @@ class ConformingAgent:
 
     def _send_resume_session_info(self, session_id: Any) -> None:
         """Hook: the current `session_info_update` every successful resume sends after any
-        replay and before responding (session-setup.mdx:358-361). Live state, not recorded."""
+        replay and before responding (session-setup.mdx:443-446). Live state, not recorded."""
         self._notify(
             "session/update",
             {
@@ -769,7 +769,7 @@ class ConformingAgent:
     def _resume_background(self, session_id: Any) -> None:
         """For `background_on_resume`: the session has one unfinished background tool call when
         it is resumed. List it (so the snapshot reports it) and announce it
-        (session-setup.mdx:346). Idempotent across repeated resumes. With
+        (session-setup.mdx:431). Idempotent across repeated resumes. With
         `background_outlives_turn="keep"` the session's still-listed work is announced again."""
         if self._background_outlives_turn == "keep":
             for item in self._background.get(session_id, []):
@@ -812,12 +812,12 @@ class ConformingAgent:
         self._reply(msg_id, {"sessionId": session_id, **self._fork_state_fields()})
 
     def _fork_background(self, source_id: Any, session_id: Any) -> None:
-        """Hook: a fork starts with no background work (session-setup.mdx:49), so nothing of the
+        """Hook: a fork starts with no background work (session-setup.mdx:50), so nothing of the
         source's list is carried over."""
 
     def _fork_state_fields(self) -> dict[str, Any]:
         """Hook: `configOptions`/`availableCommands` on the fork response
-        (session-setup.mdx:108; `ACP-FORK-205`)."""
+        (session-setup.mdx:110; `ACP-FORK-205`)."""
         return self._initial_state_fields()
 
     def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
@@ -878,7 +878,7 @@ class ConformingAgent:
         # ACP-CONFIG-002: replies with the *complete*, updated `configOptions` list, not just
         # the entry that changed. ACP-CONFIG-207/208/209: an unknown `configId`, or a value that
         # is invalid for the option (undeclared select value, mismatched or unsupported `type`),
-        # gets `-32602` with the configuration untouched (session-config-options.mdx:234).
+        # gets `-32602` with the configuration untouched (session-config-options.mdx:249).
         session_id = params.get("sessionId")
         if session_id not in self._sessions:
             self._unknown_session(msg_id, session_id)
@@ -911,7 +911,7 @@ class ConformingAgent:
         return self._current_config_options()
 
     def _reply_config_set(self, msg_id: Any, session_id: Any, config_id: Any) -> None:
-        """Hook: session-config-options.mdx:375-379 -- the duplicate `config_option_update`
+        """Hook: session-config-options.mdx:390-394 -- the duplicate `config_option_update`
         goes out before the response."""
         options = self._config_set_options(config_id)
         self._send_update(session_id, {"sessionUpdate": "config_option_update", "configOptions": options})
@@ -1105,13 +1105,13 @@ class ConformingAgent:
         return self._unsupported_content_rejection(prompt) or self._contentless_resource_rejection(prompt)
 
     # Baseline content types, and the prompt capability each optional type needs
-    # (initialization.mdx:306-331).
+    # (initialization.mdx:386-411).
     _BASELINE_PROMPT_TYPES = frozenset({"text", "resource_link"})
     _PROMPT_CAPABILITY_FOR_TYPE = {"image": "image", "audio": "audio", "resource": "embeddedContext"}
 
     def _unsupported_content_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
         """`-32602` for a block that is neither baseline nor advertised, or of an unknown type
-        (prompt-lifecycle.mdx:313)."""
+        (prompt-lifecycle.mdx:323)."""
         advertised = self._session_capability("prompt")
         for block in prompt:
             block_type = block.get("type") if isinstance(block, dict) else None
@@ -1169,7 +1169,7 @@ class ConformingAgent:
     def _start_hung_background_work(self, session_id: Any) -> None:
         """For `background_outlives_turn="keep"`: a `__hang__` turn lists the session's background
         work on its first `running` snapshot, and it stays listed when `session/cancel` ends the
-        turn: that work is not covered (prompt-lifecycle.mdx:1173)."""
+        turn: that work is not covered (prompt-lifecycle.mdx:1446)."""
         if self._report_background_work and self._background_outlives_turn == "keep":
             self._list_background_item(session_id)
 
@@ -1339,7 +1339,7 @@ class ConformingAgent:
     def _finish_outlasting_background(self, session_id: Any) -> None:
         """For `background_outlives_turn="finish"`: the work ends after the turn's idle. Its final
         status is sent, it leaves the list, and the state is re-sent with the updated list
-        (prompt-lifecycle.mdx:205-206)."""
+        (prompt-lifecycle.mdx:215-216)."""
         tool_call_id = self._outlasting_background.pop(session_id, None)
         if tool_call_id is None:
             return
@@ -1349,7 +1349,7 @@ class ConformingAgent:
 
     def _start_background_after_idle(self, session_id: Any) -> None:
         """Hook for `background_after_idle`: background work starts while the session is `idle`.
-        The item is announced, the state is re-sent with it listed (prompt-lifecycle.mdx:205),
+        The item is announced, the state is re-sent with it listed (prompt-lifecycle.mdx:215),
         then it ends and the state is re-sent without it, leaving nothing live."""
         tool_call_id = self._list_background_item(session_id)
         self._resend_background_state(session_id)
@@ -1359,7 +1359,7 @@ class ConformingAgent:
 
     def _resend_background_state(self, session_id: Any) -> None:
         """Hook: the repeated `idle` snapshot (no new stop reason) that follows a change of the
-        background list (prompt-lifecycle.mdx:205)."""
+        background list (prompt-lifecycle.mdx:215)."""
         self._send_idle_update(session_id, None)
 
     def _announce_background_item(self, session_id: Any, tool_call_id: str) -> None:
@@ -1474,8 +1474,8 @@ class AsksPermissionAgent(ConformingAgent):
 
     `session/cancel` while blocked stops waiting: it withdraws the request with
     `$/cancel_request` and ends the work as for a `cancelled` outcome, without the answer
-    (prompt-lifecycle.mdx:1177). `session/close` withdraws it the same way before responding
-    (session-setup.mdx:391). A late answer is ignored. The self-test for `ACP-PERM-201`/
+    (prompt-lifecycle.mdx:1452). `session/close` withdraws it the same way before responding
+    (session-setup.mdx:476). A late answer is ignored. The self-test for `ACP-PERM-201`/
     `ACP-PATCH-209`/`ACP-STATE-205`/`ACP-CANCEL-209`/`ACP-CANCEL-213`/`ACP-CLOSE-205`.
 
     With `permission_tool_call=True` the request carries a `tool_call` subject that creates a

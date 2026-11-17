@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: rejects unknown and unadvertised prompt content blocks, but with
-`-32600` instead of `-32602` (prompt-lifecycle.mdx:313); nothing is inserted. FAILs
+`-32600` instead of `-32602` (prompt-lifecycle.mdx:323); nothing is inserted. FAILs
 `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`.
 """
 

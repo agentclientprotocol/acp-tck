@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises a typed command whose `name` contains whitespace
-(slash-commands.mdx:98-100: MUST NOT). The item is schema-valid, and no other row judges the
+(slash-commands.mdx:101-103: MUST NOT). The item is schema-valid, and no other row judges the
 name. FAILs exactly `ACP-COMMANDS-201`.
 """
 

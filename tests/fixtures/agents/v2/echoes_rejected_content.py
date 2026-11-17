@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: answers an unknown or unadvertised prompt content block with the
 required `-32602`, but only after inserting the prompt (a `user_message` echo and a `running`
-update), which a rejection before insertion must not do (prompt-lifecycle.mdx:313,388). FAILs
+update), which a rejection before insertion must not do (prompt-lifecycle.mdx:323,413). FAILs
 `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`. The turn it started is closed with an `idle`, so no
 other row is affected.
 """

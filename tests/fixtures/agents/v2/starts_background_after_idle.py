@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conforming fixture: `reports_background_work.py`, except after each turn's idle one more
 background tool call starts while the session is `idle`. The agent announces it, re-sends the
-state with it listed, then ends it and re-sends the state without it (prompt-lifecycle.mdx:205).
+state with it listed, then ends it and re-sends the state without it (prompt-lifecycle.mdx:215).
 The positive control for `ACP-STATE-210`.
 """
 

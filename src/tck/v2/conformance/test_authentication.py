@@ -213,7 +213,7 @@ async def test_login_then_session_new_succeeds(agent_launch, tmp_path):
 
 @pytest.mark.requirement("ACP-AUTH-005")
 async def test_session_new_not_gated_when_no_auth_methods_advertised(agent_launch, tmp_path):
-    """ACP-AUTH-005 (ADVISORY; `schema.mdx:954` is a MAY). If `initialize` advertises no
+    """ACP-AUTH-005 (ADVISORY; `schema.mdx:990` is a MAY). If `initialize` advertises no
     `authMethods` at all, `session/new` must not fail with `-32000` -- there would be no
     defined remedy. SKIPs when the agent does advertise auth methods (that case is
     ACP-AUTH-003's territory), or does not advertise `capabilities.session`."""

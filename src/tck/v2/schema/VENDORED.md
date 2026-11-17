@@ -3,7 +3,7 @@
 `schema.unstable.json` and `meta.unstable.json` in this directory are verbatim copies of the ACP
 v2 JSON Schema, vendored from the spec's source-of-truth repository. Do not hand-edit them.
 
-**v2 is Draft** (schema version `2.0.0-alpha.14` as of the commit below) -- unlike v1, where
+**v2 is Draft** (schema version `2.0.0-alpha.16` as of the commit below) -- unlike v1, where
 only RFD-gated additions churn, even v2's core may still change upstream before it stabilizes:
 field shapes, capability markers, and even method inventories.
 
@@ -13,14 +13,14 @@ additionally defines fields and methods still gated behind an individual RFD. Th
 deliberately not vendored. The upstream file names are kept as-is.
 
 - **Source repo:** https://github.com/agentclientprotocol/agent-client-protocol
-  (copied from a local clone, `<spec-repo>` below)
-- **Commit:** `3961af94fa62d2386d993cadf1afc8b146fc799a`
-- **Date vendored:** 2026-11-10
+  (read from a local clone, `<spec-repo>` below)
+- **Commit:** `3ea94133bb4e7cfdb1105df75660ff83e66acf62`
+- **Date vendored:** 2026-11-18
 - **Copy commands used:**
 
   ```
-  cp <spec-repo>/schema/v2/schema.unstable.json src/tck/v2/schema/schema.unstable.json
-  cp <spec-repo>/schema/v2/meta.unstable.json   src/tck/v2/schema/meta.unstable.json
+  git -C <spec-repo> show <commit>:schema/v2/schema.unstable.json > src/tck/v2/schema/schema.unstable.json
+  git -C <spec-repo> show <commit>:schema/v2/meta.unstable.json   > src/tck/v2/schema/meta.unstable.json
   ```
 
 ## Refreshing
@@ -28,7 +28,8 @@ deliberately not vendored. The upstream file names are kept as-is.
 1. Confirm the spec repo checkout's current HEAD: `git -C <spec-repo> rev-parse HEAD`.
    Before step 3 bumps the pin, run `uv run --package spec-tracker spec-impact <pinned> <new> --version v2 --spec-repo <spec-repo> --fix`
    to remap the doc line citations.
-2. Re-run the two `cp` commands above with the new checkout path.
+2. Re-run the two `git show` commands above with the new commit (reading by ref, so the checkout's working tree
+   and branch do not matter).
 3. Update the commit hash and date in this file, and `SCHEMA_REVISION` in
    `src/tck/v2/protocol.py`.
 4. Re-run `uv run pytest` -- `tests/v2/test_validation.py` will catch any shape the new schema

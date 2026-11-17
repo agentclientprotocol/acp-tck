@@ -436,7 +436,7 @@ def test_hold_permission_ignores_a_withdrawal_after_answering_at_the_deadline():
 
 
 def test_hold_permission_holds_a_request_sent_before_requires_action():
-    """The diagram order (prompt-lifecycle.mdx:246-247): the request is held while the session
+    """The diagram order (prompt-lifecycle.mdx:256-257): the request is held while the session
     is still `running`."""
     agent, turn = _drive(
         [_RESPONSE, _state("running"), _permission_request(_ALLOW_ONCE), _state("requires_action"),
@@ -844,8 +844,9 @@ def _drive_cancelling(steps: list[dict[str, Any]], *cancelled: str, **kwargs: An
 
 def test_requests_after_a_drivers_own_cancel_are_answered_cancelled_not_allowed():
     """The driver's `session/cancel` for the prompted session or for a subagent resolves that
-    session's later permission requests `cancelled` (prompt-lifecycle.mdx:1177; Active Subagents
-    RFD, "Pending permission and elicitation requests"); a request of a session nobody
+    session's later permission requests `cancelled` (prompt-lifecycle.mdx:1452: the Client MAY
+    answer a request it knows belongs to the cancelled work; Preview Subagents RFD,
+    subagents.mdx:1268); a request of a session nobody
     cancelled is still answered per the policy."""
     steps = [
         _RESPONSE,

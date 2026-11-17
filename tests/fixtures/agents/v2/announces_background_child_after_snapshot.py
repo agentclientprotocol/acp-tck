@@ -3,7 +3,7 @@
 `running` after the parent's last snapshot and never mentioned in a `background` list until the
 parent's own cancellation `idle` lists it. It is background work that keeps running when the parent
 is cancelled (RFD:1075-1087), and the agent skips only the SHOULD that re-sends the state when its
-list changes (prompt-lifecycle.mdx:205): before that `idle` no list names the child, so a client
+list changes (prompt-lifecycle.mdx:215): before that `idle` no list names the child, so a client
 cannot tell it from foreground work. `ACP-SUBAGENT-202` must not FAIL (the cascade still stops the
 other two children and the row PASSes on them); nothing FAILs. With `--cancel-prompt __hang__`,
 within the `-k` scope of the `test_subagent_controls.py` module.

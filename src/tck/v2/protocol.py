@@ -21,10 +21,10 @@ string, same as v1."""
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 
-SCHEMA_REVISION = "3961af94fa62d2386d993cadf1afc8b146fc799a"
+SCHEMA_REVISION = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 """The spec commit the vendored `schema/{schema,meta}.unstable.json` -- and every
 requirement citation in `tck.v2.requirements` -- are pinned to (see `schema/VENDORED.md`). v2 is
-Draft (schema version `2.0.0-alpha.14` at this commit); expect this to change more often than
+Draft (schema version `2.0.0-alpha.16` at this commit); expect this to change more often than
 v1's pin."""
 
 # JSON-RPC / ACP error codes (schema/v2/schema.unstable.json#/$defs/ErrorCode; `error.mdx:26-36`).
@@ -103,6 +103,9 @@ SESSION_UPDATE_KIND = frozenset(
         "session_message",
         "session_message_chunk",
         "subagent_update",
+        "cursor_update",
+        "prompt_suggestions_update",
+        "replay_complete",
     }
 )
 STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"})
@@ -110,11 +113,11 @@ TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal", "session"})
 PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
 # More `ACP-ENUM-201` sites: `PlanUpdateContent.type`, the diff-content enums, and
 # `AvailableCommand.type`, `BackgroundWork.type`. Cross-checked against the schema the same way as the sets above.
-PLAN_CONTENT_TYPE = frozenset({"items", "file", "markdown"})
+PLAN_CONTENT_TYPE = frozenset({"items", "markdown"})
 DIFF_OPERATION = frozenset({"add", "delete", "modify", "move", "copy"})
 DIFF_FILE_TYPE = frozenset({"text", "binary", "directory", "symlink"})
 DIFF_PATCH_FORMAT = frozenset({"git_patch"})
-AVAILABLE_COMMAND_TYPE = frozenset({"command"})
+AVAILABLE_COMMAND_TYPE = frozenset({"command", "skill"})
 # `BackgroundWork.type` (a `state_update`'s `background` items); the schema's `other` branch accepts
 # any string, and says values that do not begin with `_` are reserved for future ACP variants.
 BACKGROUND_WORK_TYPE = frozenset({"terminal", "tool_call", "subagent"})
@@ -173,7 +176,7 @@ W3C_META_KEYS = frozenset({"traceparent", "tracestate", "baggage"})
 def judge_w3c_meta(meta: dict[str, Any]) -> tuple[int, list[str]]:
     """`(keys judged, problems)` for the root W3C keys of one `_meta` object. A `null` value is
     skipped: on updates `_meta` is a patch where `null` removes the key
-    (`extensibility.mdx:108-115`), so it carries no value to judge."""
+    (`extensibility.mdx:111-118`), so it carries no value to judge."""
     judged = 0
     problems: list[str] = []
     for key in sorted(W3C_META_KEYS):
@@ -190,7 +193,7 @@ def judge_w3c_meta(meta: dict[str, Any]) -> tuple[int, list[str]]:
 def is_namespaced_meta_key(key: str) -> bool:
     """`<reverse-dns>/<name>`: a prefix of two or more dot-separated labels ending in `/`, then a
     name, whose second label is not `agentclientprotocol` (that namespace is reserved for ACP;
-    `extensibility.mdx:102,259`)."""
+    `extensibility.mdx:105,262`)."""
     prefix, slash, name = key.partition("/")
     labels = prefix.split(".")
     return bool(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming (ADVISORY-only) fixture: leaks the credentials of the MCP servers it is given
-(session-setup.mdx:695). The `leaks_mcp_{env_meta,env_stderr,env_argv,header_meta}.py` wrappers
+(session-setup.mdx:784). The `leaks_mcp_{env_meta,env_stderr,env_argv,header_meta}.py` wrappers
 pick the channel: `meta` echoes every stdio `env` value and http `headers` value in the `_meta`
 of the `session/new` result (stdout), `stderr` writes them to stderr, `argv` appends the `env`
 values to the stdio server's command line, `header` echoes only the `headers` values in `_meta`.

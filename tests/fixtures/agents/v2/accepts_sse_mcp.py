@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/new` accepts an MCP server of v1's `sse` transport, which no
-v2 agent supports (session-setup.mdx:545); every other unsupported transport is still rejected
+v2 agent supports (session-setup.mdx:634); every other unsupported transport is still rejected
 with `-32602`. FAILs exactly `ACP-MCP-203` (its `sse` probe).
 """
 

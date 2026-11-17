@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: the `config_option_update` that duplicates a
 `session/set_config_option` change is sent after the response instead of before it
-(session-config-options.mdx:377-379, SHOULD). FAILs exactly `ACP-CONFIG-212` (ADVISORY);
+(session-config-options.mdx:392-394, SHOULD). FAILs exactly `ACP-CONFIG-212` (ADVISORY);
 `ACP-CONFIG-211` PASSes, since the update still arrives within the quiet drain.
 """
 

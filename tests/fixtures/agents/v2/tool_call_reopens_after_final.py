@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: reports a tool call `completed`, then reopens it as `in_progress`
 and completes it again. `completed` is final, and work that goes on after it belongs on a new
-tool call (tool-calls.mdx:423; prompt-lifecycle.mdx:184): FAILs exactly `ACP-PATCH-210`.
+tool call (tool-calls.mdx:423; prompt-lifecycle.mdx:194): FAILs exactly `ACP-PATCH-210`.
 """
 
 import sys

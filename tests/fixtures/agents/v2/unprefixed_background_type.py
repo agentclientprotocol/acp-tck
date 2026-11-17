@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `reports_background_work.py`, except every `background` list also
 carries an item whose `type` is `"task"`: not a defined type and not `_`-prefixed, so reserved
-for future ACP variants (`BackgroundWork`'s `other` branch; prompt-lifecycle.mdx:209).
+for future ACP variants (`BackgroundWork`'s `other` branch; prompt-lifecycle.mdx:219).
 
 FAILs only `ACP-ENUM-201`. The `other` branch accepts any string, so schema validation does not
 cascade, and `ACP-STATE-206..208` ignore items of other types.

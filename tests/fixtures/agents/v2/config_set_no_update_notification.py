@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/set_config_option` changes the configuration and replies,
-but never sends the `config_option_update` (session-config-options.mdx:375, SHOULD). FAILs
+but never sends the `config_option_update` (session-config-options.mdx:390, SHOULD). FAILs
 exactly `ACP-CONFIG-211` (ADVISORY); `ACP-CONFIG-212` SKIPs, with no update to order.
 """
 

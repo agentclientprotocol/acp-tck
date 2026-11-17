@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: an agent that does not keep a session it was never prompted in
-(session-setup.mdx:47 allows that) but discards it even while it is active: a `session/resume`
+(session-setup.mdx:48 allows that) but discards it even while it is active: a `session/resume`
 without `replayFrom` for a session with no history answers `-32002`. A session that has been
 prompted, or was closed, resumes normally, so every other resume row still runs.
 

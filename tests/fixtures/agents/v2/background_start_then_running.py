@@ -2,7 +2,7 @@
 """Fixture for the `ACP-STATE-210` false-FAIL guard: `starts_background_after_idle.py`, except the
 background tool call that starts while the session is `idle` is announced and then the next
 `state_update` is `running`, whose list does not name it. Only an `idle` re-send is judged
-(prompt-lifecycle.mdx:205), so `ACP-STATE-210` SKIPs; it must not FAIL.
+(prompt-lifecycle.mdx:215), so `ACP-STATE-210` SKIPs; it must not FAIL.
 """
 
 import sys

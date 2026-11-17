@@ -194,7 +194,7 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
     """ACP-RESUME-002. Vacuous -- and recorded, never FAILed on that account -- for an agent
     that retains no history to replay. The mandatory current-state snapshot is not history.
     Filtered to the resumed session: live child-session traffic may legally arrive before a
-    no-replay resume response (Active Subagents RFD)."""
+    no-replay resume response (Preview Subagents RFD)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -284,7 +284,7 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
     with a `content` array: `[]` (rebuild from the beginning) and full content (chunks append)
     are wire-indistinguishable. Vacuous -- recorded, never FAILed -- for an agent whose replay
     uses only whole-message updates (`_base.ConformingAgent`'s own case). Filtered to the
-    resumed session: live child chunks may accompany a replay (Active Subagents RFD)."""
+    resumed session: live child chunks may accompany a replay (Preview Subagents RFD)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -431,7 +431,7 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
         await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
-        # Child output may trail the turn just run (Active Subagents RFD: child work outlives the parent's
+        # Child output may trail the turn just run (Preview Subagents RFD: child work outlives the parent's
         # turn); settle it first so it is not read as part of the resume exchange.
         await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
         response_entry, updates = await resume_session(
@@ -465,7 +465,7 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
                             msg,
                             f"sessionId is neither the resumed {session_id!r} nor a child "
                             f"announced earlier in this resume via subagent_update (known: "
-                            f"{sorted(known)!r}; Active Subagents RFD: child announcements "
+                            f"{sorted(known)!r}; Preview Subagents RFD: child announcements "
                             "precede child traffic within the load/resume)",
                         )
                     )
@@ -628,7 +628,7 @@ async def test_resume_snapshot_keeps_the_background_list(agent_launch, tmp_path)
     """ACP-RESUME-217. An agent that reported a `background` list for the session on the test's
     connection before the resume (the turn the test runs first and any earlier snapshot) carries
     one on the resume's current-state snapshot too: an omitted or `null` list means "not reported"
-    (prompt-lifecycle.mdx:204; session-setup.mdx:346). SKIPs when no list was reported."""
+    (prompt-lifecycle.mdx:214; session-setup.mdx:431). SKIPs when no list was reported."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -1071,7 +1071,7 @@ async def test_close_already_closed_session_succeeds(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_close_unknown_session_succeeds(agent_launch):
     """ACP-CLOSE-003 (ADVISORY). No `session/new` is sent: this id was never created on this
-    connection (`session-setup.mdx:407` covers a session that does not exist)."""
+    connection (`session-setup.mdx:492` covers a session that does not exist)."""
     async with connected_agent(agent_launch) as agent:
         entry = await close_session(
             agent, f"tck-never-created-{uuid.uuid4().hex}", timeout=agent_launch.default_timeout
@@ -1169,7 +1169,7 @@ async def test_deleted_session_no_longer_listed(agent_launch, tmp_path):
     """ACP-DELETE-003. Closes the session first, then SKIPs when `session/list` does not report
     the closed session at all -- nothing to compare against. A `-32002` answer to the delete
     counts as a successful delete (the agent may have discarded the closed session,
-    session-setup.mdx:52), so the listing is still judged; `ACP-DELETE-002` judges the SHOULD."""
+    session-setup.mdx:54), so the listing is still judged; `ACP-DELETE-002` judges the SHOULD."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
         await close_session(agent, session_id, timeout=agent_launch.default_timeout)
@@ -1219,7 +1219,7 @@ async def test_delete_cancels_foreground_work(
     `session/delete` as the mid-turn trigger: deleting an active session cancels its work as if
     `session/close` had been called (session-delete.mdx:95), so the turn ends with a `cancelled`
     idle that arrives before the delete response. If the delete kept the prompt from being
-    inserted, the prompt is answered `-32800` (session-setup.mdx:395); any other error FAILs. A
+    inserted, the prompt is answered `-32800` (session-setup.mdx:480); any other error FAILs. A
     turn that never ends FAILs through the harness timeout, so a delete rejected without
     cancelling the work FAILs here (the cancel-then-delete MUST, session-delete.mdx:95). The
     ordering is judged only against a delete that succeeded (or answered `-32002`); the one
@@ -1496,7 +1496,7 @@ async def test_archive_and_unarchive_are_idempotent(agent_launch, agent_initiali
 @pytest.mark.capability(_ARCHIVE_PATH)
 async def test_archive_unknown_session_is_not_found(agent_launch, tmp_path):
     """ACP-ARCHIVE-005. Unlike `session/delete`, these do not succeed silently for a session that
-    does not exist: `-32002` with `data.sessionId` (session-list.mdx:251, error.mdx:54,66). A
+    does not exist: `-32002` with `data.sessionId` (session-list.mdx:251, error.mdx:54,68). A
     session is created first, so an auth-gated agent SKIPs `AUTH-GATED:` instead of failing on
     `-32000`; the probed id is still one no agent can have created."""
     async with connected_agent(agent_launch) as agent:
@@ -1551,7 +1551,7 @@ async def test_archive_cancels_foreground_work(
     as the mid-turn trigger: archiving an active session cancels its work as if `session/close`
     had been called (session-list.mdx:247), so the turn ends with a `cancelled` idle that arrives
     before the archive response. If the archive kept the prompt from being inserted, the prompt is
-    answered `-32800` (session-setup.mdx:395); any other error FAILs. A turn that never ends
+    answered `-32800` (session-setup.mdx:480); any other error FAILs. A turn that never ends
     FAILs through the harness timeout, so an archive rejected without cancelling the work FAILs
     here (an active session is archivable, session-list.mdx:247). The ordering is judged only
     against an archive that succeeded; the one case it SKIPs is an archive error after the work
@@ -1664,7 +1664,7 @@ async def test_resume_session_with_additional_directory_accepted(agent_launch, t
 @pytest.mark.capability("capabilities.session.additionalDirectories")
 async def test_new_session_with_relative_additional_directory_rejected(agent_launch, tmp_path):
     """ACP-ADDDIRS-203. Sends a relative entry on purpose, since the capability is advertised
-    and the spec defines the agent's answer to it (`session-setup.mdx:443`): `-32602`."""
+    and the spec defines the agent's answer to it (`session-setup.mdx:528`): `-32602`."""
     async with connected_agent(agent_launch) as agent:
         req_id = await agent.send_request(
             "session/new",
@@ -1706,7 +1706,7 @@ def _notice_seen(agent, session_id: Any) -> bool:
 async def test_new_session_with_stdio_mcp_server_recorded(agent_launch, tmp_path, record_property):
     """ACP-MCP-201 (INFORMATIONAL). Never asserts on the outcome -- see the requirements module
     docstring's judgment-call note. Also records whether a `notice` for the new session was seen
-    after an accepted request (`session-setup.mdx:685`: an agent that continues without a failed
+    after an accepted request (`session-setup.mdx:774`: an agent that continues without a failed
     server SHOULD tell the user, for example with a notice).
 
     Includes the `type: "stdio"` discriminator `$defs/McpServer`'s `anyOf` requires: without it,
@@ -1782,9 +1782,9 @@ async def test_new_session_with_unsupported_mcp_transport_is_rejected(
     agent_launch, agent_initialize_result, tmp_path
 ):
     """ACP-MCP-203. Up to three probes on one connection, each must get `-32602`: v1's `sse`,
-    which the spec names (`session-setup.mdx:545`), `_tck_unsupported_transport`, which no agent
-    supports (`_`-prefixed types are implementation-specific, `:553`), and `acp`, the real but
-    unstable transport a draft-aware agent may parse without advertising it (`:545` covers "a
+    which the spec names (`session-setup.mdx:634`), `_tck_unsupported_transport`, which no agent
+    supports (`_`-prefixed types are implementation-specific, `:642`), and `acp`, the real but
+    unstable transport a draft-aware agent may parse without advertising it (`:634` covers "a
     transport they did not advertise"). The `acp` probe is not sent when the agent advertises
     `capabilities.session.mcp.acp`: it supports the transport then. All break the client rule
     to send only advertised transports on purpose: the spec defines the agent's answer to
@@ -1824,7 +1824,7 @@ async def test_new_session_with_unsupported_mcp_transport_is_rejected(
 @pytest.mark.requirement("ACP-MCP-204")
 @pytest.mark.capability("capabilities.session.mcp.stdio")
 async def test_new_session_with_duplicate_mcp_server_names_is_rejected(agent_launch, tmp_path):
-    """ACP-MCP-204 (ADVISORY). Two stdio servers sharing a `name` (`session-setup.mdx:547`), which
+    """ACP-MCP-204 (ADVISORY). Two stdio servers sharing a `name` (`session-setup.mdx:636`), which
     breaks the client rule that names be unique on purpose. The command does not exist, so an
     agent that does not reject the request has nothing real to launch."""
     async with connected_agent(agent_launch) as agent:
@@ -1925,7 +1925,7 @@ async def test_mcp_env_value_is_never_echoed(agent_launch, tmp_path):
     """ACP-SESSION-006 (ADVISORY). A random canary in a stdio MCP server's `env` (the server is the
     TCK's stub, which records its command line) must appear in none of the agent's stdout lines
     or its stderr, nor in the stub's command line, across a prompt turn, `session/list` and a
-    `session/resume` with the same server (`session-setup.mdx:695`). The stub is only checked if
+    `session/resume` with the same server (`session-setup.mdx:784`). The stub is only checked if
     the agent launched it within a short grace period. Model context, logging beyond stderr and
     persistence are not observable and not covered."""
     canary = f"tck-canary-{uuid.uuid4().hex}"
@@ -2019,7 +2019,7 @@ async def test_forked_session_can_be_prompted_without_resume(agent_launch, tmp_p
 @pytest.mark.capability("capabilities.session.fork")
 async def test_fork_of_unknown_session_is_not_found(agent_launch, tmp_path):
     """ACP-FORK-203. A source the agent never created gets `-32002` with `data.sessionId`
-    (error.mdx:54,64). The id is `_tck`-prefixed so it cannot collide with a stored session."""
+    (error.mdx:54,66). The id is `_tck`-prefixed so it cannot collide with a stored session."""
     unknown_id = "_tck_never_created_session"
     async with connected_agent(agent_launch) as agent:
         entry = await _fork_session(
@@ -2031,9 +2031,9 @@ async def test_fork_of_unknown_session_is_not_found(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-FORK-204")
 @pytest.mark.capability("capabilities.session.fork")
 async def test_fork_of_closed_listed_session_succeeds(agent_launch, tmp_path):
-    """ACP-FORK-204. The fork source only has to exist, not be active (error.mdx:64). SKIPs
+    """ACP-FORK-204. The fork source only has to exist, not be active (error.mdx:66). SKIPs
     when `session/list` does not report the closed session: whether it still exists is then up to
-    the agent (session-setup.mdx:52)."""
+    the agent (session-setup.mdx:54)."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         source_id = await new_session(agent, tmp_path, timeout=timeout)
@@ -2062,7 +2062,7 @@ async def test_fork_carries_the_config_options_session_new_carried(agent_launch,
     """ACP-FORK-205. Forks on the connection that created the source, so `session/new`'s own
     response is the evidence the session has options. Only presence and non-emptiness are
     judged. `availableCommands` is not: a fork's commands are the new session's own
-    (`session-setup.mdx:140`). A fork that errors SKIPs here; `ACP-FORK-201`/`202` judge that."""
+    (`session-setup.mdx:142`). A fork that errors SKIPs here; `ACP-FORK-201`/`202` judge that."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         created = await new_session_result(agent, tmp_path, timeout=timeout)
@@ -2108,7 +2108,7 @@ async def test_fork_does_not_inherit_background_work(agent_launch, tmp_path):
     """ACP-FORK-206. When the source session's latest `background` list is non-empty at fork
     time, no state snapshot of the fork lists one of those items: a fork starts with no
     background work and reports `background: []` until it starts its own
-    (session-setup.mdx:49). The fork is prompted once so that it reports its state. Definitional
+    (session-setup.mdx:50). The fork is prompted once so that it reports its state. Definitional
     (no RFC keyword), like `ACP-FORK-202`. SKIPs when the source has no listed work, or the fork
     fails or its turn never ends and no snapshot shows a copied item (`ACP-FORK-201`/`202` judge
     those)."""
@@ -2172,7 +2172,7 @@ async def test_new_session_with_override_system_prompt_accepted(agent_launch, tm
 
 # ACP-SYSPROMPT-002/003 deliberately send what a client MUST NOT (an unadvertised mode, a
 # non-text block): the spec defines the agent's answer to exactly those inputs, so they are
-# legitimate probes (session-setup.mdx:474,477,481). For `session/new`, "MUST NOT create the
+# legitimate probes (session-setup.mdx:559,562,566). For `session/new`, "MUST NOT create the
 # session" is only observable as the error itself; for `session/resume` the session already
 # exists, so the tests also check that it was not resumed: a `session/prompt` on that id must
 # not succeed.
@@ -2228,7 +2228,7 @@ async def _assert_resume_refused(
     agent_launch, tmp_path, record_property, *, system_prompt, what: str, kind: str
 ) -> None:
     """Create a session on one connection, then resume it on a fresh one with a `systemPrompt`
-    the agent cannot apply (session-setup.mdx:481). The reply must be an error (its code is
+    the agent cannot apply (session-setup.mdx:566). The reply must be an error (its code is
     recorded, not asserted: `-32602` is only RECOMMENDED), and a `session/prompt` on that id must
     then not succeed.
 

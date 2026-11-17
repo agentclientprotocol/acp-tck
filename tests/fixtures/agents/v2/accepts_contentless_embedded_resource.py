@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `capabilities.session.prompt.embeddedContext` but accepts an
 embedded `resource` block that carries neither `text` nor `blob`, instead of rejecting it with
-`-32602` (a closed site, `extensibility.mdx:242-245`). FAILs `ACP-ENUM-204` only; an ordinary
+`-32602` (a closed site, `extensibility.mdx:245-248`). FAILs `ACP-ENUM-204` only; an ordinary
 resource block is still accepted, so `ACP-PROMPTCAP-003` PASSes. Unknown and unadvertised
 content types are still rejected.
 """

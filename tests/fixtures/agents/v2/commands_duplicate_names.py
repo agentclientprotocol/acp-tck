@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises two commands sharing the `name` `tck`
-(slash-commands.mdx:98-100: MUST be unique within the list). Both items are schema-valid. FAILs
+(slash-commands.mdx:101-103: MUST be unique within the list). Both items are schema-valid. FAILs
 exactly `ACP-COMMANDS-201`.
 """
 

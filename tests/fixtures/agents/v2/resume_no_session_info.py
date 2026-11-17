@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/resume` never sends a `session_info_update` before
-responding (session-setup.mdx:358-361). Replay and the state snapshot are correct.
+responding (session-setup.mdx:443-446). Replay and the state snapshot are correct.
 
 FAILs exactly `ACP-RESUME-214` (ADVISORY).
 """

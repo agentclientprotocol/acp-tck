@@ -2,8 +2,8 @@
 """Conforming fixture: advertises `capabilities.session.fork` and reports background work that
 stays listed for the rest of the session (`background_outlives_turn="keep"`): one background
 tool call per session, still listed on the idle, through a `__hang__` turn's `session/cancel`
-(not covered by it, prompt-lifecycle.mdx:1173) and absent from a fork's snapshots
-(session-setup.mdx:49). The positive control for `ACP-FORK-206` and, with `--cancel-prompt
+(not covered by it, prompt-lifecycle.mdx:1446) and absent from a fork's snapshots
+(session-setup.mdx:50). The positive control for `ACP-FORK-206` and, with `--cancel-prompt
 __hang__`, `ACP-INFO-BACKGROUND-202`.
 """
 
