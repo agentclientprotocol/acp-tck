@@ -21,10 +21,11 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
+- R-V1 — 5495e0f — v1 vendored at 3ea94133, citations remapped, subagents -> Preview RFD, JSONRPC-003 off mcp-over-acp; PLAN-001 temporarily -> PlanUpdateContent; suite green (1031)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
-- R-V1: in progress.
+- R-V2: in progress. Left over from R-V1 for later slices: PLAN-001 `agent-plan.mdx:127`/`plan-operations.mdx:63` (V1-PLAN deletes the row); cost entry and "stated only by the Subagents RFD" text (V1-SA1); `src/tck/common/plugin.py:446` (R-V2).
 ## Open questions (waiting on the user)
 - none
