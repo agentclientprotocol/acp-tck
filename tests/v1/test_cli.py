@@ -1770,6 +1770,9 @@ def test_subagent_rows_skip_without_a_child():
         ("child_update_after_turn_unannounced.py", "ACP-SUBAGENT-001"),
         ("replays_unannounced_child.py", "ACP-SUBAGENT-001"),
         ("replays_child_without_announcement.py", "ACP-SUBAGENT-001"),
+        # the rule applies again on every load: traffic after the load response is judged against
+        # what the load announced, not the turn's announcements
+        ("child_traffic_after_load_unannounced.py", "ACP-SUBAGENT-001"),
         # `session` content references are not child traffic
         ("session_content_unknown_session.py", "ACP-SUBAGENT-002"),
         ("session_content_unknown_in_permission.py", "ACP-SUBAGENT-002"),
@@ -1906,6 +1909,33 @@ def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
     assert test["properties"]["acp_tck_cancelled_siblings"].endswith("-child-b"), test
 
 
+def test_child_that_reports_unknown_after_the_cancel_skips_the_confirmation_row(tmp_path):
+    """`child_state_unknown_after_cancel.py` can no longer observe the cancelled child and reports
+    `unknown` instead of a confirmation, which the docs allow: the cancellation is not observable,
+    so `-016` SKIPs (not FAIL) and `-017`, which judges the parent, still PASSes."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        "child_state_unknown_after_cancel.py",
+        k=_CHILD_STOP_K,
+        cancel_prompt="__hang__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-016"] == "SKIPPED", result.stdout
+    assert statuses["ACP-SUBAGENT-017"] == "PASS", result.stdout
+    assert "FAIL" not in set(statuses.values()), result.stdout
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (test,) = by_id["ACP-SUBAGENT-016"]["tests"]
+    assert "not observable" in test["message"], test
+
+
+def test_child_that_reports_unknown_and_then_cancelled_still_confirms():
+    """`child_unknown_then_cancelled.py` reports `unknown` and then `idle`/`cancelled`: the later
+    confirmation decides `-016`, which PASSes."""
+    statuses, stdout = _child_stop_statuses("child_unknown_then_cancelled.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
 def test_child_cancel_rows_skip_without_a_cancellable_child():
     """`exposes_subagent.py` exposes a child that advertises no `cancel`, and `conforming.py` none:
     nothing is cancelled, so both rows SKIP."""
@@ -1950,6 +1980,17 @@ def test_invalid_tool_call_status_fails_the_turn_schema_rows_not_subagent_015():
     statuses = _table_statuses(result.stdout)
     assert _output_fail_ids(result.stdout) == {"ACP-PROMPT-002", "ACP-SCHEMA-001"}, result.stdout
     assert statuses["ACP-SUBAGENT-015"] == "PASS", result.stdout
+
+
+def test_incoming_task_without_a_sender_passes_subagent_012():
+    """`child_task_without_sender.py` tells the child its task as an incoming `session_message`
+    that omits `senderSessionId` (the agent has no evidence of the sender and does not assume the
+    parent): the task is reported, so `ACP-SUBAGENT-012` PASSes and nothing FAILs."""
+    result = _run_cli("child_task_without_sender.py", k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    assert statuses["ACP-SUBAGENT-012"] == "PASS", result.stdout
+    assert statuses["ACP-SUBAGENT-011"] == "PASS", result.stdout
 
 
 def test_user_message_task_gives_subagent_012_nothing_to_judge():

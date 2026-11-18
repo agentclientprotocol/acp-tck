@@ -4,7 +4,8 @@ A child that advertises `capabilities.cancel` (`SubagentSessionCapabilities`) ma
 `session/cancel` carrying the child's `sessionId`; that cancels the child's current work, not its
 parent or its siblings, and the child confirms with `idle` and `stopReason: "cancelled"` through
 its state snapshot, which in v1 is the parent association's `subagent_update.state`
-(`subagents.mdx:423,435,447,449`).
+(`subagents.mdx:423,435,447,449`), or reports `unknown` when it can no longer observe the child
+(`subagents.mdx:450`: the row SKIPs).
 
 No `initialize` marker announces the per-child capability, so each `Requirement.capability` is the
 documentation-only `inferred:subagentCancel` string, the tests carry no
@@ -87,9 +88,17 @@ async def test_child_stop_is_confirmed_by_the_child(
     """ACP-SUBAGENT-016 (CAPABILITY, `inferred:subagentCancel`). After `session/cancel` for a
     running child that advertises `capabilities.cancel`, the parent's snapshot of the child
     (`subagent_update.state`) becomes `idle` with `stopReason: "cancelled"`. SKIPs when no such
-    child was running or it ended on its own within the race window."""
+    child was running or it ended on its own within the race window, and when the child reported
+    `unknown` after the request and no `idle` followed: an Agent that can no longer observe the
+    child reports `unknown` instead of a confirmation (`subagents.mdx:450`), so the cancellation
+    is not observable."""
     run = await _child_run(request, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
+    if run.outcome == "unobservable":
+        pytest.skip(
+            f"cancellation not observable: child {run.target!r} reported `unknown` after "
+            "session/cancel and no idle snapshot followed (the Agent can no longer observe it)"
+        )
     assert run.outcome != "not_cancelled", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
         "running, was followed by an idle snapshot without stopReason 'cancelled' after the race "

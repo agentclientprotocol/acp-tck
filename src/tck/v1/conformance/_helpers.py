@@ -702,6 +702,27 @@ async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry,
 # `subagent_update`.
 
 
+def load_answered(transcript: list[TranscriptEntry], replay: tuple[int, int] | None) -> bool:
+    """Whether the `session/load` exchange `replay` (`[start, end)`, starting at the request)
+    ended with a successful response: a `result` carrying the request's id."""
+    if replay is None:
+        return False
+    request = transcript[replay[0]] if replay[0] < len(transcript) else None
+    sent = request.parsed if request is not None and request.direction is Direction.SENT else None
+    if not isinstance(sent, dict) or "id" not in sent:
+        return False
+    for entry in transcript[replay[0] + 1 : replay[1]]:
+        msg = entry.parsed
+        if (
+            entry.direction is Direction.RECEIVED
+            and isinstance(msg, dict)
+            and "method" not in msg
+            and msg.get("id") == sent["id"]
+        ):
+            return "result" in msg
+    return False
+
+
 def _wire_messages_indexed(
     transcript: list[TranscriptEntry],
     client_sessions: set[str],
@@ -717,10 +738,14 @@ def _wire_messages_indexed(
     `replay` is the `[start, end)` transcript range of a `session/load` exchange. Inside it `known`
     starts over from `client_sessions`: a client loading a session on a fresh connection has not
     seen earlier announcements, so only those made within the exchange count for it
-    (`subagents.mdx:517`, "What the Agent sends"). Announcements made inside the
-    range still count for traffic after it."""
+    (`subagents.mdx:517`, "What the Agent sends"). The rule applies again on every load, so once
+    the load was answered successfully (`load_answered`) the scope carries on after the
+    response: announcements made within the load, and after it, are all that count for later
+    traffic, not the earlier turn's. A load that failed or never answered attaches no runtime, so
+    traffic after it keeps counting every announcement made so far."""
     live = set(client_sessions)
     scoped: set[str] | None = None
+    rescoped = load_answered(transcript, replay)
     for index, entry in enumerate(transcript):
         msg = entry.parsed
         if entry.direction is not Direction.RECEIVED or not isinstance(msg, dict):
@@ -728,7 +753,9 @@ def _wire_messages_indexed(
         method = msg.get("method")
         if not isinstance(method, str):
             continue
-        if replay is not None and replay[0] <= index < replay[1]:
+        in_load = replay is not None and replay[0] <= index < replay[1]
+        after_load = rescoped and replay is not None and index >= replay[1]
+        if in_load or after_load:
             if scoped is None:
                 scoped = set(client_sessions)
             known = scoped
@@ -744,7 +771,8 @@ def _wire_messages_indexed(
             and isinstance(params.get("sessionId"), str)
         ):
             # Inside a replay the scoped set is stricter than `live`; each grows on its own.
-            for tracked in (known, live):
+            # After a successful load only the scoped set matters.
+            for tracked in (known,) if after_load else (known, live):
                 if params["sessionId"] in tracked:
                     tracked.add(update["sessionId"])
 
@@ -774,7 +802,9 @@ def child_session_traffic(
     transcript range of a `session/load` exchange (`_wire_messages_indexed`). Traffic inside it is
     judged against the announcements made inside it, even if an earlier turn announced the child
     (`subagents.mdx:517,531`: the rule applies again on every load, and a child's replayed
-    `subagent_update` precedes its other replayed updates). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
+    `subagent_update` precedes its other replayed updates). After a successful load's response
+    only announcements made within the load or later count too (`subagents.mdx:517`: ancestors
+    are announced "during this load", before live updates or requests for a child). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
     historical addresses, not announcements, and are neither judged nor counted as children (a
     recorded directed message may be replayed with its participants when the other participant's
     association is unavailable).
@@ -790,23 +820,29 @@ def child_session_traffic(
     children: set[str] = set()
     problems: list[str] = []
 
-    def carry(session_id: Any, what: str, known: set[str], replaying: bool) -> None:
+    rescoped = load_answered(transcript, replay)
+
+    def carry(session_id: Any, what: str, known: set[str], replaying: bool, after_load: bool) -> None:
         if not isinstance(session_id, str):
             return
         if session_id not in client_sessions:
             children.add(session_id)
         if session_id not in known:
+            where = ""
+            if replaying:
+                where = " within this `session/load` replay (draft docs)"
+            elif after_load:
+                where = " during the preceding `session/load` or since (draft docs)"
             problems.append(
                 f"{what} carries session ID {session_id!r}, which no earlier `subagent_update` "
-                f"on a known session announced"
-                + (" within this `session/load` replay (draft docs)" if replaying else "")
-                + f" (known: {sorted(known)!r})"
+                f"on a known session announced{where} (known: {sorted(known)!r})"
             )
 
     for index, msg, method, params, known in _wire_messages_indexed(
         transcript, client_sessions, replay
     ):
         replaying = _in_replay(replay, index)
+        after_load = rescoped and replay is not None and index >= replay[1]
         update = params.get("update") if method == "session/update" else None
         update = update if isinstance(update, dict) else {}
         kind = update.get("sessionUpdate")
@@ -814,13 +850,19 @@ def child_session_traffic(
         if "id" in msg:
             what = f"request {what} (id {msg['id']!r})"
 
-        carry(params.get("sessionId"), what, known, replaying)
+        carry(params.get("sessionId"), what, known, replaying, after_load)
         if kind == "subagent_update":
             if isinstance(update.get("sessionId"), str) and update["sessionId"] not in client_sessions:
                 children.add(update["sessionId"])
         elif kind == "session_message" and not replaying:
-            carry(update.get("senderSessionId"), f"{what} senderSessionId", known, replaying)
-            carry(update.get("recipientSessionId"), f"{what} recipientSessionId", known, replaying)
+            carry(update.get("senderSessionId"), f"{what} senderSessionId", known, replaying, after_load)
+            carry(
+                update.get("recipientSessionId"),
+                f"{what} recipientSessionId",
+                known,
+                replaying,
+                after_load,
+            )
     return children, problems
 
 
@@ -1154,11 +1196,15 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
     `user_message_tasks`. Otherwise a child whose first output was not preceded by an incoming
     `session_message` (outer `sessionId` the child, `senderSessionId` its immediate parent, the
     parent being the session that first announced it; the sender is stored across upserts of the
-    `messageId`) is `unreported`. A child that never produces output is not judged, and a child
+    `messageId`) is `unreported`. An incoming `session_message` that names no sender counts as
+    reported: an Agent with no evidence of who sent the message omits `senderSessionId` and does
+    not assume the parent (`subagents.mdx:287`, `prompt-turn.mdx:115-118`). Incoming means its
+    recipient, once stored, is the child or absent. A child that never produces output is not judged, and a child
     already in `user_message_tasks` is left out of `judged`."""
     result = ChildTasks()
     parents: dict[str, str] = {}
     senders: dict[tuple[str, str], str | None] = {}
+    recipients: dict[tuple[str, str], str | None] = {}
     tasked: set[str] = set()  # children told the task, either way
     started: set[str] = set()
     user_message_children: set[str] = set()  # `ACP-SUBAGENT-011`'s, not judged by 012
@@ -1190,7 +1236,9 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
         elif kind == "session_message" and isinstance(update.get("messageId"), str):
             key = (outer, update["messageId"])
             senders[key] = _patched(senders.get(key), update, "senderSessionId")
-            if senders[key] == parents[outer]:
+            recipients[key] = _patched(recipients.get(key), update, "recipientSessionId")
+            no_sender = senders[key] is None and recipients[key] in (None, outer)
+            if senders[key] == parents[outer] or no_sender:
                 tasked.add(outer)
         elif kind in _CHILD_OUTPUT_KINDS:
             started.add(outer)

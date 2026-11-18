@@ -19,7 +19,8 @@ announced: must PASS `ACP-SUBAGENT-001..009`, `-011..015` (`_SUBAGENT_IDS` in
 awaited.
 
 With `replay_on_load` (see `replays_subagent_history.py`) `session/load` also replays every
-subagent update it sent (never a request).
+subagent update it sent (never a request). With `traffic_after_load` the last child sends one more
+chunk right after the `session/load` response, live (see `child_traffic_after_load_unannounced.py`).
 
 The `_`-hooks below are the seams the violator fixtures override.
 """
@@ -39,11 +40,13 @@ _CHILD_DIR = str(Path(__file__).resolve().parent)  # absolute on every platform
 class ExposesSubagentAgent(ConformingAgent):
     announce_child = True
     replay_on_load = False
+    traffic_after_load = False
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._child_count = 0
         self._turn_child: str | None = None  # the child of the turn in flight, until it ends
+        self._last_child: str | None = None  # the child of the latest turn, kept after it ends
         self._subagent_log: list[tuple[str, dict[str, Any]]] = []
 
     def _exposes_subagents(self, session_id: Any) -> bool:
@@ -59,6 +62,7 @@ class ExposesSubagentAgent(ConformingAgent):
             self._child_count += 1
             child_id = f"{session_id}-child-{self._child_count}"
             self._turn_child = child_id
+            self._last_child = child_id
             self._spawn_child(session_id, child_id)
         super()._handle_prompt(msg_id, params)
         child_id, self._turn_child = self._turn_child, None
@@ -97,6 +101,17 @@ class ExposesSubagentAgent(ConformingAgent):
             for target, update in self._replayed_updates(list(self._subagent_log)):
                 self._notify("session/update", {"sessionId": target, "update": update})
         super()._handle_load(msg_id, params)
+        if self.traffic_after_load and self._exposes_subagents(session_id) and self._last_child:
+            self._notify(
+                "session/update",
+                {
+                    "sessionId": self._last_child,
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {"type": "text", "text": "child output after the load"},
+                    },
+                },
+            )
 
     def _replayed_updates(
         self, logged: list[tuple[str, dict[str, Any]]]

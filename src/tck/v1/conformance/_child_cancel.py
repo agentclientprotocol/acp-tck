@@ -14,7 +14,10 @@ clears it). Then, in this order:
    a stop reason the child could have reached on its own, means it ended first (`raced`: a cancel
    racing with ended work does not rewrite its outcome, `subagents.mdx:451`, so nothing is judged; the
    same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
-   finished by other means after the cancel. Silence for `timeout / 2` is `unconfirmed`. After a
+   finished by other means after the cancel. An `unknown` snapshot (the Agent can no longer
+   observe the child, `subagents.mdx:450`) settles nothing: a later `idle` still decides it, and
+   if none comes within `timeout / 2` the cancel is `unobservable`. Other silence for
+   `timeout / 2` is `unconfirmed`. After a
    short quiet period the parent's prompt response is checked for a cancellation the child's cancel must not have caused, and the
    other children's snapshots are recorded (not judged: the Agent may cancel its own delegated
    work, `subagents.mdx:447`).
@@ -62,8 +65,9 @@ class ChildCancelRun:
     """`none`: no child advertised `cancel` while reported running. `raced`: the child reported
     an idle snapshot that is not a cancellation within the race window (`quiet_period`), with a
     stop reason it could have reached on its own, so it had ended first. `not_cancelled`: any
-    other non-cancelled idle snapshot. `unconfirmed`: no idle snapshot within `timeout / 2`.
-    `confirmed`: `idle` with `stopReason: "cancelled"`."""
+    other non-cancelled idle snapshot. `unobservable`: the child reported `unknown` after the
+    cancel and no idle snapshot followed within `timeout / 2`. `unconfirmed`: no snapshot at all
+    within `timeout / 2`. `confirmed`: `idle` with `stopReason: "cancelled"`."""
     parent_cancelled: bool = False
     """The parent's prompt was answered `stopReason: "cancelled"` after the child cancel and
     before the TCK's own parent `session/cancel`."""
@@ -98,6 +102,7 @@ class _Driver:
         self.target_sent_index: int | None = None
         self.target_sent_at = 0.0
         self.target_settled_at: float | None = None
+        self.target_unknown = False
         self.parent_cancel_at: float | None = None
 
     def ingest(self, index: int, entry: TranscriptEntry) -> None:
@@ -133,6 +138,8 @@ class _Driver:
             if self.result.outcome == "none" and child.state.get("state") == "idle":
                 self.result.outcome = self._settle(index, child.state)
                 self.target_settled_at = asyncio.get_running_loop().time()
+            elif child.state.get("state") == "unknown":
+                self.target_unknown = True
         elif (
             self.parent_cancel_at is None
             and _is_idle_cancelled(child.state)
@@ -185,7 +192,7 @@ class _Driver:
         )
         if self.result.target is not None and self.result.outcome == "none":
             if now - self.target_sent_at > self.window:
-                self.result.outcome = "unconfirmed"
+                self.result.outcome = "unobservable" if self.target_unknown else "unconfirmed"
                 self.target_settled_at = now
         target_settled = search_over and (
             self.result.target is None

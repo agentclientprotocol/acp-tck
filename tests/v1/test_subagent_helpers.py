@@ -150,6 +150,54 @@ def test_replayed_session_message_participants_are_historical_addresses():
     assert children == {"c"} and len(problems) == 1
 
 
+def _load_exchange(*window: dict[str, Any], answer: dict[str, Any] | None = None) -> list[TranscriptEntry]:
+    """A `session/load` exchange: the request, the replayed `window` messages, then `answer` (the
+    response; a success by default, none when `answer` is an empty dict)."""
+    sent = TranscriptEntry.build(
+        Direction.SENT,
+        json.dumps({"jsonrpc": "2.0", "id": 77, "method": "session/load", "params": {}}).encode(),
+        0.0,
+    )
+    response = {"id": 77, "result": {}} if answer is None else answer
+    return [sent, *_traffic(*window), *(_traffic(response) if response else [])]
+
+
+def test_traffic_after_a_load_response_is_judged_on_the_announcements_made_during_the_load():
+    turn = _traffic(_ANNOUNCE, _CHILD_CHUNK)
+    # the load replays nothing about `c`; the chunk after the response relies on the turn's announcement
+    transcript = turn + _load_exchange() + _traffic(_CHILD_CHUNK)
+    window = (2, len(turn) + 2)
+    children, problems = child_session_traffic(transcript, {"p"}, window)
+    assert children == {"c"} and len(problems) == 1
+    assert "agent_message_chunk" in problems[0] and "`session/load`" in problems[0]
+    # a request counts the same way
+    transcript = turn + _load_exchange() + _traffic(_CHILD_PERMISSION)
+    assert len(child_session_traffic(transcript, {"p"}, window)[1]) == 1
+    # without the load scope, the turn's announcement still hides it
+    assert child_session_traffic(turn + _load_exchange() + _traffic(_CHILD_CHUNK), {"p"}) == ({"c"}, [])
+    # announced during the load (replayed or live inside the window): the traffic after it is fine,
+    # and so are children announced after the response
+    transcript = turn + _load_exchange(_ANNOUNCE) + _traffic(_CHILD_CHUNK, _sub("c", "g"), _update("g", {"sessionUpdate": "agent_message_chunk"}))
+    assert child_session_traffic(transcript, {"p"}, (2, 5)) == ({"c", "g"}, [])
+    # announced only after the response: later traffic is fine, the earlier one was not
+    transcript = turn + _load_exchange() + _traffic(_CHILD_CHUNK, _ANNOUNCE, _CHILD_CHUNK)
+    children, problems = child_session_traffic(transcript, {"p"}, window)
+    assert children == {"c"} and len(problems) == 1
+
+
+def test_a_load_that_failed_or_never_answered_does_not_reset_the_announcements():
+    turn = _traffic(_ANNOUNCE, _CHILD_CHUNK)
+    window = (2, len(turn) + 2)
+    failed = turn + _load_exchange(answer={"id": 77, "error": {"code": -32002, "message": "no"}}) + _traffic(_CHILD_CHUNK)
+    assert child_session_traffic(failed, {"p"}, window) == ({"c"}, [])
+    # no response in the range: the load is `ACP-LOAD-001`'s finding, the traffic is judged as before
+    unanswered = turn + _load_exchange(answer={}) + _traffic(_CHILD_CHUNK)
+    assert child_session_traffic(unanswered, {"p"}, (2, len(turn) + 1)) == ({"c"}, [])
+    # a response for another id does not answer the load
+    other = turn + _load_exchange(answer={"id": 5, "result": {}}) + _traffic(_CHILD_CHUNK)
+    assert child_session_traffic(other, {"p"}, window) == ({"c"}, [])
+
+
 # --- `session` content references (ACP-SUBAGENT-002) ---
 
 
@@ -230,6 +278,18 @@ def test_session_reference_judgement_ignores_other_content_and_malformed_items()
         _tool_update("p", "tool_call_content_chunk", content=_ref("ghost")),
     )
     assert session_content_references(transcript, {"p"}) == ([], [])
+
+
+def test_session_references_after_a_load_response_follow_the_load_scope():
+    turn = _traffic(_ANNOUNCE)
+    reference = _tool_update("p", content=[_ref("c")])
+    # a reference after the response names a child only the turn announced
+    transcript = turn + _load_exchange() + _traffic(reference)
+    references, problems = session_content_references(transcript, {"p"}, (1, 3))
+    assert references == ["c"] and len(problems) == 1
+    # announced during the load, it is known
+    transcript = turn + _load_exchange(_ANNOUNCE) + _traffic(reference)
+    assert session_content_references(transcript, {"p"}, (1, 4)) == (["c"], [])
 
 
 def test_replayed_session_references_are_historical_addresses():
@@ -500,6 +560,29 @@ def test_a_task_that_follows_or_misses_the_output_is_unreported():
     not_the_parent = _msg("c", "in", senderSessionId="g", recipientSessionId="c")
     assert len(child_task_reports(_traffic(_ANNOUNCE, not_the_parent, _CHILD_CHUNK), {"p"}).unreported) == 1
     assert len(child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK), {"p"}).unreported) == 1
+
+
+def test_an_incoming_task_message_without_a_sender_counts_as_reported():
+    # no evidence of the sender: omitted `senderSessionId`, the recipient (if named) is the child
+    for fields in ({}, {"recipientSessionId": "c"}):
+        found = child_task_reports(_traffic(_ANNOUNCE, _msg("c", "in", **fields), _CHILD_CHUNK), {"p"})
+        assert (found.started, found.judged, found.unreported) == (1, 1, []), fields
+    # the sender may be added by a later upsert; a cleared sender is still no evidence
+    later = _traffic(_ANNOUNCE, _msg("c", "in"), _msg("c", "in", senderSessionId="p"), _CHILD_CHUNK)
+    assert child_task_reports(later, {"p"}).unreported == []
+    cleared = _traffic(_ANNOUNCE, _msg("c", "in", senderSessionId=None), _CHILD_CHUNK)
+    assert child_task_reports(cleared, {"p"}).unreported == []
+
+
+def test_a_task_message_without_a_sender_is_not_incoming_when_it_names_another_recipient():
+    outgoing = _msg("c", "out", recipientSessionId="g")  # the child's own outgoing view, not a task for it
+    assert len(child_task_reports(_traffic(_ANNOUNCE, outgoing, _CHILD_CHUNK), {"p"}).unreported) == 1
+    # a sender that is neither the parent nor absent is still not the parent's task
+    other = _msg("c", "in", senderSessionId="g", recipientSessionId="c")
+    assert len(child_task_reports(_traffic(_ANNOUNCE, other, _CHILD_CHUNK), {"p"}).unreported) == 1
+    # a message that follows the output does not count, sender or not
+    after = child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK, _msg("c", "in")), {"p"})
+    assert len(after.unreported) == 1
 
 
 def test_a_user_message_task_is_judged_only_as_a_user_message():

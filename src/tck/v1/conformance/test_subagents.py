@@ -14,8 +14,9 @@ errors or never answers does not end the connection: that is `ACP-LOAD-001`'s fi
 row here is judged on the traffic seen. The default connections stay as they were (`subagents`
 is never advertised there).
 
-Replay is judged on its own terms. Inside the `session/load` exchange only announcements made
-within it count (001), because the client may be loading on a fresh connection; a replayed
+Replay is judged on its own terms. Inside the `session/load` exchange, and after its successful
+response, only announcements made during that load count (001), because the client may be loading
+on a fresh connection and the rule applies again on every load; a replayed
 `session_message` participant and a replayed `session` reference are historical addresses, not
 announcements, so 001 does not judge the participant and 002 does not judge the reference.
 
@@ -73,8 +74,9 @@ async def test_child_session_traffic_follows_its_announcement(
     """ACP-SUBAGENT-001. Over the whole connection -- turn, replay and quiet periods alike -- no
     `session/update`, agent -> client request (`fs/*` and `terminal/*` included) or live
     `session_message` participant names a session ID the client did not create before a
-    `subagent_update` on a known session announced it. Inside the `session/load` exchange only
-    announcements made within it count, even if the turn announced the child; a replayed
+    `subagent_update` on a known session announced it. Inside the `session/load` exchange, and
+    after a successful response, only announcements made during that load count, even if the turn
+    announced the child (the rule applies again on every load, `subagents.mdx:517`); a replayed
     `session_message` participant is a historical address and is not judged. SKIPs when the agent
     sends no such ID at all."""
     conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
@@ -215,7 +217,8 @@ async def test_child_task_is_an_incoming_session_message_before_its_output(
     request, agent_launch, agent_initialize_result, tmp_path
 ):
     """ACP-SUBAGENT-012. An announced child's first agent output is preceded by an incoming
-    `session_message` whose `senderSessionId` is its parent. A task reported as a user message is
+    `session_message` whose `senderSessionId` is its parent, or that names no sender (an Agent
+    with no evidence of the sender omits it, `subagents.mdx:287`). A task reported as a user message is
     `ACP-SUBAGENT-011`'s. SKIPs when no announced child that was not told the task as a user
     message produces agent output."""
     conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
