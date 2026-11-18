@@ -28,6 +28,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
   FIX-ROWS: S2, S3, S5, S6, N1, N2, N3, N6, N7, N8, N9, N15 (walker unit tests), N16 (repeat initial-config probes on session/fork when advertised), N18 (harden the 2 load-flaky CLI tests if the 1 s --timeout cause is confirmed).
   FIX-LEDGER: S9, S10, N10, N17.
 - Follow-up rows (user, 2026-11-18): ADD now, one slice FOLLOWUP-ROWS before id alignment: (1) v2 OPTIONS row for early updates caused by initial entries (SCO:584, mirror v1 OPTIONS-008 baseline); (2) v2 set_title -> session_info_update row (session-list.mdx:162); (3) v2 replayed child parent/order vs pre-resume traffic (subagents.mdx:482). Leave as follow-ups: elicitation $/cancel_request on close/cancel; SUBAGENT-201 double missing-mirror message.
+- Leftovers (user, 2026-11-19): one GAPS slice, ledger-first: T1 text fix; G1 v1 SA:471, G2 v2 SL:163-165, G3 child idle stopReason (verify) get a real ledger entry or a row only where cheaply observable.
 - No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
@@ -72,7 +73,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - FOLLOWUP-ROWS — 426f87b — v2 +OPTIONS-008 ADVISORY (shared id with v1; new+fork, baseline), +LIST-208 ADVISORY (set_title -> session_info_update; _base.py implements set_title, conforming_full advertises title), +RESUME-226 CAPABILITY cap.session (replayed child parent/order; conforming PASS is replays_subagent_history, conforming_full SKIPs like 223/225 — accepted); ledger -SCO:584, -SA:482, SL:162 reworded; spec-tracker 121, suite 1229. For review: SL:163-165 ordering guidance uncovered (no row/entry); set_title success/-32002/-32602 unjudged (D10(b)); RESUME-226 can't judge children from earlier connections.
 - ID alignment inventory — id-alignment.md — NO renames needed (24 shared ids aligned, v1-only and 36 v2-only ids fine, no collisions); T1 text fix (v2 PLAN-003 says SCHEMA-001, should be PROMPT-002: requirements.py:4222, test_patches.py:190); gaps Q2 (v1 SA:471 no row/entry), Q4 (child idle stopReason maybe unjudged in v2, unverified) + v2 SL:163-165 no row/entry (from FOLLOWUP-ROWS). check-specification/.repo is truncated locally (user to fix).
 ## Next
-Order (plan section 5): id alignment DONE (no renames) -> gap slice? (asking user) -> cross-check refresh -> cross-check refresh -> final review.
+Order (plan section 5): id alignment DONE (no renames) -> GAPS slice (running) -> cross-check refresh -> cross-check refresh -> final review.
 - Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-28 done (ALL area slices) (plus R-FIX, typo fix, DEL204-FIX).
 - Milestone-2 review DONE over 7254513..c80a543 (milestone-1 review covered 6bce0b3..7254513), report .agents/research/review-area-slices.md, decisions D1-D13,
   plan sections 1-5. Show findings to the user; fixes become slices. Known items to hand the reviewer: v1 OPTIONS-008 also flags
