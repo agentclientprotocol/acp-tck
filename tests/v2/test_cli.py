@@ -2430,6 +2430,17 @@ def test_user_message_task_gives_subagent_012_nothing_to_judge():
     assert statuses["ACP-SUBAGENT-012"] == "SKIPPED", result.stdout
 
 
+def test_incoming_task_without_a_sender_passes_subagent_012():
+    """`child_task_without_sender.py` tells the child its task as an incoming `session_message`
+    that omits `senderSessionId` (the agent has no evidence of the sender and does not assume the
+    parent): the task is reported, so `ACP-SUBAGENT-012` PASSes and nothing FAILs."""
+    result = _run_cli(FIXTURES_DIR_V2, "child_task_without_sender.py", protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    assert statuses["ACP-SUBAGENT-012"] == "PASS", result.stdout
+    assert statuses["ACP-SUBAGENT-011"] == "PASS", result.stdout
+
+
 def test_malformed_subagent_directories_fail_prompt_002_not_subagent_006():
     """A non-string `cwd` and a non-array `additionalDirectories` are schema defects: only
     `ACP-PROMPT-002` FAILs, and `ACP-SUBAGENT-006` judges the later well-typed values instead."""
@@ -5476,6 +5487,45 @@ def test_child_that_ends_first_leaves_the_child_cancel_rows_nothing_to_judge():
     for req_id, status in statuses.items():
         expected = "SKIPPED" if req_id in ("ACP-SUBAGENT-016", "ACP-SUBAGENT-017") else "PASS"
         assert status == expected, f"{req_id}:\n{stdout}"
+
+
+def test_child_that_reports_unknown_after_the_cancel_skips_the_confirmation_row(tmp_path):
+    """`child_state_unknown_after_cancel.py` can no longer observe the cancelled child and reports
+    `unknown` instead of a confirmation, which the docs allow (`subagents.mdx:401`): the
+    cancellation is not observable, so `-016` SKIPs (not FAIL) and `-017`, which judges the
+    parent, still PASSes."""
+    report_path = tmp_path / "report.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "child_state_unknown_after_cancel.py",
+        protocol_version=2,
+        k="test_subagent_controls",
+        cancel_prompt="__hang__",
+        report_json=str(report_path),
+    )
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-016"] == "SKIPPED", result.stdout
+    assert statuses["ACP-SUBAGENT-017"] == "PASS", result.stdout
+    assert "FAIL" not in set(statuses.values()), result.stdout
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    (test,) = by_id["ACP-SUBAGENT-016"]["tests"]
+    assert "not observable" in test["message"], test
+
+
+def test_child_that_reports_unknown_and_then_cancelled_still_confirms():
+    """`child_unknown_then_cancelled.py` reports `unknown` and then `idle`/`cancelled` on its own
+    session: the later confirmation decides `-016`, which PASSes."""
+    statuses, stdout = _child_control_statuses("child_unknown_then_cancelled.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_child_cancel_confirmed_only_by_the_mirror_fails_the_confirmation_row():
+    """`child_cancel_confirmed_by_mirror_only.py` reports `idle`/`cancelled` only on the parent's
+    `subagent_update.state`. The docs name the child's own `state_update` as the confirmation and
+    make the mirror a SHOULD (`subagents.mdx:330,400`), so `-016` FAILs and the rest PASS."""
+    statuses, stdout = _child_control_statuses("child_cancel_confirmed_by_mirror_only.py")
+    for req_id, status in statuses.items():
+        assert status == ("FAIL" if req_id == "ACP-SUBAGENT-016" else "PASS"), f"{req_id}:\n{stdout}"
 
 
 def test_child_that_ignores_cancel_and_ends_later_fails_the_confirmation_row():

@@ -220,8 +220,9 @@ async def test_child_task_is_not_a_user_message(request, agent_launch, tmp_path)
 @pytest.mark.requirement("ACP-SUBAGENT-012")
 async def test_child_task_is_an_incoming_session_message_before_its_output(request, agent_launch, tmp_path):
     """ACP-SUBAGENT-012. An announced child's first agent output is preceded by an incoming
-    `session_message` whose `senderSessionId` is its parent. A task reported as a user message is
-    `ACP-SUBAGENT-011`'s. SKIPs when no announced child that was not told the task as a user
+    `session_message` whose `senderSessionId` is its parent, or that names no sender (an Agent
+    with no evidence of the sender omits it, `subagents.mdx:265`). A task reported as a user
+    message is `ACP-SUBAGENT-011`'s. SKIPs when no announced child that was not told the task as a user
     message produces agent output."""
     transcript, session_id = await _connection_transcript(request, agent_launch, tmp_path)
     found = child_task_reports(transcript, {session_id})

@@ -11,12 +11,17 @@ child (its `capabilities.cancel`, its latest state from its own `state_update` o
    session's items). The child need not advertise `cancel` itself (tool-calls.mdx:457,603).
 2. `session/cancel` with the child's `sessionId`, only for a child that advertises
    `capabilities.cancel` and was last reported running (a client MUST NOT cancel one that does not;
-   `subagents.mdx:373,386`). The child's own idle report after it settles it: `idle` with `stopReason:
-   "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
+   `subagents.mdx:373,386`). The child's own idle `state_update` after it settles it
+   (`subagents.mdx:400`: the confirmation is the child's own report, and the mirror on the parent
+   is only a SHOULD, judged by `ACP-SUBAGENT-201`, so a mirror alone settles nothing): `idle` with
+   `stopReason: "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
    a stop reason the child could have reached on its own, means it ended first (`raced`: a cancel
    racing with ended work does not rewrite its outcome, `subagents.mdx:402`, so nothing is judged; the
    same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
-   finished by other means after the cancel. Silence for `timeout / 2` is `unconfirmed`. After a
+   finished by other means after the cancel. An `unknown` state (the Agent can no longer observe
+   the child, `subagents.mdx:401`) settles nothing: a later own `idle` still decides it, and if
+   none comes within `timeout / 2` the cancel is `unobservable`. Other silence for
+   `timeout / 2` is `unconfirmed`. After a
    short quiet period the parent is checked for a cancelled `idle` the child's cancel must not
    have caused, and the other children's are recorded (not judged: the Agent may cancel its own
    delegated work, `subagents.mdx:398`).
@@ -87,8 +92,10 @@ class ChildCancelRun:
     """`none`: no child advertised `cancel` while reported running. `raced`: the child reported
     an idle that is not a cancellation within the race window (`quiet_period`), with a stop reason
     it could have reached on its own, so it had ended first. `not_cancelled`: any other
-    non-cancelled idle. `unconfirmed`: no idle within `timeout / 2`. `confirmed`: `idle` with
-    `stopReason: "cancelled"`."""
+    non-cancelled idle. `unobservable`: the child reported `unknown` after the cancel and no idle
+    followed within `timeout / 2`. `unconfirmed`: no idle `state_update` of the child's own within
+    `timeout / 2` (a mirror on the parent alone does not count). `confirmed`: `idle` with
+    `stopReason: "cancelled"` in the child's own `state_update`."""
     parent_cancelled: bool = False
     """The parent reported `idle`/`cancelled` after the child cancel and before the TCK's own
     parent `session/cancel`."""
@@ -129,6 +136,7 @@ class _Driver:
         self.target_sent_index: int | None = None
         self.target_sent_at = 0.0
         self.target_settled_at: float | None = None
+        self.target_unknown = False
         self.parent_cancel_index: int | None = None
         self.parent_cancel_at = 0.0
         self.parent_ended_at: float | None = None
@@ -193,17 +201,19 @@ class _Driver:
             return
         self.children[sid].background = background_keys(update)
         self.children[sid].background_at = index
-        self._report(index, sid, update)
+        self._report(index, sid, update, own=True)
 
-    def _report(self, index: int, child_id: str, state: Any) -> None:
+    def _report(self, index: int, child_id: str, state: Any, own: bool = False) -> None:
         child = self.children[child_id]
         child.state = state if isinstance(state, dict) else None
         if self.target_sent_index is None or index <= self.target_sent_index or child.state is None:
             return
         if child_id == self.result.target:
-            if self.result.outcome == "none" and child.state.get("state") == "idle":
+            if own and self.result.outcome == "none" and child.state.get("state") == "idle":
                 self.result.outcome = self._settle(index, child.state)
                 self.target_settled_at = asyncio.get_running_loop().time()
+            elif child.state.get("state") == "unknown":
+                self.target_unknown = True
         elif (
             self.parent_cancel_index is None
             and _is_idle_cancelled(child.state)
@@ -326,7 +336,7 @@ class _Driver:
         )
         if self.result.target is not None and self.result.outcome == "none":
             if now - self.target_sent_at > self.window:
-                self.result.outcome = "unconfirmed"
+                self.result.outcome = "unobservable" if self.target_unknown else "unconfirmed"
                 self.target_settled_at = now
         target_settled = search_over and (
             self.result.target is None

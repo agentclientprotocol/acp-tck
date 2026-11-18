@@ -852,7 +852,7 @@ reason = "Unobservable: whether a child's configuration is available, or has cha
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/subagents.mdx:265; docs/protocol/v2/draft/prompt-lifecycle.mdx:149-152 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When the Agent has no evidence of who sent a message a child received, it omits `senderSessionId` and does not assume the parent (MUST NOT), and it links two views only when it can establish that they are the same message."
-reason = "Unobservable: the agent's evidence is internal, so a `senderSessionId` naming the parent, or a link between views, looks the same whether it was established or assumed."
+reason = "Unobservable: the agent's evidence is internal, so a `senderSessionId` naming the parent, or a link between views, looks the same whether it was established or assumed. An omitted sender still counts as reporting the message in ACP-SUBAGENT-012."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/subagents.mdx:380 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

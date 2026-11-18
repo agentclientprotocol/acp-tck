@@ -807,6 +807,37 @@ def test_a_task_that_follows_or_misses_the_output_is_unreported():
     assert len(child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK), {"p"}).unreported) == 1
 
 
+def test_an_incoming_task_message_without_a_sender_counts_as_reported():
+    # no evidence of the sender: omitted `senderSessionId`, the recipient (if named) is the child
+    for fields in ({}, {"recipientSessionId": "c"}):
+        found = child_task_reports(
+            _traffic(_ANNOUNCE, _session_message("c", "in", **fields), _CHILD_CHUNK), {"p"}
+        )
+        assert (found.started, found.judged, found.unreported) == (1, 1, []), fields
+    # the sender may be added by a later upsert; a cleared sender is still no evidence
+    later = _traffic(
+        _ANNOUNCE,
+        _session_message("c", "in"),
+        _session_message("c", "in", senderSessionId="p"),
+        _CHILD_CHUNK,
+    )
+    assert child_task_reports(later, {"p"}).unreported == []
+    cleared = _traffic(_ANNOUNCE, _session_message("c", "in", senderSessionId=None), _CHILD_CHUNK)
+    assert child_task_reports(cleared, {"p"}).unreported == []
+
+
+def test_a_task_message_without_a_sender_is_not_incoming_when_it_names_another_recipient():
+    # the child's own outgoing view is not a task for it
+    outgoing = _session_message("c", "out", recipientSessionId="g")
+    assert len(child_task_reports(_traffic(_ANNOUNCE, outgoing, _CHILD_CHUNK), {"p"}).unreported) == 1
+    # a sender that is neither the parent nor absent is still not the parent's task
+    other = _session_message("c", "in", senderSessionId="g", recipientSessionId="c")
+    assert len(child_task_reports(_traffic(_ANNOUNCE, other, _CHILD_CHUNK), {"p"}).unreported) == 1
+    # a message that follows the output does not count, sender or not
+    after = child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK, _session_message("c", "in")), {"p"})
+    assert len(after.unreported) == 1
+
+
 def test_a_user_message_task_is_judged_only_as_a_user_message():
     for user in (_USER, _update("c", {"sessionUpdate": "user_message_chunk", "messageId": "u"})):
         found = child_task_reports(_traffic(_ANNOUNCE, user, _CHILD_CHUNK), {"p"})

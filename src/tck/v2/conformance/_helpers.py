@@ -1169,11 +1169,15 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
     `user_message_tasks`. Otherwise a child whose first output was not preceded by an incoming
     `session_message` (outer `sessionId` the child, `senderSessionId` its immediate parent, the
     parent being the session that first announced it; the sender is stored across upserts of the
-    `messageId`) is `unreported`. A child that never produces output is not judged, and a child
-    already in `user_message_tasks` is left out of `judged`."""
+    `messageId`) is `unreported`. An incoming `session_message` that names no sender counts as
+    reported: an Agent with no evidence of who sent the message omits `senderSessionId` and does
+    not assume the parent (`subagents.mdx:265`, `prompt-lifecycle.mdx:149-152`). Incoming means
+    its recipient, once stored, is the child or absent. A child that never produces output is not
+    judged, and a child already in `user_message_tasks` is left out of `judged`."""
     result = ChildTasks()
     parents: dict[str, str] = {}
     senders: dict[tuple[str, str], str | None] = {}
+    recipients: dict[tuple[str, str], str | None] = {}
     tasked: set[str] = set()  # children told the task, either way
     started: set[str] = set()
     user_message_children: set[str] = set()  # `ACP-SUBAGENT-011`'s, not judged by 012
@@ -1205,7 +1209,9 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
         elif kind == "session_message" and isinstance(update.get("messageId"), str):
             key = (outer, update["messageId"])
             senders[key] = _patched(senders.get(key), update, "senderSessionId")
-            if senders[key] == parents[outer]:
+            recipients[key] = _patched(recipients.get(key), update, "recipientSessionId")
+            no_sender = senders[key] is None and recipients[key] in (None, outer)
+            if senders[key] == parents[outer] or no_sender:
                 tasked.add(outer)
         elif kind in _CHILD_OUTPUT_KINDS:
             started.add(outer)

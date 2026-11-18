@@ -3,8 +3,10 @@ ACP-TOOLCANCEL-203 and ACP-TERMCANCEL-203.
 
 A child that advertises `capabilities.cancel` (`SubagentSessionCapabilities`) may be cancelled with
 `session/cancel` carrying the child's `sessionId`; that cancels the child's current work, not its
-parent or its siblings, and the child confirms with `idle` and `stopReason: "cancelled"`
-(`subagents.mdx:386,398,400`). Cancelling a session's work also cancels the descendant work it waits on
+parent or its siblings, and the child confirms with `idle` and `stopReason: "cancelled"` in its own
+`state_update` (`subagents.mdx:386,398,400`; the mirror on the parent is a SHOULD, judged by
+`ACP-SUBAGENT-201`), or reports `unknown` when it can no longer observe the child
+(`subagents.mdx:401`: the row SKIPs). Cancelling a session's work also cancels the descendant work it waits on
 (`subagents.mdx:405`). A child's tool call or terminal that advertises its own `cancel` is cancelled with
 `tool_call/cancel` / `terminal/cancel` sent with the child's `sessionId`, whether or not the child
 advertises `cancel` (tool-calls.mdx:457,603).
@@ -79,10 +81,19 @@ def _skip_unless_child_cancelled(run: ChildCancelRun) -> None:
 async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_path, subagent_cancel_prompt_text):
     """ACP-SUBAGENT-016 (CAPABILITY, `inferred:subagentCancel`). After `session/cancel` for a
     running child that advertises `capabilities.cancel`, the child reports `idle` with
-    `stopReason: "cancelled"` (on its own session or mirrored on its parent association). SKIPs
-    when no such child was running or it ended on its own within the race window."""
+    `stopReason: "cancelled"` in a `state_update` on its own session; a mirror on the parent
+    association alone does not confirm it (`subagents.mdx:400`; the mirror is a SHOULD, judged by
+    `ACP-SUBAGENT-201`). SKIPs when no such child was running or it ended on its own within the
+    race window, and when the child reported `unknown` after the request and no `idle` followed:
+    an Agent that can no longer observe the child reports `unknown` instead of a confirmation
+    (`subagents.mdx:401`), so the cancellation is not observable."""
     run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
+    if run.outcome == "unobservable":
+        pytest.skip(
+            f"cancellation not observable: child {run.target!r} reported `unknown` after "
+            "session/cancel and no idle state_update followed (the Agent can no longer observe it)"
+        )
     assert run.outcome != "not_cancelled", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
         "running, was followed by an idle state_update without stopReason 'cancelled' after the "
@@ -90,8 +101,8 @@ async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_p
     )
     assert run.outcome == "confirmed", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
-        "running, was not followed by an idle state_update with stopReason 'cancelled' for it "
-        "within the timeout"
+        "running, was not followed by an idle state_update with stopReason 'cancelled' on the "
+        "child's own session within the timeout (a mirror on the parent alone does not confirm it)"
     )
 
 
