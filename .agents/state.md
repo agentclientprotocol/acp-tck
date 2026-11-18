@@ -23,6 +23,10 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - AUTH-211: relax the common plugin to allow several `revokes` tests, run last in collection order (user, 2026-11-18).
 - Pre-existing ACP-DELETE-204 fixture bug: fix in this PR as a small fixture-only slice + a test running DELETE-204 without the hang prompt (user).
 - Slice 28: PL "Prompt suggestions (unstable)" and "Session cursors (unstable)" STAY in the v2 left-out list (user, 2026-11-18); not core_doc sections.
+- Milestone-2 fixes (user, 2026-11-18): fix EVERYTHING (S1-S10, N1-N18) in 3 slices by area, one commit each:
+  FIX-SA (opus): S1, S4, S7, S8, N4, N5, N11, N12, N13, N14 — subagent/child-cancel harness, both versions where applicable.
+  FIX-ROWS: S2, S3, S5, S6, N1, N2, N3, N6, N7, N8, N9, N15 (walker unit tests), N16 (repeat initial-config probes on session/fork when advertised), N18 (harden the 2 load-flaky CLI tests if the 1 s --timeout cause is confirmed).
+  FIX-LEDGER: S9, S10, N10, N17.
 - No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
@@ -62,7 +66,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - DOCS (28) — c80a543 — stage wording Draft/Preview/Completed (docs, README, update-to-spec + check-specification skills), impact.py TRACKED_STAGES=("Preview",) (legacy Active still read), inferred list +promptSuggestions/subagents/subagentCancel/toolCallCancel/terminalCancel, rfd_audit=3ea94133 in both maps, v2 PL code += test_idempotency, SCO:585 reworded; spec-tracker 121, suite 1189. For review: test_session_options/test_initial_config/test_prompt_suggestions/test_cursors NOT added to core_doc code (their sections aren't core; accepted); map header comment 'rfd_audit absent until first full audit' now stale (nit).
 - Review milestone 2 — review-area-slices.md — 0 blocker, 10 should-fix (S1-S10), 18 nits (N1-N18); suite green at c80a543 (1189). Fix plan pending the user.
 ## Next
-Order (plan section 5): milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
+Order (plan section 5): fix slices FIX-SA -> FIX-ROWS -> FIX-LEDGER -> id alignment -> cross-check refresh -> final review.
 - Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-28 done (ALL area slices) (plus R-FIX, typo fix, DEL204-FIX).
 - Milestone-2 review DONE over 7254513..c80a543 (milestone-1 review covered 6bce0b3..7254513), report .agents/research/review-area-slices.md, decisions D1-D13,
   plan sections 1-5. Show findings to the user; fixes become slices. Known items to hand the reviewer: v1 OPTIONS-008 also flags
