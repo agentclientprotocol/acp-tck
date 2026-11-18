@@ -487,8 +487,8 @@ reason = "Out of scope: it needs a connection loss and a reconnect, and the TCK'
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:476; docs/protocol/v2/draft/session-delete.mdx:95; docs/protocol/v2/draft/session-list.mdx:247 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Closing, deleting or archiving an active session frees its resources, and closing also stops the session's background work."
-reason = "Not observable: freeing resources is internal to the agent, and background work needs an agent that reports it. The cancellation of foreground work is covered by ACP-CLOSE-002, ACP-DELETE-204 and ACP-ARCHIVE-201."
+statement = "Closing, deleting or archiving an active session frees its resources, and closing also stops the session's background work and its child sessions, at any depth."
+reason = "Not observable: freeing resources is internal to the agent, and background work and child sessions need an agent that reports them. The cancellation of foreground work is covered by ACP-CLOSE-002, ACP-DELETE-204 and ACP-ARCHIVE-201."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:560,561,565 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -777,72 +777,132 @@ citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:1446; docs/protocol/v2/d
 statement = "`session/cancel` does not cover work in the latest `background` list or its permission requests, which keep running, and the Agent MAY stop background activity it does not list."
 reason = "Not observable as a violation: listed work may end on its own at any moment, so an item that reaches a final status after `session/cancel` cannot be told from one that finished by itself, and an item that keeps running proves nothing about unlisted activity, which the Agent MAY stop. ACP-INFO-BACKGROUND-202 records what happens to the listed items."
 
-# --- subagents (docs/rfds/subagents.mdx, Preview RFD) ---
+# --- subagents (docs/protocol/v2/draft/subagents.mdx; docs/rfds/subagents.mdx, Preview RFD) ---
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:322-326 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:239-240; docs/rfds/subagents.mdx:322-326 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent reports a child directory that differs from the parent's before it sends child traffic that depends on it (MUST), and does not expose a child whose directories it cannot determine as sharing the parent's workspace (SHOULD NOT)."
 reason = "Unobservable: a client cannot know where the agent actually placed a child, whether that differs from the parent's directories, or whether the agent could determine them, so a child reported with no directories cannot be told from one that really shares the parent's. ACP-SUBAGENT-006 judges only that reported paths are absolute."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:381-382,387-390 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:241,473; docs/rfds/subagents.mdx:381-382,387-390 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents report the narrowest directories a child needs (SHOULD), send current directory values after reconnecting when they differ (SHOULD), and report a new value or `null` when a child's directory no longer exists (MUST)."
 reason = "Unobservable: what a child needs, and whether its directory still exists or has changed since the recorded context, is known only to the agent; the client sees only the values it chooses to report."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:198-199,976-977 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:134,484; docs/rfds/subagents.mdx:198-199,976-977 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent does not guess a child's parentage, and does not temporarily announce a nested child under the root, whether live or when a replay cannot reconstruct the association truthfully (MUST NOT)."
 reason = "Unobservable: a child's true parent is known only to the agent, so a guessed parent cannot be told from a recovered one. A later announcement of the same child under a different parent is judged by ACP-SUBAGENT-005."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:203-206 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:135-136,413; docs/rfds/subagents.mdx:203-206 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent that keeps an operation unexposed does not later move an already-issued interaction to a different session, and once a child is exposed its new interactions use the child's session ID rather than falling back to the root (MUST NOT / MUST)."
 reason = "Unobservable: which session an interaction belongs to is known only to the agent, so a request sent under the root cannot be told from one that really belongs to the root."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:223-226 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:143; docs/rfds/subagents.mdx:223-226 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After announcing a child the Agent sends its events automatically, without waiting for another Client request, and with no `session/attach`, `session/subscribe` or per-child opt-in."
 reason = "Unobservable: a quiet child cannot be told from one whose events the agent is withholding, so the absence of events proves nothing. Events the agent does send are judged by the announcement rows from ACP-SUBAGENT-001."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:584-585 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-139; docs/rfds/subagents.mdx:584-585 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent reports each side of a session-directed message only when it can observe that side, and does not manufacture an incoming entry from an outgoing one."
 reason = "Unobservable: whether the agent observed the recipient's receipt is internal, and an incoming entry looks the same whether it was observed or derived."
 
 [[not_requirement]]
-citation = "schema/v2/schema.unstable.json#/$defs/UnknownStateUpdate; docs/rfds/subagents.mdx:881-889 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "When observability of a child's foreground work is actually lost the Agent reports the `unknown` state as a `state_update` on the child's own stream, mirrored on the parent association (MUST), and not merely because the child has been quiet."
-reason = "Unobservable: whether the agent has lost sight of a child's work is internal, and a child that is only quiet looks the same from outside, so neither a missing `unknown` nor a spurious one can be judged."
+citation = "docs/protocol/v2/draft/subagents.mdx:360,364-365; schema/v2/schema.unstable.json#/$defs/UnknownStateUpdate; docs/rfds/subagents.mdx:881-889 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the Agent can no longer observe a child's foreground work, including when it stops tracking a child that may still be working, it reports the `unknown` state as a `state_update` on the child's own stream, mirrored on the parent association (MUST), and not merely because the child has been quiet; it does not invent a final status for the child's unfinished tool calls, terminals or `background` list (MUST NOT), and sends new `capabilities` if one is no longer available."
+reason = "Unobservable: whether the agent has lost sight of a child's work, or stopped tracking it, is internal, and a child that is only quiet looks the same from outside, so neither a missing `unknown` nor a spurious one can be judged. A final status after `unknown` is correct once the agent learns the work ended (`subagents.mdx:365`), and which capabilities remain available is internal."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1161-1165 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Closing a parent session cancels all of its active descendant work, background children included, and releases the associated active resources, without requiring a new terminal-state notification."
-reason = "Not observable as a violation: the rule requires no wire signal, so a descendant that stopped looks like one with nothing to report, and releasing resources is internal to the agent."
+citation = "docs/protocol/v2/draft/subagents.mdx:425,428; docs/protocol/v2/draft/session-setup.mdx:476; docs/rfds/subagents.mdx:1161-1165 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Closing a parent session stops the work of all its descendants, background children included, and frees their active resources, without requiring a final update for each child."
+reason = "Not observable as a violation: this part of the rule requires no wire signal, so a descendant that stopped looks like one with nothing to report, and freeing resources is internal to the agent. The separate MUST to cancel the descendants' pending permission requests and elicitations with `$/cancel_request` before the close response (`subagents.mdx:427`) is not part of this entry."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1198-1200 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:420; docs/rfds/subagents.mdx:1198-1200 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A late response still resolves its original request, but the Agent does not use it to restart cancelled or otherwise abandoned work, or to authorize a new assignment to the same child (MUST NOT)."
-reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt. Provoking it also needs a non-`cancelled` answer to a request of cancelled work, which breaks the client rule at :1173-1175."
+reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1038-1040 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:488; docs/rfds/subagents.mdx:1038-1040 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Replay (v2 `session/resume` with history) does not reissue recorded permission, elicitation or other Agent-to-Client requests (MUST NOT)."
 reason = "Unobservable: a request sent during replay cannot be told from a newly issued live request, which the RFD allows, and whether it was recorded is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:979-986 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:485; docs/rfds/subagents.mdx:979-986 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When replaying a recorded directed message the Agent does not invent either participant ID, and does not reinterpret its content as an ordinary message to or from the human user (MUST NOT)."
-reason = "Unobservable: a replayed participant address is historical and need not be announced (:982), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
+reason = "Unobservable: a replayed participant address is historical and need not be announced (`subagents.mdx:485`), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1063-1067 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+citation = "docs/protocol/v2/draft/subagents.mdx:472; docs/rfds/subagents.mdx:1063-1067 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The Agent does not manufacture a failure, cancellation or permanent orphan outcome for a child solely because the persisted history lacks a final update or a runtime could not be restored (MUST NOT)."
 reason = "Unobservable: whether the stored history lacked a final update, or a runtime could be restored, is internal to the agent, so a reported failure or cancellation looks like a real outcome."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1168-1170 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Agents do not fabricate an exclusive parent or child cost amount from incomplete token counts or an aggregate total (MUST NOT)."
-reason = "Unobservable: a client cannot know the provider's true cost or token counts, so a fabricated amount cannot be told from a real one."
+citation = "docs/protocol/v2/draft/subagents.mdx:139 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Requests the Agent sends for a child pass through the same Client capability and permission checks as the parent's, and the Agent does not use a child to get around a restriction the Client placed on the parent session (MUST NOT)."
+reason = "Not observable: whether a child's activity circumvents a parent restriction depends on the Agent's internal routing and agent-local tools, and restrictions such as permission policy are not on the wire. The Client capability gate on `elicitation/create` is judged by ACP-CLIENTCAP-003 whatever `sessionId` the request carries."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:248,474 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents report a child's configuration with `config_option_update` on the child after the announcement, again on every change, and for a restored child after a resume, when it is available (SHOULD)."
+reason = "Unobservable: whether a child's configuration is available, or has changed, is known only to the agent, so a missing update cannot be told from a configuration that was not available. ACP-SUBAGENT-014 judges what is reported."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:265; docs/protocol/v2/draft/prompt-lifecycle.mdx:149-152 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the Agent has no evidence of who sent a message a child received, it omits `senderSessionId` and does not assume the parent (MUST NOT), and it links two views only when it can establish that they are the same message."
+reason = "Unobservable: the agent's evidence is internal, so a `senderSessionId` naming the parent, or a link between views, looks the same whether it was established or assumed."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:380 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent ignores a `session/cancel` for a child that does not advertise `cancel`."
+reason = "Not observable as a violation: the Agent can cancel delegated work at any time (`subagents.mdx:398`) and a child may stop on its own, so an `idle`/`cancelled` after such a notification cannot be attributed to it."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:401,403 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent reports `cancelled` only when it observes that the child's work stopped, not on the provider accepting a stop command, and cancellation does not close the child."
+reason = "Unobservable: when the provider actually stopped is internal to the agent, and a child need not get more work after a cancel (`subagents.mdx:130`), so \"not closed\" has no wire signal. The confirmation itself is judged by ACP-SUBAGENT-016."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:418 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "`session/cancel` on a parent does not resolve the pending requests of a child that keeps running."
+reason = "Not observable as a violation: the Agent decides which other descendants keep running (`subagents.mdx:405`) and cancels the pending permission requests of work it stops (`subagents.mdx:417`), so a request withdrawn after a parent cancel cannot be told from one that belonged to descendant work the Agent stopped."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:470,480,487 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "After a resume the Agent reports each child's current state when it can determine it, replays the associations and child history it still has, and reports known gaps, for example with a notice (SHOULD)."
+reason = "Unobservable: what the agent can determine, still has or knows to be missing is internal, and child history may be incomplete or missing without a violation."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:494-496; docs/protocol/v2/draft/prompt-lifecycle.mdx:1055 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A session's reported cost includes the costs of its descendants, and a root session's cost is the Agent's total for the whole tree."
+reason = "Not observable as a violation: the true cost is unknown to the client, and a descendant's cost can reach its ancestors later (`subagents.mdx:494`), with no deadline, so no snapshot comparison proves one. Cost reporting is optional."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:482 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Replayed child updates keep their original `sessionId`, their known parent and their order within each session (MUST)."
+reason = "Deferred: observing it needs the session tree the client saw before a `session/resume`, carried across the reconnection, and the TCK's resume tests do not keep a live child tree. It would be unblocked by a resume step that reuses the subagents connection's announced children. The announcement rule on every resume is judged by ACP-RESUME-209."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:436-438 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "If forking a parent copies child history, the Agent remaps the copied session IDs consistently in the participant fields of `session_message` and in `session` tool call content, including references to the forked root (MUST)."
+reason = "Deferred: observing it needs a `session/fork` of a parent with announced children followed by a `session/resume` with replay of the fork. It would be unblocked by a fork and resume step on the subagents connection, gated on `sessionCapabilities.fork`."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:586-588 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent does not report an outgoing view of a session-directed message for a send it knows failed before the message left the sender (SHOULD NOT)."
+reason = "Unobservable: whether a send failed, and whether the agent knew it had, is internal to the agent; an outgoing view looks the same whether or not its delivery failed."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:471-472 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents supply each `senderMessageId` / `recipientMessageId` reference once they know it (SHOULD)."
+reason = "Unobservable: when, or whether, the agent learns the other view's `messageId` is internal, and it leaves views unlinked when it cannot establish that they are the same message, so two unlinked views cannot be told from views the agent could have linked. Conflicting references are judged by ACP-SUBAGENT-009."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:995-996 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents retain or reconstruct child identity, associations and ACP-visible conversation data where practical (SHOULD)."
+reason = "Unobservable: what the agent retained, and what was practical, is internal to the agent; child replay is best-effort, so missing child history after `session/resume` is not a violation a client can prove."
 
 
 # --- deferred unstable methods and rules ---

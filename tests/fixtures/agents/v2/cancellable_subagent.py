@@ -7,11 +7,11 @@ an empty `background` list (re-sent once the children are announced), so both ch
 foreground work.
 
 - `session/cancel` for child A stops that child only: it reports `idle` with `stopReason:
-  "cancelled"` on its own session and on the parent association (RFD:1113-1117, 1133-1137). A
+  "cancelled"` on its own session and on the parent association (`subagents.mdx:398,400`). A
   cancel for a child that is no longer running is ignored (a cancel racing with ended work does
   not rewrite its outcome).
 - `session/cancel` for the parent also stops every child it is waiting on, before the parent's own
-  `idle`/`cancelled` (RFD:1119-1131).
+  `idle`/`cancelled` (`subagents.mdx:405`).
 - `tool_call/cancel` / `terminal/cancel` with child B's `sessionId` are accepted and confirmed
   (tool-calls.mdx:457,603), and leave B running.
 

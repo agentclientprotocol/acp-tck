@@ -358,14 +358,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`elicitation/create` with the child's `sessionId`, and a `session_message` naming "
             "the child as `senderSessionId` or `recipientSessionId`. The announcement must itself "
             "be sent on a known session (nested children included); traffic for an unannounced "
-            "child FAILs. Stated by the schema's `SubagentUpdate` and the Subagents RFD (Preview "
-            "RFD). Judged in wire order over one `session/new`, one prompt turn and a quiet "
+            "child FAILs. Stated by the draft docs and schema (`SubagentUpdate`); the docs also "
+            "list `session` content (`ACP-SUBAGENT-002`'s) and a `background` list that names "
+            "the child (`ACP-STATE-207`'s) under the same MUST. Judged in wire order over one "
+            "`session/new`, one prompt turn and a quiet "
             "period after it (`session/resume` replay is `ACP-RESUME-209`'s). Subagents have no "
             "`initialize` marker, so support is inferred from the traffic "
             "(`capability=\"inferred:subagents\"` is documentation-only); SKIPs when no "
             "session ID the client did not create appears on the connection."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:68,70-78,198; "
             "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
             "docs/rfds/subagents.mdx:95-99,189-193 (Preview RFD)"
         ),
@@ -382,14 +385,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/request_permission` request's `subject.toolCall.content` (a `tool_call` "
             "subject; a `command` subject carries only a tool call ID), in wire order over one "
             "`session/new`, one prompt turn and a quiet period after it. A reference to a "
-            "session no announcement preceded FAILs. A reference does not count as traffic "
-            "carrying the child's ID, so it never FAILs `ACP-SUBAGENT-001`. The draft docs state "
-            "the MUST, but only an agent that emits `session` content is bound and no "
+            "session no announcement preceded FAILs. A reference is judged by this row, not by "
+            "`ACP-SUBAGENT-001`, so one defect never FAILs both. The draft docs state the "
+            "MUST (the announcement precedes a `session` content item that references the "
+            "child), but only an agent that emits `session` content is bound and no "
             "`initialize` marker announces that, so the row is gated by `inferred:subagents` "
             "(documentation-only) and SKIPs when no `session` content item appears."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/tool-calls.mdx:740-742; "
+            "docs/protocol/v2/draft/subagents.mdx:70,74; "
+            "docs/protocol/v2/draft/tool-calls.mdx:740-742,754-756; "
             "docs/rfds/subagents.mdx:647-649 (Preview RFD)"
         ),
     ),
@@ -400,15 +405,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A `subagent_update` never makes a session its own parent: `update.sessionId` differs "
             "from the `sessionId` of the session the notification is sent on, whichever session "
-            "that is. Stated only by the Subagents RFD (Preview RFD: `the association cannot ... "
-            "refer to itself`), so the row is capped at CAPABILITY and gated by "
-            "`inferred:subagents` (documentation-only, no `initialize` marker). Judged for every "
+            "that is. The draft docs state it (a `subagent_update` `cannot ... name its own "
+            "outer session as the child`), and it binds only an agent that exposes subagents, so "
+            "the row is CAPABILITY and gated by `inferred:subagents` (documentation-only, no "
+            "`initialize` marker). Judged for every "
             "`subagent_update` over one `session/new`, one prompt turn and a quiet period after "
             "it; SKIPs when none appears. A self-referencing update is judged here and by no "
             "other association row (`ACP-SUBAGENT-004`/`-005` leave it out), so one defect never "
             "FAILs several."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:165-169 (Preview RFD)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:68,126; "
+            "docs/rfds/subagents.mdx:165-169 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-004",
@@ -418,14 +427,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "A `subagent_update` never announces a session ID that is already an ordinary session "
             "the client created with `session/new`, as the child of another session. The child's "
             "ID identifies the child session in all ACP messages and is unique within the "
-            "connection, so it is not reused for an unrelated session. Stated only by the "
-            "Subagents RFD (Preview RFD), so the row is capped at CAPABILITY and gated by "
-            "`inferred:subagents`. A client session announced as its own child is "
+            "connection, so it is not reused for an unrelated session. The draft docs state it "
+            "(`unique on the connection`, and the Agent `MUST NOT` reuse it for an unrelated "
+            "session), and it binds only an agent that exposes subagents, so the row is "
+            "CAPABILITY and gated by `inferred:subagents`. A client session announced as its "
+            "own child is "
             "`ACP-SUBAGENT-003`'s. Judged for every `subagent_update` over one `session/new`, one "
             "prompt turn and a quiet period after it; SKIPs when none appears. Announcing a "
             "client session under one of its own descendants is the cycle case of this row."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:122-124,165-169 (Preview RFD)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:80-84,126; "
+            "docs/rfds/subagents.mdx:122-124,165-169 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-005",
@@ -436,15 +450,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`subagent_update` for the same `sessionId` sent on a different session (a "
             "reparenting, which includes one that would create a cycle) FAILs. Later updates only "
             "modify the association's metadata, not its ownership. The draft docs state the "
-            "ownership rule and the RFD states the one-parent, no-cycle rule; there is no "
-            "`initialize` marker and the rule binds only an agent that emits `subagent_update`, "
-            "so the row is CAPABILITY and gated by `inferred:subagents`. The remaining ways to "
+            "ownership and the one-parent, no-cycle rule, and replayed child updates keep their "
+            "known parent; there is no `initialize` marker and the rule binds only an agent that "
+            "emits `subagent_update`, so the row is CAPABILITY and gated by "
+            "`inferred:subagents`. The remaining ways to "
             "close a cycle are `ACP-SUBAGENT-003` (a self-parent) and `-004` (a client session "
             "announced as a child), so a cycle never FAILs more than one row. Judged for every "
             "`subagent_update` sent on a known session over one `session/new`, one prompt turn and "
             "a quiet period after it; SKIPs when none appears."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:68,126,482; "
             "docs/protocol/v2/draft/schema.mdx:11552-11556; "
             "docs/rfds/subagents.mdx:165-169 (Preview RFD)"
         ),
@@ -468,6 +484,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`additionalDirectories` entry."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:106-113,218; "
             "docs/protocol/v2/draft/schema.mdx:11603,11619; "
             "schema/v2/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; "
             "schema/v2/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories; "
@@ -524,15 +541,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "sender or recipient is a third session. A reference to a view the agent never "
             "reported, or to a view with no reference of its own, is not judged (each side is "
             "reported only when observed, and the draft docs add that views are not linked by "
-            "equal IDs alone). The draft docs define what each field names; the RFD alone states "
-            "the MUST that both references agree, so the row is capped at CAPABILITY and gated by "
-            "`inferred:subagents`. Judged on the stored state after every `session_message` of "
+            "equal IDs alone). The draft docs define what each field names and add only a SHOULD "
+            "to link the two views; the RFD alone states the MUST that both references agree, so "
+            "the row is capped at CAPABILITY and gated by `inferred:subagents`. Judged on the stored state after every `session_message` of "
             "one `session/new`, one prompt turn and a quiet period after it; SKIPs when no two views "
             "were found that both carry a reference, so no link was judged. "
             "`session_message_chunk` carries no identity, so is not judged."
         ),
         citation=_cite(
             "docs/rfds/subagents.mdx:466-475 (Preview RFD); "
+            "docs/protocol/v2/draft/subagents.mdx:263; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:133-137; "
             "docs/protocol/v2/draft/schema.mdx:9413,9427"
         ),
@@ -542,18 +560,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The task a parent gives a child is not reported as a `user_message` or "
-            "`user_message_chunk` in the child's transcript (SHOULD NOT): none appears for an "
-            "announced child before that child's first agent output (`agent_message`, "
-            "`agent_thought` or a chunk of either), which is when the first task has started its "
-            "work. The Client cannot prompt a child, so such a message would attribute the task "
-            "to the user. Judged over one `session/new`, one prompt turn and a quiet period "
+            "A message from a parent to a child is not reported as a `user_message` or "
+            "`user_message_chunk` in the child's transcript (SHOULD NOT): judged is the first "
+            "one, which starts the child's work, so none appears for an announced child before "
+            "that child's first agent output (`agent_message`, `agent_thought` or a chunk of "
+            "either). The Client cannot prompt a child, so such a message would attribute the "
+            "task to the user. Judged over one `session/new`, one prompt turn and a quiet period "
             "after it; SKIPs itself when no announced child produces agent output and none has a "
             "user message."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:260,264; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:142-147; "
-            "docs/rfds/subagents.mdx:667-676,685-690 (Preview RFD)"
+            "docs/rfds/subagents.mdx:667-690 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -561,17 +580,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The task a parent gives a child is reported as an incoming `session_message` in the "
-            "child's transcript, with `senderSessionId` set to the parent, before the child's "
-            "first agent output (SHOULD): the child's `agent_message`, `agent_thought` or a "
-            "chunk of either is preceded by such an upsert (the sender is stored across upserts "
-            "of the `messageId`; the parent is the session that announced the child). A child "
+            "A message from a parent to a child is reported as an incoming `session_message` in "
+            "the child's transcript, with `senderSessionId` set to the parent, before the "
+            "child's response to it (SHOULD): judged is the first one, which starts the child's "
+            "work, so the child's first `agent_message`, `agent_thought` or chunk of either is "
+            "preceded by such an upsert (the sender is stored across upserts of the "
+            "`messageId`; the parent is the session that announced the child). A child "
             "whose task was reported as a `user_message` is `ACP-SUBAGENT-011`'s FAIL, so is not "
             "judged here. Judged over one `session/new`, one prompt turn and a quiet period "
             "after it; SKIPs itself when no announced child that was not told its task as a "
             "`user_message` produces agent output."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:260,262; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:142-147; "
             "docs/rfds/subagents.mdx:667-676 (Preview RFD)"
         ),
@@ -604,15 +625,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A select config option reported for a child in a `config_option_update` offers only "
             "its current value (SHOULD): the child does not permit Client-initiated "
-            "configuration changes (the only mutation the Subagents RFD defines is `cancel`, and "
-            "`session/set_config_option` is not authorized for a child), so the value is kept for "
+            "configuration changes (the only capability defined for a child is `cancel`, and "
+            "`session/set_config_option` is not permitted for a child), so the value is kept for "
             "its name without advertising choices the Client cannot select. Values are counted "
             "across option groups; boolean options and updates for a not-yet-announced child are "
-            "not judged. Stated only by the Subagents RFD (Preview RFD), so the row is ADVISORY. "
+            "not judged. The draft docs state it as a SHOULD, so the row is ADVISORY. "
             "Judged over one `session/new`, one prompt turn and a quiet period after it; SKIPS "
             "itself when no `config_option_update` for an announced child carries a select."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:392-419 (Preview RFD)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:250-252,378; "
+            "docs/rfds/subagents.mdx:392-419 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-201",
@@ -621,7 +645,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Every state a child reports in its own `state_update` is mirrored on the immediate "
             "parent (the session that announced it) as the `state` of a `subagent_update` for "
-            "that child (SHOULD). For each child announced on a known session, the distinct "
+            "that child (SHOULD, as the draft docs state it). For each child announced on a known session, the distinct "
             "consecutive states of its own `state_update`s appear, in order, among the states "
             "of its `subagent_update` mirrors; a mirror may arrive before or after the copy on "
             "the child's stream, a repeated snapshot needs no second mirror, and only `state` "
@@ -633,6 +657,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "association alone (`subagent_update.state`), so there is nothing to mirror."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:330,350-352; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:1288-1291; "
             "schema/v2/schema.unstable.json#/$defs/SubagentUpdate; "
             "docs/rfds/subagents.mdx:791-800 (Preview RFD)"
@@ -647,11 +672,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "with `session/cancel` for the child's `sessionId`, and confirms it: the child "
             "reports `idle` with `stopReason: \"cancelled\"` in a `state_update` on its own "
             "session, or in its mirror on the parent association (`subagent_update.state`). The "
-            "per-child capability is stated by the draft docs and schema (`SubagentSessionCapabilities`: "
-            "`cancel` `Permits the client to cancel this child's current work`); the confirmation "
-            "is stated only by the Subagents RFD (Preview RFD), and no `initialize` marker "
-            "announces it, so the row is CAPABILITY, gated by `inferred:subagentCancel` "
-            "(documentation-only). The TCK sends the request only to a child that advertises "
+            "per-child capability and the confirmation are stated by the draft docs and schema "
+            "(`SubagentSessionCapabilities`: `cancel` `Permits the client to cancel this child's "
+            "current work`), and no `initialize` marker announces it, so the row is "
+            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). The TCK sends the request only to a child that advertises "
             "`cancel` and was last reported running (the client MUST NOT cancel one that does "
             "not), in the driven turn of the cancel prompt, and gives the child `timeout / 2` to "
             "confirm. A child that reports an idle that is not a cancellation within "
@@ -663,6 +687,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "parent snapshot alone)."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:373,378,386,398-402; "
             "docs/protocol/v2/draft/schema.mdx:11545; "
             "schema/v2/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
             "docs/rfds/subagents.mdx:1113-1117,1133-1139 (Preview RFD)"
@@ -676,11 +701,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/cancel` for a child cancels current work in that child, not its parent: "
             "after the TCK cancels a running child that advertises `cancel`, the parent does not "
             "report `idle` with `stopReason: \"cancelled\"` before the TCK itself cancels it. "
-            "Stated only by the Subagents RFD (Preview RFD: `This cancels current work in that "
-            "child, not its parent or siblings`), so the row is CAPABILITY, gated by "
-            "`inferred:subagentCancel` (documentation-only). Siblings are not judged: the same "
-            "RFD says the per-child capability `does not prevent the Agent from cancelling its "
-            "own delegated work`, and an Agent that reacts to the cancelled child by stopping a "
+            "The draft docs state it (`not the work of its parent or siblings`), and it binds "
+            "only an agent that exposes cancellable children, so the row is CAPABILITY, gated by "
+            "`inferred:subagentCancel` (documentation-only). Siblings are not judged: the docs "
+            "say the Agent `can cancel work it delegated at any time` (the Preview RFD: the "
+            "per-child capability `does not prevent the Agent from cancelling its own delegated "
+            "work`), and an Agent that reacts to the cancelled child by stopping a "
             "sibling is indistinguishable on the wire from a cancel that leaked, so a sibling's "
             "`idle`/`cancelled` is only recorded on the test's report entry "
             "(`acp_tck_cancelled_siblings`). Judged over the same driven turn as "
@@ -689,7 +715,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "reaction. SKIPs when no child was cancelled or it had ended first. Shared id with "
             "v1."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:1113-1117 (Preview RFD)"),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:398; "
+            "docs/rfds/subagents.mdx:1113-1117 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-202",
@@ -708,9 +737,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "which children the parent waits on: whether other descendants keep running is the "
             "Agent's choice. An omitted per-child `cancel` capability does not "
             "waive the cascade. The draft docs state that `session/cancel` covers foreground "
-            "work and that foreground work is not listed in `background`; that a child the "
-            "cancelled work waits on stops is stated by the Subagents RFD (Preview RFD), so the "
-            "row is CAPABILITY, gated by `inferred:subagents` (documentation-only). Each "
+            "work, that foreground work is not listed in `background`, and that a child the "
+            "cancelled work waits on stops (`subagents.mdx:405`, `prompt-lifecycle.mdx:1448`), "
+            "with no RFC keyword, so the row is CAPABILITY, gated by `inferred:subagents` "
+            "(documentation-only). Each "
             "descendant gets `timeout / 2` after the parent's turn ends. SKIPs when the parent's "
             "turn did not end `cancelled` (the cancel raced with its end, or `ACP-CANCEL-*` own "
             "that turn), or no such descendant was running. v2-only (`2xx`): v1 has no "
@@ -718,7 +748,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "on."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:218,220,1446; "
+            "docs/protocol/v2/draft/subagents.mdx:405,407; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:218,220,1446,1448; "
             "docs/rfds/subagents.mdx:1119-1131,1482-1494 (Preview RFD)"
         ),
     ),
@@ -2103,10 +2134,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "With `replayFrom` omitted (or `null`), no conversation-history `session/update` for "
             "the resumed session arrives before the response. Vacuous -- and recorded, never "
             "FAILed on that account -- for an agent that retains no history to replay. Live "
-            "traffic for other (child) sessions is not judged (Preview Subagents RFD)."
+            "traffic for other (child) sessions is not judged (with no replay every child update "
+            "is current, `subagents.mdx:462`)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:181-186 (the current-state snapshot is live sync, not history); "
+            "docs/protocol/v2/draft/subagents.mdx:462; "
             "docs/rfds/subagents.mdx:1047-1052 (Preview RFD)"
         ),
     ),
@@ -2205,12 +2238,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`replayFrom: {\"type\": \"start\"}` (replay plus the state snapshot) validates "
             "against the v2 schema and carries the resumed `sessionId` or that of a child "
             "session announced earlier in that same exchange by a `subagent_update` (on the "
-            "Preview Subagents RFD's rule that child updates keep the child's own `sessionId` and "
-            "follow its announcement within the load/resume). An update for a session not "
+            "draft subagents doc's rules that the announcement rule applies again on every "
+            "resume and that replayed child updates keep their original `sessionId`, a child's "
+            "`subagent_update` first). An update for a session not "
             "announced within the exchange FAILs, even if an earlier turn announced it."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:214-216,228,290-292; "
+            "docs/protocol/v2/draft/subagents.mdx:143,145,469,482,484; "
             "docs/rfds/subagents.mdx:962-972,1034-1042 (Preview RFD); "
             "schema/v2/schema.unstable.json#/$defs/UpdateSessionNotification"
         ),
@@ -4259,8 +4294,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "error FAILs. v2-only (`2xx`)."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:369,374; "
             "docs/protocol/v2/draft/tool-calls.mdx:440,456-458; "
-            "docs/protocol/v2/draft/subagents.mdx:374; "
             "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
             "docs/rfds/subagents.mdx:1081-1084 (Preview RFD)"
         ),
@@ -4464,8 +4499,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "other error FAILs. v2-only (`2xx`)."
         ),
         citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:369,374; "
             "docs/protocol/v2/draft/tool-calls.mdx:600-604; "
-            "docs/protocol/v2/draft/subagents.mdx:374; "
             "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
             "docs/rfds/subagents.mdx:1081-1084 (Preview RFD)"
         ),

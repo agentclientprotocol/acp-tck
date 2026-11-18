@@ -208,7 +208,7 @@ async def test_resume_without_replay_from_replays_no_history(agent_launch, tmp_p
     """ACP-RESUME-002. Vacuous -- and recorded, never FAILed on that account -- for an agent
     that retains no history to replay. The mandatory current-state snapshot is not history.
     Filtered to the resumed session: live child-session traffic may legally arrive before a
-    no-replay resume response (Preview Subagents RFD)."""
+    no-replay resume response (`subagents.mdx:462`)."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -447,7 +447,7 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
         await _add_history(agent, session_id, timeout=agent_launch.default_timeout)
-        # Child output may trail the turn just run (Preview Subagents RFD: child work outlives the parent's
+        # Child output may trail the turn just run (`subagents.mdx:356`: child work outlives the parent's
         # turn); settle it first so it is not read as part of the resume exchange.
         await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
         response_entry, updates = await resume_session(
@@ -481,8 +481,8 @@ async def test_resume_replay_updates_are_schema_valid(agent_launch, tmp_path, re
                             msg,
                             f"sessionId is neither the resumed {session_id!r} nor a child "
                             f"announced earlier in this resume via subagent_update (known: "
-                            f"{sorted(known)!r}; Preview Subagents RFD: child announcements "
-                            "precede child traffic within the load/resume)",
+                            f"{sorted(known)!r}; draft docs: the announcement rule "
+                            "applies again on every resume)",
                         )
                     )
                 update = params.get("update")

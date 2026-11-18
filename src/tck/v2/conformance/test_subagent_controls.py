@@ -4,8 +4,8 @@ ACP-TOOLCANCEL-203 and ACP-TERMCANCEL-203.
 A child that advertises `capabilities.cancel` (`SubagentSessionCapabilities`) may be cancelled with
 `session/cancel` carrying the child's `sessionId`; that cancels the child's current work, not its
 parent or its siblings, and the child confirms with `idle` and `stopReason: "cancelled"`
-(RFD:1113-1117, 1133-1137). Cancelling a session's work also cancels the descendant work it waits on
-(RFD:1119-1131). A child's tool call or terminal that advertises its own `cancel` is cancelled with
+(`subagents.mdx:386,398,400`). Cancelling a session's work also cancels the descendant work it waits on
+(`subagents.mdx:405`). A child's tool call or terminal that advertises its own `cancel` is cancelled with
 `tool_call/cancel` / `terminal/cancel` sent with the child's `sessionId`, whether or not the child
 advertises `cancel` (tool-calls.mdx:457,603).
 
@@ -102,7 +102,7 @@ async def test_child_stop_leaves_the_parent_running(
     """ACP-SUBAGENT-017 (CAPABILITY, `inferred:subagentCancel`). `session/cancel` for a child
     cancels that child's work, not its parent: the parent does not report `idle`/`cancelled`
     because of it. Siblings are not judged, since the per-child capability does not prevent the
-    Agent from cancelling its own delegated work (RFD:1115-1117) and that is indistinguishable
+    Agent from cancelling its own delegated work (`subagents.mdx:398`) and that is indistinguishable
     from a leaked cancel; a sibling that reports `idle`/`cancelled` is recorded as
     `acp_tck_cancelled_siblings`. SKIPs when no such child was running or it ended on its own
     within the race window."""

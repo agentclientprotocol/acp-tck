@@ -845,8 +845,7 @@ def _drive_cancelling(steps: list[dict[str, Any]], *cancelled: str, **kwargs: An
 def test_requests_after_a_drivers_own_cancel_are_answered_cancelled_not_allowed():
     """The driver's `session/cancel` for the prompted session or for a subagent resolves that
     session's later permission requests `cancelled` (prompt-lifecycle.mdx:1452: the Client MAY
-    answer a request it knows belongs to the cancelled work; Preview Subagents RFD,
-    subagents.mdx:1268); a request of a session nobody
+    answer a request it knows belongs to the cancelled work); a request of a session nobody
     cancelled is still answered per the policy."""
     steps = [
         _RESPONSE,

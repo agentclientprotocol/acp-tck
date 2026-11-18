@@ -697,7 +697,7 @@ def _wire_messages(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> Iterator[tuple[dict[str, Any], str, dict[str, Any], set[str]]]:
     """Walk the agent's requests and notifications in wire order, tracking which sessions are
-    known (Preview Subagents RFD; `SubagentUpdate`): the client's own, plus every child a
+    known (`subagents.mdx:68,70`; `SubagentUpdate`): the client's own, plus every child a
     `subagent_update` sent on an already-known session announces. Yields `(msg, method, params,
     known)` per message with a `method`; `known` is the set *before* the message, and the message's
     own announcement is applied once the consumer resumes. Responses are skipped."""
@@ -726,7 +726,7 @@ def child_session_traffic(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> tuple[set[str], list[str]]:
     """Replay the agent's traffic in wire order and judge the subagent announcement rule
-    (Preview Subagents RFD; `SubagentUpdate`): a child's announcing `subagent_update`, sent on a
+    (`subagents.mdx:70`; `SubagentUpdate`): a child's announcing `subagent_update`, sent on a
     known session, precedes every live request or notification bearing the child's session ID.
 
     `client_sessions` are the sessions the client created; they start out known. Returns
@@ -736,7 +736,7 @@ def child_session_traffic(
     `session/request_permission` or `elicitation/create` request, ...) or a live `session_message`
     update's `senderSessionId`/`recipientSessionId`. A `subagent_update` announces its own
     `sessionId` only when it is itself sent on a known session. A `session` tool-call content
-    reference is not traffic carrying the child's ID (`session_content_references` judges it).
+    reference is judged by `session_content_references`, not here, so one defect never FAILs both rows.
     Responses are not judged."""
     children: set[str] = set()
     problems: list[str] = []
@@ -774,7 +774,7 @@ def session_content_references(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> tuple[list[str], list[str]]:
     """Replay the agent's traffic in wire order and judge the `session` content rule
-    (`docs/protocol/v2/draft/tool-calls.mdx` `SessionReference`; Preview Subagents RFD): a
+    (`docs/protocol/v2/draft/tool-calls.mdx` `SessionReference`; `subagents.mdx:74`): a
     `session` `ToolCallContent` item names a session already known, through ordinary session
     setup (`client_sessions`) or a `subagent_update` announcement on a known session.
 
@@ -905,7 +905,7 @@ def subagent_updates(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> SubagentUpdates:
     """Replay the agent's traffic in wire order and judge the `subagent_update` association
-    rules (`SubagentUpdate`; Preview Subagents RFD): the outer `sessionId` is the immediate parent
+    rules (`SubagentUpdate`; `subagents.mdx:68,126`): the outer `sessionId` is the immediate parent
     of `update.sessionId`.
 
     The three association rules are disjoint by construction, so one defect FAILs one row. A
@@ -930,12 +930,12 @@ def subagent_updates(
         if child == outer:
             result.self_parented.append(
                 f"subagent_update on session {outer!r} announces that same session as its own child; "
-                f"the association cannot refer to itself (Preview RFD)"
+                f"the association cannot refer to itself (draft docs)"
             )
         elif child in client_sessions:
             result.client_sessions_announced.append(
                 f"subagent_update on session {outer!r} announces session {child!r}, which the "
-                f"client created, as a child; a child's ID is unique to its session (Preview RFD)"
+                f"client created, as a child; a child's ID is unique on the connection (draft docs)"
             )
         elif outer in known:
             old = parents.setdefault(child, outer)
@@ -948,7 +948,7 @@ def subagent_updates(
                     f"subagent_update on session {outer!r} announces {child!r}, already a child "
                     f"of {old!r}"
                     + (" (the new parent descends from it: a cycle)" if cycle else "")
-                    + "; a child keeps one immediate parent (Preview RFD)"
+                    + "; a child keeps one immediate parent (draft docs)"
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
@@ -1160,8 +1160,8 @@ class ChildTasks:
 
 def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[str]) -> ChildTasks:
     """Replay the agent's traffic in wire order and judge how each announced child is told its
-    task (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session-directed messages"; Preview
-    Subagents RFD, "Delegated tasks"). The task starts the child's work, so only what the child's
+    task (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session-directed messages"; `subagents.mdx`
+    "Messages from a parent to a child"). The task starts the child's work, so only what the child's
     transcript holds before its first agent output (`agent_message`, `agent_thought` or a chunk of
     either) is judged.
 
@@ -1290,8 +1290,8 @@ class ChildConfigSelects:
 def child_config_selects(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> ChildConfigSelects:
-    """Replay the agent's traffic in wire order and judge the child configuration rule (Preview
-    Subagents RFD, "Child configuration"): a select option in a `config_option_update` for an
+    """Replay the agent's traffic in wire order and judge the child configuration rule
+    (`subagents.mdx:250-252`, "Configuration"): a select option in a `config_option_update` for an
     announced child offers only its current value, because no Client-initiated configuration
     change is permitted on a child. Values are counted across option groups. Updates for a
     session the client created, or for a child not yet announced (`child_session_traffic`'s), are
@@ -1325,7 +1325,7 @@ def child_config_selects(
                 result.with_choices.append(
                     f"config_option_update for child {outer!r}: select {option.get('configId')!r} "
                     f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
-                    f"a child permits no Client-initiated configuration change (Preview RFD)"
+                    f"a child permits no Client-initiated configuration change (draft docs)"
                 )
     return result
 
@@ -2124,8 +2124,7 @@ async def run_prompt(
             ) or (not for_this_session and isinstance(target, str) and client_cancelled(agent, target, turn_start))
             # A request of a session the TCK cancelled (this turn's trigger, or a driver on the
             # same connection) is answered `cancelled` (prompt-lifecycle.mdx:1452: the Client
-            # MAY answer a request it knows belongs to the cancelled work; Preview Subagents
-            # RFD, subagents.mdx:1268).
+            # MAY answer a request it knows belongs to the cancelled work).
             if cancelled:
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
@@ -2137,9 +2136,9 @@ async def run_prompt(
                     permission_fallbacks.append(note)
                 elif note is not None and outcome["outcome"] == "cancelled" and not for_this_session:
                     # No option can be selected. A client MUST NOT cancel a subagent that does
-                    # not advertise `capabilities.cancel` (Preview Subagents RFD, "Cancellation
-                    # and resource ownership"), and this client does not track which do, so it
-                    # sends no `session/cancel` for a subagent and declines only this request.
+                    # not advertise `capabilities.cancel` (`subagents.mdx:373`), and this client
+                    # does not track which do, so it sends no `session/cancel` for a subagent
+                    # and declines only this request.
                     permission_fallbacks.append(f"{note}; answered cancelled for session {target!r}")
                 elif note is not None and outcome["outcome"] == "cancelled":
                     # The policy's option kinds were not offered: cancel this turn's session
