@@ -566,7 +566,7 @@ async def run_prompt(
                 # the `on_action` request (e.g. `session/close`) has fired for the request's
                 # session, a real client resolves an in-flight permission prompt as cancelled
                 # rather than picking an option on the user's behalf (`prompt-turn.mdx:851`;
-                # Preview Subagents RFD, "Pending permission and elicitation requests").
+                # `subagents.mdx:466-467`, "Pending requests").
                 # Cancelling one session does not resolve another's requests.
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
@@ -716,8 +716,8 @@ def _wire_messages_indexed(
 
     `replay` is the `[start, end)` transcript range of a `session/load` exchange. Inside it `known`
     starts over from `client_sessions`: a client loading a session on a fresh connection has not
-    seen earlier announcements, so only those made within the exchange count for it (Preview
-    Subagents RFD, "Child announcements precede child traffic"). Announcements made inside the
+    seen earlier announcements, so only those made within the exchange count for it
+    (`subagents.mdx:517`, "What the Agent sends"). Announcements made inside the
     range still count for traffic after it."""
     live = set(client_sessions)
     scoped: set[str] | None = None
@@ -773,8 +773,8 @@ def child_session_traffic(
     `client_sessions` are the sessions the client created; they start out known. `replay` is the
     transcript range of a `session/load` exchange (`_wire_messages_indexed`). Traffic inside it is
     judged against the announcements made inside it, even if an earlier turn announced the child
-    (Preview Subagents RFD: replayed child updates keep "child announcements precede child
-    traffic"). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
+    (`subagents.mdx:517,531`: the rule applies again on every load, and a child's replayed
+    `subagent_update` precedes its other replayed updates). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
     historical addresses, not announcements, and are neither judged nor counted as children (a
     recorded directed message may be replayed with its participants when the other participant's
     association is unavailable).
@@ -799,7 +799,7 @@ def child_session_traffic(
             problems.append(
                 f"{what} carries session ID {session_id!r}, which no earlier `subagent_update` "
                 f"on a known session announced"
-                + (" within this `session/load` replay (Preview RFD)" if replaying else "")
+                + (" within this `session/load` replay (draft docs)" if replaying else "")
                 + f" (known: {sorted(known)!r})"
             )
 
@@ -836,7 +836,8 @@ def session_content_references(
 
     A reference inside `replay`, the transcript range of a `session/load` exchange, is a
     historical address: a replayed reference to a session that is not available follows the
-    historical replay rules (Preview Subagents RFD), so it is neither judged nor counted.
+    historical replay rules (Preview Subagents RFD; the docs state no such exemption, see
+    `ACP-SUBAGENT-002`), so it is neither judged nor counted.
 
     Returns `(references, problems)`: the `sessionId` of every `session` item judged, in wire
     order, and one message per reference to a session not yet known. Items are read from a
@@ -979,12 +980,12 @@ def subagent_updates(
         if child == outer:
             result.self_parented.append(
                 f"subagent_update on session {outer!r} announces that same session as its own child; "
-                f"the association cannot refer to itself (Preview RFD)"
+                f"the association cannot refer to itself (draft docs)"
             )
         elif child in client_sessions:
             result.client_sessions_announced.append(
                 f"subagent_update on session {outer!r} announces session {child!r}, which the "
-                f"client created, as a child; a child's ID is unique to its session (Preview RFD)"
+                f"client created, as a child; a child's ID is unique on the connection (draft docs)"
             )
         elif outer in known:
             old = parents.setdefault(child, outer)
@@ -997,7 +998,7 @@ def subagent_updates(
                     f"subagent_update on session {outer!r} announces {child!r}, already a child "
                     f"of {old!r}"
                     + (" (the new parent descends from it: a cycle)" if cycle else "")
-                    + "; a child keeps one immediate parent (Preview RFD)"
+                    + "; a child keeps one immediate parent (draft docs)"
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
@@ -1145,7 +1146,7 @@ class ChildTasks:
 def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[str]) -> ChildTasks:
     """Replay the agent's traffic in wire order and judge how each announced child is told its
     task (`docs/protocol/v1/draft/prompt-turn.mdx` "Session-directed messages (unstable)"; `subagents.mdx`
-    "Messages from a parent to a child"; Preview Subagents RFD, "Delegated tasks"). The task starts the child's work, so only what the child's
+    "Messages from a parent to a child"). The task starts the child's work, so only what the child's
     transcript holds before its first agent output (`agent_message_chunk` or
     `agent_thought_chunk`) is judged.
 
@@ -1274,8 +1275,8 @@ class ChildConfigSelects:
 def child_config_selects(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> ChildConfigSelects:
-    """Replay the agent's traffic in wire order and judge the child configuration rule (Preview
-    Subagents RFD, "Child configuration"): a select option in a `config_option_update` for an
+    """Replay the agent's traffic in wire order and judge the child configuration rule
+    (`subagents.mdx:272-273`, "Configuration"): a select option in a `config_option_update` for an
     announced child offers only its current value, because no Client-initiated configuration
     change is permitted on a child. Values are counted across option groups. Updates for a
     session the client created, or for a child not yet announced (`child_session_traffic`'s), are
@@ -1309,6 +1310,6 @@ def child_config_selects(
                 result.with_choices.append(
                     f"config_option_update for child {outer!r}: select {option.get('id')!r} "
                     f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
-                    f"a child permits no Client-initiated configuration change (Preview RFD)"
+                    f"a child permits no Client-initiated configuration change (draft docs)"
                 )
     return result

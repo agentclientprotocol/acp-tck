@@ -580,7 +580,7 @@ def test_a_child_select_with_other_values_is_flagged():
     for option in (_select("a", "a", "b"), _select("a", "a", "b", group=True), _select("a", "b")):
         found = child_config_selects(_traffic(_ANNOUNCE, _config("c", option)), {"p"})
         assert found.selects == 1 and len(found.with_choices) == 1, option
-        assert "(Preview RFD)" in found.with_choices[0]
+        assert "(draft docs)" in found.with_choices[0]
 
 
 def test_a_grouped_select_counts_values_across_its_groups():

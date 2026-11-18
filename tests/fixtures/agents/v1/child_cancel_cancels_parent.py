@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `cancellable_subagent.py`, except that `session/cancel` for a child also
-cancels its parent's turn (RFD:1113-1117: it cancels the child, not its parent). The child still
+cancels its parent's turn (`subagents.mdx:447`: it cancels the child, not its parent). The child still
 confirms its own cancellation, so `ACP-SUBAGENT-016` PASSes; the parent's prompt answered
 `cancelled` FAILs exactly `ACP-SUBAGENT-017`. Within the `-k` scope of the
 `test_subagent_controls.py` module, with `--cancel-prompt __hang__`.
