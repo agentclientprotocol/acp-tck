@@ -54,14 +54,49 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-SA1 — 8cb3a0e — v2 subagent rows + RESUME-002/-209 docs-first; ledger +13 (incl. 2 Deferred), -1 cost, 13 rewrites; suite green (1146)
 - V2-SA2 — 08a671d — SUBAGENT-012 sender-less counts, -016 needs child's own idle, unknown-after-cancel SKIPs; 4 fixtures; suite green (1152)
 ## Next
-- Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
-  -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
-  alignment + cross-check).
-- Milestone 1 (re-vendor) DONE and reviewed.
-- Slice 16 V2-TOOL: in progress. Programmers must run the full suite in the FOREGROUND (timeout 600000, ~8.5 min); background runs force premature hand-backs.
-- Pre-existing (also on main ee2af8a): plain `acp-tck --protocol-version 2` on v2 conforming_full FAILs ACP-DELETE-204 — fixture answers session/delete before the cancelled idle when a permission request is pending. Not a regression; reported to the user; candidate fix slice.
-- For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
-- For LEDGER-HYGIENE v2: add v2 `SA:263` (outgoing view + link, SHOULD; v1 twin `SA:285`) entry; extend the `TC:753,754` entry to cover `TC:755-756` or note SUBAGENT-002 covers it.
-- User asked about parallelizing with worktrees; I assessed (only ledger/docs slices 25, 27-v1, 28 could overlap, ~45-60 min saved); no change made, mode stays single unless the user says otherwise.
+Order (plan section 5): area slices 23-28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
+- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-22 done (plus R-FIX, typo fix, DEL204-FIX).
+- Slice 23 V2-SA3: STOPPED GRACEFULLY, NOT COMMITTED (user request, before an orchestrator restart). The working tree holds the
+  complete implementation, uncommitted: SUBAGENT-018/-019/-205, LIST-004, SUBAGENT-004 extension. Handoff with details and
+  decisions: `.agents/research/v2-sa3-handoff.md`. Modified: src/tck/v2/requirements.py, src/tck/v2/conformance/_helpers.py,
+  src/tck/v2/conformance/test_subagents.py, tests/fixtures/agents/v2/exposes_subagent.py, tests/v2/test_cli.py,
+  tests/v2/test_helpers.py, tests/v2/test_registry.py. New fixtures in tests/fixtures/agents/v2/: exposes_subagent_full.py,
+  child_close_wrong_code.py, child_close_succeeds.py, child_delete_succeeds.py, lists_child_session.py,
+  child_id_reused_for_new_session.py, late_child_state_mirror.py. Last results: test_helpers, test_registry and spec-tracker
+  green; subagent part of test_cli had 1 failure that was fixed but not re-run; the full suite was NEVER run.
+  FIRST ACTION on resume: spawn a programmer (single mode, tip a1dd1c8 plus this tree) to read the handoff, run the FULL suite in the
+  foreground, fix what fails, and commit by explicit paths as `feat(v2): child-session probes, list and state-ordering rows`.
+- Slice 24 V2-SA4 (plan 5.2 row 24; 1.2 ~lines 199-201, 206-207): +RESUME-223/-224/-225, +SUBAGENT-203 (CAPABILITY cap.session,
+  pending child requests get $/cancel_request before the session/close response), +SUBAGENT-204 (CAPABILITY inferred:subagentCancel;
+  harness change in _child_cancel.py, run_prompt hold mode). Needs replay_complete (0ec3a61) and CANCEL-213 (a8c38d8), both done.
+- Slices 25/26 LEDGER-HYGIENE v1/v2: D10 rewords (plan 1.1 removed/rewritten table: error.mdx:37 / :38, transports.mdx:10,45, TC:250,
+  get-auth-state.mdx:297/:313, session-list.mdx:258 Deferred, session/status + session/set_title reasons; v2 SCO:375 fan-out ->
+  cite SS:56 NOT SS:54); +v1 AuthAccount.description entry if missing (v2 has it from b07c1f7). v2 extras: add an entry for
+  `SA:263` (outgoing view + link SHOULD; v1 twin SA:285); extend the `TC:753,754` entry to cover TC:755-756 or say SUBAGENT-002 covers it.
+- Slice 27 BACKFILL (D11, included): v1 elicitation 9 entries + agent-plan.mdx:53; v2 meta-patch 5 entries + security.mdx:59.
+- Slice 28 DOCS + rfd_audit: remove "Active > v2" stage wording from docs/requirements.md and docs/spec-updates.md (no Active stage
+  upstream; also check spec-tracker/src/spec_tracker/impact.py:915 wording); add `inferred:promptSuggestions` to the inferred list
+  (`inferred:skills` already added); decide whether PL "Prompt suggestions (unstable)"/"Session cursors (unstable)" become core_doc
+  sections (currently left out in spec-tracker/tests/test_maps_v2.py); core_doc `code` lists gain the new modules
+  (test_prompt_suggestions, test_cursors, test_session_options/test_initial_config, test_idempotency); set
+  `rfd_audit = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"` at the top of both maps.
+- Then milestone-2 review: one reviewer over the area-slice range 3039958..HEAD (product commits from 1c04f52 on), decisions D1-D13,
+  plan sections 1-5. Show findings to the user; fixes become slices. Known items to hand the reviewer: v1 OPTIONS-008 also flags
+  config_option_update (overlaps -007; plan meant "other" updates); session/fork initial config entries not probed (both versions);
+  CURSOR-001 requires an anchor on the first replayed update (accepted); cursor fixtures exercise only message anchors.
+- Then id alignment (plan 5.3): researcher inventory -> user approves EACH rename -> programmer applies everywhere.
+- Then cross-check refresh (plan 5.4): expect new CAPABILITY failures for SDK agents (replay_complete, idempotency, CANCEL-213,
+  CURSOR-003, file plans on ENUM-201); never bake a suspected TCK false positive into --expect.
+- Finish: grep `.agents/(research|state.md|prompt.md)` in src tests cross-check spec-tracker (clean so far); remind the user to delete
+  .agents/prompt.md, .agents/state.md, .agents/research/ before the PR merges. No push / PR unless asked.
+## Working notes for programmers (put in every brief)
+- Full suite ~10 min: run it in the FOREGROUND (timeout 600000); background runs force premature hand-backs.
+- Commit only after a green full run; never stage `tck-iso-*` temp dirs; verify every citation at 3ea94133 via
+  `git -C ../agent-client-protocol-2 show 3ea94133:<path>` (never read that working tree; never modify either spec checkout).
+- No type checker/linter in CI (ruff not installed); Pyright IDE noise on fixtures/tests is expected.
+- Orchestrator: commit state.md only while no programmer runs; commit it BEFORE launching a programmer, not in parallel.
+## Settings questions answered by the user this session
+- Worktrees assessed but NOT adopted: mode stays single. Only ledger/docs slices 25, 27-v1, 28 could overlap the code chain safely
+  (~45-60 min saved); offer again only if the user asks.
 ## Open questions (waiting on the user)
 - none
