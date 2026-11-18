@@ -168,7 +168,7 @@ reason = "\"Before pagination\" is not observable without knowing the agent's pa
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/session-list.mdx:258 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Archive state persists across connections and restarts; closing, loading or resuming a session does not change it."
-reason = "Out of scope for now: it needs a two-process test against the agent's real persistent store, and `session/load`/`session/resume` of an archived session MAY be rejected (line 257), which makes the load half inconclusive."
+reason = "Deferred: the persistence half needs the harness to restart the agent process mid-test, and an agent with an ephemeral store gives an inconclusive result. The load/resume half is observable on one connection, but `session/load`/`session/resume` of an archived session MAY be rejected (line 257); a follow-up SKIPpable row can cover it."
 
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -178,7 +178,7 @@ reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
-reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
+reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and probing an unadvertised `auth/status` would break the client MUST on the same line (\"Clients MUST check for this capability before calling the method\")."
 
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:309 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -191,6 +191,11 @@ statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
 
 [[not_requirement]]
+citation = "schema/v1/schema.unstable.json#/$defs/AuthAccount/properties/description; docs/rfds/get-auth-state.mdx:174-176 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An `AuthAccount` `description` MUST NOT contain credentials."
+reason = "Not observable: the TCK cannot tell a credential from display text such as a credential source name."
+
+[[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:301,307 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
 reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
@@ -198,7 +203,7 @@ reason = "Not reliably observable: timing depends on the environment and \"guess
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:313 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send `auth/status_update` when their status changes (including after `authenticate` or `logout`), and only when it differs from the last one sent on the connection."
-reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
+reason = "Not conclusive: a Draft-RFD SHOULD with no deadline for the notification, so its absence never proves a violation, and seeing a change needs a live credential change (`--auth-method`, or the destructive `--allow-logout`) from a state the agent may already be in. Revisit if the RFD stabilizes."
 
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/authentication.mdx:194 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -233,7 +238,7 @@ reason = "Not observable: a client cannot know which extensions an agent has unl
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/transports.mdx:10,45 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD support stdio whenever possible, and an agent that implements a custom transport MUST preserve the JSON-RPC message format and lifecycle requirements."
-reason = "Out of scope: the TCK only launches agents over stdio, so the first rule is vacuous for any agent it can run and a custom transport is never reached."
+reason = "Not observable over stdio: an agent reached over stdio supports stdio by construction, and ACP does not specify custom transports, so no generic client can drive one."
 
 
 # --- session-config-options.mdx ---
@@ -316,7 +321,7 @@ reason = "Not mechanically decidable: it needs a natural-language judgement of `
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/tool-calls.mdx:250 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD perform only the operation the approved permission request described, and SHOULD request again if the command or resolved target changes."
-reason = "Not observable: the operation is not on the wire in v1, and the TCK cannot tell a changed target from the original."
+reason = "Not decidable: the approved request describes the operation only in agent-authored free-form fields, so a client cannot tell a changed command or target from the original."
 
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/tool-calls.mdx:238-242,251 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -362,7 +367,7 @@ reason = "Not observable: no protocol event marks a plan as rejected or abandone
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/error.mdx:37 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Receivers MUST treat an unrecognized error code as a generic failure."
-reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes."
+reason = "Not observable: \"generic failure\" has no defined wire shape, so how an agent treats an unknown code in a client's error reply has no defined wire effect."
 
 
 # --- schema.unstable.json ---
@@ -536,12 +541,12 @@ reason = "Deferred (unstable archive): needs a prompt still in flight when the s
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/session-list.mdx:259; docs/protocol/v1/draft/error.mdx:68; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v1/schema.unstable.json#/$defs/SessionStatusRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/status` reports an archived session as `saved`, answers an unknown session with `-32002` and the requested `sessionId` in `data`, and MUST NOT have side effects."
-reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
+reason = "Deferred unstable method: the `saved` and `-32002` answers are observable whenever the agent advertises the method and are left to SKIPpable follow-up rows; absence of side effects is not observable, since a client cannot enumerate the agent's state."
 
 [[not_requirement]]
 citation = "docs/rfds/session-set-title.mdx:178-179 (Draft RFD); docs/protocol/v1/draft/error.mdx:70; schema/v1/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
-reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
+reason = "Deferred unstable method: the `-32002` and `-32602` answers are observable whenever the agent advertises the method and are left to SKIPpable follow-up rows; when an agent generates titles is internal, so a clean window proves nothing."
 
 [[not_requirement]]
 citation = "docs/rfds/proxy-chains.mdx:235-236,304-305 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
