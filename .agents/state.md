@@ -47,6 +47,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-CAN — a8c38d8 — CANCEL-213 ADVISORY->CAPABILITY (quiet_period window in text), CANCEL-209 note; elicitation MUST restated as Deferred ledger entry (U10), section header/reasons reworded off TCK-choice; suite green (1093)
 - V2-TOOL — 145356c — +PATCH-213/-214/-215 CAPABILITY, -216 ADVISORY, +TOOLCANCEL/TERMCANCEL-210 CAPABILITY (inferred gates), -211 ADVISORY; ENUM-201 subject.type; ledger -2 +3; TOOL/TERMCANCEL-203 cite subagents.mdx:374 primary; suite green (1111)
 - V2-AUTH+DIRS — b07c1f7 — common plugin allows several `revokes` tests (docs/writing-tests.md); +AUTH-211 ADVISORY (revokes, SKIPs if re-login fails), AUTH-004 standalone path (-32601 only), +ADDDIRS-204 ADVISORY; ledger -SS:528 +AuthAccount.description; suite green (1116)
+- DEL204-FIX — 98673e1 — AsksPermissionAgent now withdraws the pending permission before answering session/delete (close already did); new CLI test runs close/delete cancel rows without __hang__; plain v2 run on conforming_full is CONFORMANT; suite green (1117)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
