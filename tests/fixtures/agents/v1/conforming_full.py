@@ -20,6 +20,10 @@ absolute `path` -- so ACP-PLAN-002/003/004 PASS non-vacuously. Without `plan`, n
 For a client that advertised `clientCapabilities.session.promptSuggestions` it sends a suggestion
 list after each prompt response and withdraws the previous one when the next prompt is accepted, so
 ACP-SUGGEST-001..004 PASS non-vacuously (`_suggests.py`); the replay on `session/load` has none.
+For a client that advertised `clientCapabilities.session.cursors` it reports each agent message
+with a `messageId` and announces a fork-capable cursor after it (replayed on `session/load` with
+the same id), and `session/fork` accepts those cursors and rejects any other with `-32602`, so
+ACP-CURSOR-001..004 PASS non-vacuously (`_cursors.py`).
 It also inherits `HonorsPermissionAgent`'s permission probe, so ACP-PERM-001/002 PASS
 non-vacuously; ordinary prompts never request permission.
 """
@@ -30,6 +34,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from _cursors import CursorsMixin  # noqa: E402
 from _suggests import SuggestsMixin  # noqa: E402
 from honors_permission import HonorsPermissionAgent  # noqa: E402
 
@@ -41,6 +46,7 @@ CAPABILITIES = {
         "archive": {},
         "resume": {},
         "close": {},
+        "fork": {},
         "additionalDirectories": {},
         "systemPrompt": {},
     },
@@ -110,7 +116,7 @@ PLANS = [
 ]
 
 
-class ConformingFullAgent(SuggestsMixin, HonorsPermissionAgent):
+class ConformingFullAgent(CursorsMixin, SuggestsMixin, HonorsPermissionAgent):
     # So load/resume can be probed from a fresh process (ACP-SYSPROMPT-002/003).
     _persist_sessions = True
 

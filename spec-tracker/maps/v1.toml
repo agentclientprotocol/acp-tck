@@ -116,7 +116,17 @@ citation = "docs/protocol/v1/draft/prompt-turn.mdx:413 @ 3ea94133bb4e7cfdb1105df
 statement = "Agents SHOULD replace or withdraw the prompt-suggestion list when it stops applying for a reason other than an accepted `session/prompt`."
 reason = "Not observable from a client: it cannot tell whether a list still applies, and the spec sets no deadline, so a list that stays current proves nothing. ACP-SUGGEST-003 judges the one trigger it can drive, an accepted `session/prompt`."
 
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/prompt-turn.mdx:705-709 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD accept a cursor for as long as they retain the history at its position. The Agent can stop accepting a cursor at any time, and SHOULD then send a `cursor_update` that clears the cursor's `capabilities`, if the session is active on a connection."
+reason = "Not observable from a client: whether the agent still retains the history, and when it stops accepting a cursor, is internal and may happen at any time, so a rejected cursor proves no violation and no deadline bounds the clearing update. A positive `session/fork` at a fresh cursor is left out for the same reason."
+
 # --- session-setup.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-setup.mdx:154 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent SHOULD send a `cursor_update` during `session/load` for each cursor in the loaded history that it still accepts."
+reason = "Not observable from a client: which cursors the agent still accepts is internal to it and may change at any time, so a cursor missing from a replay is no evidence. ACP-CURSOR-001/002 judge the cursors a replay does carry."
 
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/session-setup.mdx:486-487 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

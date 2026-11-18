@@ -10,9 +10,10 @@ Each version's conformance suite drives `session/prompt` through its own `run_pr
   `sessionId`;
 - answers every other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) with `-32601`,
   because the mock client advertises no `fs`, `terminal` or elicitation capability, and records it in
-  `PromptTurn.client_requests_seen`. Three v1 connections advertise one unrelated feature and nothing else, so
+  `PromptTurn.client_requests_seen`. Four v1 connections advertise one unrelated feature and nothing else, so
   those requests are still answered `-32601` there: the plan rows (`test_plan.py`, `plan`), the prompt-suggestion
-  rows (`test_prompt_suggestions.py`, `session.promptSuggestions`) and the subagent rows
+  rows (`test_prompt_suggestions.py`, `session.promptSuggestions`), the cursor rows (`test_cursors.py`,
+  `session.cursors`) and the subagent rows
   (`_subagents_connection.py`, `subagents`, one turn of `--subagent-prompt`). The one v2 connection that
   advertises a feature, the prompt-suggestion rows' (`test_prompt_suggestions.py`, `session.promptSuggestions`),
   likewise answers them `-32601`;

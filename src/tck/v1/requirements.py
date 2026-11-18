@@ -1670,6 +1670,80 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-CURSOR-001",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "On a connection where the client advertised `clientCapabilities.session.cursors: "
+            "{}`, the first `cursor_update` for a `cursorId` on a session carries a non-null "
+            "`anchor`, and no later update for that `cursorId` carries a different anchor (a "
+            "cursor never moves; omitting the anchor or repeating it is fine). The state is per "
+            "session and `cursorId`, and starts afresh at each successful `session/load`, whose "
+            "replay rebuilds the session's cursors. Checked over a connection of `session/new`, "
+            "two prompt turns, two `session/load`s when advertised, and a `session/fork` probe. "
+            "Unstable feature: an agent that announces no cursor passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:617,619,622-624; "
+            "docs/protocol/v1/draft/session-setup.mdx:154,156; "
+            "schema/v1/schema.unstable.json#/$defs/CursorUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-002",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A `cursor_update` whose `anchor` has a defined `type` (`user_message`, "
+            "`agent_message`, `agent_thought`, `session_message`, `tool_call`, `compaction`) "
+            "names an entity the agent already reported on the same session, by the matching "
+            "ID (`messageId`, `toolCallId` or `compactionId`) in an earlier `session/update`; "
+            "a message needs a `messageId` to be anchored to. A `session/load` replay delivers "
+            "each entity before the cursors anchored to it, so the reported set starts afresh "
+            "at each successful load. Anchors of unknown `type` are not judged. Judged on the "
+            "session the TCK created, over the connection of ACP-CURSOR-001. Unstable feature: "
+            "an agent that announces no cursor passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:652-654,656-657,674; "
+            "docs/protocol/v1/draft/session-setup.mdx:154; "
+            "schema/v1/schema.unstable.json#/$defs/CursorAnchor"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.fork",
+        text=(
+            "`session/fork` with a `cursorId` the agent did not issue for that session is "
+            "rejected with `-32602`: the agent does not fork at another position and does not "
+            "treat the request as if `cursorId` had been omitted (a whole-session fork). Probed "
+            "on every agent that advertises `fork`, whether or not it announced a cursor, with "
+            "a fabricated `cursorId` on the session of ACP-CURSOR-001's connection. The probe "
+            "breaks a client MUST (only pass an announced cursor) on purpose, because the docs "
+            "define the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:676-680,698-701; "
+            "schema/v1/schema.unstable.json#/$defs/ForkSessionRequest/properties/cursorId"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD use the same `cursorId` for the same position in every "
+            "`session/load`. Two loads of the session of ACP-CURSOR-001's connection are "
+            "compared by position, not by entity ID (message IDs may change across a load): a "
+            "cursor is keyed by its anchor's `type`, `position`, and the ordinal of the "
+            "anchored entity among the entities of that `type` the replay reported. SKIPs "
+            "without `loadSession`, when the first load replayed no cursor, or when no replayed "
+            "cursor has a placeable anchor."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:155,157"),
+    ),
+    Requirement(
         id="ACP-PERM-001",
         tier=Tier.ADVISORY,
         capability=None,
