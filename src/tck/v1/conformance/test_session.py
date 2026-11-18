@@ -85,7 +85,7 @@ async def _new_session_with_stub_mcp(
 
 
 @pytest.mark.requirement("ACP-SESSION-003")
-async def test_session_new_accepts_astdio_mcp_server(agent_launch, agent_initialize_result, tmp_path):
+async def test_session_new_accepts_a_stdio_mcp_server(agent_launch, agent_initialize_result, tmp_path):
     """ACP-SESSION-003. Checks version mismatch first: the result is judged against v1's schema."""
     if agent_initialize_result.result is not None:
         skip_if_version_mismatch(agent_initialize_result.result)
@@ -102,7 +102,7 @@ async def test_session_new_accepts_astdio_mcp_server(agent_launch, agent_initial
 
 
 @pytest.mark.requirement("ACP-SESSION-004")
-async def test_agent_connects_to_thestdio_mcp_server(agent_launch, agent_initialize_result, tmp_path):
+async def test_agent_connects_to_the_stdio_mcp_server(agent_launch, agent_initialize_result, tmp_path):
     """ACP-SESSION-004 (ADVISORY). Runs one prompt turn before looking for the stub's marker
     file, then keeps polling up to --tck-timeout, so an agent that connects lazily or in the
     background is not misreported."""
