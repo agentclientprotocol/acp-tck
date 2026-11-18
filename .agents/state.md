@@ -54,12 +54,10 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-SA1 — 8cb3a0e — v2 subagent rows + RESUME-002/-209 docs-first; ledger +13 (incl. 2 Deferred), -1 cost, 13 rewrites; suite green (1146)
 - V2-SA2 — 08a671d — SUBAGENT-012 sender-less counts, -016 needs child's own idle, unknown-after-cancel SKIPs; 4 fixtures; suite green (1152)
 - V2-SA3 — 0e649c6 — +SUBAGENT-018 ADVISORY / -019 CAPABILITY child probes (list, new, resume, delete, close last), +LIST-004, +SUBAGENT-205 (delayed mirror; 201 keeps missing/swapped), SUBAGENT-004 ext; 7 fixtures; suite green (1167). For review: error.mdx cite is :58 not :57; probes share the subagents connection.
+- V2-SA4 — 4dfbf16 — +RESUME-223/-224/-225, +SUBAGENT-203 (cap.session), +SUBAGENT-204 (inferred:subagentCancel); run_prompt(hold_children=) + ChildPermissionHold, _child_cancel holds child requests; docs/mock-client.md section; 8 fixtures; CLI_SUBPROCESS_TIMEOUT 60->120 (conforming_full ~61 s); suite green (1189). For review: 204 also judges parent-cascade stops (gate narrower than judged); 016 PASS + 204 FAIL possible now; 202 may SKIP if parent waits on held child request; 225 judges only params.sessionId traffic; 224 doesn't judge update fields; U13c RFD line is :1268. Possibly flaky under load: test_mcp_unsupported_transport_fixtures_fail_mcp_203_only, test_permission_before_requires_action_judges_cancel_while_blocked. Follow-up: elicitation $/cancel_request on close/cancel.
 ## Next
-Order (plan section 5): area slices 24-28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
-- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-23 done (plus R-FIX, typo fix, DEL204-FIX).
-- Slice 24 V2-SA4 (plan 5.2 row 24; 1.2 ~lines 199-201, 206-207): +RESUME-223/-224/-225, +SUBAGENT-203 (CAPABILITY cap.session,
-  pending child requests get $/cancel_request before the session/close response), +SUBAGENT-204 (CAPABILITY inferred:subagentCancel;
-  harness change in _child_cancel.py, run_prompt hold mode). Needs replay_complete (0ec3a61) and CANCEL-213 (a8c38d8), both done.
+Order (plan section 5): area slices 25-28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
+- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-24 done (plus R-FIX, typo fix, DEL204-FIX).
 - Slices 25/26 LEDGER-HYGIENE v1/v2: D10 rewords (plan 1.1 removed/rewritten table: error.mdx:37 / :38, transports.mdx:10,45, TC:250,
   get-auth-state.mdx:297/:313, session-list.mdx:258 Deferred, session/status + session/set_title reasons; v2 SCO:375 fan-out ->
   cite SS:56 NOT SS:54); +v1 AuthAccount.description entry if missing (v2 has it from b07c1f7). v2 extras: add an entry for
