@@ -272,6 +272,8 @@ _ADVISORY_IDS = {
     "ACP-SESSION-006",
     "ACP-AUTH-005",
     "ACP-AUTH-210",
+    "ACP-AUTH-211",
+    "ACP-ADDDIRS-204",
     "ACP-PATCH-208",
     "ACP-PATCH-209",
     "ACP-PATCH-211",
@@ -569,6 +571,7 @@ _NO_AUTH_SKIP_IDS = {
     "ACP-AUTH-007",
     "ACP-AUTH-008",
     "ACP-AUTH-210",
+    "ACP-AUTH-211",
 }
 
 _TABLE_ROW_RE = re.compile(r"^\s*(ACP-\S+)\s+(PASS|FAIL|SKIPPED|NOT TESTED)\b")
@@ -738,6 +741,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-AUTH-007",
     "ACP-AUTH-008",
     "ACP-AUTH-210",
+    "ACP-AUTH-211",
     "ACP-ENUM-203",
     "ACP-ENUM-204",
     "ACP-META-203",
@@ -856,6 +860,7 @@ def test_v2_conforming_agent_passes_everything():
 # `ACP-SUBAGENT-001..014`/`-201` SKIP: it exposes no subagent (`exposes_subagent.py` exercises them),
 # and so do `_CHILD_CONTROL_IDS` (`cancellable_subagent.py` exercises them).
 _FULL_EXPECTED_SKIPS = {
+    "ACP-ADDDIRS-204",  # advertises additionalDirectories
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
     "ACP-SUBAGENT-003",
@@ -938,7 +943,7 @@ def test_v2_conforming_full_agent_passes_everything():
 
 def test_v2_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     """Acceptance criterion: the same `conforming_full.py --auth-method tck` run, but WITHOUT
-    `--allow-logout`, must SKIP ONLY `ACP-AUTH-004` in addition to the baseline's own SKIPs
+    `--allow-logout`, must SKIP ONLY `ACP-AUTH-004`/`211` in addition to the baseline's own SKIPs
     (`_ALWAYS_SKIPPED_IDS` plus `ACP-AUTH-005`, per
     `test_v2_conforming_full_agent_passes_everything` above) -- every other id keeps the exact
     same status. `ACP-AUTH-003` still PASSes here since `--auth-method tck` alone is enough to
@@ -956,7 +961,7 @@ def test_v2_conforming_full_agent_without_allow_logout_only_skips_auth_004():
 
     statuses = _table_statuses(result.stdout)
     assert set(statuses) == _ALL_IDS, f"requirement table missing/extra ids: {result.stdout}"
-    expected_skips = _ALWAYS_SKIPPED_IDS | _FULL_EXPECTED_SKIPS | {"ACP-AUTH-004"}
+    expected_skips = _ALWAYS_SKIPPED_IDS | _FULL_EXPECTED_SKIPS | {"ACP-AUTH-004", "ACP-AUTH-211"}
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -4690,6 +4695,35 @@ def test_advertises_auth_but_logout_errors_skips_auth_004_without_allow_logout()
     assert statuses.get("ACP-AUTH-004") == "SKIPPED", result.stdout
 
 
+def test_logout_not_idempotent_fails_auth_211_only():
+    """`logout_not_idempotent.py` answers a second `auth/logout` (no authenticated state left)
+    with an error. Run with `--auth-method tck --allow-logout`, only the ADVISORY `ACP-AUTH-211`
+    FAILs; `ACP-AUTH-004` PASSes, since the TCK's login gives the first logout state to end. The
+    second revoking test logs in again after the first one's logout and still works."""
+    fails, statuses, out, _ = _auth_fixture_run(
+        "logout_not_idempotent.py", auth_method="tck", allow_logout=True
+    )
+    assert fails == {"ACP-AUTH-211"}, out
+    assert statuses.get("ACP-AUTH-004") == "PASS", out
+
+
+def test_logout_not_idempotent_skips_logout_rows_without_a_tck_login():
+    """Without `--auth-method` the fixture's first logout has no state to end and errors: the
+    standalone path of `ACP-AUTH-004` SKIPs on any error but `-32601`, and `ACP-AUTH-211` SKIPs
+    since the first logout did not succeed."""
+    fails, statuses, out, _ = _auth_fixture_run("logout_not_idempotent.py", allow_logout=True)
+    assert fails == set(), out
+    assert statuses.get("ACP-AUTH-004") == "SKIPPED", out
+    assert statuses.get("ACP-AUTH-211") == "SKIPPED", out
+
+
+def test_logout_method_not_found_fails_auth_004_standalone():
+    """`-32601` on the standalone logout still FAILs `ACP-AUTH-004` (the MUST to implement it)."""
+    fails, statuses, out, _ = _auth_fixture_run("logout_method_not_found.py", allow_logout=True)
+    assert fails == {"ACP-AUTH-004"}, out
+    assert statuses.get("ACP-AUTH-211") == "SKIPPED", out
+
+
 def test_terminal_env_duplicate_names_fails_auth_006_only():
     """`terminal_env_duplicate_names.py` only advertises its `type: "terminal"` authMethods entry
     to a connection that itself advertises `capabilities.auth.terminal` -- so it never trips
@@ -6121,6 +6155,23 @@ def test_adddirs_accepts_relative_fails_adddirs_203_only():
     assert fails == {"ACP-ADDDIRS-203"}, out
     assert statuses.get("ACP-ADDDIRS-001") == "PASS", out
     assert statuses.get("ACP-ADDDIRS-202") == "PASS", out
+
+
+def test_rejects_unadvertised_dirs_fails_adddirs_204_only():
+    """The agent advertises no `additionalDirectories` but rejects `session/new` carrying it:
+    only the ADVISORY `ACP-ADDDIRS-204` FAILs; the capability-gated rows SKIP."""
+    fails, statuses, out = _fails_for("rejects_unadvertised_dirs.py", _SETUP_K)
+    assert fails == {"ACP-ADDDIRS-204"}, out
+    for req_id in ("ACP-ADDDIRS-001", "ACP-ADDDIRS-202", "ACP-ADDDIRS-203"):
+        assert statuses.get(req_id) == "SKIPPED", out
+
+
+def test_conforming_passes_adddirs_204_and_advertising_agent_skips_it():
+    fails, statuses, out = _fails_for("conforming.py", _SETUP_K)
+    assert fails == set(), out
+    assert statuses.get("ACP-ADDDIRS-204") == "PASS", out
+    _, statuses, out = _fails_for("adddirs_accepts_relative.py", _SETUP_K)
+    assert statuses.get("ACP-ADDDIRS-204") == "SKIPPED", out
 
 
 def test_mcp_unsupported_transport_fixtures_fail_mcp_203_only():

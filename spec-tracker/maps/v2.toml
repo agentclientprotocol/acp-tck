@@ -387,6 +387,11 @@ statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
 
 [[not_requirement]]
+citation = "schema/v2/schema.unstable.json#/$defs/AuthAccount/properties/description; docs/rfds/get-auth-state.mdx:174-176 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An `AuthAccount` `description` MUST NOT contain credentials."
+reason = "Not observable: the TCK cannot tell a credential from display text such as a credential source name."
+
+[[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:301,307 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
 reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
@@ -484,11 +489,6 @@ reason = "Out of scope: it needs a connection loss and a reconnect, and the TCK'
 citation = "docs/protocol/v2/draft/session-setup.mdx:476; docs/protocol/v2/draft/session-delete.mdx:95; docs/protocol/v2/draft/session-list.mdx:247 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Closing, deleting or archiving an active session frees its resources, and closing also stops the session's background work."
 reason = "Not observable: freeing resources is internal to the agent, and background work needs an agent that reports it. The cancellation of foreground work is covered by ACP-CLOSE-002, ACP-DELETE-204 and ACP-ARCHIVE-201."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:528 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Agents that do not advertise `session.additionalDirectories` ignore the `additionalDirectories` field."
-reason = "Not tested: it needs the TCK to send the field against the client MUST at line 526, and the unadvertised-capability probe is not built. ACP-ADDDIRS-203 probes only an agent that advertises the capability."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:560,561,565 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

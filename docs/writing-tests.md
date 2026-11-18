@@ -47,9 +47,11 @@ false-PASS. `pytest.skip` inside the test instead, when the agent shows no use o
 ### `revokes`
 
 `@pytest.mark.revokes("auth", reason=...)` marks a test that takes away something other tests rely on (today only
-the logout tests). The common plugin moves it to the end of the run, keeping collection order otherwise. At most
-one `revokes` test may be collected per run (`pytest.UsageError` otherwise; a second would need dependency
-ordering). Do not use it for archiving or deleting the TCK's own sessions.
+the logout tests). The common plugin moves every such test to the end of the run, after all other tests, keeping
+collection order otherwise (also among the revoking tests themselves). Several may be collected. A revoking test that
+runs after an earlier one may find that what was taken away stops it from setting up (for example, it can no longer
+log in): it must then SKIP with a reason that says so, not FAIL. Do not use it for archiving or deleting the TCK's
+own sessions.
 
 ## Probes
 

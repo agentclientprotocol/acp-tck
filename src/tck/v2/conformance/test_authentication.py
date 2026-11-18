@@ -1,6 +1,6 @@
 """The v2 authentication surface: `authMethods` shape, the terminal-method client-capability
 gate, the `auth/login`/`auth/logout`/`session/new` flow, and the open-enum `type` rule
-(ACP-AUTH-001..006/206/208/210), plus the unstable `auth/status` query (ACP-AUTH-007/008).
+(ACP-AUTH-001..006/206/208/210/211), plus the unstable `auth/status` query (ACP-AUTH-007/008).
 
 v2 renames v1's `authenticate`/`logout` to `auth/login`/`auth/logout` and drops the separate
 `agentCapabilities.auth.logout` marker. Ids shared with v1 name the same rule; the `2xx` ids are
@@ -33,7 +33,7 @@ from ..protocol import (
     METHOD_NOT_FOUND,
     is_valid_open_enum_value,
 )
-from ..validation import validate_agent_response
+from ..validation import validate_agent_response, validate_def_value
 from ._helpers import (
     advertises_session,
     connected_agent,
@@ -340,42 +340,91 @@ async def test_auth_status_state_is_defined_or_underscore_prefixed(
     )
 
 
+async def _logout_session_setup(agent, agent_launch, init_result) -> bool:
+    """The shared start of the logout tests, on a fresh initialized connection: SKIPs when no
+    `authMethods` are advertised or `--allow-logout` was not given. With `--tck-auth-method`,
+    logs in first (gated by the same `validate_login_method_id` check as ACP-AUTH-003, so an
+    unadvertised/terminal id SKIPs rather than sending a spec-forbidden `auth/login`); a login
+    that fails SKIPs, since an earlier logout in this run may have revoked it. Returns whether
+    the TCK logged in."""
+    auth_methods = init_result.get("authMethods") or []
+    if not auth_methods:
+        pytest.skip("agent advertises no authMethods; nothing to log out of")
+    if not current_allow_logout():
+        pytest.skip(
+            "auth/logout not exercised: pass --allow-logout (it may revoke the operator's "
+            "credentials)"
+        )
+    method_id = current_auth_method_id()
+    if method_id is None:
+        return False
+    validate_login_method_id(auth_methods, method_id)
+    login_id = await agent.send_request("auth/login", {"methodId": method_id})
+    with skip_if_login_times_out("auth/login", method_id, agent_launch.default_timeout):
+        login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
+    login_msg = login_entry.parsed
+    if not (isinstance(login_msg, dict) and isinstance(login_msg.get("result"), dict)):
+        detail = (login_msg.get("error") if isinstance(login_msg, dict) else None) or login_entry.text
+        pytest.skip(
+            f"auth/login with methodId={method_id!r} failed (an earlier auth/logout in this run "
+            f"may have revoked it): {detail!r}"
+        )
+    return True
+
+
+async def _logout(agent, agent_launch):
+    """Sends `auth/logout {}` and returns `(parsed message, raw text)`."""
+    logout_id = await agent.send_request("auth/logout", {})
+    entry = await agent.wait_for_response(logout_id, timeout=agent_launch.default_timeout)
+    return entry.parsed, entry.text
+
+
 @pytest.mark.requirement("ACP-AUTH-004")
 @pytest.mark.revokes("auth", reason="auth/logout may drop credentials other tests rely on")
 async def test_logout_succeeds(agent_launch):
     """ACP-AUTH-004 (CAPABILITY, `capability="inferred:authMethods"`, since v2 has no
-    `agentCapabilities.auth.logout` marker). SKIPs when
-    the agent advertises no `authMethods`, or unless `--allow-logout`/`--tck-allow-logout` was
-    given, since a real `auth/logout` may revoke the operator's own credentials.
+    `agentCapabilities.auth.logout` marker). SKIPs when the agent advertises no `authMethods`,
+    or unless `--allow-logout`/`--tck-allow-logout` was given, since a real `auth/logout` may
+    revoke the operator's own credentials.
 
-    If `--tck-auth-method` was given, logs in first (gated by the same `validate_login_method_id`
-    check as ACP-AUTH-003, so an unadvertised/terminal id SKIPs rather than sending a
-    spec-forbidden `auth/login`). Only `auth/logout`'s own success (a schema-valid object
-    result) is checked -- nothing about session state after logout."""
+    With `--tck-auth-method` the TCK logs in first, so there is authenticated state to end and
+    any error FAILs. Without it the agent may have none, and logging out then is only a SHOULD
+    to succeed (authentication.mdx:273): the logout MUST exists (:51-52), so only `-32601`
+    FAILs and any other error SKIPs. Only `auth/logout`'s own success (an object result) is
+    checked -- nothing about session state after logout."""
     async with _initialized_agent(agent_launch) as (agent, init_result):
-        auth_methods = init_result.get("authMethods") or []
-        if not auth_methods:
-            pytest.skip("agent advertises no authMethods; nothing to log out of")
-        if not current_allow_logout():
+        logged_in = await _logout_session_setup(agent, agent_launch, init_result)
+        logout_msg, text = await _logout(agent, agent_launch)
+        error = logout_msg.get("error") if isinstance(logout_msg, dict) else None
+        if not logged_in and isinstance(error, dict) and error.get("code") != METHOD_NOT_FOUND:
             pytest.skip(
-                "auth/logout not exercised: pass --allow-logout (it may revoke the operator's "
-                "credentials)"
+                "auth/logout was rejected with no TCK login before it, so the agent may have had "
+                "no authenticated state to end; succeeding then is only a SHOULD "
+                f"(authentication.mdx:273): {text!r}"
             )
-
-        method_id = current_auth_method_id()
-        if method_id is not None:
-            validate_login_method_id(auth_methods, method_id)
-            login_id = await agent.send_request("auth/login", {"methodId": method_id})
-            with skip_if_login_times_out("auth/login", method_id, agent_launch.default_timeout):
-                login_entry = await agent.wait_for_response(login_id, timeout=agent_launch.default_timeout)
-            login_msg = login_entry.parsed
-            if not (isinstance(login_msg, dict) and isinstance(login_msg.get("result"), dict)):
-                detail = (login_msg.get("error") if isinstance(login_msg, dict) else None) or login_entry.text
-                pytest.skip(f"auth/login with methodId={method_id!r} failed: {detail!r}")
-
-        logout_id = await agent.send_request("auth/logout", {})
-        logout_entry = await agent.wait_for_response(logout_id, timeout=agent_launch.default_timeout)
-        logout_msg = logout_entry.parsed
         assert isinstance(logout_msg, dict) and isinstance(logout_msg.get("result"), dict), (
-            f"auth/logout did not succeed with an object result: {logout_entry.text!r}"
+            f"auth/logout did not succeed with an object result: {text!r}"
         )
+
+
+@pytest.mark.requirement("ACP-AUTH-211")
+@pytest.mark.revokes("auth", reason="auth/logout may drop credentials other tests rely on")
+async def test_second_logout_returns_the_empty_result(agent_launch):
+    """ACP-AUTH-211 (ADVISORY). A second `auth/logout` right after a successful one, on the same
+    connection, returns the same empty result: logging out is idempotent, and with no
+    authenticated state left to end the agent SHOULD still answer it (authentication.mdx:273).
+    SKIPs as ACP-AUTH-004 does, and when the login fails (an earlier logout in this run may have
+    revoked it) or the first logout did not return an object result (ACP-AUTH-004's concern).
+    The result is judged as a `LogoutAuthResponse`, not byte-for-byte against the first."""
+    async with _initialized_agent(agent_launch) as (agent, init_result):
+        await _logout_session_setup(agent, agent_launch, init_result)
+        first, first_text = await _logout(agent, agent_launch)
+        if not (isinstance(first, dict) and isinstance(first.get("result"), dict)):
+            pytest.skip(f"the first auth/logout did not succeed (ACP-AUTH-004's concern): {first_text!r}")
+        second, second_text = await _logout(agent, agent_launch)
+        assert isinstance(second, dict) and isinstance(second.get("result"), dict), (
+            f"a second auth/logout right after a successful one did not return the empty result: "
+            f"{second_text!r}"
+        )
+        issues = validate_def_value("LogoutAuthResponse", second["result"])
+        assert not issues, f"the second auth/logout result failed LogoutAuthResponse validation: {issues!r}"

@@ -2838,6 +2838,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-ADDDIRS-204",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "An agent that does not advertise `session.additionalDirectories` ignores the "
+            "field: `session/new` carrying an existing absolute entry is accepted. The probe "
+            "deliberately breaks the client MUST to send `additionalDirectories` only when it "
+            "is advertised, because the spec defines the agent's answer to exactly that input. "
+            "ADVISORY: the sentence carries no RFC keyword. SKIPs without `capabilities.session` "
+            "and when the capability is advertised."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:526,528; "
+            "schema/v2/schema.unstable.json#/$defs/NewSessionRequest/properties/additionalDirectories"
+        ),
+    ),
+    Requirement(
         id="ACP-FORK-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.fork",
@@ -3595,13 +3612,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "a non-empty `authMethods` -- v2 has no `agentCapabilities.auth.logout` marker at "
             "all (unlike v1); `capability=\"inferred:authMethods\"` is documentation-only. "
             "Only actually exercised when `--allow-logout`/`--tck-allow-logout` is given "
-            "(destructive: may revoke the operator's own credentials); SKIPs otherwise."
+            "(destructive: may revoke the operator's own credentials); SKIPs otherwise. After "
+            "a TCK login (`--auth-method`) any error FAILs. Without one the agent may have no "
+            "authenticated state, and answering then is only a SHOULD, so only `-32601` FAILs "
+            "and any other error SKIPs."
         ),
         citation=_cite(
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthRequest; "
             "schema/v2/schema.unstable.json#/$defs/LogoutAuthResponse; "
             "schema/v2/schema.unstable.json#/$defs/AgentAuthCapabilities; "
-            "docs/protocol/v2/draft/authentication.mdx:51-52,247-249"
+            "docs/protocol/v2/draft/authentication.mdx:51-52,247-249,273"
         ),
     ),
     Requirement(
@@ -3745,6 +3765,24 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(`ACP-AUTH-208`'s concern)."
         ),
         citation=_cite("docs/protocol/v2/draft/authentication.mdx:191"),
+    ),
+    Requirement(
+        id="ACP-AUTH-211",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A second `auth/logout` sent right after a successful one on the same connection "
+            "returns the same empty result (logging out is idempotent; the Agent SHOULD answer "
+            "even with no authenticated state left to end). The result is judged as a "
+            "`LogoutAuthResponse`, not byte-for-byte against the first. SKIPs as `ACP-AUTH-004` "
+            "does (no `authMethods`, no `--allow-logout`), when `--auth-method` is given but "
+            "the login fails (an earlier logout in the run may have revoked it), and when the "
+            "first logout did not succeed (`ACP-AUTH-004`'s concern)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/authentication.mdx:273; "
+            "schema/v2/schema.unstable.json#/$defs/LogoutAuthResponse"
+        ),
     ),
     Requirement(
         id="ACP-PATCH-201",

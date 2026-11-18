@@ -219,6 +219,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-ADDDIRS-001",
         "ACP-ADDDIRS-202",
         "ACP-ADDDIRS-203",
+        "ACP-ADDDIRS-204",
         "ACP-FORK-201",
         "ACP-FORK-202",
         "ACP-FORK-203",
@@ -258,6 +259,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-AUTH-007",
         "ACP-AUTH-008",
         "ACP-AUTH-210",
+        "ACP-AUTH-211",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
@@ -330,6 +332,8 @@ def test_advisory_tier_is_exactly_these_ids():
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.ADVISORY} == {
         "ACP-AUTH-005",
         "ACP-AUTH-210",
+        "ACP-AUTH-211",
+        "ACP-ADDDIRS-204",
         "ACP-BATCH-209",
         "ACP-INIT-215",
         "ACP-SUBAGENT-011",
@@ -663,7 +667,7 @@ def test_every_logout_test_carries_the_revokes_marker_and_nothing_else_does():
     logout_tests = {
         test_name
         for test_name, marks in _tests_with_marker("requirement").items()
-        if "ACP-AUTH-004" in {req_id for mark in marks for req_id in mark.args}
+        if {"ACP-AUTH-004", "ACP-AUTH-211"} & {req_id for mark in marks for req_id in mark.args}
     }
     assert logout_tests, "no test is bound to ACP-AUTH-004"
     revoking = _tests_with_marker("revokes")

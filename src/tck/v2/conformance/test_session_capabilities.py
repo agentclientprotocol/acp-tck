@@ -4,20 +4,20 @@
 `test_cancel.py`'s `test_close_cancels_foreground_work`, see its row text), `session/delete`
 (ACP-DELETE-001..003/204/205), `session/archive`/`session/unarchive` (ACP-ARCHIVE-002..006,
 201), the `additionalDirectories` carrier on `session/new`/`session/resume`
-(ACP-ADDDIRS-001/202/203), the MCP-server rows (ACP-MCP-201..204 and ACP-SESSION-006), and the
+(ACP-ADDDIRS-001/202/203/204), the MCP-server rows (ACP-MCP-201..204 and ACP-SESSION-006), and the
 `session/fork` (ACP-FORK-201..206) and `systemPrompt` (ACP-SYSPROMPT-001/202, and the error paths
 ACP-SYSPROMPT-002/003) surfaces.
 
 Every id here except `ACP-RESUME-214`/`216`/`222`, `ACP-CLOSE-003`/`204`, `ACP-DELETE-002`,
-`ACP-LIST-207`, `ACP-MCP-201`/`202`/`204` and `ACP-SESSION-006` is
+`ACP-LIST-207`, `ACP-ADDDIRS-204`, `ACP-MCP-201`/`202`/`204` and `ACP-SESSION-006` is
 `Tier.CAPABILITY`; see the requirements module for the exact capability path each uses. Those
 still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate even though
 `Requirement.capability` is `None` (ADVISORY/INFORMATIONAL tier) -- the same independence used
 throughout this registry (e.g. `ACP-CANCEL-204`).
 
-`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`, `ACP-LIST-003`/`205`/`207`, `ACP-ARCHIVE-004`/`005` and
+`ACP-SYSPROMPT-002`/`003`, `ACP-ADDDIRS-203`/`204`, `ACP-LIST-003`/`205`/`207`, `ACP-ARCHIVE-004`/`005` and
 `ACP-MCP-203`/`204` send input a client MUST NOT (an unsupported `systemPrompt` mode or non-text
-block, a relative entry or `cwd` filter, a never-issued cursor, an unsupported `archived` filter
+block, a relative entry, `additionalDirectories` without the capability, a relative `cwd` filter, a never-issued cursor, an unsupported `archived` filter
 value, a never-created session, an unsupported transport, duplicate names) on purpose: the
 spec defines the agent's answer to exactly those inputs, and the probes are `_`-prefixed or
 otherwise unmistakably the TCK's.
@@ -1931,6 +1931,36 @@ async def test_new_session_with_relative_additional_directory_rejected(agent_lau
         assert isinstance(error, dict) and error.get("code") == INVALID_PARAMS, (
             "session/new with a relative additionalDirectories entry must be rejected with "
             f"-32602, got: {entry.text!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-ADDDIRS-204")
+@pytest.mark.capability("capabilities.session")
+async def test_new_session_with_unadvertised_additional_directory_accepted(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-ADDDIRS-204 (ADVISORY). An agent that does not advertise
+    `session.additionalDirectories` ignores the field (`session-setup.mdx:528`), so `session/new`
+    carrying an existing absolute entry succeeds. Breaks the client MUST to send it only when
+    advertised (:526) on purpose, because the spec defines the agent's answer to exactly that
+    input. SKIPs without `capabilities.session` (no `session/new`) and when
+    `additionalDirectories` is advertised (`ACP-ADDDIRS-001`/`203` judge that)."""
+    init_result = agent_initialize_result.result
+    assert init_result is not None, f"initialize did not succeed: {agent_initialize_result.error_message}"
+    if capability_is_supported(init_result, "capabilities.session.additionalDirectories"):
+        pytest.skip("the agent advertises session.additionalDirectories")
+    extra_dir = tmp_path / "extra"
+    extra_dir.mkdir()
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request(
+            "session/new", {"cwd": str(tmp_path), "additionalDirectories": [str(extra_dir)]}
+        )
+        entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
+            "session/new with an absolute additionalDirectories entry was not accepted by an agent "
+            f"that does not advertise session.additionalDirectories: {entry.text!r}"
         )
 
 
