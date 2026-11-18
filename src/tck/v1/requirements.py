@@ -1142,6 +1142,41 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-CLIENTCAP-008",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `prompt_suggestions_update` unless the client advertised "
+            "`clientCapabilities.session.promptSuggestions` (omitting `session` or "
+            "`promptSuggestions`, or setting either to `null`, is not advertising), live or "
+            "during `session/load` replay -- checked the same way as ACP-CLIENTCAP-004. Unstable "
+            "feature: an agent that sends no prompt suggestions passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:35,364; "
+            "docs/protocol/v1/draft/initialization.mdx:244-256; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestionsUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-009",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `cursor_update` unless the client advertised "
+            "`clientCapabilities.session.cursors` (omitting `session` or `cursors`, or setting "
+            "either to `null`, is not advertising), live or during `session/load` replay -- "
+            "checked the same way as ACP-CLIENTCAP-004. Unstable feature: an agent that "
+            "announces no session cursors passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:36,584-589; "
+            "docs/protocol/v1/draft/initialization.mdx:289-297; "
+            "docs/protocol/v1/draft/session-setup.mdx:152; "
+            "schema/v1/schema.unstable.json#/$defs/CursorUpdate"
+        ),
+    ),
+    Requirement(
         id="ACP-SUBAGENT-001",
         tier=Tier.CAPABILITY,
         capability="inferred:subagents",
@@ -1564,6 +1599,74 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v1/draft/agent-plan.mdx:55,108-117; "
             "schema/v1/schema.unstable.json#/$defs/SessionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-001",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.session.promptSuggestions: {}` and "
+            "nothing else, each suggestion in a `prompt_suggestions_update` has a `prompt` that "
+            "is valid as the `prompt` of a `session/prompt` request (a non-empty list of valid "
+            "content blocks) and holds only `text` and `resource_link` blocks: `image`, `audio` "
+            "and `resource` blocks need the client to advertise them under "
+            "`session.promptSuggestions` too, which the TCK's connection does not. Checked over "
+            "a connection of `session/new`, two prompt turns, `session/load` when advertised, "
+            "and quiet periods. Unstable feature: an agent that sends no suggestion passes "
+            "vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:398-405; "
+            "docs/protocol/v1/draft/initialization.mdx:250-255,258-279; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestion"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-002",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "No suggestion in a `prompt_suggestions_update` has a `prompt` whose only content is "
+            "empty or whitespace-only text -- checked over the connection of ACP-SUGGEST-001. "
+            "Unstable feature: an agent that sends no suggestion passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:402; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestion"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-003",
+        tier=Tier.CAPABILITY,
+        capability="inferred:promptSuggestions",
+        text=(
+            "When the agent accepts a `session/prompt` while the session's current suggestion "
+            "list is not empty, it replaces the list or withdraws it with `suggestions: []`. "
+            "Judged on the connection of ACP-SUGGEST-001: if the list the agent sent after the "
+            "first turn is non-empty when the second `session/prompt` is sent and that prompt is "
+            "accepted, a `prompt_suggestions_update` for the session must arrive before the end "
+            "of that turn plus a quiet period (the rule has no deadline of its own; the window "
+            "is the TCK's). SKIPs when the agent sent no non-empty list before the second "
+            "prompt, or did not accept it."
+        ),
+        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:409,412"),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD NOT include prompt suggestions in `session/load` replay: no "
+            "`prompt_suggestions_update` arrives between the `session/load` request and its "
+            "response, on the connection of ACP-SUGGEST-001. A loaded session starts with an "
+            "empty list. Applies only to an agent that advertised `loadSession` (SKIPs "
+            "otherwise) and SKIPs when no suggestion was seen live."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:425; "
+            "docs/protocol/v1/draft/session-setup.mdx:150; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestionsUpdate"
         ),
     ),
     Requirement(

@@ -104,6 +104,18 @@ code = [
 ]
 reason = "the error object, the code table, and the per-case code rules (unknown method, invalid params, unknown session, before initialize) that no feature doc links to, yet every request that can fail depends on"
 
+# --- prompt-turn.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/prompt-turn.mdx:411 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent predicts a prompt-suggestion list from the conversation as it stands when it sends it, and discards a prediction the conversation outgrew before it was sent, for example because a `session/prompt` arrived."
+reason = "Not observable from a client: it sees only the lists sent, never the predictions an agent discarded, and whether a sent list was predicted from the current conversation cannot be told from its content."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/prompt-turn.mdx:413 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD replace or withdraw the prompt-suggestion list when it stops applying for a reason other than an accepted `session/prompt`."
+reason = "Not observable from a client: it cannot tell whether a list still applies, and the spec sets no deadline, so a list that stays current proves nothing. ACP-SUGGEST-003 judges the one trigger it can drive, an accepted `session/prompt`."
+
 # --- session-setup.mdx ---
 
 [[not_requirement]]

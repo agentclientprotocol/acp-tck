@@ -56,8 +56,12 @@ _MANDATORY_IDS = {
     "ACP-CLIENTCAP-005",
     "ACP-CLIENTCAP-006",
     "ACP-CLIENTCAP-007",
+    "ACP-CLIENTCAP-008",
+    "ACP-CLIENTCAP-009",
     "ACP-PLAN-003",
     "ACP-PLAN-004",
+    "ACP-SUGGEST-001",
+    "ACP-SUGGEST-002",
     "ACP-EXT-001",
 }
 # The subagent rows judge a connection that advertises `clientCapabilities.subagents`. They are
@@ -97,6 +101,7 @@ _ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | {
     "ACP-PLAN-002",
     "ACP-PERM-001",
     "ACP-PERM-002",
+    "ACP-SUGGEST-004",
     # ACP-AUTH-001: its only assertion, AUTH-A5 (auth method ids are unique), is advisory in
     # the auth research -- not in _MANDATORY_IDS.
     "ACP-AUTH-001",
@@ -137,6 +142,9 @@ _CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
     "ACP-PROMPTCAP-003",
     "ACP-AUTH-004",
     "ACP-AUTH-007",
+    # ACP-SUGGEST-003: CAPABILITY with capability="inferred:promptSuggestions" -- SKIPs itself
+    # unless the agent sent a non-empty suggestion list before the second prompt.
+    "ACP-SUGGEST-003",
     # ACP-AUTH-003: CAPABILITY with capability="inferred:authMethods" -- runs only when
     # `authMethods` is non-empty and `--tck-auth-method` was given, otherwise SKIPPED.
     "ACP-AUTH-003",
@@ -161,13 +169,14 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS | {
     "ACP-ERROR-007",
     "ACP-PERM-001",
     "ACP-PERM-002",
+    "ACP-SUGGEST-004",
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
 (including `ACP-AUTH-003`, `capability="inferred:authMethods"` and the `inferred:subagents` rows),
-plus the ADVISORY `ACP-SUBAGENT-011..014` and the nine ADVISORY ids
+plus the ADVISORY `ACP-SUBAGENT-011..014` and the ten ADVISORY ids
 (`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-AUTH-008`, `ACP-ERROR-004`, `ACP-ERROR-007`,
-`ACP-PERM-001`, `ACP-PERM-002`) whose tests are still gated (by a `@pytest.mark.capability(...)`
+`ACP-PERM-001`, `ACP-PERM-002`, `ACP-SUGGEST-004`) whose tests are still gated (by a `@pytest.mark.capability(...)`
 marker, for `ACP-ERROR-004`/`007` by what `session/new` returned, for `ACP-PERM-*` by the agent
 never sending `session/request_permission`) even though their `Requirement.tier` itself is
 ADVISORY, not CAPABILITY (see `test_session_capabilities.py` module docstring)."""
@@ -1572,10 +1581,41 @@ def test_client_gated_update_fixtures_fail_only_their_own_clientcap_id():
         ("emits_plan_update_unadvertised.py", "ACP-CLIENTCAP-006"),
         ("emits_subagent_update_unadvertised.py", "ACP-CLIENTCAP-007"),
         ("session_content_without_subagents.py", "ACP-CLIENTCAP-007"),
+        ("emits_prompt_suggestions_unadvertised.py", "ACP-CLIENTCAP-008"),
+        ("emits_cursor_unadvertised.py", "ACP-CLIENTCAP-009"),
     ):
         result = _run_cli(fixture)
         assert result.returncode != 0, f"{fixture}:\n{result.stdout}"
         assert _output_fail_ids(result.stdout) == {expected}, f"{fixture}:\n{result.stdout}"
+
+
+def test_prompt_suggestion_defect_fixtures_fail_only_their_own_row():
+    """Each fixture sends suggestions only to a client that advertised `promptSuggestions`, so
+    ACP-CLIENTCAP-008 stays PASS. Everything but the defective row PASSes or SKIPs (ACP-SUGGEST-004
+    SKIPs without `loadSession`). The run is scoped with `-k`, so its verdict is not asserted."""
+    for fixture, expected in (
+        ("suggests_image_block.py", "ACP-SUGGEST-001"),
+        ("suggests_blank_prompt.py", "ACP-SUGGEST-002"),
+        ("stale_suggestions.py", "ACP-SUGGEST-003"),
+        ("replays_suggestions.py", "ACP-SUGGEST-004"),
+    ):
+        result = _run_cli(fixture, k="test_prompt_suggestions or test_client_capabilities")
+        assert _output_fail_ids(result.stdout) == {expected}, f"{fixture}:\n{result.stdout}"
+        statuses = _table_statuses(result.stdout)
+        assert statuses["ACP-CLIENTCAP-008"] == "PASS", f"{fixture}:\n{result.stdout}"
+        for req_id in {"ACP-SUGGEST-001", "ACP-SUGGEST-002", "ACP-SUGGEST-003", "ACP-SUGGEST-004"} - {expected}:
+            assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_conforming_suggestions_pass_non_vacuously_and_conforming_skips():
+    """`conforming_full.py` sends and withdraws suggestions and advertises `loadSession`, so all four
+    ACP-SUGGEST rows PASS (none SKIPs); `conforming.py` sends none: 001/002 pass vacuously, 003 and
+    004 SKIP."""
+    scope = "test_prompt_suggestions"
+    full = _table_statuses(_run_cli("conforming_full.py", k=scope).stdout)
+    assert {full[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)} == {"PASS"}, full
+    plain = _table_statuses(_run_cli("conforming.py", k=scope).stdout)
+    assert [plain[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)] == ["PASS", "PASS", "SKIPPED", "SKIPPED"], plain
 
 
 # --- subagents: a connection that advertises `clientCapabilities.subagents` ---

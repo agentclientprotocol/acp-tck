@@ -17,6 +17,9 @@ that capability (see `test_session_config.py`).
 For a client that advertised `clientCapabilities.plan` (only the `ACP-PLAN-*` tests do), each
 prompt turn also sends two `plan_update` messages -- an item plan and a markdown plan with an
 absolute `path` -- so ACP-PLAN-002/003/004 PASS non-vacuously. Without `plan`, no plan is sent.
+For a client that advertised `clientCapabilities.session.promptSuggestions` it sends a suggestion
+list after each prompt response and withdraws the previous one when the next prompt is accepted, so
+ACP-SUGGEST-001..004 PASS non-vacuously (`_suggests.py`); the replay on `session/load` has none.
 It also inherits `HonorsPermissionAgent`'s permission probe, so ACP-PERM-001/002 PASS
 non-vacuously; ordinary prompts never request permission.
 """
@@ -27,6 +30,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from _suggests import SuggestsMixin  # noqa: E402
 from honors_permission import HonorsPermissionAgent  # noqa: E402
 
 CAPABILITIES = {
@@ -106,7 +110,7 @@ PLANS = [
 ]
 
 
-class ConformingFullAgent(HonorsPermissionAgent):
+class ConformingFullAgent(SuggestsMixin, HonorsPermissionAgent):
     # So load/resume can be probed from a fresh process (ACP-SYSPROMPT-002/003).
     _persist_sessions = True
 
