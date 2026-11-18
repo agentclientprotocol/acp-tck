@@ -434,7 +434,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "own child is "
             "`ACP-SUBAGENT-003`'s. Judged for every `subagent_update` over one `session/new`, one "
             "prompt turn and a quiet period after it; SKIPs when none appears. Announcing a "
-            "client session under one of its own descendants is the cycle case of this row."
+            "client session under one of its own descendants is the cycle case of this row. "
+            "The reverse also FAILs: after that turn and the `session/list` of `ACP-LIST-004`, "
+            "the TCK creates one more session with `session/new`, and a `sessionId` equal to an "
+            "announced child reuses the child's ID for an unrelated session (judged only when "
+            "a child was announced and the `session/new` was answered with a result)."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/subagents.mdx:80-84,126; "
@@ -729,6 +733,56 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-018",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "An Agent rejects a Client-initiated request that names an announced child session "
+            "with `-32602`, any request other than `session/cancel`, `tool_call/cancel` and "
+            "`terminal/cancel` (which the docs allow for a child under the conditions they "
+            "state). The draft docs state the SHOULD (`session/close` and `session/delete` "
+            "included), so the row is ADVISORY. The probe deliberately breaks a Client MUST NOT "
+            "(the restricted-methods allowlist), because the docs define the Agent's answer to "
+            "exactly that input: after the judged transcript of the subagents connection (see "
+            "`ACP-SUBAGENT-001`) the TCK sends `session/resume` (with the connection's `cwd`), "
+            "`session/delete` (when `capabilities.session.delete` is advertised) and, last, "
+            "`session/close` for each of the first two announced children (a close that "
+            "succeeds anyway could end the tree the other probes name, so it goes after them). "
+            "The probes are mutating methods only: the docs (`error.mdx`) say an Agent rejects "
+            "`any other request` that names a child, while the Preview RFD leaves read-only "
+            "operations their normal semantics, so no read-only request is probed. Judged only "
+            "for a probe that came back as an error: a success is `ACP-SUBAGENT-019`'s "
+            "(close/delete) and a missing reply is not judged. SKIPs when the agent announced no "
+            "child, no probe was answered, or none was answered with an error. Shared id with "
+            "v1."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/error.mdx:58; "
+            "docs/protocol/v2/draft/subagents.mdx:369,376,379-380; "
+            "docs/rfds/subagents.mdx:1093-1096 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-019",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/close` and `session/delete` naming an announced child session do not "
+            "report success: the docs say they `do not report success for a child`. The probe "
+            "is the one of `ACP-SUBAGENT-018` (which breaks a Client MUST NOT on purpose, "
+            "because the docs define the Agent's answer): `session/close` (baseline with "
+            "`capabilities.session`) is sent for each of the first two announced children, "
+            "`session/delete` too when `capabilities.session.delete` is advertised. A success "
+            "FAILs, whatever an error's code (the code is `-32602` under `ACP-SUBAGENT-018`). "
+            "SKIPs when the agent announced no child or no probe was answered. Shared id with "
+            "v1."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:376,380,425; "
+            "docs/rfds/subagents.mdx:1093-1096 (Preview RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-SUBAGENT-202",
         tier=Tier.CAPABILITY,
         capability="inferred:subagents",
@@ -759,6 +813,31 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/subagents.mdx:405,407; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:218,220,1446,1448; "
             "docs/rfds/subagents.mdx:1119-1131,1482-1494 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-205",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "The Agent sends both copies of a child's state transition (the child's own "
+            "`state_update` and the mirror in the parent's `subagent_update.state`) before a "
+            "later transition on either path, so a late mirror cannot overwrite newer state. "
+            "The docs state it as the Agent's rule with no RFC keyword, and it binds only an "
+            "agent that exposes subagents, so the row is CAPABILITY, gated by "
+            "`inferred:subagents` (documentation-only). For each child announced on a known "
+            "session, the distinct consecutive states of each path are aligned as in "
+            "`ACP-SUBAGENT-201` (each own state with the first unused mirror of that state, in "
+            "order); a state with no counterpart is `ACP-SUBAGENT-201`'s and is not judged "
+            "here. Over consecutive aligned transitions, the later transition's first copy on "
+            "either path arrives after both copies of the earlier one, else the row FAILs. "
+            "Judged over one `session/new`, one prompt turn and a quiet period after it; SKIPs "
+            "when no announced child has two aligned transitions. v2-only (`2xx`): v1 has no "
+            "child-addressed `state_update` stream, so there are no two copies."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:350-351; "
+            "docs/rfds/subagents.mdx:799-800 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -2529,6 +2608,26 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/session-list.mdx:157; "
             "docs/protocol/v2/draft/error.mdx:48; "
             "schema/v2/schema.unstable.json#/$defs/ListSessionsRequest/properties/cursor"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-004",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "`session/list` never returns a child session an Agent announced with "
+            "`subagent_update`: a Client learns of children from `subagent_update`, not from the "
+            "list. Judged on the subagents connection (see `ACP-SUBAGENT-001`), after its turn "
+            "and quiet period and before the child probes of `ACP-SUBAGENT-018`: the TCK lists "
+            "with `params: {}` and follows `nextCursor` for at most ten pages, and every "
+            "announced child is looked for in the result. SKIPs when the agent announced no "
+            "child or the list did not answer with a `sessions` array (`ACP-LIST-001`'s "
+            "finding). Shared id with v1."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:6; "
+            "docs/protocol/v2/draft/subagents.mdx:381; "
+            "docs/rfds/subagents.mdx:1098-1100 (Preview RFD)"
         ),
     ),
     Requirement(

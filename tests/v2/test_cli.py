@@ -62,6 +62,9 @@ _MANDATORY_IDS = {
     "ACP-EXT-204",
 }
 _CAPABILITY_IDS = {
+    "ACP-SUBAGENT-019",
+    "ACP-SUBAGENT-205",
+    "ACP-LIST-004",
     "ACP-ENUM-201",
     "ACP-ENUM-203",
     "ACP-META-203",
@@ -246,6 +249,7 @@ _ADVISORY_IDS = {
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-018",
     "ACP-STATE-204",
     "ACP-STATE-209",
     "ACP-STATE-210",
@@ -443,6 +447,10 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-018",
+    "ACP-SUBAGENT-019",
+    "ACP-LIST-004",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",  # the fixture stays silent on a non-JSON line
     "ACP-PROMPTCAP-001",
@@ -722,6 +730,10 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-018",
+    "ACP-SUBAGENT-019",
+    "ACP-LIST-004",
     "ACP-FORK-201",
     "ACP-FORK-202",
     "ACP-FORK-203",
@@ -786,6 +798,10 @@ _SUBAGENT_EXERCISED_IDS = {
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-018",
+    "ACP-SUBAGENT-019",
+    "ACP-LIST-004",
     "ACP-PATCH-204",
     "ACP-PATCH-208",
     "ACP-PATCH-210",
@@ -875,6 +891,10 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-018",
+    "ACP-SUBAGENT-019",
+    "ACP-LIST-004",
     "ACP-AUTH-005",
     "ACP-PROMPT-207",
     "ACP-PROMPTCAP-201",  # every prompt capability is advertised, so no negative case applies
@@ -2421,6 +2441,56 @@ def test_subagent_should_violations_fail_one_advisory_row_only(fixture, failing)
         assert statuses[req_id] == "PASS", result.stdout
 
 
+_CHILD_PROBE_IDS = {"ACP-SUBAGENT-018", "ACP-SUBAGENT-019", "ACP-LIST-004"}
+
+
+@pytest.mark.parametrize(
+    "fixture", ["exposes_subagent.py", "exposes_subagent_full.py", "replays_subagent_history.py"]
+)
+def test_child_probe_and_ordering_rows_pass_non_vacuously(fixture):
+    """The announced child answers every request naming it (`session/resume`, `session/close`, and
+    `session/delete` when advertised) with `-32602`, is never listed, its ID is not handed to a later
+    `session/new`, and both copies of its state transitions precede the next one: every subagent row,
+    `ACP-SUBAGENT-018`, `-019`, `-205` and `ACP-LIST-004` included, PASSes (none SKIPs)."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    for req_id in _SUBAGENT_ROW_IDS:
+        assert statuses[req_id] == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_child_probe_rows_skip_without_a_child():
+    """`conforming.py` announces no child: the probe phase sends nothing and the rows SKIP."""
+    result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
+    statuses = _table_statuses(result.stdout)
+    for req_id in (*_CHILD_PROBE_IDS, "ACP-SUBAGENT-205", "ACP-SUBAGENT-004"):
+        assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("child_close_wrong_code.py", "ACP-SUBAGENT-018"),
+        ("child_close_succeeds.py", "ACP-SUBAGENT-019"),
+        ("child_delete_succeeds.py", "ACP-SUBAGENT-019"),
+        ("lists_child_session.py", "ACP-LIST-004"),
+        ("child_id_reused_for_new_session.py", "ACP-SUBAGENT-004"),
+        ("late_child_state_mirror.py", "ACP-SUBAGENT-205"),
+    ],
+)
+def test_child_probe_and_ordering_violators_fail_exactly_their_row(fixture, failing):
+    """Each defect is announced, schema-valid and visible only to its own row: a `-32002` instead of
+    `-32602` (018 judges only an error's code), a `session/close`/`session/delete` that succeeds (019
+    judges only a success; the `delete` probe is sent because the fixture advertises it), a listed
+    child, a child's ID reused by a later `session/new` (the probe phase's, so `ACP-SUBAGENT-001`..`009`
+    still PASS) and mirrors held back until the child's `idle` (every state is mirrored in order, so
+    `ACP-SUBAGENT-201` PASSes)."""
+    result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {failing}, result.stdout
+    assert statuses["ACP-SUBAGENT-201"] == "PASS", result.stdout
+
+
 def test_user_message_task_gives_subagent_012_nothing_to_judge():
     """The child's task came as a `user_message`: `ACP-SUBAGENT-011` FAILs it, and `-012` SKIPs
     instead of PASSing a child it did not judge."""
@@ -3479,6 +3549,10 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-SUBAGENT-013",
             "ACP-SUBAGENT-014",
             "ACP-SUBAGENT-201",
+            "ACP-SUBAGENT-205",
+            "ACP-SUBAGENT-018",
+            "ACP-SUBAGENT-019",
+            "ACP-LIST-004",
         }
     )
     for req_id, status in statuses.items():
@@ -5429,7 +5503,13 @@ def test_subagent_prompt_does_not_drive_the_child_control_turn():
         assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
 
 
-_SUBAGENT_ROW_IDS = {f"ACP-SUBAGENT-{n:03}" for n in (*range(1, 10), *range(11, 15))} | {"ACP-SUBAGENT-201"}
+_SUBAGENT_ROW_IDS = {f"ACP-SUBAGENT-{n:03}" for n in (*range(1, 10), *range(11, 15))} | {
+    "ACP-SUBAGENT-018",
+    "ACP-SUBAGENT-019",
+    "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-205",
+    "ACP-LIST-004",
+}
 
 
 def test_subagent_prompt_reaches_the_subagents_turn():

@@ -1087,23 +1087,19 @@ class ChildStateMirrors:
     unmirrored: list[str] = field(default_factory=list)
 
 
-def child_state_mirrors(
+def _child_state_paths(
     transcript: list[TranscriptEntry], client_sessions: set[str]
-) -> ChildStateMirrors:
-    """Replay the agent's traffic in wire order and judge the state mirroring rule
-    (`docs/protocol/v2/draft/prompt-lifecycle.mdx` "Session states"; `SubagentUpdate`): every
-    state a child reports in its own `state_update` is also reported in the `state` of a
-    `subagent_update` for that child on its immediate parent (the session that first announced it).
-
-    A child is judged once a `subagent_update` on a known session announces it. For each child the
-    distinct consecutive states of its own `state_update`s (a repeated snapshot is idempotent) must
-    appear, in order, among the states of its mirrors. A mirror may arrive before or after the copy
-    on the child's own stream and extra mirrors are fine. Only `state.state` is compared: a
-    mirror is "the same snapshot", and `stopReason`/`background` are not judged."""
+) -> tuple[dict[str, str], dict[str, list[tuple[int, str]]], dict[str, list[tuple[int, str]]]]:
+    """The two copies of every announced child's reported states, in wire order:
+    `(parents, own, mirrored)`. `parents` maps a child, once a `subagent_update` on a known
+    session announces it, to its immediate parent (the session that first announced it). `own` holds
+    the distinct consecutive `state` strings of the child's own `state_update`s and `mirrored` every
+    `state.state` string of a `subagent_update` for it on that parent, each with the index of its
+    message in the agent's traffic."""
     parents: dict[str, str] = {}
-    own: dict[str, list[str]] = {}
-    mirrored: dict[str, list[str]] = {}
-    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+    own: dict[str, list[tuple[int, str]]] = {}
+    mirrored: dict[str, list[tuple[int, str]]] = {}
+    for position, (_msg, method, params, known) in enumerate(_wire_messages(transcript, client_sessions)):
         update = params.get("update") if method == "session/update" else None
         outer = params.get("sessionId")
         if not isinstance(update, dict) or not isinstance(outer, str):
@@ -1119,16 +1115,33 @@ def child_state_mirrors(
                 and isinstance(state, dict)
                 and isinstance(state.get("state"), str)
             ):
-                mirrored.setdefault(child, []).append(state["state"])
+                mirrored.setdefault(child, []).append((position, state["state"]))
         elif kind == "state_update" and outer in parents and isinstance(update.get("state"), str):
             states = own.setdefault(outer, [])
-            if not states or states[-1] != update["state"]:
-                states.append(update["state"])
+            if not states or states[-1][1] != update["state"]:
+                states.append((position, update["state"]))
+    return parents, own, mirrored
+
+
+def child_state_mirrors(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildStateMirrors:
+    """Replay the agent's traffic in wire order and judge the state mirroring rule
+    (`subagents.mdx:330,350-352`; `SubagentUpdate`): every state a child reports in its own
+    `state_update` is also reported in the `state` of a `subagent_update` for that child on its
+    immediate parent (the session that first announced it).
+
+    A child is judged once a `subagent_update` on a known session announces it. For each child the
+    distinct consecutive states of its own `state_update`s (a repeated snapshot is idempotent) must
+    appear, in order, among the states of its mirrors. A mirror may arrive before or after the copy
+    on the child's own stream and extra mirrors are fine. Only `state.state` is compared: a
+    mirror is "the same snapshot", and `stopReason`/`background` are not judged."""
+    parents, own, mirrored = _child_state_paths(transcript, client_sessions)
     result = ChildStateMirrors()
     for child, states in own.items():
-        copies = mirrored.get(child, [])
+        copies = [state for _position, state in mirrored.get(child, [])]
         position = 0
-        for state in states:
+        for _index, state in states:
             result.judged += 1
             while position < len(copies) and copies[position] != state:
                 position += 1
@@ -1140,6 +1153,76 @@ def child_state_mirrors(
             else:
                 position += 1
     return result
+
+
+@dataclass
+class ChildStateOrder:
+    """What `child_state_order` found: how many consecutive pairs of aligned transitions were
+    judged and the pairs whose later transition began before both copies of the earlier one."""
+
+    judged: int = 0
+    out_of_order: list[str] = field(default_factory=list)
+
+
+def child_state_order(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildStateOrder:
+    """Judge the ordering rule of the two copies of a child's state (`subagents.mdx:351`): the
+    Agent sends both copies of a transition before a later transition on either path.
+
+    Per announced child, the distinct consecutive states of each path (the child's own
+    `state_update`s, and the `subagent_update.state`s on its parent) are aligned as
+    `child_state_mirrors` does it: each own state with the first mirror of that state after the
+    one the previous own state took. A state without a counterpart is that function's finding,
+    not judged here. For each two consecutive aligned transitions, the later one's first copy
+    must arrive after the earlier one's second copy."""
+    _parents, own, mirrored = _child_state_paths(transcript, client_sessions)
+    result = ChildStateOrder()
+    for child, states in own.items():
+        copies: list[tuple[int, str]] = []
+        for position, state in mirrored.get(child, []):
+            if not copies or copies[-1][1] != state:  # a repeated snapshot is idempotent
+                copies.append((position, state))
+        aligned: list[tuple[int, int, str]] = []  # (own position, mirror position, state)
+        cursor = 0
+        for own_position, state in states:
+            while cursor < len(copies) and copies[cursor][1] != state:
+                cursor += 1
+            if cursor == len(copies):
+                break
+            aligned.append((own_position, copies[cursor][0], state))
+            cursor += 1
+        for earlier, later in zip(aligned, aligned[1:]):
+            result.judged += 1
+            if max(earlier[:2]) > min(later[:2]):
+                result.out_of_order.append(
+                    f"child {child!r}: a copy of its {earlier[2]!r} state arrived after a copy of "
+                    f"the later {later[2]!r} state (both copies of a transition must precede a "
+                    f"later transition on either path)"
+                )
+    return result
+
+
+def announced_children(transcript: list[TranscriptEntry], client_sessions: set[str]) -> list[str]:
+    """The child session IDs a `subagent_update` sent on an already-known session announced, in
+    first-announcement order (the rule `child_session_traffic` judges). A session the client
+    created or the update's own session is never a child."""
+    children: list[str] = []
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        outer, child = params.get("sessionId"), update.get("sessionId")
+        if (
+            isinstance(outer, str)
+            and isinstance(child, str)
+            and outer in known
+            and child != outer
+            and child not in client_sessions
+            and child not in children
+        ):
+            children.append(child)
+    return children
 
 
 _CHILD_OUTPUT_KINDS = {"agent_message", "agent_message_chunk", "agent_thought", "agent_thought_chunk"}

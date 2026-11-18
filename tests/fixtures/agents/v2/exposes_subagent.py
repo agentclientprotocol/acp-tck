@@ -10,10 +10,13 @@ turn has ended, the child sends one more `agent_message_chunk` (child work outli
 turn). The association stays one tree: the child is later patched under the same parent with an
 absolute `cwd` and `additionalDirectories`, and announces one nested child of its own (also with
 an absolute `cwd`). Everything is legal once announced, and the child's idle must not end the
-parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..009`, `-011..014` and `-201` and
+parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..009`, `-011..014`, `-201` and `-205` and
 `ACP-STATE-201..205` like `conforming.py`, and also exercises the rows that need a subagent, a
 permission request or `session` content (`_SUBAGENT_EXERCISED_IDS` in `tests/v2/test_cli.py`). The
-mock client answers the permission requests; the child's is not awaited.
+mock client answers the permission requests; the child's is not awaited. A Client-initiated
+request naming an announced child gets `-32602` (`_answer_child_request`, `subagents.mdx:380`), so
+the child-session probes (`ACP-SUBAGENT-018`, `-019`) and `ACP-LIST-004` PASS: the child is never
+listed, and a later `session/new` never reuses its ID.
 
 The `_`-hooks below are the seams the violator fixtures override.
 """
@@ -38,6 +41,32 @@ class ExposesSubagentAgent(ConformingAgent):
         super().__init__(**kwargs)
         self._child_count = 0
         self._turn_child: str | None = None  # the child of the turn in flight, until it ends
+        self._announced_children: set[str] = set()  # every child announced so far
+
+    def _send_update(self, session_id: Any, update: dict[str, Any]) -> None:
+        child = update.get("sessionId")
+        if (
+            update.get("sessionUpdate") == "subagent_update"
+            and isinstance(child, str)
+            and child != session_id
+            and child not in self._sessions
+        ):
+            self._announced_children.add(child)
+        super()._send_update(session_id, update)
+
+    def _handle_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
+        if (
+            params.get("sessionId") in self._announced_children
+            and method not in ("tool_call/cancel", "terminal/cancel")
+        ):
+            self._answer_child_request(method, msg_id, params)
+        else:
+            super()._handle_request(method, msg_id, params)
+
+    def _answer_child_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
+        """Hook: a Client-initiated request names an announced child, which no request may do
+        but the cancels (`session/cancel` is a notification, handled elsewhere): `-32602`."""
+        self._error(msg_id, -32602, f"Invalid params: {params.get('sessionId')!r} is a child session")
 
     def _mid_turn_action(self, session_id: Any) -> bool:
         self._child_count += 1

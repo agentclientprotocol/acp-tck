@@ -12,8 +12,10 @@ import pytest
 
 from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
+    announced_children,
     child_config_selects,
     child_state_mirrors,
+    child_state_order,
     child_task_reports,
     session_message_streams,
     _LIST_ROUTE_MAX_PAGES,
@@ -773,6 +775,101 @@ def test_mirrors_must_follow_the_order_of_the_child_states():
 def test_an_unannounced_child_state_is_not_judged_for_mirroring():
     found = child_state_mirrors(_traffic(_state("c", "idle")), {"p"})
     assert (found.judged, found.unmirrored) == (0, [])
+
+
+def test_both_copies_of_a_transition_before_the_next_are_in_order():
+    transcript = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _mirror("running"),
+        _mirror("idle"),  # the mirror of the next transition may lead its own copy
+        _state("c", "idle"),
+    )
+    found = child_state_order(transcript, {"p"})
+    assert (found.judged, found.out_of_order) == (1, [])
+    # the mirror of a transition may also precede the child's own copy of it
+    mirror_first = _traffic(
+        _ANNOUNCE, _mirror("running"), _state("c", "running"), _mirror("idle"), _state("c", "idle")
+    )
+    assert child_state_order(mirror_first, {"p"}).out_of_order == []
+
+
+def test_a_copy_of_a_later_transition_before_both_copies_of_an_earlier_one_is_out_of_order():
+    # the child's idle arrives before the running transition's mirror: a late mirror
+    late = _traffic(
+        _ANNOUNCE, _state("c", "running"), _state("c", "idle"), _mirror("running"), _mirror("idle")
+    )
+    found = child_state_order(late, {"p"})
+    assert found.judged == 1 and len(found.out_of_order) == 1
+    assert "'running'" in found.out_of_order[0] and "'idle'" in found.out_of_order[0]
+    # and the reverse path: the parent's mirror of idle leads the child's own running copy
+    early = _traffic(
+        _ANNOUNCE, _mirror("running"), _mirror("idle"), _state("c", "running"), _state("c", "idle")
+    )
+    assert len(child_state_order(early, {"p"}).out_of_order) == 1
+
+
+def test_state_order_ignores_repeats_and_is_judged_per_consecutive_pair():
+    repeated = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _state("c", "running"),  # idempotent repeats are one transition
+        _mirror("running"),
+        _mirror("running"),
+        _state("c", "idle"),
+        _mirror("idle"),
+        _state("c", "running"),
+        _mirror("running"),
+    )
+    assert (child_state_order(repeated, {"p"}).judged, child_state_order(repeated, {"p"}).out_of_order) == (2, [])
+    # only the pair that overlaps is reported
+    overlap = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _mirror("running"),
+        _state("c", "idle"),
+        _state("c", "running"),
+        _mirror("idle"),
+        _mirror("running"),
+    )
+    found = child_state_order(overlap, {"p"})
+    assert found.judged == 2 and len(found.out_of_order) == 1 and "'idle'" in found.out_of_order[0]
+
+
+def test_state_order_leaves_missing_and_reordered_mirrors_to_the_mirroring_row():
+    # fewer than two aligned transitions: nothing to order
+    assert child_state_order(_traffic(_ANNOUNCE, _state("c", "running"), _mirror("running")), {"p"}).judged == 0
+    assert child_state_order(_traffic(_ANNOUNCE, _state("c", "idle")), {"p"}).judged == 0
+    assert child_state_order(_traffic(_state("c", "running"), _state("c", "idle")), {"p"}).judged == 0
+    # a state with no mirror ends the alignment, and a swapped mirror pair aligns one state only
+    missing = _traffic(_ANNOUNCE, _state("c", "running"), _state("c", "idle"), _mirror("running"))
+    assert child_state_order(missing, {"p"}).judged == 0
+    swapped = _traffic(
+        _ANNOUNCE, _state("c", "running"), _state("c", "idle"), _mirror("idle"), _mirror("running")
+    )
+    found = child_state_order(swapped, {"p"})
+    assert (found.judged, found.out_of_order) == (0, [])
+    # a mirror on a session that is not the child's parent is not a copy
+    elsewhere = _traffic(
+        _ANNOUNCE, _state("c", "running"), _mirror("running", parent="g"), _state("c", "idle")
+    )
+    assert child_state_order(elsewhere, {"p"}).judged == 0
+
+
+def test_announced_children_follow_the_announcement_rule():
+    """First-announcement order, nested children included; a session the client created, the
+    update's own session and a child announced on a session nothing announced are not children."""
+    transcript = _traffic(
+        _sub("p", "c1"),
+        _sub("c1", "nested"),
+        _sub("p", "c1"),
+        _sub("p", "p"),
+        _sub("ghost", "orphan"),
+        _sub("p", "other-client-session"),
+        _sub("p", "c2"),
+    )
+    assert announced_children(transcript, {"p", "other-client-session"}) == ["c1", "nested", "c2"]
+    assert announced_children(_traffic(_update("p", {"sessionUpdate": "agent_message_chunk"})), {"p"}) == []
 
 
 def _session_message(outer: str, message_id: str, **fields: Any) -> dict[str, Any]:
