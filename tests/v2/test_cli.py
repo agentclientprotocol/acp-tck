@@ -94,6 +94,9 @@ _CAPABILITY_IDS = {
     "ACP-CLIENTCAP-008",
     "ACP-CLIENTCAP-202",
     "ACP-CLIENTCAP-203",
+    "ACP-SUGGEST-001",
+    "ACP-SUGGEST-002",
+    "ACP-SUGGEST-003",
     "ACP-CANCEL-001",
     "ACP-CANCEL-002",
     "ACP-CANCEL-203",
@@ -215,6 +218,7 @@ _ADVISORY_IDS = {
     "ACP-STATE-204",
     "ACP-STATE-209",
     "ACP-STATE-210",
+    "ACP-SUGGEST-004",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
@@ -419,6 +423,10 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
+    "ACP-SUGGEST-001",  # the fixture sends no suggestion
+    "ACP-SUGGEST-002",
+    "ACP-SUGGEST-003",
+    "ACP-SUGGEST-004",
 } | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
@@ -564,6 +572,10 @@ def test_help_mentions_protocol_version_option():
 
 
 _CONFORMING_EXPECTED_SKIPS = {
+    "ACP-SUGGEST-001",  # the fixture sends no suggestion
+    "ACP-SUGGEST-002",
+    "ACP-SUGGEST-003",
+    "ACP-SUGGEST-004",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",
     "ACP-PROMPTCAP-001",
@@ -776,6 +788,7 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-META-203",
     "ACP-META-204",
     "ACP-FORK-206",  # no listed work at fork time
+    "ACP-SUGGEST-004",  # the fixture base sends no `replay_complete` yet, so the window is unbounded
 } | _STALE_CANCEL_IDS | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _CHILD_CONTROL_IDS
 
 
@@ -952,6 +965,45 @@ def test_gated_content_unadvertised_fixtures_fail_only_their_own_clientcap_id():
         assert fails == {expected}, f"{fixture}:\n{result.stdout}"
         for req_id in (other, "ACP-CLIENTCAP-003", "ACP-CLIENTCAP-202"):
             assert statuses.get(req_id) == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_prompt_suggestion_defect_fixtures_fail_only_their_own_row():
+    """Each fixture sends suggestions only to a client that advertised `promptSuggestions`, so
+    ACP-CLIENTCAP-008 stays PASS. Everything but the defective row PASSes (ACP-SUGGEST-004 too: the
+    fixtures send suggestions live, and `replays_suggestions.py` is the only one that sends a
+    `replay_complete`, so for the others the window is unbounded and it SKIPs). The run is scoped
+    with `-k`, so its verdict is not asserted."""
+    for fixture, expected in (
+        ("suggests_image_block.py", "ACP-SUGGEST-001"),
+        ("suggests_blank_prompt.py", "ACP-SUGGEST-002"),
+        ("stale_suggestions.py", "ACP-SUGGEST-003"),
+        ("replays_suggestions.py", "ACP-SUGGEST-004"),
+    ):
+        result = _run_cli(
+            FIXTURES_DIR_V2,
+            fixture,
+            protocol_version=2,
+            k="test_prompt_suggestions or test_client_capabilities",
+        )
+        statuses = _table_statuses(result.stdout)
+        fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+        assert fails == {expected}, f"{fixture}:\n{result.stdout}"
+        assert statuses["ACP-CLIENTCAP-008"] == "PASS", f"{fixture}:\n{result.stdout}"
+        for req_id in {"ACP-SUGGEST-001", "ACP-SUGGEST-002", "ACP-SUGGEST-003"} - {expected}:
+            assert statuses[req_id] == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
+        if expected != "ACP-SUGGEST-004":
+            assert statuses["ACP-SUGGEST-004"] == "SKIPPED", f"{fixture}:\n{result.stdout}"
+
+
+def test_conforming_suggestions_pass_non_vacuously_and_conforming_skips():
+    """`conforming_full.py` sends and withdraws suggestions, so ACP-SUGGEST-001..003 PASS (none SKIPs).
+    ACP-SUGGEST-004 SKIPs for it until the fixture base sends `replay_complete` (its resume window
+    cannot be bounded without one). `conforming.py` sends none: all four SKIP."""
+    scope = "test_prompt_suggestions"
+    full = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=scope).stdout)
+    assert [full[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)] == ["PASS", "PASS", "PASS", "SKIPPED"], full
+    plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=scope).stdout)
+    assert {plain[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)} == {"SKIPPED"}, plain
 
 
 def test_calls_fs_unadvertised_fails_clientcap_202_only():
@@ -1448,6 +1500,10 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
         "ACP-PERM-201",
         "ACP-CANCEL-001",
         "ACP-CANCEL-002",
@@ -1624,6 +1680,10 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
         "ACP-PERM-201",
         "ACP-CANCEL-001",
         "ACP-CANCEL-002",
@@ -2367,6 +2427,10 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
         "ACP-PERM-201",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
@@ -2483,6 +2547,10 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
         "ACP-PERM-201",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
@@ -2597,6 +2665,10 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
         "ACP-PERM-201",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
@@ -3037,6 +3109,10 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         | {
             "ACP-PROMPT-207",
             "ACP-PROMPTCAP-201",  # every prompt capability is advertised
+            "ACP-SUGGEST-001",  # the fixture sends no suggestion
+            "ACP-SUGGEST-002",
+            "ACP-SUGGEST-003",
+            "ACP-SUGGEST-004",
             "ACP-CANCEL-209",
             "ACP-CANCEL-213",
             "ACP-CLOSE-205",

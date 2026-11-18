@@ -13,7 +13,9 @@ Each version's conformance suite drives `session/prompt` through its own `run_pr
   `PromptTurn.client_requests_seen`. Three v1 connections advertise one unrelated feature and nothing else, so
   those requests are still answered `-32601` there: the plan rows (`test_plan.py`, `plan`), the prompt-suggestion
   rows (`test_prompt_suggestions.py`, `session.promptSuggestions`) and the subagent rows
-  (`_subagents_connection.py`, `subagents`, one turn of `--subagent-prompt`);
+  (`_subagents_connection.py`, `subagents`, one turn of `--subagent-prompt`). The one v2 connection that
+  advertises a feature, the prompt-suggestion rows' (`test_prompt_suggestions.py`, `session.promptSuggestions`),
+  likewise answers them `-32601`;
 - records `session/update` notifications in wire order;
 - optionally fires a trigger mid-turn (`on_cancel` sends `session/cancel`, `on_action` sends another request,
   for example `session/close`);

@@ -108,6 +108,10 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
         "ACP-INFO-CONCURRENT-201",
         "ACP-INFO-BACKGROUND-201",
         "ACP-INFO-BACKGROUND-202",
@@ -335,6 +339,7 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-STATE-209",
         "ACP-STATE-210",
         "ACP-STATE-204",
+        "ACP-SUGGEST-004",
     }
 
 

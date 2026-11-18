@@ -38,6 +38,11 @@ which the cancel methods also answer `-32602`, so the not-cancellable rows (`-20
 connection a well-formed `type: "terminal"` descriptor to see (ACP-AUTH-002 still PASSes: the
 default connection this fixture also answers under advertises no `auth.terminal` capability, so
 the descriptor never appears there).
+
+For a client that advertised `capabilities.session.promptSuggestions` (only the `ACP-SUGGEST-*` tests
+do) it withdraws the previous suggestion list when a prompt is accepted and sends a fresh one
+after each turn's idle (`_suggests.py`), so ACP-SUGGEST-001..003 PASS non-vacuously. A resume
+sends none.
 """
 
 import sys
@@ -46,10 +51,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _base import AsksPermissionAgent  # noqa: E402
+from _suggests import SuggestsMixin  # noqa: E402
+
+
+class ConformingFullAgent(SuggestsMixin, AsksPermissionAgent):
+    pass
 
 
 def main() -> None:
-    AsksPermissionAgent(
+    ConformingFullAgent(
         capabilities={
             "session": {
                 "prompt": {"image": {}, "audio": {}, "embeddedContext": {}},

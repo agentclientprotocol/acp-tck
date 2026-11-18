@@ -1221,6 +1221,76 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUGGEST-001",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When the client advertised `capabilities.session.promptSuggestions: {}` and "
+            "nothing else, each suggestion in a `prompt_suggestions_update` has a `prompt` that "
+            "is valid as the `prompt` of a `session/prompt` request (a non-empty list of valid "
+            "content blocks) and holds only `text` and `resource_link` blocks: `image`, `audio` "
+            "and `resource` blocks need the client to advertise them under "
+            "`session.promptSuggestions` too, which the TCK's connection does not. Checked over "
+            "a connection of `session/new`, two prompt turns, a `session/resume` with "
+            "`replayFrom: {\"type\": \"start\"}` and quiet periods. Unstable feature: SKIPPED "
+            "when the agent sends no suggestion."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:743,745-748; "
+            "docs/protocol/v2/draft/initialization.mdx:210-212,217-238; "
+            "schema/v2/schema.unstable.json#/$defs/PromptSuggestion"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "No suggestion in a `prompt_suggestions_update` has a `prompt` whose only content is "
+            "empty or whitespace-only text -- checked over the connection of ACP-SUGGEST-001. "
+            "Unstable feature: SKIPPED when the agent sends no suggestion."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:745; "
+            "schema/v2/schema.unstable.json#/$defs/PromptSuggestion"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "When the agent accepts a `session/prompt` while the session's current suggestion "
+            "list is not empty, it replaces the list or withdraws it with `suggestions: []`. "
+            "Judged on the connection of ACP-SUGGEST-001: if the list the agent sent after the "
+            "first turn is non-empty when the second `session/prompt` is sent and that prompt is "
+            "accepted, a `prompt_suggestions_update` for the session must arrive before the "
+            "second turn's idle plus a quiet period (the rule has no deadline of its own; the "
+            "window, from the second request to that turn's idle plus `quiet_period`, is the "
+            "TCK's). SKIPPED when the agent sent no non-empty list before the second prompt, or "
+            "did not accept it."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:339,755"),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD NOT include prompt suggestions in `session/resume` replay: no "
+            "`prompt_suggestions_update` arrives between the `replay_complete` update and the "
+            "`session/resume` response (`replayFrom: {\"type\": \"start\"}`), on the connection "
+            "of ACP-SUGGEST-001. A resumed session starts with an empty list. The window before "
+            "`replay_complete` is not judged here. The test is gated on `capabilities.session` "
+            "and SKIPPED when no suggestion was seen live or no `replay_complete` was observed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:768; "
+            "docs/protocol/v2/draft/session-setup.mdx:236; "
+            "schema/v2/schema.unstable.json#/$defs/PromptSuggestionsUpdate"
+        ),
+    ),
+    Requirement(
         id="ACP-INFO-CONCURRENT-201",
         tier=Tier.INFORMATIONAL,
         capability=None,
