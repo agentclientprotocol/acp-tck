@@ -210,6 +210,53 @@ citation = "docs/protocol/v1/draft/authentication.mdx:194 @ 3ea94133bb4e7cfdb110
 statement = "A terminal auth method's `env` values SHOULD NOT contain secrets."
 reason = "Not observable: the TCK cannot classify an `env` value as secret."
 
+# --- elicitation.mdx (coverage deferred: needs an MCP-stub-forwarded elicitation trigger and a mock client that advertises a mode and holds `elicitation/create`) ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:54-55 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents MUST NOT request an elicitation mode the Client has not advertised, and SHOULD provide a graceful fallback when the required mode is unavailable."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). The zero-modes case is ACP-CLIENTCAP-003; a partial-mode check needs a client advertising one mode, and the fallback is the agent's own choice."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:69-71 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents MUST bind each elicitation and its related state to the receiving Client connection and, when authentication exists, the verified user identity; a `sessionId` alone or an unverified Client-provided identity is not sufficient."
+reason = "Not observable: how an agent binds an elicitation and its state is internal, and ACP has no user identity on the wire, so a client cannot present as a second connection or user to show the binding is missing."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:105-111 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Form mode MUST NOT be used to request secrets or credentials that grant access or authorize transactions, sensitive interactions MUST use URL mode, and an Agent whose Client does not support URL mode MUST NOT fall back to form mode."
+reason = "Not observable: whether a form field asks for a secret is a semantic judgement of its free-form text, and which interaction is sensitive is the agent's call. The no-fallback half is deferred: it needs a live elicitation, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:134-135 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents MUST NOT send credentials or tokens obtained through URL mode back over ACP or place them in Client or model context."
+reason = "Not observable: the credentials come from an out-of-band browser flow the TCK cannot see, and the TCK cannot tell a credential from any other string."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:151-153 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents MUST NOT assume an elicitation succeeds, and MUST handle `decline`, `cancel` and failures by safely falling back, retrying or failing the originating operation."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). \"Handled safely\" is also only weakly observable: falling back, retrying and failing the operation are all legitimate."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:158-163 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An `elicitationId` is unique among outstanding URL elicitations on the connection, and `elicitation/complete` goes only to the Client that received the original request, carrying the original `elicitationId`."
+reason = "Deferred: needs live URL elicitations; no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:177-178 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents MUST NOT put credentials, personal data or pre-authenticated access in an elicitation URL, and SHOULD use HTTPS outside development."
+reason = "Not observable: a URL elicitation cannot be forced (see the section header), and whether a URL carries credentials or personal data, or whether the agent is in development, is not decidable from the URL alone."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:179-180 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD NOT include URLs intended to be clickable in any field of a form-mode request."
+reason = "Not decidable: whether a URL in a free-form form field is meant to be clickable is the agent's intent, and a form elicitation cannot be forced (see the section header)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/elicitation.mdx:190-191 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent MUST verify that the authenticated user who started an elicitation is the same user who completes the external interaction."
+reason = "Not observable: the interaction happens in an out-of-band browser flow, and ACP has no user identity on the wire, so a client cannot present as a different user."
+
 # --- initialization.mdx ---
 
 [[not_requirement]]
@@ -350,6 +397,11 @@ reason = "Not observable beyond ACP-SUBAGENT-002: a reference to an unknown sess
 
 
 # --- agent-plan.mdx ---
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/agent-plan.mdx:53 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "If the Client omits `plan`, the Agent falls back to the existing `plan` update (MUST)."
+reason = "Not observable: the TCK cannot know that the agent had a plan it chose to send another way, so a missing fallback looks the same as an agent with no plan to report. The first sentence of the line, no `plan_update` or `plan_removed` without the capability, is ACP-CLIENTCAP-006."
 
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/agent-plan.mdx:171,173 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

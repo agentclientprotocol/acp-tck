@@ -322,6 +322,33 @@ citation = "docs/protocol/v2/draft/extensibility.mdx:252 @ 3ea94133bb4e7cfdb1105
 statement = "When storing, replaying, proxying or forwarding data, implementations SHOULD preserve unknown values and raw tagged-union payloads, and SHOULD display unknown values generically."
 reason = "Not observable at the agent-received sites: the baseline ones (`ContentBlock`, `McpServer`) must reject unknown variants, and the others are responses. Replaying an unknown client-sent variant would need the agent to store it. Display is client-side."
 
+# --- metadata patches (extensibility.mdx) ---
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154; docs/protocol/v2/draft/session-setup.mdx:333-335 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "To send the current metadata of an entity the Client may already hold, the Agent removes stale keys, either by setting each to `null` alongside the current keys or by sending `_meta: null` and then the current object in a later update."
+reason = "Not observable: a client cannot know which keys the agent considers current, and on a full replay it rebuilds rather than merges (`session-setup.mdx:300`), so a stale key left behind cannot be told from one the agent still holds."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When an entity's current metadata is empty, the Agent sends `_meta: null`, not `{}`."
+reason = "Not decidable: `_meta: {}` is a legal no-op patch (`extensibility.mdx:116`), so an occurrence cannot be told from an intentional no-op."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154; docs/protocol/v2/draft/session-setup.mdx:330-332 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Replay and resynchronization apply metadata patches exactly as live delivery does and never reset metadata implicitly, and an update that replaces another field leaves the `_meta` keys it does not mention."
+reason = "Not observable: applying patches is client-side, and whether replayed metadata reproduces the agent's intended state is not visible on the wire."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Intermediaries that combine updates MUST keep removals and clears."
+reason = "Not observable: combining happens inside an intermediary, and the TCK sees only the resulting stream, with no record of the updates before they were combined."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:156 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Metadata that is not a patch (on requests, responses, notification params, chunks, content items, snapshots and other nested objects) is not copied into a patch unchanged, for example from a `session/list` entry into a `session_info_update`, because its `null` key values would become removals."
+reason = "Not decidable: a `session_info_update` with a `null` key may be a deliberate removal, so it cannot be told from a copied one."
+
 # --- overview.mdx and error.mdx ---
 
 [[not_requirement]]
@@ -674,6 +701,11 @@ reason = "Not testable deterministically: it depends on model behavior and agent
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/security.mdx:59 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An agent serving more than one user SHOULD scope `session/list`, every request that names a session, permission requests and elicitations to the user that owns the session, treating another user's session as nonexistent."
+reason = "Out of scope: ACP has no user identity on the wire, so a client cannot present as a second user."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/security.mdx:59 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An agent serving more than one user SHOULD authorize `cwd`, `additionalDirectories` and `mcpServers` against the requesting user, and SHOULD NOT launch stdio MCP servers that user is not permitted to run."
 reason = "Out of scope: ACP has no user identity on the wire, so a client cannot present as a second user."
 
 # --- tool-calls.mdx ---
