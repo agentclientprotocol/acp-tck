@@ -48,6 +48,8 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-TOOL — 145356c — +PATCH-213/-214/-215 CAPABILITY, -216 ADVISORY, +TOOLCANCEL/TERMCANCEL-210 CAPABILITY (inferred gates), -211 ADVISORY; ENUM-201 subject.type; ledger -2 +3; TOOL/TERMCANCEL-203 cite subagents.mdx:374 primary; suite green (1111)
 - V2-AUTH+DIRS — b07c1f7 — common plugin allows several `revokes` tests (docs/writing-tests.md); +AUTH-211 ADVISORY (revokes, SKIPs if re-login fails), AUTH-004 standalone path (-32601 only), +ADDDIRS-204 ADVISORY; ledger -SS:528 +AuthAccount.description; suite green (1116)
 - DEL204-FIX — 98673e1 — AsksPermissionAgent now withdraws the pending permission before answering session/delete (close already did); new CLI test runs close/delete cancel rows without __hang__; plain v2 run on conforming_full is CONFORMANT; suite green (1117)
+- V1-SA1 — 9137de7 — v1 subagent rows + CLIENTCAP-001..003/-007 cite subagents.mdx first (U13a in SUBAGENT-002); ledger +17, -1 cost, rewrites/re-points; suite green (1117)
+- V1-SA2 — 2800a5a — SUBAGENT-001 post-load scope (only after a successful load), -012 sender-less message counts, -016 unknown-after-cancel SKIPs; 4 fixtures; suite green (1126)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
