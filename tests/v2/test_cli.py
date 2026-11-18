@@ -100,6 +100,9 @@ _CAPABILITY_IDS = {
     "ACP-CURSOR-001",
     "ACP-CURSOR-002",
     "ACP-CURSOR-003",
+    "ACP-OPTIONS-001",
+    "ACP-OPTIONS-002",
+    "ACP-OPTIONS-003",
     "ACP-CANCEL-001",
     "ACP-CANCEL-002",
     "ACP-CANCEL-203",
@@ -223,6 +226,7 @@ _ADVISORY_IDS = {
     "ACP-STATE-210",
     "ACP-SUGGEST-004",
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-009",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
@@ -435,6 +439,10 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-CURSOR-002",
     "ACP-CURSOR-003",  # ... and advertises no `fork`
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-001",  # the fixture advertises no `session.options`
+    "ACP-OPTIONS-002",
+    "ACP-OPTIONS-003",
+    "ACP-OPTIONS-009",
 } | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
@@ -588,6 +596,10 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CURSOR-002",
     "ACP-CURSOR-003",  # ... and advertises no `fork`
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-001",  # the fixture advertises no `session.options`
+    "ACP-OPTIONS-002",
+    "ACP-OPTIONS-003",
+    "ACP-OPTIONS-009",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",
     "ACP-PROMPTCAP-001",
@@ -1065,6 +1077,60 @@ def test_unprefixed_cursor_anchor_values_fail_only_enum_201(tmp_path):
     assert _fails(statuses) == {"ACP-ENUM-201"}, stdout
     for n in (1, 2, 3, 4):
         assert statuses[f"ACP-CURSOR-00{n}"] in ("PASS", "SKIPPED"), stdout
+
+
+def test_options_defect_fixtures_fail_only_their_own_row():
+    """Each fixture advertises `session.options` (and `mcp.stdio` where its row needs it) and breaks one
+    `session/options` rule. ACP-OPTIONS-001 FAILs only for a method that errors; the others SKIP on that
+    prerequisite, never pass vacuously. The run is scoped with `-k`, so its verdict is not asserted."""
+    ids = [f"ACP-OPTIONS-00{n}" for n in (1, 2, 3, 9)]
+    scope = "test_session_options or test_session_config or test_slash_commands or test_client_capabilities"
+    for fixture, expected in (
+        ("options_method_errors.py", {"ACP-OPTIONS-001"}),
+        ("options_creates_session.py", {"ACP-OPTIONS-002"}),
+        ("options_resumes_session.py", {"ACP-OPTIONS-002"}),
+        ("options_accepts_unknown_session.py", {"ACP-OPTIONS-003"}),
+        ("options_connects_mcp.py", {"ACP-OPTIONS-009"}),
+        ("options_undeclared_current_value.py", {"ACP-CONFIG-001"}),
+        ("options_duplicate_select_values.py", {"ACP-CONFIG-210"}),
+        ("options_duplicate_commands.py", {"ACP-COMMANDS-201"}),
+        ("options_sends_skill.py", {"ACP-CLIENTCAP-203"}),
+    ):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k=scope)
+        statuses = _table_statuses(result.stdout)
+        fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+        assert fails == expected, f"{fixture}:\n{result.stdout}"
+        for req_id in set(ids) - expected:
+            assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+    errors = _table_statuses(
+        _run_cli(FIXTURES_DIR_V2, "options_method_errors.py", protocol_version=2, k="test_session_options").stdout
+    )
+    assert [errors[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)] == ["FAIL", "SKIPPED", "SKIPPED", "SKIPPED"], errors
+
+
+def test_answers_unadvertised_options_fails_error_006_only():
+    """`answers_unadvertised_options.py` serves `session/options` without advertising `session.options`
+    -- MANDATORY, so the verdict is NOT CONFORMANT. The `ACP-OPTIONS-*` rows SKIP."""
+    result = _run_cli(FIXTURES_DIR_V2, "answers_unadvertised_options.py", protocol_version=2, k=_ERROR_K)
+    statuses = _table_statuses(result.stdout)
+    fails = {r for r, status in statuses.items() if status == "FAIL"}
+    assert fails == {"ACP-ERROR-006"}, result.stdout
+    assert "session/options" in result.stdout, result.stdout
+    assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_conforming_options_pass_non_vacuously_and_conforming_skips():
+    """`conforming_full.py` advertises `options` and `mcp.stdio`, so ACP-OPTIONS-001/002/003/009 PASS
+    (009 reconnects on one connection), and ACP-CONFIG-001/210, ACP-COMMANDS-201 and ACP-CLIENTCAP-203
+    stay PASS with the `session/options` result judged; `conforming.py` advertises nothing and SKIPs
+    the four ACP-OPTIONS rows."""
+    scope = "test_session_options or test_session_config or test_slash_commands or test_client_capabilities"
+    full = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=scope).stdout)
+    assert [full[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)] == ["PASS"] * 4, full
+    for req_id in ("ACP-CONFIG-001", "ACP-CONFIG-210", "ACP-COMMANDS-201", "ACP-CLIENTCAP-203"):
+        assert full[req_id] == "PASS", full
+    plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=scope).stdout)
+    assert {plain[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)} == {"SKIPPED"}, plain
 
 
 def test_calls_fs_unadvertised_fails_clientcap_202_only():
@@ -3178,6 +3244,10 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-CURSOR-002",
             "ACP-CURSOR-003",
             "ACP-CURSOR-004",
+            "ACP-OPTIONS-001",
+            "ACP-OPTIONS-002",
+            "ACP-OPTIONS-003",
+            "ACP-OPTIONS-009",
             "ACP-CANCEL-209",
             "ACP-CANCEL-213",
             "ACP-CLOSE-205",

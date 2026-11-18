@@ -116,6 +116,10 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CURSOR-002",
         "ACP-CURSOR-003",
         "ACP-CURSOR-004",
+        "ACP-OPTIONS-001",
+        "ACP-OPTIONS-002",
+        "ACP-OPTIONS-003",
+        "ACP-OPTIONS-009",
         "ACP-INFO-CONCURRENT-201",
         "ACP-INFO-BACKGROUND-201",
         "ACP-INFO-BACKGROUND-202",
@@ -345,6 +349,7 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-STATE-204",
         "ACP-SUGGEST-004",
         "ACP-CURSOR-004",
+        "ACP-OPTIONS-009",
     }
 
 

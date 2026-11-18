@@ -155,6 +155,7 @@ _OTHER_GATED = (
     ("session/archive", "capabilities.session.archive"),
     ("session/unarchive", "capabilities.session.archive"),
     ("session/fork", "capabilities.session.fork"),
+    ("session/options", "capabilities.session.options"),
     ("providers/list", "capabilities.providers"),
 )
 
@@ -162,7 +163,7 @@ _OTHER_GATED = (
 def _gated_params(method: str, session_id: str, cwd) -> dict[str, Any]:
     if method in ("session/list", "providers/list"):
         return {}
-    if method == "session/new":
+    if method in ("session/new", "session/options"):
         return {"cwd": str(cwd)}
     if method in ("session/resume", "session/fork"):
         return {"sessionId": session_id, "cwd": str(cwd)}
@@ -178,8 +179,8 @@ async def test_unadvertised_gated_methods_get_method_not_found(
     """ACP-ERROR-006. Every standard method gated on a capability the agent did not advertise
     gets `-32601`: the `session/*` baseline without `capabilities.session`, `session/delete`
     without `session.delete`, `session/archive`/`session/unarchive` without `session.archive`,
-    `session/fork` without `session.fork`, `providers/list` without
-    `providers`. The gate is inverted -- the test needs what is *not* advertised -- so it is
+    `session/fork` without `session.fork`, `session/options` without `session.options`,
+    `providers/list` without `providers`. The gate is inverted -- the test needs what is *not* advertised -- so it is
     computed here instead of by a capability marker. Params are well-formed and name a real
     session when the agent offers sessions at all, so a missing session is not an alternative
     explanation. SKIPs if everything probed is advertised."""

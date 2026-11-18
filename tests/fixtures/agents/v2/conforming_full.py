@@ -44,6 +44,10 @@ do) it withdraws the previous suggestion list when a prompt is accepted and send
 after each turn's idle (`_suggests.py`), so ACP-SUGGEST-001..003 PASS non-vacuously. A resume
 sends none.
 
+It advertises `capabilities.session.options`, and `_base.py` answers `session/options` (with or
+without a closed or persisted `sessionId`) without creating or resuming a session or launching an
+MCP server, so ACP-OPTIONS-001/002/003/009 PASS non-vacuously.
+
 Every turn also announces a fork-capable cursor before the turn's user message (v2 has no client
 capability for cursors); a full resume replays it with the same `cursorId`, and `session/fork`
 accepts those cursors and rejects any other with `-32602`, so ACP-CURSOR-001..004 PASS
@@ -75,6 +79,7 @@ def main() -> None:
                 "mcp": {"stdio": {}, "http": {}},
                 "fork": {},
                 "systemPrompt": {"mode": {"override": {}}},
+                "options": {},
             },
             "auth": {"status": {}},
         },

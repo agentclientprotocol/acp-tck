@@ -29,7 +29,6 @@ import asyncio
 import contextlib
 import json
 import os
-import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -64,6 +63,7 @@ from ._helpers import (
     session_state_update,
     skip_if_auth_gated,
     skip_if_turn_end_race_not_exercised,
+    stdio_mcp_server,
 )
 
 _HISTORY_KINDS = {"user_message", "agent_message", "agent_thought"}
@@ -1845,7 +1845,6 @@ async def test_new_session_with_duplicate_mcp_server_names_is_rejected(agent_lau
         )
 
 
-_MCP_STUB = Path(__file__).with_name("_mcp_stub.py")
 _CANARY_ENV_NAME = "ACP_TCK_CANARY"
 _STUB_GRACE_SECONDS = 3.0
 
@@ -1930,13 +1929,7 @@ async def test_mcp_env_value_is_never_echoed(agent_launch, tmp_path):
     persistence are not observable and not covered."""
     canary = f"tck-canary-{uuid.uuid4().hex}"
     marker = tmp_path / "mcp-marker"
-    server = {
-        "type": "stdio",
-        "name": "acp-tck-stub",
-        "command": sys.executable,
-        "args": [str(_MCP_STUB), str(marker)],
-        "env": [{"name": _CANARY_ENV_NAME, "value": canary}],
-    }
+    server = stdio_mcp_server(marker, [{"name": _CANARY_ENV_NAME, "value": canary}])
     leaks = await _drive_and_scan_for_canary(agent_launch, tmp_path, server, canary, marker)
     assert not leaks, f"the MCP env value {canary!r} leaked into: {'; '.join(leaks)}"
 

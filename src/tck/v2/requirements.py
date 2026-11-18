@@ -1205,17 +1205,20 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "The agent MUST NOT send `skill` command entries (`type: \"skill\"`, in "
-            "`availableCommands` of a setup response or an `available_commands_update`) unless "
+            "`availableCommands` of a setup response, an `available_commands_update` or a "
+            "`session/options` result) unless "
             "the client advertised `capabilities.session.commands.skill` (omitting `session`, "
             "`commands` or `skill`, or setting any of them to `null`, is not advertising; "
-            "`commands: {}` advertises nothing). Checked over a `session/new`, a prompt turn and "
-            "a quiet period on three connections: the default one (`capabilities: {}`), one "
-            "with `session.commands.skill: null` and one with `session.commands: {}`. Unstable "
+            "`commands: {}` advertises nothing). Checked over a `session/new`, a "
+            "`session/options` (when `session.options` is advertised), a prompt turn and a quiet "
+            "period on three connections: the default one (`capabilities: {}`), one with "
+            "`session.commands.skill: null` and one with `session.commands: {}`. Unstable "
             "feature: an agent that sends no skill entry passes vacuously."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/slash-commands.mdx:171; "
             "docs/protocol/v2/draft/initialization.mdx:254-261; "
+            "docs/protocol/v2/draft/session-config-options.mdx:549; "
             "docs/protocol/v2/draft/extensibility.mdx:40; "
             "schema/v2/schema.unstable.json#/$defs/Skill"
         ),
@@ -2900,10 +2903,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:configOptions",
         text=(
             "A `select`-type option's `currentValue` is one of its declared `options` values "
-            "(flat or grouped). An explicit MUST, not schema-enforced."
+            "(flat or grouped). An explicit MUST, not schema-enforced. Checked on `session/new`'s "
+            "`configOptions` and, when `session.options` is advertised, on a `session/options` "
+            "result's (same type and rules as on `NewSessionResponse`)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:116-119,125-133; "
+            "docs/protocol/v2/draft/session-config-options.mdx:116-119,125-133,549; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
         ),
     ),
@@ -2984,10 +2989,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="inferred:configOptions",
         text=(
             "Within one `select` option every declared `value` is unique, across groups as "
-            "well. Not schema-enforced."
+            "well. Not schema-enforced. Checked on `session/new`'s `configOptions` and, when "
+            "`session.options` is advertised, on a `session/options` result's."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-config-options.mdx:125-133; "
+            "docs/protocol/v2/draft/session-config-options.mdx:125-133,549; "
             "schema/v2/schema.unstable.json#/$defs/SessionConfigSelect"
         ),
     ),
@@ -3025,12 +3031,95 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-OPTIONS-001",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.options",
+        text=(
+            "An agent that advertises `session.options` supports `session/options`: "
+            "`session/options` with an absolute `cwd` (and no `sessionId`) succeeds, and its "
+            "result validates as `SessionOptionsResponse`. Unstable feature. The docs state this "
+            "declaratively, with no RFC keyword; advertising the capability is the opt-in. The "
+            "result's `configOptions` and `availableCommands` are judged by the rows that judge "
+            "those lists elsewhere (`ACP-CONFIG-001`/`210`, `ACP-COMMANDS-201`, "
+            "`ACP-CLIENTCAP-203`). A `-32000` (authentication required) reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:482,486-512,518-549; "
+            "docs/protocol/v2/draft/initialization.mdx:348-353; "
+            "schema/v2/schema.unstable.json#/$defs/SessionOptionsRequest; "
+            "schema/v2/schema.unstable.json#/$defs/SessionOptionsResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.options",
+        text=(
+            "`session/options` MUST NOT create or resume a session, send a `session/update` "
+            "notification or add an entry to `session/list`. Checked on a connection holding a "
+            "session the TCK created and closed: no `session/update` arrives from the request "
+            "until a quiet period after its response, and a `session/list` for the same `cwd` "
+            "shows no session it did not show before. Then `session/options` with the closed "
+            "session's `sessionId` must not resume it: a following `session/prompt` for that id "
+            "still gets `-32002` (an active session would take it). A half that cannot be judged "
+            "is skipped, not failed: `session/list` failing leaves only the notification half, "
+            "and an agent that no longer knows the closed session leaves the `sessionId` half "
+            "unjudged. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:514,551; "
+            "docs/protocol/v2/draft/session-setup.mdx:50,52; "
+            "docs/protocol/v2/draft/error.mdx:54; "
+            "schema/v2/schema.unstable.json#/$defs/SessionOptionsRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.options",
+        text=(
+            "`session/options` with a `sessionId` the agent never issued fails with `-32002`. "
+            "The `session/options` docs and schema state the code and `error.mdx` makes it a "
+            "MUST for a session-scoped request naming an unknown session. Upstream discrepancy: "
+            "`error.mdx`'s Unstable features list omits `session/options`. Whether "
+            "`error.data.sessionId` echoes the id is recorded, not asserted, for that reason. "
+            "Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:514; "
+            "docs/protocol/v2/draft/error.mdx:54,66-70; "
+            "schema/v2/schema.unstable.json#/$defs/SessionOptionsRequest/properties/sessionId"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-009",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/options` with a `sessionId` SHOULD NOT connect to MCP servers (the request "
+            "has no `mcpServers`, so an agent that does reconnects those the session was "
+            "created with). Checked on one connection: a session created with the TCK's stub "
+            "stdio MCP server, one prompt, the stub's marker awaited, `session/close`, the "
+            "marker deleted, then `session/options` for that session: the marker must not "
+            "reappear within a quiet period. SKIPs without `session.options`, without "
+            "`session.mcp.stdio` (the TCK may not send the stub otherwise), when the agent "
+            "never connected to the stub, or when it cannot answer for the closed session. "
+            "Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:514,516; "
+            "docs/protocol/v2/draft/session-setup.mdx:646; "
+            "schema/v2/schema.unstable.json#/$defs/SessionOptionsRequest"
+        ),
+    ),
+    Requirement(
         id="ACP-COMMANDS-201",
         tier=Tier.CAPABILITY,
         capability="inferred:availableCommands",
         text=(
-            "Every command the agent advertises (in a setup response's `availableCommands` or "
-            "an `available_commands_update`) validates as `AvailableCommand` -- it carries a "
+            "Every command the agent advertises (in a setup response's `availableCommands`, "
+            "an `available_commands_update` or, when `session.options` is advertised, a "
+            "`session/options` result's `availableCommands`) validates as `AvailableCommand` -- it carries a "
             "`type` discriminator (`command`, or a `_`-prefixed custom type) -- and within each "
             "list every `name` contains no whitespace and is unique. Only the command items are "
             "judged, not the rest of the carrying message. No `availableCommands` capability "
@@ -3041,6 +3130,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/slash-commands.mdx:12,37-43,91-113; "
+            "docs/protocol/v2/draft/session-config-options.mdx:549; "
             "schema/v2/schema.unstable.json#/$defs/AvailableCommand; "
             "schema/v2/schema.unstable.json#/$defs/Command; "
             "schema/v2/schema.unstable.json#/$defs/AvailableCommandsUpdate"
@@ -4049,12 +4139,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "A standard method gated on a capability the agent did not advertise gets error "
             "`-32601`. Sent only for what is not advertised: the `session/*` baseline "
             "(`capabilities.session`), `session/delete`, `session/archive`/`session/unarchive`, "
-            "`session/fork` and `providers/list`. "
+            "`session/fork`, `session/options` and `providers/list`. "
             "A `-32000` reply FAILs, since an unadvertised method has no authentication surface. "
             "SKIPs when every probed capability is advertised."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/error.mdx:44,70; docs/protocol/v2/draft/overview.mdx:60,141-142"
+            "docs/protocol/v2/draft/error.mdx:44,70; docs/protocol/v2/draft/overview.mdx:60,141-142; "
+            "docs/protocol/v2/draft/session-config-options.mdx:482"
         ),
     ),
     Requirement(

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
@@ -56,6 +57,21 @@ from ..protocol import (
     PROTOCOL_VERSION,
     RESOURCE_NOT_FOUND,
 )
+
+
+_MCP_STUB = Path(__file__).with_name("_mcp_stub.py")
+
+
+def stdio_mcp_server(marker: Path, env: list[dict] | None = None) -> dict[str, Any]:
+    """A stdio `McpServer` entry for the TCK's stub server (`_mcp_stub.py`), which writes `marker`
+    when an agent connects to it. `command` must be an absolute path, which `sys.executable` is."""
+    return {
+        "type": "stdio",
+        "name": "acp-tck-stub",
+        "command": sys.executable,
+        "args": [str(_MCP_STUB), str(marker)],
+        "env": env or [],
+    }
 
 
 @contextlib.asynccontextmanager
@@ -216,6 +232,16 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     `skip_if_auth_gated_msg()` above for the full rationale; this is a thin `TranscriptEntry`
     adapter over it for the common single-response case."""
     skip_if_auth_gated_msg(entry.parsed)
+
+
+def skip_if_auth_required(entry: TranscriptEntry, method: str) -> None:
+    """SKIP when `entry` (the answer to `method`) is the `-32000` (authentication required) error:
+    nothing was judged. Marks the SKIP `AUTH-GATED:` when `skip_if_auth_gated` does."""
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    if isinstance(error, dict) and error.get("code") == AUTHENTICATION_REQUIRED:
+        skip_if_auth_gated(entry)
+        pytest.skip(f"{method} returned -32000 (authentication required)")
 
 
 async def new_session_result(

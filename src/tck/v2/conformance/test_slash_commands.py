@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from tck.common.harness import Direction
+from tck.common.plugin import capability_is_supported
 from tck.v2.validation import validate_def_value
 
 from ._helpers import drain_quiet, iter_messages, new_session_result, quiet_period, v2_only_agent
@@ -24,16 +25,25 @@ from ._helpers import drain_quiet, iter_messages, new_session_result, quiet_peri
 
 @pytest.mark.requirement("ACP-COMMANDS-201")
 async def test_advertised_commands_are_typed_unique_and_whitespace_free(agent_launch, tmp_path):
-    """ACP-COMMANDS-201. Reads `session/new`'s `availableCommands` plus whatever
-    `available_commands_update` the agent pushes right after setup (a quiet drain). A leading `/`
-    in a name is not judged: the spec says "without the leading `/`" with no RFC keyword."""
-    async with v2_only_agent(agent_launch, require_session=True) as agent:
+    """ACP-COMMANDS-201. Reads `session/new`'s `availableCommands`, a `session/options` result's
+    (when `session.options` is advertised; advisory and possibly partial, but typed and unique all
+    the same) plus whatever `available_commands_update` the agent pushes right after setup (a
+    quiet drain). A leading `/` in a name is not judged: the spec says "without the leading `/`"
+    with no RFC keyword."""
+    async with v2_only_agent(agent_launch, require_session=True, yield_result=True) as (agent, init_result):
+        timeout = agent_launch.default_timeout
         start = len(agent.transcript)
-        result = await new_session_result(agent, tmp_path, timeout=agent_launch.default_timeout)
+        result = await new_session_result(agent, tmp_path, timeout=timeout)
         session_id = result["sessionId"]
-        await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
-
         lists: list[tuple[str, Any]] = [("session/new availableCommands", result.get("availableCommands"))]
+        if capability_is_supported(init_result, "capabilities.session.options"):
+            req_id = await agent.send_request("session/options", {"cwd": str(tmp_path)})
+            entry = await agent.wait_for_response(req_id, timeout=timeout)
+            options_result = entry.parsed.get("result") if isinstance(entry.parsed, dict) else None
+            if isinstance(options_result, dict):
+                lists.append(("session/options availableCommands", options_result.get("availableCommands")))
+        await drain_quiet(agent, quiet_period(timeout))
+
         for entry in agent.transcript[start:]:
             if entry.direction is not Direction.RECEIVED:
                 continue

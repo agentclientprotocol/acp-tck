@@ -75,6 +75,10 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   names (`_mcp_duplicate_name_rejection`, :636) -- all `-32602`. Stdio MCP servers of a
   successful `session/new` are launched and sent an MCP `initialize` (`_launch_mcp_servers`), so
   the TCK's stub server can observe the connection.
+- `session/options` (only when `capabilities.session.options` is advertised, else `-32601`) answers
+  with the lists a new session would carry (`_options_result`) without creating or resuming a
+  session, sending an update or launching an MCP server; a `sessionId` the agent does not know is
+  `-32002` (`_handle_options`).
 - `session/set_config_option` rejects an unknown `configId` or an invalid value with `-32602`
   (state untouched), otherwise updates `currentValue`, sends the duplicate
   `config_option_update`, and replies with the complete list (`_reply_config_set`);
@@ -376,6 +380,8 @@ class ConformingAgent:
             self._handle_archive_session(msg_id, params, archived=method == "session/archive")
         elif method == "session/fork" and self._session_capability("fork") is not None:
             self._handle_fork_session(msg_id, params)
+        elif method == "session/options" and self._session_capability("options") is not None:
+            self._handle_options(msg_id, params)
         elif method == "session/set_config_option":
             self._handle_set_config_option(msg_id, params)
         elif method == "session/prompt":
@@ -618,6 +624,44 @@ class ConformingAgent:
         self._launch_mcp_servers(params.get("mcpServers") or [])
         self._before_new_response(session_id)
         self._reply(msg_id, self._new_session_result(session_id))
+
+    def _handle_options(self, msg_id: Any, params: dict[str, Any]) -> None:
+        """`session/options` (only when `capabilities.session.options` is advertised, else `-32601`):
+        the options a session would start with, without creating or resuming one, sending an update
+        or connecting to an MCP server (session-config-options.mdx:514-516,551). A relative `cwd`
+        or `additionalDirectories` entry or a missing `cwd` is `-32602`; a `sessionId` the agent
+        does not know is `-32002`."""
+        if not isinstance(params.get("cwd"), str):
+            self._error(msg_id, -32602, "Invalid params: missing 'cwd'")
+            return
+        rejection = self._cwd_rejection(params["cwd"]) or self._additional_directories_rejection(
+            params.get("additionalDirectories")
+        )
+        if rejection is not None:
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
+        session_id = params.get("sessionId")
+        if session_id is not None and not self._session_known(session_id, params["cwd"]):
+            self._unknown_session(msg_id, session_id)
+            return
+        self._reply(msg_id, self._options_result(params))
+
+    def _options_result(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Hook: the `session/options` result, the same lists a new session would carry."""
+        return self._initial_state_fields()
+
+    def _session_known(self, session_id: Any, cwd: Any) -> bool:
+        """Whether the agent still has `session_id` (live, closed or persisted by an earlier
+        process), without making it live."""
+        if session_id in self._sessions or session_id in self._closed_sessions:
+            return True
+        path = self._store_path(cwd)
+        return (
+            self._persist_sessions
+            and path is not None
+            and isinstance(session_id, str)
+            and isinstance(self._read_store(path).get(session_id), str)
+        )
 
     @staticmethod
     def _store_path(cwd: Any) -> Path | None:

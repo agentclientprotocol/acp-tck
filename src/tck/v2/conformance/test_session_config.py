@@ -13,6 +13,9 @@ Must NOT assert that a `configId`'s value scheme means anything beyond schema va
 observed `config_option_update` (the spec lets the response report a different `currentValue`
 than the one requested, `session-config-options.mdx:251`).
 
+`ACP-CONFIG-001`/`210` also judge the `configOptions` of a `session/options` result when
+`capabilities.session.options` is advertised (`_config_option_lists`).
+
 Only the `configOptions` items are schema-validated (against `SessionConfigOption`), and only by
 the shape rows (`ACP-CONFIG-201`/`203`): an unrelated violation elsewhere in `session/new`'s result
 is the whole-result rows' to report (`ACP-SESSION-001`), not a reason for every config row to
@@ -40,6 +43,7 @@ from typing import Any
 import pytest
 
 from tck.common.harness import Direction
+from tck.common.plugin import capability_is_supported
 from tck.v2.protocol import INVALID_PARAMS
 from tck.v2.validation import validate_agent_message, validate_agent_response, validate_def_value
 
@@ -236,22 +240,16 @@ async def test_resume_config_options_shape_is_valid_when_present(agent_launch, t
 
 @pytest.mark.requirement("ACP-CONFIG-001")
 async def test_select_config_option_current_value_is_declared(agent_launch, tmp_path):
-    """ACP-CONFIG-001."""
-    async with v2_only_agent(agent_launch, require_session=True) as agent:
-        result = await _new_session_full_result(agent, tmp_path, timeout=agent_launch.default_timeout)
-        config_options = result.get("configOptions")
-        if not config_options:
-            pytest.skip("session/new returned no configOptions")
-        select_options = [
-            option for option in config_options if isinstance(option, dict) and option.get("type") == "select"
-        ]
-        if not select_options:
-            pytest.skip("no select-type configOptions to check")
-        for option in select_options:
+    """ACP-CONFIG-001. Judges `session/new`'s `configOptions` and a `session/options` result's."""
+    async with v2_only_agent(agent_launch, require_session=True, yield_result=True) as (agent, init_result):
+        lists = await _config_option_lists(
+            agent, tmp_path, init_result, timeout=agent_launch.default_timeout
+        )
+        for source, option in _select_options(lists):
             legal_values = _flatten_select_values(option.get("options"))
             assert option.get("currentValue") in legal_values, (
-                f"config option {option['configId']!r} currentValue {option.get('currentValue')!r} "
-                f"is not among its declared options {legal_values!r}"
+                f"{source}: config option {option.get('configId')!r} currentValue "
+                f"{option.get('currentValue')!r} is not among its declared options {legal_values!r}"
             )
 
 
@@ -331,6 +329,40 @@ async def _advertised_config(agent, cwd, *, timeout) -> tuple[str, list[Any]]:
     if not isinstance(config_options, list) or not config_options:
         pytest.skip("session/new returned no configOptions")
     return result["sessionId"], config_options
+
+
+async def _config_option_lists(
+    agent, cwd, init_result, *, timeout
+) -> list[tuple[str, list[Any]]]:
+    """`(source, configOptions)` for every non-empty list the passive rows judge: `session/new`'s
+    and, when `session.options` is advertised, a `session/options` result's (same type and rules
+    as on `NewSessionResponse`, `session-config-options.mdx:549`). A `session/options` that does not
+    answer with a result contributes nothing: ACP-OPTIONS-001 judges that. SKIPs when both are
+    empty."""
+    result = await _new_session_full_result(agent, cwd, timeout=timeout)
+    lists = [("session/new", result.get("configOptions"))]
+    if capability_is_supported(init_result, "capabilities.session.options"):
+        req_id = await agent.send_request("session/options", {"cwd": str(cwd)})
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+        options_result = entry.parsed.get("result") if isinstance(entry.parsed, dict) else None
+        if isinstance(options_result, dict):
+            lists.append(("session/options", options_result.get("configOptions")))
+    observed = [(source, options) for source, options in lists if isinstance(options, list) and options]
+    if not observed:
+        pytest.skip("neither session/new nor session/options returned configOptions")
+    return observed
+
+
+def _select_options(lists: list[tuple[str, list[Any]]]) -> list[tuple[str, dict[str, Any]]]:
+    selects = [
+        (source, option)
+        for source, options in lists
+        for option in options
+        if isinstance(option, dict) and option.get("type") == "select"
+    ]
+    if not selects:
+        pytest.skip("no select-type configOptions to check")
+    return selects
 
 
 def _settable_options(config_options: list[Any]) -> list[dict[str, Any]]:
@@ -496,22 +528,18 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
 
 @pytest.mark.requirement("ACP-CONFIG-210")
 async def test_select_values_are_unique_within_an_option(agent_launch, tmp_path):
-    """ACP-CONFIG-210. Passive, on `session/new`'s `configOptions`."""
-    async with v2_only_agent(agent_launch, require_session=True) as agent:
-        _session_id, config_options = await _advertised_config(
-            agent, tmp_path, timeout=agent_launch.default_timeout
+    """ACP-CONFIG-210. Passive, on `session/new`'s `configOptions` and a `session/options`
+    result's."""
+    async with v2_only_agent(agent_launch, require_session=True, yield_result=True) as (agent, init_result):
+        lists = await _config_option_lists(
+            agent, tmp_path, init_result, timeout=agent_launch.default_timeout
         )
-        select_options = [
-            option for option in config_options if isinstance(option, dict) and option.get("type") == "select"
-        ]
-        if not select_options:
-            pytest.skip("no select-type configOptions to check")
-        for option in select_options:
+        for source, option in _select_options(lists):
             values = _flatten_select_values(option.get("options"))
             duplicates = sorted({v for v in values if values.count(v) > 1}, key=repr)
             assert not duplicates, (
-                f"config option {option.get('configId')!r} declares value(s) {duplicates!r} more "
-                f"than once (across groups included): {values!r}"
+                f"{source}: config option {option.get('configId')!r} declares value(s) {duplicates!r} "
+                f"more than once (across groups included): {values!r}"
             )
 
 

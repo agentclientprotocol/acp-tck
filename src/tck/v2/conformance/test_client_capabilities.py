@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 
 from tck.common.harness import Direction
+from tck.common.plugin import capability_is_supported
 from tck.v2.protocol import CLIENT_METHODS, PROTOCOL_METHODS
 
 from ._helpers import (
@@ -87,18 +88,21 @@ async def test_no_undefined_client_methods(agent_launch, tmp_path):
 
 
 async def _update_kinds_and_commands(
-    agent_launch, tmp_path, capabilities_variants: list[dict]
+    agent_launch, tmp_path, capabilities_variants: list[dict], *, call_options: bool = False
 ) -> tuple[list[str], list[dict]]:
-    """Run a `session/new`, a prompt turn and a quiet period once per `capabilities` variant, and
-    return the `sessionUpdate` kind of every `session/update` the agent sent, plus every entry of
-    every command list it sent (a setup result's `availableCommands` or an
-    `available_commands_update`), over all the connections."""
+    """Run a `session/new` (and, with `call_options`, a `session/options`), a prompt turn and a
+    quiet period once per `capabilities` variant, and return the `sessionUpdate` kind of every
+    `session/update` the agent sent, plus every entry of every command list it sent (a result's
+    `availableCommands` or an `available_commands_update`), over all the connections."""
     kinds: list[str] = []
     commands: list[dict] = []
     for capabilities in capabilities_variants:
         async with connected_agent(agent_launch, capabilities=capabilities) as agent:
             timeout = agent_launch.default_timeout
             created = await new_session_result(agent, tmp_path, timeout=timeout)
+            if call_options:
+                req_id = await agent.send_request("session/options", {"cwd": str(tmp_path)})
+                await agent.wait_for_response(req_id, timeout=timeout)
             await run_prompt(
                 agent,
                 created["sessionId"],
@@ -142,14 +146,20 @@ async def test_no_prompt_suggestions_without_client_capability(agent_launch, tmp
 
 @pytest.mark.requirement("ACP-CLIENTCAP-203")
 @pytest.mark.capability("capabilities.session")
-async def test_no_skill_command_entries_without_client_capability(agent_launch, tmp_path):
+async def test_no_skill_command_entries_without_client_capability(
+    agent_launch, agent_initialize_result, tmp_path
+):
     """ACP-CLIENTCAP-203. See module docstring. Reads every command list the agent sends: a
-    `session/new` (or any other) result's `availableCommands` and each `available_commands_update`.
+    `session/new` (or any other) result's `availableCommands`, each `available_commands_update`
+    and, when `session.options` is advertised, a `session/options` result's `availableCommands`.
     What an agent sends once `session.commands.skill` *is* advertised is a later row's."""
+    init_result = agent_initialize_result.result
     _, commands = await _update_kinds_and_commands(
         agent_launch,
         tmp_path,
         [{}, {"session": {"commands": {"skill": None}}}, {"session": {"commands": {}}}],
+        call_options=init_result is not None
+        and capability_is_supported(init_result, "capabilities.session.options"),
     )
     skills = [command for command in commands if command.get("type") == "skill"]
     assert not skills, (

@@ -544,6 +544,16 @@ citation = "docs/protocol/v2/draft/session-config-options.mdx:390 @ 3ea94133bb4e
 statement = "Agents SHOULD send a `config_option_update` on each connection where the session is active whenever configuration state changes."
 reason = "Out of scope: whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so fan-out to connections other than the requesting one is not judged. ACP-CONFIG-211 covers the requesting connection."
 
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:514 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With a `sessionId`, `session/options` returns what `session/resume` with the same `cwd` and `additionalDirectories` would return."
+reason = "Not deterministically observable: the response is a snapshot and options can change between `session/options` and session setup, so a later difference is not a violation. ACP-OPTIONS-002, -003 and -009 judge the parts a client can observe."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:551 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "`session/options` MUST NOT change an existing session, and it stores no session and writes nothing to the history of `sessionId`."
+reason = "Not deterministically observable: a change to the session or its history has no client-visible marker, and comparing `session/resume` replays before and after does not work because replays need not be identical. ACP-OPTIONS-002 judges the observable parts (no session created or resumed, no `session/update`, no `session/list` entry)."
+
 # --- content.mdx and security.mdx ---
 
 [[not_requirement]]
