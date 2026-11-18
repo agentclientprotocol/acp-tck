@@ -1180,6 +1180,47 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-CLIENTCAP-008",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "The agent MUST NOT send `prompt_suggestions_update` unless the client advertised "
+            "`capabilities.session.promptSuggestions` (omitting `session` or "
+            "`promptSuggestions`, or setting either to `null`, is not advertising; "
+            "`session: {}` advertises nothing). Checked over a prompt turn and a quiet period "
+            "on three connections: the default one (`capabilities: {}`), one with "
+            "`session.promptSuggestions: null` and one with `session: {}`. Unstable feature: "
+            "an agent that sends no prompt suggestions passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:42,707; "
+            "docs/protocol/v2/draft/initialization.mdx:206-215; "
+            "docs/protocol/v2/draft/extensibility.mdx:39; "
+            "schema/v2/schema.unstable.json#/$defs/PromptSuggestionsUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "The agent MUST NOT send `skill` command entries (`type: \"skill\"`, in "
+            "`availableCommands` of a setup response or an `available_commands_update`) unless "
+            "the client advertised `capabilities.session.commands.skill` (omitting `session`, "
+            "`commands` or `skill`, or setting any of them to `null`, is not advertising; "
+            "`commands: {}` advertises nothing). Checked over a `session/new`, a prompt turn and "
+            "a quiet period on three connections: the default one (`capabilities: {}`), one "
+            "with `session.commands.skill: null` and one with `session.commands: {}`. Unstable "
+            "feature: an agent that sends no skill entry passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/slash-commands.mdx:171; "
+            "docs/protocol/v2/draft/initialization.mdx:254-261; "
+            "docs/protocol/v2/draft/extensibility.mdx:40; "
+            "schema/v2/schema.unstable.json#/$defs/Skill"
+        ),
+    ),
+    Requirement(
         id="ACP-INFO-CONCURRENT-201",
         tier=Tier.INFORMATIONAL,
         capability=None,

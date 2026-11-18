@@ -91,7 +91,9 @@ _CAPABILITY_IDS = {
     "ACP-PERM-002",
     "ACP-PERM-204",
     "ACP-CLIENTCAP-003",
+    "ACP-CLIENTCAP-008",
     "ACP-CLIENTCAP-202",
+    "ACP-CLIENTCAP-203",
     "ACP-CANCEL-001",
     "ACP-CANCEL-002",
     "ACP-CANCEL-203",
@@ -934,6 +936,24 @@ def test_sends_undefined_client_notification_fails_clientcap_202_only():
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
 
 
+def test_gated_content_unadvertised_fixtures_fail_only_their_own_clientcap_id():
+    """`suggests_unadvertised.py` sends a prompt suggestion and `skills_unadvertised.py` lists a
+    skill entry to clients that advertised neither `session.promptSuggestions` nor
+    `session.commands.skill`; each FAILs exactly its own gate row, the other gate and the
+    elicitation/method rows PASS."""
+    for fixture, expected, other in (
+        ("suggests_unadvertised.py", "ACP-CLIENTCAP-008", "ACP-CLIENTCAP-203"),
+        ("skills_unadvertised.py", "ACP-CLIENTCAP-203", "ACP-CLIENTCAP-008"),
+    ):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="client_capabilities")
+        assert result.returncode != 0, f"{fixture}:\n{result.stdout}"
+        statuses = _table_statuses(result.stdout)
+        fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+        assert fails == {expected}, f"{fixture}:\n{result.stdout}"
+        for req_id in (other, "ACP-CLIENTCAP-003", "ACP-CLIENTCAP-202"):
+            assert statuses.get(req_id) == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
+
+
 def test_calls_fs_unadvertised_fails_clientcap_202_only():
     """`fs/read_text_file` is not a known v2 agent->client method at all (`fs/*`/`terminal/*`
     were removed from v2), so it also cascades into `ACP-SCHEMA-001`'s general "every agent
@@ -1425,7 +1445,9 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PROMPT-207",
         "ACP-CANCEL-209",
         "ACP-CLIENTCAP-003",
+        "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
+        "ACP-CLIENTCAP-203",
         "ACP-PERM-201",
         "ACP-CANCEL-001",
         "ACP-CANCEL-002",
@@ -1599,7 +1621,9 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PROMPT-207",
         "ACP-CANCEL-209",
         "ACP-CLIENTCAP-003",
+        "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
+        "ACP-CLIENTCAP-203",
         "ACP-PERM-201",
         "ACP-CANCEL-001",
         "ACP-CANCEL-002",
@@ -2340,7 +2364,9 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-CANCEL-206",
         "ACP-CANCEL-207",
         "ACP-CLIENTCAP-003",
+        "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
+        "ACP-CLIENTCAP-203",
         "ACP-PERM-201",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
@@ -2454,7 +2480,9 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
         "ACP-CLIENTCAP-003",
+        "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
+        "ACP-CLIENTCAP-203",
         "ACP-PERM-201",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
@@ -2566,7 +2594,9 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-TRANSPORT-002",
         "ACP-TRANSPORT-203",
         "ACP-CLIENTCAP-003",
+        "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
+        "ACP-CLIENTCAP-203",
         "ACP-PERM-201",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",

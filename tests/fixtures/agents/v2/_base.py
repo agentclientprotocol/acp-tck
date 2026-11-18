@@ -222,6 +222,9 @@ class ConformingAgent:
         self._report_background_work = report_background_work
         self._background: dict[Any, list[dict[str, Any]]] = {}  # sessionId -> listed items
         self._capabilities = capabilities if capabilities is not None else {}
+        # The `capabilities` of the last `initialize` request that succeeded, for fixtures that
+        # act only for a client that advertised something (`_suggests.py`).
+        self._client_capabilities: dict[str, Any] = {}
         self._agent_name = agent_name
         self._sessions: dict[str, str] = {}  # live sessionId -> cwd
         self._closed_sessions: dict[str, str] = {}  # closed but still listed sessionId -> cwd
@@ -400,6 +403,8 @@ class ConformingAgent:
         if requested < PROTOCOL_VERSION:
             self._reject_unsupported_version(msg_id, requested)
             return
+        client_capabilities = params.get("capabilities")
+        self._client_capabilities = client_capabilities if isinstance(client_capabilities, dict) else {}
         self._reply(msg_id, self._initialize_result(params))
 
     def _reject_unsupported_version(self, msg_id: Any, requested: int) -> None:
