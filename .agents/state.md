@@ -59,15 +59,11 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - LEDGER v1 (25) — 1c1a02c — D10 rewords (error:37, transports, TC:250, get-auth-state 297/313, session-list:258 Deferred, status/set_title), +AuthAccount.description (:174-176)
 - LEDGER v2 (26) — 6fe8518 — same rewords + SCO:390 (plan's :375) cites SS:56, session-list 162/248/249, security:81, TC:387, +SA:263, TC:753-756 extended (resolve half not observable beyond SUBAGENT-002)
 - BACKFILL (27) — 311ef10 — v1 9 elicitation + agent-plan:53; v2 5 meta-patch + security:59; spec-tracker 120, full suite green (1189)
+- DOCS (28) — c80a543 — stage wording Draft/Preview/Completed (docs, README, update-to-spec + check-specification skills), impact.py TRACKED_STAGES=("Preview",) (legacy Active still read), inferred list +promptSuggestions/subagents/subagentCancel/toolCallCancel/terminalCancel, rfd_audit=3ea94133 in both maps, v2 PL code += test_idempotency, SCO:585 reworded; spec-tracker 121, suite 1189. For review: test_session_options/test_initial_config/test_prompt_suggestions/test_cursors NOT added to core_doc code (their sections aren't core; accepted); map header comment 'rfd_audit absent until first full audit' now stale (nit).
 ## Next
-Order (plan section 5): area slice 28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
-- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-27 done (plus R-FIX, typo fix, DEL204-FIX).
-- Slice 28 DOCS + rfd_audit: remove "Active > v2" stage wording from docs/requirements.md and docs/spec-updates.md (no Active stage
-  upstream; also check spec-tracker/src/spec_tracker/impact.py:915 wording); add `inferred:promptSuggestions` to the inferred list
-  (`inferred:skills` already added); PL suggestions/cursors sections stay left out (decided); core_doc `code` lists gain the new modules
-  (test_prompt_suggestions, test_cursors, test_session_options/test_initial_config, test_idempotency); set
-  `rfd_audit = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"` at the top of both maps.
-- Then milestone-2 review: one reviewer over the area-slice range 3039958..HEAD (product commits from 1c04f52 on), decisions D1-D13,
+Order (plan section 5): milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
+- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-28 done (ALL area slices) (plus R-FIX, typo fix, DEL204-FIX).
+- NOW milestone-2 review (running): one reviewer over 7254513..c80a543 (milestone-1 review covered 6bce0b3..7254513), report .agents/research/review-area-slices.md, decisions D1-D13,
   plan sections 1-5. Show findings to the user; fixes become slices. Known items to hand the reviewer: v1 OPTIONS-008 also flags
   config_option_update (overlaps -007; plan meant "other" updates); session/fork initial config entries not probed (both versions);
   CURSOR-001 requires an anchor on the first replayed update (accepted); cursor fixtures exercise only message anchors.
