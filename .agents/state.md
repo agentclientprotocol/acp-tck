@@ -32,12 +32,14 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V1-GATES+SUGGEST — f421609 — +CLIENTCAP-008/-009, +SUGGEST-001..004 (003 CAPABILITY inferred:promptSuggestions, 004 ADVISORY), ledger +2 (PT:411,413), 6 fixtures + _suggests mixin; suite green (1029). DOCS slice must add inferred:promptSuggestions.
 - V2-GATES — 25e3c20 — +CLIENTCAP-008 v2, +CLIENTCAP-203 (CAPABILITY capabilities.session), 2 fixtures
 - V2-SUGGEST — 1f3a143 — +SUGGEST-001..003 (CAPABILITY), -004 ADVISORY (replay_complete..resume response window); ledger +2 (PL:754,756); suite green (1032)
+- V1-CURSOR — 8b535fa — +CURSOR-001/-002 MANDATORY vacuous, -003 CAPABILITY fork (literal D5), -004 ADVISORY; ledger +2; suite green (1034)
+- V2-CURSOR — a239149 — +CURSOR-001..004 (CAPABILITY cap.session / cap.session.fork / ADVISORY), ENUM-201 cursor anchor sites, ledger +4 (one Deferred: positive fork-at-cursor); _base.py rejects unissued cursorId by default; suite green (1040). CURSOR-001 also requires an anchor on the first replayed update after load (SS:156 'like a first update'); accepted.
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE and reviewed.
-- Slices 6 V1-CURSOR + 7 V2-CURSOR (one programmer, two commits): in progress.
+- Slices 8 V1-OPT1 + 9 V1-OPT2 (one programmer, two commits): in progress. Then 10-11 V2-OPT1/2.
 - For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
 - none
