@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `cancellable_subagent.py`, except that cancelling the parent ends its own
-turn but leaves the foreground child it was waiting on running (RFD:1075-1087): the child keeps
+turn but leaves the foreground child it was waiting on running (RFD:1119-1131): the child keeps
 reporting `running` and the parent lists no background work. FAILs exactly `ACP-SUBAGENT-202`.
 Within the `-k` scope of the `test_subagent_controls.py` module, with `--cancel-prompt __hang__`.
 """

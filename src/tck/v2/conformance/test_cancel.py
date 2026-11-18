@@ -566,7 +566,7 @@ async def test_withdrawn_prompt_is_still_answered_exactly_once(
     (prompt-lifecycle.mdx:341,413). Other error codes are recorded only: an agent may decline the
     cancel and send its normal response (cancellation.mdx:22). Cancellation is optional, so a
     prompt still unanswered after `--timeout` is not failed yet: the TCK sends `session/cancel`,
-    which also covers a prompt not yet inserted (prompt-lifecycle.mdx:403), and FAILs only if it
+    which also covers a prompt not yet inserted (prompt-lifecycle.mdx:404), and FAILs only if it
     stays unanswered after that. Either way no race SKIP is needed: every outcome is judged."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
@@ -627,7 +627,7 @@ async def test_cancel_answers_a_held_prompt_request_cancelled(
 ):
     """ACP-CANCEL-214. `ACP-PROMPT-209`'s scenario: a second prompt still unanswered when
     `session/cancel` is sent was received before the cancel and not inserted, so the cancel
-    covers it and the agent MUST answer it `-32800` (prompt-lifecycle.mdx:403,1446). A held
+    covers it and the agent MUST answer it `-32800` (prompt-lifecycle.mdx:404,1446). A held
     prompt must also never be inserted later: after the `-32800`, no user-message update for a
     new message (one other than the first prompt's) may follow within `quiet_period`. A success
     after the race window FAILs; one within it, or a user-message update with its `messageId`

@@ -1366,7 +1366,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/prompt-turn.mdx:108-113; "
-            "docs/rfds/subagents.mdx:667-690 (Preview RFD)"
+            "docs/rfds/subagents.mdx:667-676,685-690 (Preview RFD)"
         ),
     ),
     Requirement(

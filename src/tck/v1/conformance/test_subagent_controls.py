@@ -4,7 +4,7 @@ A child that advertises `capabilities.cancel` (`SubagentSessionCapabilities`) ma
 `session/cancel` carrying the child's `sessionId`; that cancels the child's current work, not its
 parent or its siblings, and the child confirms with `idle` and `stopReason: "cancelled"` through
 its state snapshot, which in v1 is the parent association's `subagent_update.state`
-(RFD:1069-1073,1089-1093).
+(RFD:1113-1117, 1133-1137).
 
 No `initialize` marker announces the per-child capability, so each `Requirement.capability` is the
 documentation-only `inferred:subagentCancel` string, the tests carry no
@@ -109,7 +109,7 @@ async def test_child_stop_leaves_the_parent_running(
     """ACP-SUBAGENT-017 (CAPABILITY, `inferred:subagentCancel`). `session/cancel` for a child
     cancels that child's work, not its parent: the parent's prompt is not answered `cancelled`
     because of it. Siblings are not judged, since the per-child capability does not prevent the
-    Agent from cancelling its own delegated work (RFD:1071-1073) and that is indistinguishable
+    Agent from cancelling its own delegated work (RFD:1115-1117) and that is indistinguishable
     from a leaked cancel; a sibling reported `idle`/`cancelled` is recorded as
     `acp_tck_cancelled_siblings`. SKIPs when no such child was running or it ended on its own
     within the race window."""

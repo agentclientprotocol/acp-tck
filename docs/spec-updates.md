@@ -80,8 +80,8 @@ First and alone: this slice changes no requirement semantics.
    only, never the pin) and prints "Needs review" first, listing citations inside changed regions that it left as
    written. It is not idempotent and refuses unless `<old-pin>` equals the current `SCHEMA_REVISION`, so bumping the
    pin first blocks it. Fix the "Needs review" citations by hand against the new text.
-2. **Vendor** the schema per `src/tck/v{1,2}/schema/VENDORED.md`: copy the two `.unstable.json` files, update the
-   commit and date there, and update `SCHEMA_REVISION` in `src/tck/v{1,2}/protocol.py`. Do not hand-edit the vendored
+2. **Vendor** the schema per `src/tck/v{1,2}/schema/VENDORED.md`: extract the two `.unstable.json` files with `git show <commit>:<path>`, update
+   the commit and date there, and update `SCHEMA_REVISION` in `src/tck/v{1,2}/protocol.py`. Do not hand-edit the vendored
    JSON.
 3. **Fix what the checks flag.** Run `tests/v{1,2}/test_registry.py` and `tests/v{1,2}/test_validation.py`
    (a changed schema shape, or a hand-written carve-out in a `validation.py` docstring that a refresh could

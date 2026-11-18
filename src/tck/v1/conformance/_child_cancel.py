@@ -9,15 +9,15 @@ clears it). Then, in this order:
 
 1. `session/cancel` with the child's `sessionId`, only for a child that advertises
    `capabilities.cancel` and was last reported running (a client MUST NOT cancel one that does
-   not; RFD:1069-1073). The child's next idle snapshot settles it: `idle` with `stopReason:
+   not; RFD:1113-1117). The child's next idle snapshot settles it: `idle` with `stopReason:
    "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
    a stop reason the child could have reached on its own, means it ended first (`raced`: a cancel
-   racing with ended work does not rewrite its outcome, RFD:1093-1095, so nothing is judged; the
+   racing with ended work does not rewrite its outcome, RFD:1137-1139, so nothing is judged; the
    same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
    finished by other means after the cancel. Silence for `timeout / 2` is `unconfirmed`. After a
    short quiet period the parent's prompt response is checked for a cancellation the child's cancel must not have caused, and the
    other children's snapshots are recorded (not judged: the Agent may cancel its own delegated
-   work, RFD:1071-1073).
+   work, RFD:1115-1117).
 2. `session/cancel` for the parent, so no work is left behind.
 
 Every wait is bounded per step (`timeout` to find something to cancel, `timeout / 2` for the

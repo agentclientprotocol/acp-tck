@@ -1412,7 +1412,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/cancellation.mdx:20,22,24,26-29,61; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:341,404,413"
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:341,404-405,413"
         ),
     ),
     Requirement(
@@ -1445,7 +1445,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "cancel. Uses the `ACP-PROMPT-209` scenario."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:403,1446; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:404,1446; "
             "schema/v2/schema.unstable.json#/$defs/CancelSessionNotification"
         ),
     ),

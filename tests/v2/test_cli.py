@@ -4827,7 +4827,7 @@ def test_child_that_asks_after_the_parent_turn_ended_is_still_answered():
 
 def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
     """The per-child `cancel` capability does not prevent the Agent from cancelling its own
-    delegated work (RFD:1071-1073), which is indistinguishable from a leaked cancel, so
+    delegated work (RFD:1115-1117), which is indistinguishable from a leaked cancel, so
     `child_cancel_stops_sibling_too.py` PASSes `-016`/`-017` and the sibling is only recorded.
     Nothing is left running for the parent's cascade (`-202` SKIPs)."""
     report_path = tmp_path / "report.json"

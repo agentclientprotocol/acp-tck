@@ -428,7 +428,7 @@ reason = "Not observable: freeing resources is internal to the agent, and backgr
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:528 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents that do not advertise `session.additionalDirectories` ignore the `additionalDirectories` field."
-reason = "Not tested: it needs the TCK to send the field against the client MUST at line 441, and the unadvertised-capability probe is not built. ACP-ADDDIRS-203 probes only an agent that advertises the capability."
+reason = "Not tested: it needs the TCK to send the field against the client MUST at line 526, and the unadvertised-capability probe is not built. ACP-ADDDIRS-203 probes only an agent that advertises the capability."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:560,561,565 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -512,7 +512,7 @@ reason = "Not observable: it concerns the agent's internal operation. The observ
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:390 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send a `config_option_update` on each connection where the session is active whenever configuration state changes."
-reason = "Out of scope: whether a session can be active on several connections is the agent's choice (session-setup.mdx:54), so fan-out to connections other than the requesting one is not judged. ACP-CONFIG-211 covers the requesting connection."
+reason = "Out of scope: whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so fan-out to connections other than the requesting one is not judged. ACP-CONFIG-211 covers the requesting connection."
 
 # --- content.mdx and security.mdx ---
 
@@ -697,7 +697,7 @@ reason = "Not observable as a violation: the rule requires no wire signal, so a 
 [[not_requirement]]
 citation = "docs/rfds/subagents.mdx:1198-1200 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A late response still resolves its original request, but the Agent does not use it to restart cancelled or otherwise abandoned work, or to authorize a new assignment to the same child (MUST NOT)."
-reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt. Provoking it also needs a non-`cancelled` answer to a request of cancelled work, which breaks the client rule at :1126-1128."
+reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt. Provoking it also needs a non-`cancelled` answer to a request of cancelled work, which breaks the client rule at :1173-1175."
 
 [[not_requirement]]
 citation = "docs/rfds/subagents.mdx:1038-1040 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -707,7 +707,7 @@ reason = "Unobservable: a request sent during replay cannot be told from a newly
 [[not_requirement]]
 citation = "docs/rfds/subagents.mdx:979-986 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When replaying a recorded directed message the Agent does not invent either participant ID, and does not reinterpret its content as an ordinary message to or from the human user (MUST NOT)."
-reason = "Unobservable: a replayed participant address is historical and need not be announced (:945), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
+reason = "Unobservable: a replayed participant address is historical and need not be announced (:982), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
 
 [[not_requirement]]
 citation = "docs/rfds/subagents.mdx:1063-1067 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

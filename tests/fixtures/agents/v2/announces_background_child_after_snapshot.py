@@ -2,7 +2,7 @@
 """Conforming fixture: `cancellable_subagent.py`, plus a third child, `<id>-child-bg`, announced as
 `running` after the parent's last snapshot and never mentioned in a `background` list until the
 parent's own cancellation `idle` lists it. It is background work that keeps running when the parent
-is cancelled (RFD:1075-1087), and the agent skips only the SHOULD that re-sends the state when its
+is cancelled (RFD:1119-1131), and the agent skips only the SHOULD that re-sends the state when its
 list changes (prompt-lifecycle.mdx:215): before that `idle` no list names the child, so a client
 cannot tell it from foreground work. `ACP-SUBAGENT-202` must not FAIL (the cascade still stops the
 other two children and the row PASSes on them); nothing FAILs. With `--cancel-prompt __hang__`,

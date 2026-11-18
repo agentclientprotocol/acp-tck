@@ -6,10 +6,10 @@ not), each reporting `running` on the parent's `subagent_update.state`, the only
 child's work state.
 
 - `session/cancel` for child A stops that child only: its snapshot becomes `idle` with
-  `stopReason: "cancelled"` (RFD:1069-1073, 1089-1093). A cancel for a child that is no longer
+  `stopReason: "cancelled"` (RFD:1113-1117, 1133-1137). A cancel for a child that is no longer
   running is ignored (a cancel racing with ended work does not rewrite its outcome).
 - `session/cancel` for the parent also stops every child it is waiting on, before the parent's own
-  `cancelled` response (RFD:1075-1087).
+  `cancelled` response (RFD:1119-1131).
 
 Must PASS `ACP-SUBAGENT-016/017` under `--cancel-prompt __hang__`; other prompts expose no child.
 The `_`-hooks below are the seams the violator fixtures override.

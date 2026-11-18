@@ -316,7 +316,7 @@ class ConformingAgent:
 
     def _cancel_held_prompts(self, session_id: Any) -> None:
         """Answer every prompt held for `session_id` `-32800`: `session/cancel` and
-        `session/close` cover prompts not yet inserted (prompt-lifecycle.mdx:403,1446)."""
+        `session/close` cover prompts not yet inserted (prompt-lifecycle.mdx:404,1446)."""
         for msg_id, _ in self._held_prompts.pop(session_id, []):
             self._error(msg_id, -32800, "Request cancelled")
 
@@ -587,7 +587,7 @@ class ConformingAgent:
 
     def _initial_state_fields(self) -> dict[str, Any]:
         """`configOptions`/`availableCommands` for a setup response, each only when the session
-        has any (session-setup.mdx:110, 134)."""
+        has any (session-setup.mdx:110, 138)."""
         fields: dict[str, Any] = {}
         if self._config_options:
             fields["configOptions"] = self._current_config_options()

@@ -22,7 +22,7 @@ files are deliberately not vendored. The upstream file names are kept as-is.
 
 ## Refreshing
 
-1. Confirm the spec repo checkout's current HEAD: `git -C <spec-repo> rev-parse HEAD`.
+1. Pick the commit to vendor (any ref of the spec repo; the checkout's HEAD and working tree are not used).
    Before step 3 bumps the pin, run `uv run --package spec-tracker spec-impact <pinned> <new> --version v1 --spec-repo <spec-repo> --fix`
    to remap the doc line citations.
 2. Re-run the two `git show` commands above with the new commit (reading by ref, so the checkout's working tree

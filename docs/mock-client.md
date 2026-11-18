@@ -73,7 +73,7 @@ track which do). Such a request is answered `cancelled` without any `session/can
 
 **After a cancel.** Once the TCK has sent `session/cancel` for a request's session since the turn began, that
 request is answered `cancelled`: a real client resolves a pending prompt that way rather than choosing for the user
-(v1 prompt-turn.mdx:641; v2 prompt-lifecycle.mdx:1177; Subagents RFD, "Pending permission and elicitation requests").
+(v1 prompt-turn.mdx:851; v2 prompt-lifecycle.mdx:1452; Subagents RFD, "Pending permission and elicitation requests").
 This covers the driver's own trigger, and also a `session/cancel` that a driver such as `drive_child_cancel` sent for the
 prompted session or for a child on the same connection, whichever session it names. A request of a session nobody
 cancelled, such as a sibling's, is still answered per the policy, since cancelling one session does not resolve

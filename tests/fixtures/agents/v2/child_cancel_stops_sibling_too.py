@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conforming fixture: `cancellable_subagent.py`, except that `session/cancel` for one child
 also stops the cancelled child's sibling (the per-child capability does not prevent the Agent from
-cancelling its own delegated work, RFD:1071-1073, and that cannot be told from a leaked cancel).
+cancelling its own delegated work, RFD:1115-1117, and that cannot be told from a leaked cancel).
 The cancelled child confirms and the parent is left running, so `ACP-SUBAGENT-016` and `-017`
 PASS, and the sibling's `idle`/`cancelled` is only recorded (`acp_tck_cancelled_siblings`). Nothing is left running for the parent's cascade, so
 `ACP-SUBAGENT-202` SKIPs. Within the `-k` scope of the `test_subagent_controls.py` module, with

@@ -1794,7 +1794,7 @@ def test_child_that_ignores_cancel_and_ends_later_fails_the_confirmation_row():
 
 def test_child_stop_that_also_stops_a_sibling_is_recorded_not_judged(tmp_path):
     """The per-child `cancel` capability does not prevent the Agent from cancelling its own
-    delegated work (RFD:1071-1073), which is indistinguishable from a leaked cancel, so
+    delegated work (RFD:1115-1117), which is indistinguishable from a leaked cancel, so
     `child_cancel_stops_sibling_too.py` PASSes both rows and the sibling is only recorded."""
     report_path = tmp_path / "report.json"
     result = _run_cli(
