@@ -39,13 +39,13 @@ adds a row picks a provisional number that the id-alignment step settles.
 Besides the protocol docs, a spec update tracks RFDs that already govern agent behaviour.
 
 **Stage.** An RFD's stage is the nearest enclosing sidebar group in the spec repo's `docs/docs.json` whose name is a
-stage: Draft, Active, Preview or Completed. RFDs nested under Active, such as the `rfds/v2/*` pages in
-"Active > v2", are Active, and tracked for v2 only.
+stage: Draft, Preview or Completed (upstream has no Active stage). RFDs nested under a stage, such as the
+`rfds/v2/*` pages in "Draft > v2", take that stage, and one that reaches Preview is tracked for v2 only.
 
 **Tracked set:**
 
-- tracked: RFDs that are Active or Preview at the target, which includes those that moved from Draft into Active or
-  Preview within the update range;
+- tracked: RFDs that are Preview at the target, which includes those that moved from Draft into Preview within the
+  update range;
 - never tracked: Completed RFDs, even ones that moved to Completed within the range, because the doc diff covers
   their rules;
 - only those whose wire shapes are in that version's schema (stable or unstable), or that apply to that version.

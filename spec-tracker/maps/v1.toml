@@ -24,6 +24,7 @@
 # Optional top-level `rfd_audit = "<spec commit>"` (put it above the first table; absent until the first
 # full RFD audit): the spec revision at which every tracked RFD was last audited in full. `spec-impact`
 # reports a missing marker; the update process sets it after a full RFD audit.
+rfd_audit = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 
 # Schema `$defs` whose changes are treated like a core doc change.
 core_defs = [

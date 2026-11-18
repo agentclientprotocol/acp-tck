@@ -270,11 +270,11 @@ def _write(repo: Path, files: dict[str, str | None]) -> str:
     ).stdout.strip()
 
 
-def _docs_json(sidebar: dict[str, list[str]], v2: list[str] = ()) -> str:
+def _docs_json(sidebar: dict[str, list[str]], v2: list[str] = (), v2_stage: str = "Draft") -> str:
     groups: list[dict] = [{"group": "General", "pages": ["rfds/about"]}]
     groups += [{"group": stage, "pages": pages} for stage, pages in sidebar.items()]
-    active = next(g for g in groups if g["group"] == "Active")
-    active["pages"].append({"group": "v2", "pages": list(v2)})
+    stage_group = next(g for g in groups if g["group"] == v2_stage)
+    stage_group["pages"].append({"group": "v2", "pages": list(v2)})
     return json.dumps({"navigation": {"tabs": [{"tab": "RFDs", "groups": groups}]}})
 
 
@@ -291,7 +291,7 @@ def spec_repo(tmp_path_factory) -> tuple[Path, str, str]:
             "docs/protocol/v1/core.mdx": "# stable copy, out of scope\n",
             "docs/rfds/thing.mdx": "# Thing\n\nline three\n\nline five\n",
             "docs/docs.json": _docs_json(
-                {"Draft": ["rfds/thing", "rfds/promoted"], "Active": ["rfds/live"], "Completed": ["rfds/done"]},
+                {"Draft": ["rfds/thing", "rfds/promoted"], "Preview": ["rfds/live"], "Completed": ["rfds/done"]},
                 v2=["rfds/v2/nested"],
             ),
             SCHEMA: json.dumps(SCHEMA_BASE, indent=2),
@@ -308,8 +308,7 @@ def spec_repo(tmp_path_factory) -> tuple[Path, str, str]:
             "docs/docs.json": _docs_json(
                 {
                     "Draft": ["rfds/thing"],
-                    "Active": ["rfds/live", "rfds/promoted"],
-                    "Preview": ["rfds/previewed"],
+                    "Preview": ["rfds/live", "rfds/promoted", "rfds/previewed"],
                     "Completed": ["rfds/done", "rfds/finished"],
                 },
                 v2=["rfds/v2/nested"],
@@ -405,42 +404,53 @@ def test_affected_entries(report):
     assert affected["REQ-WHOLE"] == [f"cites all of `{D}/core.mdx`, which changed"]
 
 
-def test_rfd_stage_is_the_nearest_enclosing_stage_group_and_nested_active_counts_as_active():
+def test_rfd_stage_is_the_nearest_enclosing_stage_group_and_nested_v2_takes_the_enclosing_stage():
     stages = si.rfd_stages(
-        _docs_json({"Draft": ["rfds/a"], "Active": ["rfds/b"], "Completed": ["rfds/c"]}, v2=["rfds/v2/d"])
+        _docs_json({"Draft": ["rfds/a"], "Preview": ["rfds/b"], "Completed": ["rfds/c"]}, v2=["rfds/v2/d"])
     )
     assert stages == {
         "docs/rfds/a.mdx": "Draft",
-        "docs/rfds/b.mdx": "Active",
+        "docs/rfds/b.mdx": "Preview",
         "docs/rfds/c.mdx": "Completed",
-        "docs/rfds/v2/d.mdx": "Active",
+        "docs/rfds/v2/d.mdx": "Draft",
     }  # `rfds/about` sits outside every stage group
     assert si.rfd_stages(None) == {}
 
 
-def test_tracked_rfds_are_active_or_preview_at_target_with_v2_rfds_for_v2_only(spec_repo):
+def test_rfd_stage_still_reads_the_active_group_of_an_older_base():
+    stages = si.rfd_stages(_docs_json({"Draft": [], "Active": ["rfds/old"]}, v2=["rfds/v2/old"], v2_stage="Active"))
+    assert stages == {"docs/rfds/old.mdx": "Active", "docs/rfds/v2/old.mdx": "Active"}
+    assert si.tracked_rfds("v2", stages) == []  # Active is not a tracked stage at the target
+
+
+def test_tracked_rfds_are_preview_at_target_with_v2_rfds_for_v2_only(spec_repo):
     repo, _, target = spec_repo
     stages = si.rfd_stages(si.SpecRepo(repo).show(target, si.DOCS_JSON))
+    assert stages["docs/rfds/v2/nested.mdx"] == "Draft"  # v2 RFDs sit under Draft > v2
     assert si.tracked_rfds("v2", stages) == [
         "docs/rfds/live.mdx",
         "docs/rfds/previewed.mdx",
         "docs/rfds/promoted.mdx",
-        "docs/rfds/v2/nested.mdx",
     ]
-    assert "docs/rfds/v2/nested.mdx" not in si.tracked_rfds("v1", stages)
     assert "docs/rfds/finished.mdx" not in si.tracked_rfds("v2", stages)  # moved to Completed: never tracked
+
+    previewed_v2 = si.rfd_stages(
+        _docs_json({"Draft": [], "Preview": ["rfds/p"]}, v2=["rfds/v2/q"], v2_stage="Preview")
+    )
+    assert si.tracked_rfds("v2", previewed_v2) == ["docs/rfds/p.mdx", "docs/rfds/v2/q.mdx"]
+    assert si.tracked_rfds("v1", previewed_v2) == ["docs/rfds/p.mdx"]
 
 
 def test_rfd_stage_moves_are_reported_even_when_only_docs_json_changed(report):
     assert report.base_stages["docs/rfds/promoted.mdx"] == "Draft"
-    assert report.target_stages["docs/rfds/promoted.mdx"] == "Active"
+    assert report.target_stages["docs/rfds/promoted.mdx"] == "Preview"
     assert "docs/rfds/promoted.mdx" not in report.changes
     text = si.render(report)
     section = text.split("## 7. RFD stages")[1].split("## Summary")[0]
-    assert "- `docs/rfds/promoted.mdx` (Active; unchanged, moved from Draft)" in section
-    assert "- `docs/rfds/live.mdx` (Active; unchanged)" in section
+    assert "- `docs/rfds/promoted.mdx` (Preview; unchanged, moved from Draft)" in section
+    assert "- `docs/rfds/live.mdx` (Preview; unchanged)" in section
     assert "- `docs/rfds/previewed.mdx` (Preview; unchanged, moved from not listed)" in section
-    assert "- `docs/rfds/promoted.mdx`: Draft -> Active" in section
+    assert "- `docs/rfds/promoted.mdx`: Draft -> Preview" in section
     assert "- `docs/rfds/finished.mdx`: not listed -> Completed" in section
     assert "`docs/rfds/done.mdx`" not in section
     assert "`docs/rfds/v2/nested.mdx`" not in section  # v1 report

@@ -57,8 +57,10 @@ from .spec_map import (
 
 RFDS_DIR = "docs/rfds/"
 DOCS_JSON = "docs/docs.json"
+# `Active` is a stage of older revisions only (upstream removed it); keep reading it so a base from
+# before the removal still reports its stage moves.
 RFD_STAGES = ("Draft", "Active", "Preview", "Completed")
-TRACKED_STAGES = ("Active", "Preview")
+TRACKED_STAGES = ("Preview",)
 V2_RFDS_DIR = f"{RFDS_DIR}v2/"
 
 
@@ -210,7 +212,7 @@ def file_changes(repo: SpecRepo, base: str, target: str, version: str) -> dict[s
 
 def rfd_stages(docs_json: str | None) -> dict[str, str]:
     """`docs/rfds/<name>.mdx` -> stage, from the sidebar groups in `docs/docs.json`. The stage is the
-    nearest enclosing group named like a stage, so `Active > v2` pages are Active. Pages outside a
+    nearest enclosing group named like a stage, so `Draft > v2` pages are Draft. Pages outside a
     stage group (`rfds/about`) are omitted."""
     stages: dict[str, str] = {}
 
@@ -231,7 +233,7 @@ def rfd_stages(docs_json: str | None) -> dict[str, str]:
 
 
 def tracked_rfds(version: str, stages: dict[str, str]) -> list[str]:
-    """RFDs that the update process tracks at the target: Active or Preview (v2 RFDs for v2 only).
+    """RFDs that the update process tracks at the target: Preview (v2 RFDs for v2 only).
     This includes any that moved there from Draft within the range; Completed RFDs never are."""
     return sorted(
         path
@@ -912,7 +914,7 @@ def render(report: Report) -> str:
         "## 7. RFD stages",
         "",
         f"Stage = nearest stage group in `{DOCS_JSON}` ({', '.join(RFD_STAGES)}), read at base and at target. "
-        f"Tracked = Active or Preview at target ({'all RFDs' if report.version == 'v2' else 'not `rfds/v2/*`'}); "
+        f"Tracked = Preview at target ({'all RFDs' if report.version == 'v2' else 'not `rfds/v2/*`'}); "
         "Completed RFDs are never tracked.",
         "",
         "Full RFD audit marker (`rfd_audit` in the spec map): "

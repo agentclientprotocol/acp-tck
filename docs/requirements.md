@@ -68,7 +68,8 @@ RFD does too.
 Some features have no `initialize` marker; an agent opts in by behaviour (it returns `modes`, it exposes a child
 session, it lists commands). A `CAPABILITY` row for such a feature uses a documentation-only `capability` string,
 `inferred:<feature>` (`inferred:modes`, `inferred:configOptions`, `inferred:authMethods`,
-`inferred:availableCommands`, `inferred:skills`).
+`inferred:availableCommands`, `inferred:skills`, `inferred:promptSuggestions`, `inferred:subagents`,
+`inferred:subagentCancel`, `inferred:toolCallCancel`, `inferred:terminalCancel`).
 
 - The plugin never parses it: `@pytest.mark.capability(...)` and `_tck_capability_gate` only understand real
   `initialize`-result paths, so an `inferred:` row carries no `capability` marker. Never pass an `inferred:` path to
@@ -125,13 +126,13 @@ helper from its `SCHEMA_REVISION`). Take the rule from the spec text, not from m
   or ranges in the spec repo at the pinned commit. Always the draft tree, which pairs with the draft schema.
 - **Schema:** a JSON Pointer by name path, `schema/v1/schema.unstable.json#/$defs/Name` (or `schema/v2/...`),
   never a line number.
-- **RFDs** (`docs/rfds/<name>.mdx:<line>`): Active and Preview RFDs carry nearly the weight of the docs; a Draft
+- **RFDs** (`docs/rfds/<name>.mdx:<line>`): Preview RFDs carry nearly the weight of the docs; a Draft
   RFD only where nothing else states the rule. Where the draft docs or schema state the same rule, cite them first
   and the RFD only as secondary context ([docs take precedence](#tiers)). Label every RFD citation with the RFD's
-  stage at the pinned revision, e.g. `(Active RFD)`, in the row text and in any failure message that relies on it,
+  stage at the pinned revision, e.g. `(Preview RFD)`, in the row text and in any failure message that relies on it,
   because an RFD is not yet part of the protocol docs. The stage is the nearest enclosing sidebar group in the spec
-  repo's `docs/docs.json` whose name is a stage (Draft, Active, Preview, Completed); an RFD nested under Active,
-  such as `rfds/v2/*` in "Active > v2", is Active. A Completed RFD is labelled `(Completed RFD)`; prefer the docs
+  repo's `docs/docs.json` whose name is a stage (Draft, Preview, Completed); an RFD nested under a stage, such as
+  `rfds/v2/*` in "Draft > v2", takes that stage. A Completed RFD is labelled `(Completed RFD)`; prefer the docs
   that absorbed it and keep the RFD only as secondary context. A rule stated only in an RFD is capped below
   `MANDATORY` ([Tiers](#tiers)). A spec update refreshes these labels when the pin moves
   ([spec-updates.md](spec-updates.md#re-vendor)).

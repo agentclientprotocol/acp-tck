@@ -25,6 +25,7 @@
 # Optional top-level `rfd_audit = "<spec commit>"` (put it above the first table; absent until the first
 # full RFD audit): the spec revision at which every tracked RFD was last audited in full. `spec-impact`
 # reports a missing marker; the update process sets it after a full RFD audit.
+rfd_audit = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 
 # Schema `$defs` whose changes are treated like a core doc change.
 core_defs = [
@@ -66,6 +67,7 @@ code = [
     "src/tck/v2/conformance/test_cancel.py",
     "src/tck/v2/conformance/test_patches.py",
     "src/tck/v2/conformance/test_permission.py",
+    "src/tck/v2/conformance/test_idempotency.py",
 ]
 reason = "foreground state machine, insertion boundary, entity IDs, upserts, stop reasons and cancellation, restated by tool-calls, elicitation, cancellation, session-setup and others"
 
@@ -659,7 +661,7 @@ reason = "Not attributable: an update before the response cannot be tied to the 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:585 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A `session/resume` with initial config option entries that reaches a session active on other connections changes its configuration, so the agent SHOULD send `config_option_update` on those connections."
-reason = "Deferred: the TCK drives each agent instance over one stdio connection, so it cannot hold a second connection to the same session."
+reason = "Deferred: needs a second connection to the same agent instance, which stdio cannot provide; whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so multi-connection activity is optional. ACP-OPTIONS-007 judges the requesting connection."
 
 # --- content.mdx and security.mdx ---
 
