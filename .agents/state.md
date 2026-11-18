@@ -38,12 +38,15 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V1-OPT2 — 586c37e — +OPTIONS-004/-005/-006/-011 CAPABILITY, -007/-008 ADVISORY, -010 INFORMATIONAL; ledger +5; suite green (1044). For review: OPTIONS-008 also flags config_option_update (overlaps -007; plan says 'other' updates); fork initial entries not probed.
 - V2-OPT1 — 93b3b14 — +OPTIONS-001/-002/-003 (-32002, U5) CAPABILITY, -009 ADVISORY; ERROR-006 probes session/options; CONFIG-001/-210, COMMANDS-201, CLIENTCAP-203 scan session/options; suite green (1047)
 - V2-OPT2 — 252d13a — +OPTIONS-004/-005/-006/-011 CAPABILITY, -007 ADVISORY, -010/-201 INFORMATIONAL (U6/U7); ledger +8; suite green (1049)
+- typo fix — a00eef1 — v1 stdio MCP test names restored
+- V2-SKILL — c270315 — COMMANDS-201 accepts skill (+ unique across commands/skills, U12 recorded on the custom-type branch), PROMPTCAP-201 probes skill, +COMMANDS-202 (inferred:skills), +PROMPTCAP-202, +PROMPT-220 ADVISORY; ledger +4; inferred:skills added to docs/requirements.md; suite green (1074)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE and reviewed.
-- Slice 12 V2-SKILL (+ separate tiny commit fixing v1 test-name typos `astdio`/`thestdio` from a2a47c4): in progress.
+- Slice 13 V2-IDEM: in progress.
+- Pre-existing (also on main ee2af8a): plain `acp-tck --protocol-version 2` on v2 conforming_full FAILs ACP-DELETE-204 — fixture answers session/delete before the cancelled idle when a permission request is pending. Not a regression; reported to the user; candidate fix slice.
 - For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
 - none
