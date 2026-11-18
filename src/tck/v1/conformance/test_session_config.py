@@ -246,10 +246,14 @@ def _boolean_options(config_options: Any) -> list[Any]:
 
 
 async def _result_of(agent, method: str, params: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-    """The `result` object of `method`, or `{}` if it errored -- an error is another
-    requirement's finding; CONFIG-003 only inspects payloads that were actually sent."""
+    """The `result` object of `method`, or `{}` if it errored or was not answered within `timeout`
+    -- either is another requirement's finding (ACP-LOAD-001, ACP-OPTIONS-001, ...); CONFIG-003
+    only inspects payloads that were actually sent."""
     req_id = await agent.send_request(method, params)
-    entry = await agent.wait_for_response(req_id, timeout=timeout)
+    try:
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+    except AgentTimeout:
+        return {}
     msg = entry.parsed
     result = msg.get("result") if isinstance(msg, dict) else None
     return result if isinstance(result, dict) else {}

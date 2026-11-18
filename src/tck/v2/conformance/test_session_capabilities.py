@@ -902,8 +902,11 @@ async def test_only_replayed_history_precedes_replay_complete(
 @pytest.mark.requirement("ACP-RESUME-221")
 @pytest.mark.capability("capabilities.session")
 async def test_rejected_replay_cursor_sends_no_replay_complete(agent_launch, tmp_path):
-    """ACP-RESUME-221. Runs the probes of `ACP-RESUME-207` (unsupported custom cursor) and
-    `ACP-RESUME-208` (malformed values); only a probe answered `-32602` is judged here."""
+    """ACP-RESUME-221. Adds a prompt turn to the session (so there is history a replay would
+    deliver) and waits a quiet period, then runs the probes of `ACP-RESUME-207` (unsupported custom
+    cursor) and `ACP-RESUME-208` (malformed values); only a probe answered `-32602` is judged here:
+    no replayed-history update (`_REPLAYED_HISTORY_KINDS`) and no `replay_complete` for the session
+    before the error."""
     timeout = agent_launch.default_timeout
     async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
         agent,
@@ -911,8 +914,10 @@ async def test_rejected_replay_cursor_sends_no_replay_complete(agent_launch, tmp
         _entry,
         resume_cwd,
     ):
+        await _add_history(agent, session_id, timeout=timeout)
+        await drain_quiet(agent, quiet_period(timeout))
         rejected = 0
-        sent = []
+        problems = []
         for cursor in ({"type": "_tck_unsupported_cursor"}, "start", {}, {"type": 5}):
             response_entry, updates = await resume_session(
                 agent, session_id, resume_cwd, replay_from=cursor, timeout=timeout
@@ -922,12 +927,23 @@ async def test_rejected_replay_cursor_sends_no_replay_complete(agent_launch, tmp
             if not (isinstance(error, dict) and error.get("code") == INVALID_PARAMS):
                 continue
             rejected += 1
-            if _replay_completes_for([m for _, m in _session_update_messages(updates)], session_id):
-                sent.append(cursor)
+            messages = [m for _, m in _session_update_messages(updates)]
+            if _replay_completes_for(messages, session_id):
+                problems.append(f"replayFrom {cursor!r}: replay_complete was sent")
+            replayed = sorted(
+                {
+                    update["sessionUpdate"]
+                    for m in messages
+                    if (update := _update_for(m, session_id)) is not None
+                    and update.get("sessionUpdate") in _REPLAYED_HISTORY_KINDS
+                }
+            )
+            if replayed:
+                problems.append(f"replayFrom {cursor!r}: history was replayed ({', '.join(replayed)})")
         if not rejected:
             pytest.skip("no replayFrom probe was rejected with -32602 (ACP-RESUME-207/208 judge that)")
-        assert not sent, (
-            f"session/resume rejected with -32602 for replayFrom {sent!r} but sent replay_complete first"
+        assert not problems, (
+            "session/resume rejected its replayFrom with -32602 but replayed before the error: " + "; ".join(problems)
         )
 
 

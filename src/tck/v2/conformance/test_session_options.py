@@ -114,10 +114,11 @@ async def test_session_options_succeeds_with_a_valid_result(agent_launch, agent_
 @pytest.mark.requirement("ACP-OPTIONS-002")
 @pytest.mark.capability(_OPTIONS_PATH)
 async def test_session_options_creates_resumes_and_notifies_nothing(agent_launch, tmp_path):
-    """ACP-OPTIONS-002. The connection holds a session the TCK created and closed. A plain
-    `session/options {cwd}` must send no `session/update` between the request and a quiet period
-    after its response, and a `session/list` for the same `cwd` must show no session it did not
-    show before (if `session/list` fails, only the notification half is judged). Then
+    """ACP-OPTIONS-002. The connection holds a session the TCK created and closed, then waits a
+    quiet period. A plain `session/options {cwd}` must send no `session/update` between the request
+    and a quiet period after its response, and a `session/list` for the same `cwd` must show no
+    session it did not show before, apart from the closed one (an agent may persist it late); if
+    `session/list` fails, only the notification half is judged. Then
     `session/options` with the closed session's `sessionId` must send no update either and must not
     resume it: a following `session/prompt` for that id must still get `-32002`. An agent that
     fails that call (it may have discarded the closed session) leaves this half unjudged."""
@@ -127,6 +128,7 @@ async def test_session_options_creates_resumes_and_notifies_nothing(agent_launch
         await _require_working_method(agent, tmp_path, timeout=timeout)
         session_id = await new_session(agent, tmp_path, timeout=timeout)
         closed = _succeeded(await close_session(agent, session_id, timeout=timeout))
+        await drain_quiet(agent, quiet_period(timeout))  # late setup traffic is not session/options'
         before = await _listed_ids(agent, tmp_path, timeout=timeout)
 
         start = len(agent.transcript)
@@ -137,7 +139,7 @@ async def test_session_options_creates_resumes_and_notifies_nothing(agent_launch
             problems.append(f"session/options was followed by session/update notifications: {updates!r}")
         if before is not None:
             after = await _listed_ids(agent, tmp_path, timeout=timeout)
-            created = (after or set()) - before
+            created = (after or set()) - before - {session_id}  # the TCK's own session may be persisted late
             if created:
                 problems.append(f"session/options added entries to session/list: {sorted(map(str, created))!r}")
 

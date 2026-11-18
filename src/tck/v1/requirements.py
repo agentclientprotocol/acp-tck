@@ -836,7 +836,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/set_config_option` result, `session/load`/`session/resume` results when "
             "advertised, a `session/options` result when `sessionCapabilities.options` is "
             "advertised (its `configOptions` follow \"the same type and rules as on "
-            "`NewSessionResponse`\"), and any `config_option_update` seen meanwhile. Passes "
+            "`NewSessionResponse`\"), and any `config_option_update` seen meanwhile; a call "
+            "other than `session/new` that fails or is not answered within `--timeout` adds no "
+            "payload (other rows judge it). Passes "
             "vacuously if the agent has no config options, or none of `type: \"boolean\"`, at "
             "all. Upstream discrepancy: the `session/options` docs and schema descriptions name "
             "the gate `sessionCapabilities.configOptions.boolean`, which does not exist; the "
@@ -893,8 +895,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/options` with a `sessionId` the agent never issued fails with an error "
             "rather than a result. The docs give the code (`-32002`) without an RFC keyword and "
             "`error.mdx` lists it only as a SHOULD, so the code is not asserted. The probe "
-            "breaks a client MUST (send `sessionId` only when the agent supports `loadSession` "
-            "or `sessionCapabilities.resume`) only on an agent that advertises one of them; "
+            "breaks a client MUST (send `sessionId` only when the agent supports `loadSession`, "
+            "`sessionCapabilities.resume` or `sessionCapabilities.fork`) only on an agent that "
+            "advertises one of them; "
             "SKIPs otherwise. Unstable feature."
         ),
         citation=_cite(
@@ -912,7 +915,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "created with). Checked with a session created with the TCK's stub stdio MCP server "
             "on one connection, the stub's marker deleted, then `session/options` for that "
             "session on a fresh connection: the marker must not reappear. SKIPs without "
-            "`sessionCapabilities.options`, without `loadSession` or `sessionCapabilities.resume`, "
+            "`sessionCapabilities.options`, without any of `loadSession`, "
+            "`sessionCapabilities.resume` and `sessionCapabilities.fork`, "
             "when the agent never connected to the stub, or when the second connection cannot "
             "answer for the session (the agent does not persist sessions). Unstable feature."
         ),
@@ -932,9 +936,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`configId`) and `[{\"configId\": \"x\", \"value\": 42}]` (a value that is "
             "neither a string nor, with `type: \"boolean\"`, a boolean). The probes break a "
             "client rule (send schema-valid entries) on purpose, because the docs define the "
-            "agent's answer. The docs list `session/new`, `session/load` and `session/resume`, "
-            "and `session/fork` when supported; only `session/new` is probed. Unstable feature. "
-            "A `-32000` reply SKIPs."
+            "agent's answer. Both probes are repeated on `session/fork` of a fresh session when "
+            "`sessionCapabilities.fork` is advertised; the docs also list `session/load` and "
+            "`session/resume`, which are not probed. Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:475,541,563; "
@@ -952,8 +956,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "request with `-32602`. Checked on `session/new` with a real option of "
             "`session/options` (a non-boolean one, at its current value) sent twice; an agent "
             "with none gets a synthetic id, since the rule has no exception for unknown ids. "
-            "The probe breaks a client rule (no duplicate entries) on purpose, because the docs "
-            "define the agent's answer. Unstable feature. A `-32000` reply SKIPs."
+            "Repeated on `session/fork` of a fresh session when `sessionCapabilities.fork` is "
+            "advertised. The probe breaks a client rule (no duplicate entries) on purpose, "
+            "because the docs define the agent's answer. Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:475,541,564; "
@@ -973,10 +978,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "boolean: {}`, a `type: \"boolean\"` entry for a select option and a string value "
             "for a boolean option (the docs and schema descriptions name the gate "
             "`sessionCapabilities.configOptions.boolean`, a path that does not exist; the real "
-            "one is the client capability); the unknown-id probe is repeated on `session/load` "
-            "and `session/resume` when advertised. Entries that apply are not probed (their "
-            "values may legitimately be refused at runtime). Unstable feature. A `-32000` reply "
-            "SKIPs."
+            "one is the client capability); every `session/new` probe is repeated on "
+            "`session/fork` of a fresh session when `sessionCapabilities.fork` is advertised, and "
+            "the unknown-id probe on `session/load` and `session/resume` when advertised. Entries "
+            "that apply are not probed (their values may legitimately be refused at runtime). "
+            "Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:475,541,565-566; "
@@ -1007,14 +1013,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "Until the `session/new` response, the agent SHOULD NOT send other `session/update` "
-            "notifications caused by applying initial `configOptions` entries (such as a notice "
-            "that a value fell back, or a `current_mode_update`); it sends them after the "
-            "response. Judged on the exchange of ACP-OPTIONS-007, for `current_mode_update` and "
-            "`config_option_update` before the response only. SKIPs under the same conditions. "
-            "Unstable feature."
+            "Until the `session/new` or `session/fork` response, the agent SHOULD NOT send other "
+            "`session/update` notifications caused by applying initial `configOptions` entries "
+            "(such as a notice that a value fell back, or a `current_mode_update`); it sends "
+            "them after the response. Judged on the exchange of ACP-OPTIONS-007, and on a "
+            "`session/fork` of a fresh session with the same entry when "
+            "`sessionCapabilities.fork` is advertised: an update for the new session before the "
+            "response FAILs, except `config_option_update` (ACP-OPTIONS-007's) and kinds that "
+            "the same request without entries, on a fresh connection, also sends before its "
+            "response (they are not caused by the entries). A fork that does not succeed is not "
+            "judged. SKIPs under the conditions of ACP-OPTIONS-007. Unstable feature."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-config-options.mdx:568"),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:541,568; "
+            "docs/protocol/v1/draft/session-setup.mdx:456"
+        ),
     ),
     Requirement(
         id="ACP-OPTIONS-010",
@@ -2029,12 +2042,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`anchor`, and no later update for that `cursorId` carries a different anchor (a "
             "cursor never moves; omitting the anchor or repeating it is fine). The state is per "
             "session and `cursorId`, and starts afresh at each successful `session/load`, whose "
-            "replay rebuilds the session's cursors. Checked over a connection of `session/new`, "
+            "replay rebuilds the session's cursors: the first update for a cursor inside the "
+            "replay (up to the load response) carries its anchor too. After the response, an "
+            "update without an anchor for a cursor anchored before the load is not judged (the "
+            "agent may clear the `capabilities` of a cursor it stopped accepting and did not "
+            "replay). Checked over a connection of `session/new`, "
             "two prompt turns, two `session/load`s when advertised, and a `session/fork` probe. "
             "Unstable feature: an agent that announces no cursor passes vacuously."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:617,619,622-624; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:617,619,622-624,707-708; "
             "docs/protocol/v1/draft/session-setup.mdx:154,156; "
             "schema/v1/schema.unstable.json#/$defs/CursorUpdate"
         ),
@@ -2088,8 +2105,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "compared by position, not by entity ID (message IDs may change across a load): a "
             "cursor is keyed by its anchor's `type`, `position`, and the ordinal of the "
             "anchored entity among the entities of that `type` the replay reported. SKIPs "
-            "without `loadSession`, when the first load replayed no cursor, or when no replayed "
-            "cursor has a placeable anchor."
+            "without `loadSession`, when either load did not succeed, when the first load "
+            "replayed no cursor, or when no replayed cursor has a placeable anchor."
         ),
         citation=_cite("docs/protocol/v1/draft/session-setup.mdx:155,157"),
     ),

@@ -5,6 +5,9 @@ select option and one boolean option, and a `session.options` capability.
 
 CAPABILITIES = {"session": {"options": {}}}
 
+FORK_CAPABILITIES = {"session": {"options": {}, "fork": {}}}
+"""For the `options_fork_*` fixtures, which break an initial-value rule only on `session/fork`."""
+
 
 def config_options() -> list[dict]:
     return [

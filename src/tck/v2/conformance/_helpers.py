@@ -865,10 +865,12 @@ def git_patch_paths(text: str) -> list[tuple[str, str]]:
     (`---`, `+++`, `rename from/to`, `copy from/to`), in order (tool-calls.mdx:653-660). The
     `diff --git` line is left out (ambiguous when a path has spaces, :674-676), and so are hunk
     bodies, so a removed line that reads `-- x` is not mistaken for a header. A trailing TAB, which
-    Git writes after a path with spaces, is dropped."""
+    Git writes after a path with spaces, is dropped, and so is the `\r` of a CRLF line ending (Git
+    quotes a path that contains one)."""
     found: list[tuple[str, str]] = []
     old_left = new_left = 0
     for line in text.split("\n"):
+        line = line.removesuffix("\r")
         if old_left > 0 or new_left > 0:
             if line.startswith("+"):
                 new_left -= 1
@@ -3268,14 +3270,18 @@ class _RepeatProbe(_FollowUpProbe):
     """The item the main request was accepted for, once it is final and no longer advertises
     `cancel`: a request sent again must get `-32602` (tool-calls.mdx:459,605). It breaks the client
     rule at :456/:602, which the probe rules allow because the spec defines the answer. An item that
-    still advertises `cancel` is `_StaleProbe`'s, so no item is asked twice."""
+    still advertises `cancel` is `_StaleProbe`'s, and one a follow-up probe already sent a request
+    for (`_ItemProbe.claimed`: the stale probe, before the agent withdrew `cancel`) is not sent
+    another, so no item is asked twice."""
 
     def _target(self, tracker: PatchTracker) -> str | None:
         if self.main.result.outcome != "confirmed" or not self.main._is_final(tracker):
             return None
         item_id = self.main.result.item_id
         assert item_id is not None
-        return None if self.main._advertises_cancel(tracker) else item_id
+        if item_id in self.main.claimed or self.main._advertises_cancel(tracker):
+            return None
+        return item_id
 
 
 async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry, *, since: int) -> None:

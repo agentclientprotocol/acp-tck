@@ -10,9 +10,10 @@ supports cursors announces them"), so an agent that announces none SKIPs ACP-CUR
 -004. ACP-CURSOR-003 is literal: it probes every agent that advertises `fork`. A turn that
 outlasts `--timeout` FAILs every row, like any broken setup.
 
-The replay window of a resume is its request to its response; none of these rows needs
-`replay_complete` to bound it, since entities are delivered before the cursors anchored to them
-and the state starts afresh at the request.
+The state of ACP-CURSOR-001 and -002 starts afresh at each successful resume request, since the
+replay re-delivers entities before the cursors anchored to them. ACP-CURSOR-001 demands a replayed
+anchor only inside the replay, up to `replay_complete` (or the response); ACP-CURSOR-004 compares
+each resume's traffic up to the next request.
 
 The connection's mock client answers any agent -> client request with `-32601`, as everywhere.
 """
@@ -156,11 +157,38 @@ async def cursors_connection(request, agent_launch, agent_initialize_result, tmp
     return cache["connection"]
 
 
+def _replay_end(connection: CursorsConnection, start: int, end: int) -> int:
+    """The index just past the replay of the resume requested at `start`: past its
+    `replay_complete` on the session, else at its response, else `end`."""
+    request_id = connection.transcript[start].parsed.get("id")
+    for index in range(start + 1, end):
+        entry = connection.transcript[index]
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        if entry.matches_id(request_id):
+            return index
+        for message in iter_messages(entry):
+            params = message.get("params")
+            update = params.get("update") if isinstance(params, dict) else None
+            if (
+                message.get("method") == "session/update"
+                and params.get("sessionId") == connection.session_id
+                and isinstance(update, dict)
+                and update.get("sessionUpdate") == "replay_complete"
+            ):
+                return index + 1
+    return end
+
+
 def _walk(connection: CursorsConnection):
-    """Yield `("reset", None)` at each successful full-replay `session/resume` request and
-    `(kind, update)` for each `session/update` of the TCK's session, in wire order."""
+    """Yield `("reset", None)` at each successful full-replay `session/resume` request,
+    `("replay_end", None)` where its replay ends (`_replay_end`), and `(kind, update)` for each
+    `session/update` of the TCK's session, in wire order."""
     resets = {start for start, _end, ok in connection.resumes if ok}
+    replay_ends = {_replay_end(connection, start, end) for start, end, ok in connection.resumes if ok}
     for index, entry in enumerate(connection.transcript):
+        if index in replay_ends:
+            yield "replay_end", None
         if index in resets:
             yield "reset", None
         if entry.direction is not Direction.RECEIVED:
@@ -176,6 +204,8 @@ def _walk(connection: CursorsConnection):
                 and isinstance(update.get("sessionUpdate"), str)
             ):
                 yield update["sessionUpdate"], update
+    if len(connection.transcript) in replay_ends:
+        yield "replay_end", None
 
 
 def _skip_if_no_cursor(connection: CursorsConnection) -> None:
@@ -195,43 +225,52 @@ def _anchored_entity(anchor: Any) -> tuple[str, Any] | None:
     return (anchor["type"], anchor.get(field)) if field else None
 
 
-@pytest.mark.requirement("ACP-CURSOR-001")
-@pytest.mark.capability("capabilities.session")
-async def test_anchor_comes_first_and_never_changes(request, agent_launch, agent_initialize_result, tmp_path):
-    """ACP-CURSOR-001. See module docstring. The first update seen for a `cursorId` since the start
-    of the session or its last successful full replay must carry an object `anchor` (a replayed
-    update "carries the cursor's `capabilities` and `anchor`, like a first update"); a later
-    non-null anchor must equal it (`_meta` aside)."""
-    connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
-    _skip_if_no_cursor(connection)
+def anchor_problems(connection: CursorsConnection) -> list[str]:
+    """ACP-CURSOR-001's findings, in wire order. The first update seen for a `cursorId` since the
+    start of the session or its last successful full replay must carry an object `anchor` (a
+    replayed update "carries the cursor's `capabilities` and `anchor`, like a first update"); a
+    later non-null anchor must equal it (`_meta` aside). After a replay ends, an anchor-less update
+    for a cursor anchored before it is not judged: the agent may clear the `capabilities` of a
+    cursor it stopped accepting, and such a cursor is left out of the replay."""
     anchors: dict[Any, dict] = {}
+    earlier: set[Any] = set()
+    in_replay = False
     problems = []
     for kind, update in _walk(connection):
         if kind == "reset":
-            anchors = {}
+            earlier |= anchors.keys()
+            anchors, in_replay = {}, True
+        elif kind == "replay_end":
+            in_replay = False
         elif kind == "cursor_update" and isinstance(update.get("cursorId"), str):
             cursor_id, anchor = update["cursorId"], update.get("anchor")
             if cursor_id not in anchors:
-                if not isinstance(anchor, dict):
-                    problems.append(f"first update for cursor {cursor_id!r} has no `anchor` (got {anchor!r})")
-                else:
+                if isinstance(anchor, dict):
                     anchors[cursor_id] = _anchor_identity(anchor)
+                elif in_replay or cursor_id not in earlier:
+                    problems.append(f"first update for cursor {cursor_id!r} has no `anchor` (got {anchor!r})")
             elif isinstance(anchor, dict) and _anchor_identity(anchor) != anchors[cursor_id]:
                 problems.append(
                     f"cursor {cursor_id!r} moved from {anchors[cursor_id]!r} to {_anchor_identity(anchor)!r}"
                 )
-    assert not problems, "ACP-CURSOR-001: " + "; ".join(dict.fromkeys(problems))
+    return list(dict.fromkeys(problems))
 
 
-@pytest.mark.requirement("ACP-CURSOR-002")
+@pytest.mark.requirement("ACP-CURSOR-001")
 @pytest.mark.capability("capabilities.session")
-async def test_anchor_names_an_entity_already_reported(request, agent_launch, agent_initialize_result, tmp_path):
-    """ACP-CURSOR-002. See module docstring. An entity is reported by a `session/update` of
+async def test_anchor_comes_first_and_never_changes(request, agent_launch, agent_initialize_result, tmp_path):
+    """ACP-CURSOR-001. See module docstring and `anchor_problems`."""
+    connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    _skip_if_no_cursor(connection)
+    problems = anchor_problems(connection)
+    assert not problems, "ACP-CURSOR-001: " + "; ".join(problems)
+
+
+def unreported_anchor_problems(connection: CursorsConnection) -> list[str]:
+    """ACP-CURSOR-002's findings, in wire order. An entity is reported by a `session/update` of
     `_ENTITY_OF_UPDATE` carrying its ID; the set starts afresh at each successful full-replay resume
     (the replay re-delivers entities before their cursors). A defined-`type` anchor without its ID
     field is a schema defect, not judged here."""
-    connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
-    _skip_if_no_cursor(connection)
     reported: set[tuple[str, Any]] = set()
     problems = []
     for kind, update in _walk(connection):
@@ -248,7 +287,17 @@ async def test_anchor_names_an_entity_already_reported(request, agent_launch, ag
                     f"cursor {update.get('cursorId')!r} is anchored to {entity[0]} {entity[1]!r}, "
                     "which was not reported on the session before"
                 )
-    assert not problems, "ACP-CURSOR-002: " + "; ".join(dict.fromkeys(problems))
+    return list(dict.fromkeys(problems))
+
+
+@pytest.mark.requirement("ACP-CURSOR-002")
+@pytest.mark.capability("capabilities.session")
+async def test_anchor_names_an_entity_already_reported(request, agent_launch, agent_initialize_result, tmp_path):
+    """ACP-CURSOR-002. See module docstring and `unreported_anchor_problems`."""
+    connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    _skip_if_no_cursor(connection)
+    problems = unreported_anchor_problems(connection)
+    assert not problems, "ACP-CURSOR-002: " + "; ".join(problems)
 
 
 @pytest.mark.requirement("ACP-CURSOR-003")

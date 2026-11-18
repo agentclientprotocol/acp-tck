@@ -18,12 +18,17 @@ import pytest
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "agents" / "v1"
 FIXTURES_DIR_V2 = Path(__file__).parent.parent / "fixtures" / "agents" / "v2"
-CLI_SUBPROCESS_TIMEOUT = 60
-"""Wall-clock cap on one `_run_cli` subprocess. Against `wrong_id_echo.py`, every
-`--timeout`-bounded MANDATORY/ADVISORY/INFORMATIONAL id fails/errors via a real timeout (since
-id-correlated waits never resolve), which adds up across the full registry; 60s leaves headroom
-without materially changing the overall suite's runtime budget, since every other self-test
-finishes in a small fraction of this."""
+CLI_SUBPROCESS_TIMEOUT = 300
+"""Wall-clock cap on one `_run_cli` subprocess, only there to report a hung run. A full run takes
+well under a minute, but its CPU work (the inner pytest, schema validation, one agent process per
+connection) stretches several times over when the suite's workers outnumber the cores actually
+free, so the cap leaves that headroom; a run that finishes costs nothing extra."""
+CLI_STARTUP_TIMEOUT = "5"
+"""`--startup-timeout` for `_run_cli`: the spawn of an agent process and its `initialize` answer,
+paid once per connection. A fixture answers in tens of milliseconds, but under CPU starvation a
+Python process start alone can approach a second, and a full run opens hundreds of connections.
+It does not change any verdict, since every fixture that answers `initialize` answers it at once;
+tests whose fixture never answers it pass `startup_timeout="1"` to stay fast."""
 
 _MANDATORY_IDS = {
     "ACP-TRANSPORT-001",
@@ -222,7 +227,7 @@ def _run_cli(
     timeout: str = "1",
     report_json: str | None = None,
     test_timeout: str | None = None,
-    startup_timeout: str = "1",
+    startup_timeout: str = CLI_STARTUP_TIMEOUT,
     cancel_prompt: str | None = None,
     subagent_prompt: str | None = None,
     subagent_cancel_prompt: str | None = None,
@@ -498,7 +503,7 @@ def test_wrong_id_echo_fails_id_dependent_requirements():
     times out waiting for an id-correlated response before failing, which costs far longer for
     a fact this one id already demonstrates -- narrowing to the id-echo tests themselves keeps
     the same assertion true in a fraction of the time."""
-    result = _run_cli("wrong_id_echo.py", k="jsonrpc")
+    result = _run_cli("wrong_id_echo.py", k="jsonrpc", startup_timeout="1")  # initialize never matches
     assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
     assert statuses.get("ACP-JSONRPC-001") == "FAIL", result.stdout
@@ -1053,6 +1058,7 @@ def test_login_that_never_answers_skips_auth_gated_and_blocks_the_verdict(tmp_pa
         k="test_session_new_succeeds_with_a_unique_session_id",
         auth_method="tck",
         report_json=str(report_path),
+        startup_timeout="1",  # the login waits the startup timeout out
     )
     assert result.returncode != 0, result.stdout + result.stderr
     statuses = _table_statuses(result.stdout)
@@ -2433,6 +2439,22 @@ def test_options_defect_fixtures_fail_only_their_own_row():
     assert [errors[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)] == ["FAIL", "SKIPPED", "SKIPPED", "SKIPPED"], errors
 
 
+def test_options_session_id_probe_runs_on_a_fork_only_agent():
+    """`options_fork_accepts_malformed.py` advertises `fork` but neither `loadSession` nor `resume`,
+    which is enough for the client to send `session/options` a `sessionId`: ACP-OPTIONS-003 probes
+    it and PASSes instead of SKIPping."""
+    statuses = _table_statuses(_run_cli("options_fork_accepts_malformed.py", k="test_session_options").stdout)
+    assert statuses["ACP-OPTIONS-003"] == "PASS", statuses
+
+
+def test_config_003_does_not_fail_on_an_unanswered_session_options():
+    """`options_never_answers.py` never answers `session/options`; that is ACP-OPTIONS-001's
+    finding, so the MANDATORY ACP-CONFIG-003 judges the payloads it got and PASSes."""
+    result = _run_cli("options_never_answers.py", k="test_session_config")
+    assert _output_fail_ids(result.stdout) == set(), result.stdout
+    assert _table_statuses(result.stdout)["ACP-CONFIG-003"] == "PASS", result.stdout
+
+
 def test_conforming_options_pass_non_vacuously_and_conforming_skips():
     """`conforming_full.py` advertises `options`, `list`, `loadSession` and persists sessions, so
     ACP-OPTIONS-001/002/003/009 PASS (009 reconnects from a fresh process) and ACP-CONFIG-003 stays
@@ -2447,16 +2469,21 @@ def test_conforming_options_pass_non_vacuously_and_conforming_skips():
 
 def test_initial_config_defect_fixtures_fail_only_their_own_rows():
     """Each fixture advertises `sessionCapabilities.options` with a select and a boolean option and
-    breaks one initial-`configOptions` rule. Everything else PASSes or SKIPs. The run is scoped with
+    breaks one initial-`configOptions` rule. The `options_fork_*` ones also advertise `fork` and
+    break the rule only on `session/fork`. Everything else PASSes or SKIPs. The run is scoped with
     `-k`, so its verdict is not asserted."""
     ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 8, 10, 11)]
     for fixture, expected in (
         ("options_accepts_malformed.py", {"ACP-OPTIONS-004"}),
         ("options_accepts_duplicate.py", {"ACP-OPTIONS-005"}),
         ("options_rejects_unknown_entry.py", {"ACP-OPTIONS-006"}),
-        ("options_notifies_initial.py", {"ACP-OPTIONS-007", "ACP-OPTIONS-008"}),
+        ("options_notifies_initial.py", {"ACP-OPTIONS-007"}),
         ("options_announces_mode.py", {"ACP-OPTIONS-008"}),
         ("options_response_hides_values.py", {"ACP-OPTIONS-011"}),
+        ("options_fork_accepts_malformed.py", {"ACP-OPTIONS-004"}),
+        ("options_fork_accepts_duplicate.py", {"ACP-OPTIONS-005"}),
+        ("options_fork_rejects_unknown_entry.py", {"ACP-OPTIONS-006"}),
+        ("options_fork_announces_mode.py", {"ACP-OPTIONS-008"}),
     ):
         result = _run_cli(fixture, k="test_initial_config")
         assert _output_fail_ids(result.stdout) == expected, f"{fixture}:\n{result.stdout}"

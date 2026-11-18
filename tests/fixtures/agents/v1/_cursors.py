@@ -6,7 +6,8 @@ with a `messageId` and announces a cursor `after` it that accepts `session/fork`
 session's history, so `session/load` replays each cursor right after its message with the same
 `cursorId`. `session/fork` (advertise `sessionCapabilities.fork` to use it) rejects with `-32602` a
 `cursorId` the session did not issue; a valid one forks the history up to and including the
-anchored message (a fork inherits no cursors). A defect fixture overrides one of the hooks
+anchored message (a fork inherits no cursors). Initial `configOptions` on `session/fork` are
+handled like on `session/new` (`_base.py`). A defect fixture overrides one of the hooks
 `_new_cursor_id`, `_anchor_for`, `_cursor_update` or `_cursor_rejected`.
 """
 
@@ -90,6 +91,8 @@ class CursorsMixin:
         if cursor_id is not None and self._cursor_rejected(source_id, cursor_id):
             self._error(msg_id, -32602, f"Invalid params: unknown cursorId {cursor_id!r}")
             return
+        if self._refuses_initial_config(msg_id, params):
+            return
         cut = self._cursor_history_index.get(source_id, {}).get(cursor_id)
         history = [
             entry
@@ -100,4 +103,11 @@ class CursorsMixin:
         new_id = f"sess-{self._session_count:04d}"
         self._sessions[new_id] = {"cwd": params["cwd"], "history": [dict(e, sessionId=new_id) for e in history]}
         self._persist(new_id)
-        self._reply(msg_id, {"sessionId": new_id})
+        self._apply_initial_config(params)
+        result: dict[str, Any] = {"sessionId": new_id}
+        if self._modes is not None:
+            result["modes"] = self._modes
+        visible_config = self._visible_config_options()
+        if visible_config is not None:
+            result["configOptions"] = visible_config
+        self._reply(msg_id, result)

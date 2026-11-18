@@ -55,6 +55,20 @@ async def _require_working_method(agent, cwd: Path, *, timeout: float) -> None:
         pytest.skip(f"prerequisite not met: session/options {{cwd}} did not succeed (see ACP-OPTIONS-001): {entry.text!r}")
 
 
+def _skip_unless_session_id_allowed(init_result: dict[str, Any] | None) -> None:
+    """SKIP unless the agent supports `session/load`, `session/resume` or `session/fork`: a client
+    may send `session/options` a `sessionId` only then (`session-config-options.mdx:507`)."""
+    if init_result is None or not (
+        capability_is_supported(init_result, "agentCapabilities.loadSession", boolean=True)
+        or capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.resume")
+        or capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.fork")
+    ):
+        pytest.skip(
+            "none of loadSession, sessionCapabilities.resume or sessionCapabilities.fork is advertised, "
+            "so the agent may not be sent a sessionId"
+        )
+
+
 async def _listed_ids(agent, cwd: Path, *, timeout: float) -> set[Any] | None:
     """The `sessionId`s `session/list` returns for `cwd` (following `nextCursor`, bounded), or
     `None` when a page was not answered with a list: ACP-LIST-001 judges that."""
@@ -133,16 +147,11 @@ async def test_session_options_sends_no_update_and_lists_no_session(
 async def test_session_options_for_an_unknown_session_is_an_error(
     agent_launch, agent_initialize_result, tmp_path
 ):
-    """ACP-OPTIONS-003. A client may send `sessionId` only to an agent that supports `loadSession`
-    or `resume`, so the probe SKIPs on any other. A `sessionId` the agent never issued must be
+    """ACP-OPTIONS-003. A client may send `sessionId` only to an agent that supports `loadSession`,
+    `resume` or `fork`, so the probe SKIPs on any other. A `sessionId` the agent never issued must be
     answered with an error, not a result; the docs name `-32002` but no keyword, so the code is
     not asserted."""
-    init_result = agent_initialize_result.result
-    if init_result is None or not (
-        capability_is_supported(init_result, "agentCapabilities.loadSession", boolean=True)
-        or capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.resume")
-    ):
-        pytest.skip("neither loadSession nor sessionCapabilities.resume is advertised, so the agent may not be sent a sessionId")
+    _skip_unless_session_id_allowed(agent_initialize_result.result)
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         await _require_working_method(agent, tmp_path, timeout=timeout)
@@ -175,12 +184,7 @@ async def test_session_options_with_a_session_id_does_not_connect_mcp_servers(
     ACP-SESSION-004). Connection 2, a fresh process, asks `session/options` for that session after
     the marker is deleted (SKIP if it cannot answer for it: the agent does not persist sessions);
     the marker must not reappear within a quiet period."""
-    init_result = agent_initialize_result.result
-    if init_result is None or not (
-        capability_is_supported(init_result, "agentCapabilities.loadSession", boolean=True)
-        or capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.resume")
-    ):
-        pytest.skip("neither loadSession nor sessionCapabilities.resume is advertised, so the agent may not be sent a sessionId")
+    _skip_unless_session_id_allowed(agent_initialize_result.result)
     timeout = agent_launch.default_timeout
     marker = tmp_path / "mcp-marker"
     async with connected_agent(agent_launch) as agent:

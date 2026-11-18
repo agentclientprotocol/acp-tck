@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `sessionCapabilities.options` and, for a `session/new` that
 carries initial `configOptions` entries, sends a `config_option_update` for the new session before
-its response. Violates ACP-OPTIONS-007 and ACP-OPTIONS-008 (the update is both an update for the
-entries and one sent before the response).
+its response. Violates ACP-OPTIONS-007 only: ACP-OPTIONS-008 judges the other kinds sent before
+the response and leaves `config_option_update` to ACP-OPTIONS-007.
 """
 
 import sys

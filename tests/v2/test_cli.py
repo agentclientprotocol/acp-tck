@@ -23,7 +23,17 @@ import pytest
 
 FIXTURES_DIR_V2 = Path(__file__).parent.parent / "fixtures" / "agents" / "v2"
 FIXTURES_DIR_V1 = Path(__file__).parent.parent / "fixtures" / "agents" / "v1"
-CLI_SUBPROCESS_TIMEOUT = 120
+CLI_SUBPROCESS_TIMEOUT = 300
+"""Wall-clock cap on one `_run_cli` subprocess, only there to report a hung run. A full run takes
+about a minute, but its CPU work (the inner pytest, schema validation, one agent process per
+connection) stretches several times over when the suite's workers outnumber the cores actually
+free, so the cap leaves that headroom; a run that finishes costs nothing extra."""
+CLI_STARTUP_TIMEOUT = "5"
+"""`--startup-timeout` for `_run_cli`: the spawn of an agent process and its `initialize` answer,
+paid once per connection. A fixture answers in tens of milliseconds, but under CPU starvation a
+Python process start alone can approach a second, and a full run opens hundreds of connections.
+It does not change any verdict, since every fixture that answers `initialize` answers it at once;
+tests whose fixture never answers it pass `startup_timeout="1"` to stay fast."""
 
 _MANDATORY_IDS = {
     "ACP-INIT-001",
@@ -630,7 +640,7 @@ def _run_cli(
     protocol_version: int | None,
     k: str | None = None,
     timeout: str = "1",
-    startup_timeout: str = "1",
+    startup_timeout: str = CLI_STARTUP_TIMEOUT,
     report_json: str | None = None,
     cancel_prompt: str | None = None,
     subagent_prompt: str | None = None,
@@ -1244,7 +1254,8 @@ def test_options_defect_fixtures_fail_only_their_own_row():
 
 def test_initial_config_defect_fixtures_fail_only_their_own_rows():
     """Each fixture advertises `session.options` with a select and a boolean option and breaks one
-    initial-`configOptions` rule. Everything else PASSes or SKIPs. The run is scoped with `-k`, so its
+    initial-`configOptions` rule. The `options_fork_*` ones also advertise `fork` and break the rule
+    only on `session/fork`. Everything else PASSes or SKIPs. The run is scoped with `-k`, so its
     verdict is not asserted."""
     ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 10, 11, 201)]
     for fixture, expected in (
@@ -1254,6 +1265,9 @@ def test_initial_config_defect_fixtures_fail_only_their_own_rows():
         ("options_notifies_initial.py", {"ACP-OPTIONS-007"}),
         ("options_response_hides_values.py", {"ACP-OPTIONS-011"}),
         ("options_ignores_unsupported_type.py", set()),
+        ("options_fork_accepts_malformed.py", {"ACP-OPTIONS-004"}),
+        ("options_fork_accepts_duplicate.py", {"ACP-OPTIONS-005"}),
+        ("options_fork_rejects_unknown_entry.py", {"ACP-OPTIONS-006"}),
     ):
         result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_initial_config")
         statuses = _table_statuses(result.stdout)
@@ -1261,6 +1275,16 @@ def test_initial_config_defect_fixtures_fail_only_their_own_rows():
         assert fails == expected, f"{fixture}:\n{result.stdout}"
         for req_id in set(ids) - expected:
             assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_duplicate_probe_uses_a_real_boolean_option_when_there_is_no_select():
+    """`options_only_boolean.py` lists only a boolean option and ignores unknown ids before looking
+    for duplicates. ACP-OPTIONS-005 duplicates the real boolean option rather than a synthetic id,
+    so the agent's `-32602` is judged and the row PASSes."""
+    result = _run_cli(FIXTURES_DIR_V2, "options_only_boolean.py", protocol_version=2, k="test_initial_config")
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    assert statuses["ACP-OPTIONS-005"] == "PASS", result.stdout
 
 
 def test_conforming_initial_config_passes_non_vacuously_and_conforming_skips(tmp_path):
@@ -1300,6 +1324,16 @@ def test_answers_unadvertised_options_fails_error_006_only():
     assert fails == {"ACP-ERROR-006"}, result.stdout
     assert "session/options" in result.stdout, result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_late_setup_traffic_is_not_blamed_on_session_options():
+    """`options_late_setup_traffic.py` sends `available_commands_update` from a timer shortly after
+    `session/new` and lists its closed session only from the second `session/list` on. ACP-OPTIONS-002
+    waits out the setup traffic and does not count the TCK's own session, so it PASSes."""
+    result = _run_cli(FIXTURES_DIR_V2, "options_late_setup_traffic.py", protocol_version=2, k="test_session_options")
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == set(), result.stdout
+    assert statuses["ACP-OPTIONS-002"] == "PASS", result.stdout
 
 
 def test_conforming_options_pass_non_vacuously_and_conforming_skips():
@@ -1838,6 +1872,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-218",
         "ACP-RESUME-219",
         "ACP-RESUME-220",
+        "ACP-RESUME-221",
         "ACP-RESUME-222",
         "ACP-RESUME-223",
         "ACP-RESUME-224",
@@ -2030,6 +2065,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-218",
         "ACP-RESUME-219",
         "ACP-RESUME-220",
+        "ACP-RESUME-221",
         "ACP-RESUME-222",
         "ACP-RESUME-223",
         "ACP-RESUME-224",
@@ -2876,6 +2912,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-218",
         "ACP-RESUME-219",
         "ACP-RESUME-220",
+        "ACP-RESUME-221",
         "ACP-RESUME-222",
         "ACP-RESUME-223",
         "ACP-RESUME-224",
@@ -3007,6 +3044,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-218",
         "ACP-RESUME-219",
         "ACP-RESUME-220",
+        "ACP-RESUME-221",
         "ACP-RESUME-222",
         "ACP-RESUME-223",
         "ACP-RESUME-224",
@@ -3136,6 +3174,7 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-RESUME-218",
         "ACP-RESUME-219",
         "ACP-RESUME-220",
+        "ACP-RESUME-221",
         "ACP-RESUME-222",
         "ACP-RESUME-223",
         "ACP-RESUME-224",
@@ -3330,7 +3369,9 @@ def test_v2_wrong_id_echo_fails_id_dependent_requirements():
     everything else is deselected (`NOT_TESTED`). `ACP-JSONRPC-202` FAILs too: its tests need a
     working `session/new` to elicit requests, and (like `ACP-JSONRPC-003`/`005`) hit the
     unmatched response."""
-    result = _run_cli(FIXTURES_DIR_V2, "wrong_id_echo.py", protocol_version=2, k="jsonrpc")
+    result = _run_cli(
+        FIXTURES_DIR_V2, "wrong_id_echo.py", protocol_version=2, k="jsonrpc", startup_timeout="1"
+    )  # initialize never matches
     assert result.returncode != 0
 
     statuses = _table_statuses(result.stdout)
@@ -3867,6 +3908,7 @@ def test_resume_205_judges_every_chunk_kind(monkeypatch):
         ("resume_snapshot_before_replay_complete.py", {"ACP-RESUME-220"}),
         ("resume_notice_before_replay_complete.py", {"ACP-RESUME-220"}),
         ("rejected_cursor_sends_replay_complete.py", {"ACP-RESUME-221"}),
+        ("rejected_cursor_replays_history.py", {"ACP-RESUME-221"}),
         ("requests_before_replay_complete.py", {"ACP-RESUME-222"}),
     ],
 )
@@ -4703,6 +4745,7 @@ def test_conforming_agents_pass_idempotency_rows():
     ("fixture", "failing"),
     [
         ("retry_inserts_second_message.py", {"ACP-PROMPT-212", "ACP-PROMPT-214"}),
+        ("reused_key_rejected_then_forgotten.py", {"ACP-PROMPT-214"}),
         ("accepts_malformed_idempotency_key.py", {"ACP-PROMPT-213"}),
         ("held_retry_rejected_as_duplicate.py", {"ACP-PROMPT-215"}),
         ("echoes_idempotency_key.py", {"ACP-PROMPT-216"}),
@@ -4762,6 +4805,7 @@ def test_login_that_never_answers_skips_auth_gated_and_blocks_the_verdict(tmp_pa
         k="test_session_new_returns_unique_string_id",
         auth_method="tck",
         report_json=str(report_path),
+        startup_timeout="1",  # the login waits the startup timeout out
     )
     assert result.returncode != 0, result.stdout + result.stderr
     statuses = _table_statuses(result.stdout)

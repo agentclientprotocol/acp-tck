@@ -27,6 +27,9 @@ from tck.v2.conformance._helpers import (
     agent_requests,
     assert_unknown_session_error,
     child_session_traffic,
+    _ItemProbe,
+    _RepeatProbe,
+    _StaleProbe,
     git_patch_paths,
     git_unquote,
     is_absolute_path,
@@ -595,6 +598,27 @@ def test_git_patch_paths_reads_header_lines_and_skips_diff_git_and_hunk_bodies()
 def test_git_patch_paths_reports_default_ab_prefixes_as_given():
     text = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-1\n+2\n"
     assert git_patch_paths(text) == [("---", "a/x"), ("+++", "b/x")]
+
+
+def test_repeat_probe_skips_an_item_the_stale_probe_already_asked():
+    """The main request was confirmed for `t1`, which turned final still advertising `cancel`, so
+    `_StaleProbe` asked again; once `cancel` is withdrawn `_RepeatProbe` must not ask a third time."""
+    main = _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=0.5)
+    main.result.outcome, main.result.item_id = "confirmed", "t1"
+    stale, repeat = _StaleProbe(main), _RepeatProbe(main)
+    tracker = _tracked(_tool_call(status="completed", capabilities={"cancel": {}}))
+    assert stale._target(tracker) == "t1"
+    main.claimed.add("t1")  # what `_FollowUpProbe.step` records when the stale request is sent
+    tracker.apply("update", _tool_call(status="completed", capabilities=None)[1])
+    assert repeat._target(tracker) is None
+    unclaimed = _ItemProbe("tool_call", "tool_call/cancel", "toolCallId", grace=0.5)
+    unclaimed.result.outcome, unclaimed.result.item_id = "confirmed", "t1"
+    assert _RepeatProbe(unclaimed)._target(tracker) == "t1"
+
+
+def test_git_patch_paths_drops_the_cr_of_crlf_line_endings():
+    text = 'diff --git /r/x /r/x\r\n--- /r/a b\t\r\n+++ "/r/q\\r"\r\n@@ -1 +1 @@\r\n-1\r\n+2\r\n'
+    assert git_patch_paths(text) == [("---", "/r/a b"), ("+++", "/r/q\r")]
 
 
 def _msg(outer: str, message_id: str, **fields: Any) -> dict[str, Any]:

@@ -5,8 +5,10 @@ An agent that advertises `capabilities.session.options` accepts a `configOptions
 is gated on that capability (the TCK may not send entries otherwise, `session-config-options.mdx:482`)
 and every test judges its own fresh connection. The entries come from `session/options` of the same
 agent: a select option with an alternative value for the rows that apply one, a real id for the
-duplicate probe. Probes are `session/new` requests; ACP-OPTIONS-006 repeats its unknown-id probe on
-`session/resume`. `session/fork` is not probed. Boolean options need no client capability in v2.
+duplicate probe. Probes are `session/new` requests, repeated by ACP-OPTIONS-004..006 as
+`session/fork` requests (of a plain session made on the same connection) when
+`capabilities.session.fork` is advertised; ACP-OPTIONS-006 also repeats its unknown-id probe on
+`session/resume`. Boolean options need no client capability in v2.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from tck.common.plugin import capability_is_supported
 from tck.v2.protocol import INVALID_PARAMS
 from tck.v2.validation import validate_agent_response
 
@@ -33,6 +36,7 @@ from ._helpers import (
 )
 
 _OPTIONS_PATH = "capabilities.session.options"
+_FORK_PATH = "capabilities.session.fork"
 _UNKNOWN_ID = "_tck_unknown_config"
 _NOT_A_VALUE = "_tck_unknown_value"
 _UNSUPPORTED_TYPE = "_tck_unsupported"
@@ -65,6 +69,33 @@ async def _call(agent, method: str, params: dict[str, Any], *, timeout: float):
 
 async def _new_with_entries(agent, cwd: Path, entries: Any, *, timeout: float):
     return await _call(agent, "session/new", {"cwd": str(cwd), "configOptions": entries}, timeout=timeout)
+
+
+async def _source_session(agent, cwd: Path, *, timeout: float) -> str:
+    """A plain `session/new` to fork from. Its failure FAILs the row: the agent cannot set up the
+    session the fork probes need."""
+    entry = await _call(agent, "session/new", {"cwd": str(cwd)}, timeout=timeout)
+    result = _result(entry)
+    session_id = result.get("sessionId") if result is not None else None
+    assert isinstance(session_id, str), f"session/new for the session/fork probes failed: {entry.text!r}"
+    return session_id
+
+
+async def _setup_targets(agent, cwd: Path, init_result: Any, *, timeout: float) -> list[tuple[str, str | None]]:
+    """`(method, source sessionId)` for each setup request the probes go to: `session/new`, and
+    `session/fork` of a fresh session when `capabilities.session.fork` is advertised."""
+    targets: list[tuple[str, str | None]] = [("session/new", None)]
+    if init_result is not None and capability_is_supported(init_result, _FORK_PATH):
+        targets.append(("session/fork", await _source_session(agent, cwd, timeout=timeout)))
+    return targets
+
+
+async def _setup_with_entries(agent, cwd: Path, target: tuple[str, str | None], entries: Any, *, timeout: float):
+    method, source_id = target
+    if method == "session/fork":
+        params = {"sessionId": source_id, "cwd": str(cwd), "configOptions": entries}
+        return await _call(agent, "session/fork", params, timeout=timeout)
+    return await _new_with_entries(agent, cwd, entries, timeout=timeout)
 
 
 async def _advertised_options(agent, cwd: Path, *, timeout: float) -> list[dict[str, Any]]:
@@ -121,23 +152,26 @@ def _setup_failures(label: str, method: str, entry) -> list[str]:
     return [f"{label}: {p}" for p in _value_problems(result.get("configOptions"))]
 
 
-async def _expect_invalid_params(agent, cwd: Path, probes, *, timeout: float) -> list[str]:
+async def _expect_invalid_params(agent, cwd: Path, probes, targets, *, timeout: float) -> list[str]:
     failures = []
-    for label, entries in probes:
-        entry = await _new_with_entries(agent, cwd, entries, timeout=timeout)
-        if _error_code(entry) != INVALID_PARAMS:
-            failures.append(f"{label} ({entries!r}): {entry.text!r}")
+    for target in targets:
+        for label, entries in probes:
+            entry = await _setup_with_entries(agent, cwd, target, entries, timeout=timeout)
+            if _error_code(entry) != INVALID_PARAMS:
+                failures.append(f"{label} on {target[0]} ({entries!r}): {entry.text!r}")
     return failures
 
 
 @pytest.mark.requirement("ACP-OPTIONS-004")
 @pytest.mark.capability(_OPTIONS_PATH)
-async def test_malformed_initial_entries_fail_with_invalid_params(agent_launch, tmp_path):
-    """ACP-OPTIONS-004. `session/new` with an entry without `configId`, one without `type`, one of
-    `type: "id"` whose `value` is not a string and one of `type: "boolean"` whose `value` is not a
-    boolean must each fail with `-32602`: the probes break the client rule to send schema-valid
-    entries because the docs define the answer."""
+async def test_malformed_initial_entries_fail_with_invalid_params(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-OPTIONS-004. `session/new` (and `session/fork` when advertised) with an entry without
+    `configId`, one without `type`, one of `type: "id"` whose `value` is not a string and one of
+    `type: "boolean"` whose `value` is not a boolean must each fail with `-32602`: the probes break
+    the client rule to send schema-valid entries because the docs define the answer."""
+    timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
+        targets = await _setup_targets(agent, tmp_path, agent_initialize_result.result, timeout=timeout)
         failures = await _expect_invalid_params(
             agent,
             tmp_path,
@@ -147,37 +181,52 @@ async def test_malformed_initial_entries_fail_with_invalid_params(agent_launch, 
                 ("a value that does not match type id", [{"configId": "x", "type": "id", "value": 42}]),
                 ("a value that does not match type boolean", [{"configId": "x", "type": "boolean", "value": "yes"}]),
             ),
-            timeout=agent_launch.default_timeout,
+            targets,
+            timeout=timeout,
         )
     assert not failures, "malformed initial configOptions must fail with -32602: " + "; ".join(failures)
 
 
+def _duplicate_entry(options: list[dict[str, Any]]) -> dict[str, Any]:
+    """The entry ACP-OPTIONS-005 sends twice: a select option of `options` at its current value,
+    else a boolean one at its current value, else a synthetic id. An unknown id is the last resort:
+    the duplicate rule and the rule to ignore an unknown id both apply to it."""
+    if selects := _selects(options):
+        return _id_entry(selects[0]["configId"], selects[0]["currentValue"])
+    booleans = [o for o in options if o.get("type") == "boolean" and isinstance(o.get("currentValue"), bool)]
+    if booleans:
+        return {"configId": booleans[0]["configId"], "type": "boolean", "value": booleans[0]["currentValue"]}
+    return _id_entry(f"_tck_duplicate_{uuid.uuid4().hex}", "x")
+
+
 @pytest.mark.requirement("ACP-OPTIONS-005")
 @pytest.mark.capability(_OPTIONS_PATH)
-async def test_duplicate_initial_entries_fail_with_invalid_params(agent_launch, tmp_path):
-    """ACP-OPTIONS-005. The same entry twice on `session/new` must fail with `-32602`. A real
-    select option of `session/options` at its current value is used when there is one, otherwise a
-    synthetic id: the rule has no exception for unknown ids."""
+async def test_duplicate_initial_entries_fail_with_invalid_params(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-OPTIONS-005. The same entry twice on `session/new` (and `session/fork` when advertised)
+    must fail with `-32602`. The entry is a real option of `session/options` at its current value: a
+    select one when there is one, else a boolean one (`_duplicate_entry`)."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
-        options = _selects(await _advertised_options(agent, tmp_path, timeout=timeout))
-        if options:
-            entry_params = _id_entry(options[0]["configId"], options[0]["currentValue"])
-        else:
-            entry_params = _id_entry(f"_tck_duplicate_{uuid.uuid4().hex}", "x")
+        entry_params = _duplicate_entry(await _advertised_options(agent, tmp_path, timeout=timeout))
+        targets = await _setup_targets(agent, tmp_path, agent_initialize_result.result, timeout=timeout)
         failures = await _expect_invalid_params(
-            agent, tmp_path, (("the same configId twice", [dict(entry_params), dict(entry_params)]),), timeout=timeout
+            agent,
+            tmp_path,
+            (("the same configId twice", [dict(entry_params), dict(entry_params)]),),
+            targets,
+            timeout=timeout,
         )
     assert not failures, "duplicate initial configOptions must fail with -32602: " + "; ".join(failures)
 
 
 @pytest.mark.requirement("ACP-OPTIONS-006")
 @pytest.mark.capability(_OPTIONS_PATH)
-async def test_inapplicable_initial_entries_are_ignored(agent_launch, tmp_path):
+async def test_inapplicable_initial_entries_are_ignored(agent_launch, agent_initialize_result, tmp_path):
     """ACP-OPTIONS-006. Entries the agent cannot apply must not fail setup, and the options keep a
     valid value: an unknown `configId`, a `type: "boolean"` entry for a select option, a
     `type: "id"` entry for a boolean option and, for a select option, a value it does not list, on
-    `session/new`; the unknown id again on `session/resume` of that session."""
+    `session/new` (and `session/fork` when advertised); the unknown id again on `session/resume` of
+    a session the `session/new` probes made."""
     timeout = agent_launch.default_timeout
     failures: list[str] = []
     session_id = None
@@ -195,17 +244,18 @@ async def test_inapplicable_initial_entries_are_ignored(agent_launch, tmp_path):
             )
         if booleans := [o for o in options if o.get("type") == "boolean"]:
             probes.append(("an id entry for a boolean option", [_id_entry(booleans[0]["configId"], _NOT_A_VALUE)]))
-        for label, entries in probes:
-            entry = await _new_with_entries(agent, tmp_path, entries, timeout=timeout)
-            problems = _setup_failures(label, "session/new", entry)
-            result = _result(entry)
-            if result is not None and isinstance(result.get("sessionId"), str):
-                session_id = session_id or result["sessionId"]
-            if label.startswith("a value") and not problems:
-                shown = config_state(result.get("configOptions")).get(selects[0]["configId"])
-                if shown == _NOT_A_VALUE:
-                    problems.append(f"{label}: {selects[0]['configId']!r} took the value that was sent")
-            failures += problems
+        for target in await _setup_targets(agent, tmp_path, agent_initialize_result.result, timeout=timeout):
+            for label, entries in probes:
+                entry = await _setup_with_entries(agent, tmp_path, target, entries, timeout=timeout)
+                problems = _setup_failures(f"{label} on {target[0]}", target[0], entry)
+                result = _result(entry)
+                if target[0] == "session/new" and result is not None and isinstance(result.get("sessionId"), str):
+                    session_id = session_id or result["sessionId"]
+                if label.startswith("a value") and not problems:
+                    shown = config_state(result.get("configOptions")).get(selects[0]["configId"])
+                    if shown == _NOT_A_VALUE:
+                        problems.append(f"{label} on {target[0]}: {selects[0]['configId']!r} took the value that was sent")
+                failures += problems
         if session_id is not None:
             params = {"sessionId": session_id, "cwd": str(tmp_path), "configOptions": [_id_entry(_UNKNOWN_ID, "x")]}
             entry = await _call(agent, "session/resume", params, timeout=timeout)

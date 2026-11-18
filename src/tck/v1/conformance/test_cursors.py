@@ -166,25 +166,34 @@ def _session_events(connection: CursorsConnection) -> list[tuple[int, str, dict]
     return events
 
 
-def _successful_load_starts(connection: CursorsConnection) -> set[int]:
-    """The transcript index of each `session/load` request that got a success response: where the
-    session's replayed state starts afresh. A failed or unanswered load rebuilds nothing."""
-    starts = set()
+def _successful_loads(connection: CursorsConnection) -> dict[int, int]:
+    """The transcript index of each `session/load` request that got a success response, mapped to
+    the index of that response: the session's replayed state starts afresh at the request, and
+    the replay ends at the response. A failed or unanswered load rebuilds nothing."""
+    loads = {}
     for start, end in connection.loads:
         request_id = connection.transcript[start].parsed.get("id")
-        if any(
-            entry.direction is Direction.RECEIVED
-            and entry.matches_id(request_id)
-            and isinstance(entry.parsed, dict)
-            and "result" in entry.parsed
-            for entry in connection.transcript[start:end]
-        ):
-            starts.add(start)
-    return starts
+        for index in range(start + 1, end):
+            entry = connection.transcript[index]
+            if entry.direction is Direction.RECEIVED and entry.matches_id(request_id):
+                if isinstance(entry.parsed, dict) and "result" in entry.parsed:
+                    loads[start] = index
+                break
+    return loads
 
 
-def _cursor_updates(events: list[tuple[int, str, dict]]) -> list[tuple[int, dict]]:
-    return [(index, update) for index, kind, update in events if kind == "cursor_update"]
+def _walk(connection: CursorsConnection):
+    """Yield `("reset", None)` at each successful `session/load` request, `("replay_end", None)`
+    at its response, and `(kind, update)` for each `session/update` of the TCK's session, in wire
+    order."""
+    loads = _successful_loads(connection)
+    marks = {start: "reset" for start in loads} | {end: "replay_end" for end in loads.values()}
+    events = {index: (kind, update) for index, kind, update in _session_events(connection)}
+    for index in sorted(marks.keys() | events.keys()):
+        if index in marks:
+            yield marks[index], None
+        if index in events:
+            yield events[index]
 
 
 def _anchor_identity(anchor: dict) -> dict:
@@ -199,56 +208,57 @@ def _anchored_entity(anchor: Any) -> tuple[str, Any] | None:
     return (anchor["type"], anchor.get(field)) if field else None
 
 
+def anchor_problems(connection: CursorsConnection) -> list[str]:
+    """ACP-CURSOR-001's findings, in wire order. The first update seen for a `cursorId` since the
+    start of the session or its last successful load must carry an object `anchor`; a later
+    non-null anchor must equal it (`_meta` aside). A replayed update "carries the cursor's
+    `capabilities` and `anchor`, like a first update", so the first one inside a load's replay
+    needs its anchor too. After the load's response, an anchor-less update for a cursor anchored
+    before the load is not judged: the agent may clear the `capabilities` of a cursor it stopped
+    accepting, and such a cursor is left out of the replay."""
+    anchors: dict[Any, dict] = {}
+    earlier: set[Any] = set()
+    in_replay = False
+    problems = []
+    for kind, update in _walk(connection):
+        if kind == "reset":
+            earlier |= anchors.keys()
+            anchors, in_replay = {}, True
+        elif kind == "replay_end":
+            in_replay = False
+        elif kind == "cursor_update" and isinstance(update.get("cursorId"), str):
+            cursor_id, anchor = update["cursorId"], update.get("anchor")
+            if cursor_id not in anchors:
+                if isinstance(anchor, dict):
+                    anchors[cursor_id] = _anchor_identity(anchor)
+                elif in_replay or cursor_id not in earlier:
+                    problems.append(f"first update for cursor {cursor_id!r} has no `anchor` (got {anchor!r})")
+            elif isinstance(anchor, dict) and _anchor_identity(anchor) != anchors[cursor_id]:
+                problems.append(
+                    f"cursor {cursor_id!r} moved from {anchors[cursor_id]!r} to {_anchor_identity(anchor)!r}"
+                )
+    return list(dict.fromkeys(problems))
+
+
 @pytest.mark.requirement("ACP-CURSOR-001")
 async def test_anchor_comes_first_and_never_changes(request, agent_launch, agent_initialize_result, tmp_path):
-    """ACP-CURSOR-001. See module docstring. The first update seen for a `cursorId` since the start
-    of the session or its last successful load must carry an object `anchor`; a later non-null
-    anchor must equal it (`_meta` aside). A replayed update "carries the cursor's `capabilities`
-    and `anchor`, like a first update", so the first one after a load needs its anchor too."""
+    """ACP-CURSOR-001. See module docstring and `anchor_problems`."""
     connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
-    events = _session_events(connection)
-    resets = _successful_load_starts(connection)
-    anchors: dict[Any, dict] = {}
-    problems = []
-    updates = {index: update for index, update in _cursor_updates(events)}
-    for index in sorted(resets | set(updates)):
-        if index in resets:
-            anchors = {}
-            continue
-        update = updates[index]
-        cursor_id, anchor = update.get("cursorId"), update.get("anchor")
-        if not isinstance(cursor_id, str):
-            continue
-        if cursor_id not in anchors:
-            if not isinstance(anchor, dict):
-                problems.append(f"first update for cursor {cursor_id!r} has no `anchor` (got {anchor!r})")
-            else:
-                anchors[cursor_id] = _anchor_identity(anchor)
-        elif isinstance(anchor, dict) and _anchor_identity(anchor) != anchors[cursor_id]:
-            problems.append(
-                f"cursor {cursor_id!r} moved from {anchors[cursor_id]!r} to {_anchor_identity(anchor)!r}"
-            )
-    assert not problems, "ACP-CURSOR-001: " + "; ".join(dict.fromkeys(problems))
+    problems = anchor_problems(connection)
+    assert not problems, "ACP-CURSOR-001: " + "; ".join(problems)
 
 
-@pytest.mark.requirement("ACP-CURSOR-002")
-async def test_anchor_names_an_entity_already_reported(request, agent_launch, agent_initialize_result, tmp_path):
-    """ACP-CURSOR-002. See module docstring. An entity is reported by a `session/update` of
+def unreported_anchor_problems(connection: CursorsConnection) -> list[str]:
+    """ACP-CURSOR-002's findings, in wire order. An entity is reported by a `session/update` of
     `_ENTITY_OF_UPDATE` carrying its ID; the set starts afresh at each successful `session/load`
     (the replay re-delivers entities before their cursors). A defined-`type` anchor without its ID
     field is a schema defect, not judged here."""
-    connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
-    events = _session_events(connection)
-    resets = _successful_load_starts(connection)
     reported: set[tuple[str, Any]] = set()
     problems = []
-    by_index = {index: (kind, update) for index, kind, update in events}
-    for index in sorted(resets | set(by_index)):
-        if index in resets:
+    for kind, update in _walk(connection):
+        if kind == "reset":
             reported = set()
-            continue
-        kind, update = by_index[index]
-        if kind in _ENTITY_OF_UPDATE:
+        elif kind in _ENTITY_OF_UPDATE:
             entity_type, field = _ENTITY_OF_UPDATE[kind]
             if isinstance(update.get(field), str):
                 reported.add((entity_type, update[field]))
@@ -259,7 +269,15 @@ async def test_anchor_names_an_entity_already_reported(request, agent_launch, ag
                     f"cursor {update.get('cursorId')!r} is anchored to {entity[0]} {entity[1]!r}, "
                     "which was not reported on the session before"
                 )
-    assert not problems, "ACP-CURSOR-002: " + "; ".join(dict.fromkeys(problems))
+    return list(dict.fromkeys(problems))
+
+
+@pytest.mark.requirement("ACP-CURSOR-002")
+async def test_anchor_names_an_entity_already_reported(request, agent_launch, agent_initialize_result, tmp_path):
+    """ACP-CURSOR-002. See module docstring and `unreported_anchor_problems`."""
+    connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    problems = unreported_anchor_problems(connection)
+    assert not problems, "ACP-CURSOR-002: " + "; ".join(problems)
 
 
 @pytest.mark.requirement("ACP-CURSOR-003")
@@ -310,19 +328,28 @@ def _replayed_cursor_ids(connection: CursorsConnection, window: tuple[int, int])
     return {key: tuple(ids) for key, ids in keyed.items()}
 
 
+def compared_loads(connection: CursorsConnection) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """The windows of the first two `session/load`s when both succeeded, else `None`: a failed
+    load replays nothing to compare."""
+    loads = _successful_loads(connection)
+    windows = [window for window in connection.loads[:2] if window[0] in loads]
+    return (windows[0], windows[1]) if len(windows) == 2 else None
+
+
 @pytest.mark.requirement("ACP-CURSOR-004")
 @pytest.mark.capability("agentCapabilities.loadSession", boolean=True)
 async def test_cursor_ids_are_stable_across_loads(request, agent_launch, agent_initialize_result, tmp_path):
     """ACP-CURSOR-004. Compares the cursors the two `session/load`s replayed (`_replayed_cursor_ids`).
-    SKIPs when the first replayed none (an agent without cursors), or when fewer than two loads
-    completed. Positions only one load replayed are not compared."""
+    SKIPs when either load did not succeed (`compared_loads`), or when the first replayed none (an
+    agent without cursors). Positions only one load replayed are not compared."""
     connection = await cursors_connection(request, agent_launch, agent_initialize_result, tmp_path)
-    if len(connection.loads) < 2:
-        pytest.skip("fewer than two session/load exchanges completed")
-    first = _replayed_cursor_ids(connection, connection.loads[0])
+    windows = compared_loads(connection)
+    if windows is None:
+        pytest.skip("fewer than two session/load exchanges succeeded")
+    first = _replayed_cursor_ids(connection, windows[0])
     if not first:
         pytest.skip("the first session/load replayed no cursor with a placeable anchor")
-    second = _replayed_cursor_ids(connection, connection.loads[1])
+    second = _replayed_cursor_ids(connection, windows[1])
     changed = [
         f"{key[0]} {key[1]!r} #{key[2]}: {ids!r} then {second[key]!r}"
         for key, ids in first.items()

@@ -1647,14 +1647,17 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "cursor never moves; omitting the anchor or repeating it is fine). The state is per "
             "session and `cursorId`, and starts afresh at each successful `session/resume` with "
             "`replayFrom: {\"type\": \"start\"}`, whose full replay rebuilds the session's "
-            "cursors: the first replayed update for a cursor carries its anchor too. Checked over "
-            "a connection of `session/new`, two prompt turns, two such resumes and a "
+            "cursors: the first update for a cursor inside the replay (up to `replay_complete`, "
+            "or the response without one) carries its anchor too. After the replay, an update "
+            "without an anchor for a cursor anchored before the resume is not judged (the agent "
+            "may clear the `capabilities` of a cursor it stopped accepting and did not replay). "
+            "Checked over a connection of `session/new`, two prompt turns, two such resumes and a "
             "`session/fork` probe. Unstable feature: SKIPPED when the agent sends no "
             "`cursor_update`."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:947,949,952-954; "
-            "docs/protocol/v2/draft/session-setup.mdx:339,341; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:947,949,952-954,1026-1027; "
+            "docs/protocol/v2/draft/session-setup.mdx:339,341,379; "
             "schema/v2/schema.unstable.json#/$defs/CursorUpdate"
         ),
     ),
@@ -2566,9 +2569,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A `session/resume` whose `replayFrom` cursor the agent rejects with `-32602` -- the "
             "unsupported custom cursor and the malformed values of `ACP-RESUME-207`/`208` -- "
-            "replays nothing and sends no `replay_complete` before the error response. A probe "
-            "the agent does not reject with `-32602` is not judged here (`ACP-RESUME-207`/`208` "
-            "do); SKIPs when none was."
+            "replays nothing and sends no `replay_complete` before the error response. Probed "
+            "on a session with a completed prompt turn, after a quiet period; \"replays "
+            "nothing\" is judged as no message update or chunk (user, agent or thought) for the "
+            "session before the error. A probe the agent does not reject with `-32602` is not "
+            "judged here (`ACP-RESUME-207`/`208` do); SKIPs when none was."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:382,406; "
@@ -3615,14 +3620,15 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "`session/options` MUST NOT create or resume a session, send a `session/update` "
             "notification or add an entry to `session/list`. Checked on a connection holding a "
-            "session the TCK created and closed: no `session/update` arrives from the request "
-            "until a quiet period after its response, and a `session/list` for the same `cwd` "
-            "shows no session it did not show before. Then `session/options` with the closed "
-            "session's `sessionId` must not resume it: a following `session/prompt` for that id "
-            "still gets `-32002` (an active session would take it). A half that cannot be judged "
-            "is skipped, not failed: `session/list` failing leaves only the notification half, "
-            "and an agent that no longer knows the closed session leaves the `sessionId` half "
-            "unjudged. Unstable feature."
+            "session the TCK created and closed, after a quiet period: no `session/update` "
+            "arrives from the request until a quiet period after its response, and a "
+            "`session/list` for the same `cwd` shows no session it did not show before other "
+            "than the closed one (which an agent may persist late). Then `session/options` with "
+            "the closed session's `sessionId` must not resume it: a following `session/prompt` "
+            "for that id still gets `-32002` (an active session would take it). A half that "
+            "cannot be judged is skipped, not failed: `session/list` failing leaves only the "
+            "notification half, and an agent that no longer knows the closed session leaves the "
+            "`sessionId` half unjudged. Unstable feature."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:514,551; "
@@ -3682,9 +3688,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "\"type\": \"id\", \"value\": 42}]` and `[{\"configId\": \"x\", \"type\": "
             "\"boolean\", \"value\": \"yes\"}]` (a `value` that does not match its `type`). "
             "The probes break a client rule (send schema-valid entries) on purpose, because the "
-            "docs define the agent's answer. The docs list `session/new`, `session/resume` and "
-            "`session/fork` when supported; only `session/new` is probed. Unstable feature. A "
-            "`-32000` reply SKIPs."
+            "docs define the agent's answer. Every probe is repeated on `session/fork` of a fresh "
+            "session when `capabilities.session.fork` is advertised; the docs also list "
+            "`session/resume`, which is not probed. Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:482,555,578; "
@@ -3699,11 +3705,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session.options",
         text=(
             "Two initial `configOptions` entries with the same `configId` fail the setup "
-            "request with `-32602`. Checked on `session/new` with a real option of "
-            "`session/options` (a select one, at its current value) sent twice; an agent with "
-            "none gets a synthetic id, since the rule has no exception for unknown ids. The "
-            "probe breaks a client rule (no duplicate entries) on purpose, because the docs "
-            "define the agent's answer. Unstable feature. A `-32000` reply SKIPs."
+            "request with `-32602`. Checked on `session/new`, and on `session/fork` of a fresh "
+            "session when `capabilities.session.fork` is advertised, with a real option of "
+            "`session/options` at its current value sent twice: a select one, else a boolean one. "
+            "Only an agent with neither gets a synthetic id (the rule to ignore an unknown id "
+            "applies to it too). The probe breaks a client rule (no duplicate entries) on "
+            "purpose, because the docs define the agent's answer. Unstable feature. A `-32000` "
+            "reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:482,555,580; "
@@ -3720,10 +3728,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "request succeeds and the option keeps a value valid for its type (not the one "
             "sent). Probed on `session/new` with an unknown `configId`, a value no option "
             "lists, a `type: \"boolean\"` entry for a select option and a `type: \"id\"` "
-            "entry for a boolean option (neither needs a client capability in v2); the "
-            "unknown-id probe is repeated on `session/resume` of that session. Entries that "
-            "apply are not probed (their values may legitimately be refused at runtime), and "
-            "`session/fork` is not probed. Unstable feature. A `-32000` reply SKIPs."
+            "entry for a boolean option (neither needs a client capability in v2); every probe "
+            "is repeated on `session/fork` of a fresh session when `capabilities.session.fork` "
+            "is advertised, and the unknown-id probe on `session/resume` of a session the "
+            "`session/new` probes made. Entries that apply are not probed (their values may "
+            "legitimately be refused at runtime). Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:482,555,581; "
