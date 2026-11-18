@@ -207,6 +207,9 @@ _CAPABILITY_IDS = {
     "ACP-PATCH-206",
     "ACP-PATCH-207",
     "ACP-PATCH-210",
+    "ACP-PATCH-213",
+    "ACP-PATCH-214",
+    "ACP-PATCH-215",
     "ACP-TOOLCANCEL-201",
     "ACP-TOOLCANCEL-202",
     "ACP-TERMCANCEL-201",
@@ -219,6 +222,8 @@ _CAPABILITY_IDS = {
     "ACP-TERMCANCEL-206",
     "ACP-TOOLCANCEL-208",
     "ACP-TERMCANCEL-208",
+    "ACP-TOOLCANCEL-210",
+    "ACP-TERMCANCEL-210",
     "ACP-SUBAGENT-016",
     "ACP-SUBAGENT-017",
     "ACP-SUBAGENT-202",
@@ -271,12 +276,15 @@ _ADVISORY_IDS = {
     "ACP-PATCH-209",
     "ACP-PATCH-211",
     "ACP-PATCH-212",
+    "ACP-PATCH-216",
     "ACP-TOOLCANCEL-205",
     "ACP-TERMCANCEL-205",
     "ACP-TOOLCANCEL-207",
     "ACP-TERMCANCEL-207",
     "ACP-TOOLCANCEL-209",
     "ACP-TERMCANCEL-209",
+    "ACP-TOOLCANCEL-211",
+    "ACP-TERMCANCEL-211",
     "ACP-META-001",
     "ACP-META-201",
     "ACP-META-202",
@@ -357,7 +365,10 @@ _BACKGROUND_SKIP_IDS = {"ACP-STATE-206", "ACP-STATE-207", "ACP-STATE-208"}
 # a request sent once an item of the kind advertised `cancel` during the turn, so they SKIP
 # wherever nothing advertises it. The `-208`/`-209` not-cancellable rows also need a live item
 # without `cancel`, which only `uncancellable_work` (`conforming_full.py`, the `*uncancellable*`
-# fixtures) or an agent that withdraws `cancel` from a live item offers.
+# fixtures) or an agent that withdraws `cancel` from a live item offers. The `-210`/`-211` repeat
+# rows judge a request sent again for the item the main request was accepted for, once it is final
+# and no longer advertises `cancel`: they SKIP wherever the main request was not accepted and
+# confirmed, and wherever the item keeps advertising `cancel` (the already-final rows judge that).
 _ITEM_ACCEPT_IDS = {"ACP-TOOLCANCEL-201", "ACP-TOOLCANCEL-202", "ACP-TERMCANCEL-201", "ACP-TERMCANCEL-202"}
 _STALE_CANCEL_IDS = {"ACP-TOOLCANCEL-204", "ACP-TOOLCANCEL-205", "ACP-TERMCANCEL-204", "ACP-TERMCANCEL-205"}
 _UNKNOWN_CANCEL_IDS = {"ACP-TOOLCANCEL-206", "ACP-TOOLCANCEL-207", "ACP-TERMCANCEL-206", "ACP-TERMCANCEL-207"}
@@ -367,7 +378,10 @@ _UNCANCELLABLE_CANCEL_IDS = {
     "ACP-TERMCANCEL-208",
     "ACP-TERMCANCEL-209",
 }
-_ITEM_CANCEL_IDS = _ITEM_ACCEPT_IDS | _STALE_CANCEL_IDS | _UNKNOWN_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS
+_REPEAT_CANCEL_IDS = {"ACP-TOOLCANCEL-210", "ACP-TOOLCANCEL-211", "ACP-TERMCANCEL-210", "ACP-TERMCANCEL-211"}
+_ITEM_CANCEL_IDS = (
+    _ITEM_ACCEPT_IDS | _STALE_CANCEL_IDS | _UNKNOWN_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS | _REPEAT_CANCEL_IDS
+)
 
 # The child-stop rows judge only a running child that advertises `capabilities.cancel` (or a child's
 # own cancellable tool call or terminal) in the `__hang__` turn: only `cancellable_subagent.py` and
@@ -452,6 +466,10 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PATCH-210",
     "ACP-PATCH-211",
     "ACP-PATCH-212",
+    "ACP-PATCH-213",
+    "ACP-PATCH-214",
+    "ACP-PATCH-215",
+    "ACP-PATCH-216",
     "ACP-STATE-205",
     "ACP-CANCEL-209",
     "ACP-CANCEL-213",
@@ -734,6 +752,10 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PATCH-210",
     "ACP-PATCH-211",
     "ACP-PATCH-212",
+    "ACP-PATCH-213",
+    "ACP-PATCH-214",
+    "ACP-PATCH-215",
+    "ACP-PATCH-216",
     "ACP-STATE-205",
     "ACP-CANCEL-209",
     "ACP-CANCEL-213",
@@ -870,7 +892,7 @@ def test_v2_conforming_full_agent_passes_everything():
     create+patch sharing one `toolCallId`, one plan_update with one `planId`), and advertises one
     `type: "agent"` authMethods entry (`methodId: "tck"`). Run with `--cancel-prompt __hang__
     --auth-method tck --allow-logout`, this exercises essentially every capability: every
-    prompt-content/permission/client-capability id, `ACP-PATCH-201/203..212` and
+    prompt-content/permission/client-capability id, `ACP-PATCH-201/203..216` and
     `ACP-ENUM-201/203`, `ACP-AUTH-003/004`, and every CAPABILITY-tier `ACP-CANCEL-*` id but
     `ACP-CANCEL-209` all PASS. The INFORMATIONAL probe PASSes too (an INFORMATIONAL test PASSes as
     long as it never hits an assertion failure or setup/teardown error -- it never asserts on the
@@ -1771,6 +1793,10 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -1956,6 +1982,10 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -2709,6 +2739,10 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
         "ACP-ENUM-201",
         "ACP-META-001",
         "ACP-META-201",
@@ -2841,6 +2875,10 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
     }, cascade_result.stdout
     for req_id in ("ACP-CANCEL-001", "ACP-CANCEL-002", "ACP-CANCEL-206", "ACP-CANCEL-207"):
         assert cancel_statuses.get(req_id) == "SKIPPED", f"{req_id}: {cancel_result.stdout}"
@@ -2961,6 +2999,10 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
     }, cascade_result.stdout
     assert cancel_statuses.get("ACP-CANCEL-002") == "SKIPPED", cancel_result.stdout
     assert cancel_statuses.get("ACP-CANCEL-208") == "PASS", cancel_result.stdout
@@ -3338,6 +3380,10 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
         "ACP-PERM-203",
         "ACP-PERM-002",
         "ACP-PERM-204",
@@ -4851,6 +4897,10 @@ _TOOL_CALL_K = "test_permission or patches or background or test_enums or test_p
         ("leaves_terminal_tool_call_in_progress.py", "ACP-PATCH-211"),
         ("abandons_tool_call_after_terminal_exit.py", "ACP-PATCH-211"),
         ("advertises_cancel_after_final.py", "ACP-PATCH-212"),
+        ("relative_diff_path.py", "ACP-PATCH-213"),
+        ("git_patch_ab_prefix.py", "ACP-PATCH-214"),
+        ("git_patch_email_envelope.py", "ACP-PATCH-215"),
+        ("output_after_exit.py", "ACP-PATCH-216"),
     ],
 )
 def test_tool_call_defect_fails_its_row_only(fixture: str, failing_id: str):
@@ -4921,7 +4971,7 @@ def test_cancellable_items_pass_the_cancel_rows(tmp_path):
     stay open on a `__hang__` turn and implements both cancel methods. It stops advertising `cancel`
     once they are final, so no already-final request is made: `-201/202` PASS, `-204/205` SKIP.
     It answers an unknown id, and its live items that advertise no `cancel`, `-32602`: `-206-209`
-    PASS."""
+    PASS. It answers a repeat request for the cancelled items `-32602` too, so `-210/211` PASS."""
     statuses, stdout = _item_cancel_statuses("conforming_full.py", tmp_path)
     for req_id, status in statuses.items():
         assert status == ("SKIPPED" if req_id in _STALE_CANCEL_IDS else "PASS"), f"{req_id}:\n{stdout}"
@@ -4934,11 +4984,15 @@ def test_agent_that_keeps_advertising_cancel_gets_a_further_request(tmp_path):
     live item without `cancel`, so the not-cancellable rows SKIP although the gate holds."""
     statuses, by_id, stdout = _item_cancel_run("keeps_cancel_after_final.py", tmp_path)
     for req_id, status in statuses.items():
-        assert status == ("SKIPPED" if req_id in _UNCANCELLABLE_CANCEL_IDS else "PASS"), f"{req_id}:\n{stdout}"
+        skipped = _UNCANCELLABLE_CANCEL_IDS | _REPEAT_CANCEL_IDS
+        assert status == ("SKIPPED" if req_id in skipped else "PASS"), f"{req_id}:\n{stdout}"
     for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
         assert "was live without advertising capabilities.cancel" in _skip_message(by_id, req_id), (
             f"{req_id}:\n{stdout}"
         )
+    # The confirmed items still advertise `cancel`, so the already-final request is their repeat.
+    for req_id in ("ACP-TOOLCANCEL-210", "ACP-TERMCANCEL-210"):
+        assert "still advertises capabilities.cancel" in _skip_message(by_id, req_id), f"{req_id}:\n{stdout}"
 
 
 @pytest.mark.parametrize(
@@ -4963,7 +5017,32 @@ def test_already_final_cancel_defect_fails_its_row_only(fixture: str, expected: 
     SKIP."""
     statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
     for req_id, status in statuses.items():
-        default = "SKIPPED" if req_id in _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        default = "SKIPPED" if req_id in _UNCANCELLABLE_CANCEL_IDS | _REPEAT_CANCEL_IDS else "PASS"
+        assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
+
+
+@pytest.mark.parametrize(
+    ("fixture", "expected"),
+    [
+        (
+            "repeat_tool_cancel_accepted.py",
+            {"ACP-TOOLCANCEL-210": "FAIL", "ACP-TOOLCANCEL-211": "SKIPPED"},
+        ),
+        (
+            "repeat_terminal_cancel_accepted.py",
+            {"ACP-TERMCANCEL-210": "FAIL", "ACP-TERMCANCEL-211": "SKIPPED"},
+        ),
+    ],
+)
+def test_accepted_repeat_cancel_fails_its_row_only(fixture: str, expected: dict[str, str], tmp_path):
+    """A request sent again for an item whose cancel was accepted and which is final, with
+    `capabilities` cleared, is answered with a result: fails `-210` (and leaves the code row
+    nothing to judge). The other kind of item and the happy-path rows still PASS (the repeat rows
+    of `conforming_full.py` PASS, so the other kind's `-210/211` do too), and the already-final
+    rows SKIP: nothing is final while still advertising `cancel`."""
+    statuses, stdout = _item_cancel_statuses(fixture, tmp_path)
+    for req_id, status in statuses.items():
+        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
         assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
 
 
@@ -5077,19 +5156,24 @@ def test_unknown_id_cancel_defect_fails_its_row_only(fixture: str, expected: dic
         assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
 
 
+# A kind whose main request was not accepted and confirmed leaves its repeat rows nothing to judge.
+_NO_TOOL_REPEAT = {"ACP-TOOLCANCEL-210": "SKIPPED", "ACP-TOOLCANCEL-211": "SKIPPED"}
+_NO_TERM_REPEAT = {"ACP-TERMCANCEL-210": "SKIPPED", "ACP-TERMCANCEL-211": "SKIPPED"}
+
+
 @pytest.mark.parametrize(
     ("fixture", "expected"),
     [
         (
             "tool_call_cancel_errors.py",
-            {"ACP-TOOLCANCEL-201": "FAIL", "ACP-TOOLCANCEL-202": "SKIPPED"},
+            {"ACP-TOOLCANCEL-201": "FAIL", "ACP-TOOLCANCEL-202": "SKIPPED", **_NO_TOOL_REPEAT},
         ),
-        ("tool_call_cancel_never_final.py", {"ACP-TOOLCANCEL-202": "FAIL"}),
+        ("tool_call_cancel_never_final.py", {"ACP-TOOLCANCEL-202": "FAIL", **_NO_TOOL_REPEAT}),
         (
             "terminal_cancel_errors.py",
-            {"ACP-TERMCANCEL-201": "FAIL", "ACP-TERMCANCEL-202": "SKIPPED"},
+            {"ACP-TERMCANCEL-201": "FAIL", "ACP-TERMCANCEL-202": "SKIPPED", **_NO_TERM_REPEAT},
         ),
-        ("terminal_cancel_never_exits.py", {"ACP-TERMCANCEL-202": "FAIL"}),
+        ("terminal_cancel_never_exits.py", {"ACP-TERMCANCEL-202": "FAIL", **_NO_TERM_REPEAT}),
     ],
 )
 def test_item_cancel_defect_fails_its_row_only(fixture: str, expected: dict[str, str], tmp_path):
@@ -5193,7 +5277,8 @@ def test_not_cancellable_request_does_not_repeat_the_main_request(tmp_path):
     statuses, by_id, stdout = _item_cancel_run("cancel_never_final_accepts_repeat.py", tmp_path)
     expected = {"ACP-TOOLCANCEL-202": "FAIL", "ACP-TERMCANCEL-202": "FAIL"}
     for req_id, status in statuses.items():
-        default = "SKIPPED" if req_id in _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS else "PASS"
+        skipped = _STALE_CANCEL_IDS | _UNCANCELLABLE_CANCEL_IDS | _REPEAT_CANCEL_IDS
+        default = "SKIPPED" if req_id in skipped else "PASS"
         assert status == expected.get(req_id, default), f"{req_id}:\n{stdout}"
     for req_id in ("ACP-TOOLCANCEL-208", "ACP-TERMCANCEL-208"):
         message = _skip_message(by_id, req_id)

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -828,6 +829,63 @@ def is_absolute_path(value: Any) -> bool:
     return isinstance(value, str) and (
         PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
     )
+
+
+_GIT_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92, '"': 34}
+_GIT_OCTAL = re.compile(r"[0-7]{1,3}")
+_HUNK_HEADER = re.compile(r"@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
+_GIT_PATH_LINES = ("--- ", "+++ ", "rename from ", "rename to ", "copy from ", "copy to ")
+
+
+def git_unquote(token: str) -> str:
+    """`token` with Git's `core.quotePath` quoting removed: a double-quoted token holds C-style
+    escapes (backslash, quote, control characters, octal bytes) and decodes as UTF-8; anything
+    else is returned as is (tool-calls.mdx:659-660)."""
+    if not (len(token) >= 2 and token.startswith('"') and token.endswith('"')):
+        return token
+    body, out, i = token[1:-1], bytearray(), 0
+    while i < len(body):
+        if body[i] != "\\" or i + 1 >= len(body):
+            out += body[i].encode()
+            i += 1
+        elif body[i + 1] in _GIT_ESCAPES:
+            out.append(_GIT_ESCAPES[body[i + 1]])
+            i += 2
+        elif octal := _GIT_OCTAL.match(body, i + 1):
+            out.append(int(octal.group(), 8) & 0xFF)
+            i = octal.end()
+        else:
+            out += b"\\"
+            i += 1
+    return out.decode("utf-8", errors="replace")
+
+
+def git_patch_paths(text: str) -> list[tuple[str, str]]:
+    """`(header line prefix, unquoted path)` for the path-bearing header lines of a `git_patch`
+    (`---`, `+++`, `rename from/to`, `copy from/to`), in order (tool-calls.mdx:653-660). The
+    `diff --git` line is left out (ambiguous when a path has spaces, :674-676), and so are hunk
+    bodies, so a removed line that reads `-- x` is not mistaken for a header. A trailing TAB, which
+    Git writes after a path with spaces, is dropped."""
+    found: list[tuple[str, str]] = []
+    old_left = new_left = 0
+    for line in text.split("\n"):
+        if old_left > 0 or new_left > 0:
+            if line.startswith("+"):
+                new_left -= 1
+            elif line.startswith("-"):
+                old_left -= 1
+            elif not line.startswith("\\"):
+                old_left, new_left = old_left - 1, new_left - 1
+            continue
+        if hunk := _HUNK_HEADER.match(line):
+            old_left = int(hunk.group(1)) if hunk.group(1) is not None else 1
+            new_left = int(hunk.group(2)) if hunk.group(2) is not None else 1
+            continue
+        for prefix in _GIT_PATH_LINES:
+            if line.startswith(prefix):
+                found.append((prefix.rstrip(), git_unquote(line[len(prefix) :].removesuffix("\t"))))
+                break
+    return found
 
 
 @dataclass
@@ -2560,15 +2618,18 @@ class ItemCancel:
 class FollowUpCancel:
     """What one further cancel request beside the main one showed, for a target the agent must
     reject with `-32602` (tool-calls.mdx:459,605): an item that was final yet still advertised
-    `capabilities.cancel`, an id no update announced, or a live item that did not advertise
-    `cancel`."""
+    `capabilities.cancel`, an id no update announced, a live item that did not advertise
+    `cancel`, or the item the main request was accepted for once it is final and no longer
+    advertises `cancel` (a repeat)."""
 
     outcome: str = "none"
     """`none`: not sent (no such target). `tried`: not sent, because every live item that did not
     advertise `cancel` had already been sent the main request (`_ItemProbe.tried`), which this
     request never repeats. `error`: answered with an error (`error`). `result`: answered with a
     result (`result`). `raced`: a result, but the live item started advertising `cancel` as the
-    request crossed, so it was legitimate. `unanswered`: no response in time."""
+    request crossed, so it was legitimate. `unanswered`: no response in time. `stale`: not sent
+    (a repeat only): the accepted-and-confirmed item still advertised `cancel`, so the stale
+    probe's request is the repeat."""
     item_id: str | None = None
     result: Any = None
     error: dict[str, Any] | None = None
@@ -2588,6 +2649,8 @@ class ItemCancelRun:
     terminal_unknown: FollowUpCancel = field(default_factory=FollowUpCancel)
     tool_call_uncancellable: FollowUpCancel = field(default_factory=FollowUpCancel)
     terminal_uncancellable: FollowUpCancel = field(default_factory=FollowUpCancel)
+    tool_call_repeat: FollowUpCancel = field(default_factory=FollowUpCancel)
+    terminal_repeat: FollowUpCancel = field(default_factory=FollowUpCancel)
     tool_call_cancel_seen: bool = False
     """Some tool call advertised `cancel` at some point in the turn (the follow-up gate)."""
     terminal_cancel_seen: bool = False
@@ -2871,6 +2934,20 @@ class _UncancellableProbe(_FollowUpProbe):
         await super().step(agent, session_id, tracker, now, window)
 
 
+class _RepeatProbe(_FollowUpProbe):
+    """The item the main request was accepted for, once it is final and no longer advertises
+    `cancel`: a request sent again must get `-32602` (tool-calls.mdx:459,605). It breaks the client
+    rule at :456/:602, which the probe rules allow because the spec defines the answer. An item that
+    still advertises `cancel` is `_StaleProbe`'s, so no item is asked twice."""
+
+    def _target(self, tracker: PatchTracker) -> str | None:
+        if self.main.result.outcome != "confirmed" or not self.main._is_final(tracker):
+            return None
+        item_id = self.main.result.item_id
+        assert item_id is not None
+        return None if self.main._advertises_cancel(tracker) else item_id
+
+
 async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry, *, since: int) -> None:
     """Answer the agent -> client requests in `entry`, a line read after `run_prompt` returned,
     as `run_prompt` would have: `session/request_permission` per the `allow` policy (`cancelled`
@@ -2914,8 +2991,9 @@ async def drive_item_cancel(
     only to an item that does. Further requests go to the first item that is final yet still
     advertises `cancel` (`_StaleProbe`) and, once an item of the kind advertised `cancel`, to an
     id no update announced (`_UnknownProbe`) and to the first live item that does not advertise
-    `cancel` (`_UncancellableProbe`): probes the spec defines the answer to. The main request
-    never goes to an item a further request went to, nor the not-cancellable one to an item the
+    `cancel` (`_UncancellableProbe`), and to the item the main request was accepted for, once it
+    is final and no longer advertises `cancel` (`_RepeatProbe`): probes the spec defines the
+    answer to. The main request never goes to an item a further request went to, nor the not-cancellable one to an item the
     main request went to: neither row judges the answer to a repeat request for an item the agent
     may still be cancelling.
 
@@ -2945,6 +3023,7 @@ async def drive_item_cancel(
     follow_ups: list[_FollowUpProbe] = [_StaleProbe(probe) for probe in probes]
     follow_ups += [_UnknownProbe(probe) for probe in probes]
     follow_ups += [_UncancellableProbe(probe, grace=grace) for probe in probes]
+    follow_ups += [_RepeatProbe(probe) for probe in probes]
     tracker = PatchTracker()
     cursor = since = len(agent.transcript)
     started = last_activity = loop.time()
@@ -3021,6 +3100,9 @@ async def drive_item_cancel(
         if isinstance(follow_up, _UncancellableProbe):
             if follow_up.result.outcome == "none" and follow_up.skipped_tried:
                 follow_up.result.outcome = "tried"
+        elif isinstance(follow_up, _RepeatProbe):
+            if follow_up.result.outcome == "none" and follow_up.main.result.outcome == "confirmed":
+                follow_up.result.outcome = "stale"
     return ItemCancelRun(
         turn=turn,
         tool_call=results[0],
@@ -3031,6 +3113,8 @@ async def drive_item_cancel(
         terminal_unknown=follow_ups[3].result,
         tool_call_uncancellable=follow_ups[4].result,
         terminal_uncancellable=follow_ups[5].result,
+        tool_call_repeat=follow_ups[6].result,
+        terminal_repeat=follow_ups[7].result,
         tool_call_cancel_seen=tracker.tool_call_cancel_seen,
         terminal_cancel_seen=tracker.terminal_cancel_seen,
     )

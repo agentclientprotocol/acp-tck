@@ -1,12 +1,12 @@
-"""Patch/upsert semantics: ACP-PATCH-201, ACP-PATCH-203..212, and ACP-PLAN-003 (a markdown plan's
+"""Patch/upsert semantics: ACP-PATCH-201, ACP-PATCH-203..216, and ACP-PLAN-003 (a markdown plan's
 `path` is read from the same driven turn as ACP-PATCH-205).
 
 `ACP-PATCH-202` (the `session/prompt` result's `messageId` matches the `user_message`/
 `user_message_chunk` updates' own `messageId`) is deliberately **not** registered here: it is
 already fully covered by `ACP-PROMPT-201` + `ACP-PROMPT-203`.
 
-ACP-PATCH-201/203/204/205/206/207/210 are `Tier.CAPABILITY` (`capabilities.session`);
-ACP-PATCH-208/209/211/212 are `Tier.ADVISORY` with only the *test* capability-gated for the SKIP.
+ACP-PATCH-201/203/204/205/206/207/210/213/214/215 are `Tier.CAPABILITY` (`capabilities.session`);
+ACP-PATCH-208/209/211/212/216 are `Tier.ADVISORY` with only the *test* capability-gated for the SKIP.
 
 The tool-call rows (208, 210..212) judge every report of a tool call in wire order: a
 `tool_call_update`, a `tool_call_content_chunk`, or a permission request's `tool_call` subject
@@ -33,6 +33,7 @@ from ._helpers import (
     PatchTracker,
     background_keys,
     connected_agent,
+    git_patch_paths,
     is_absolute_path,
     new_session,
     permission_subject_keys,
@@ -407,3 +408,148 @@ async def test_capabilities_cleared_once_final(agent_launch, tmp_path):
     if not tracker.cancel_seen:
         pytest.skip("no tool call or terminal advertised capabilities.cancel during this turn")
     assert not tracker.cancel_violations, tracker.cancel_violations[0]
+
+
+def _diff_contents(turn) -> list[dict[str, Any]]:
+    """Every `diff` content item the prompted session's turn reported, in wire order: in a
+    `tool_call_update`'s `content`, as a `tool_call_content_chunk`'s `content`, or in a permission
+    request's `tool_call` subject (tool-calls.mdx:198-200,270-273)."""
+    diffs: list[dict[str, Any]] = []
+    for _, kind, payload in session_events(turn):
+        if kind == "permission":
+            subject = payload.get("subject")
+            tool_call = subject.get("toolCall") if isinstance(subject, dict) else None
+            content = tool_call.get("content") if isinstance(tool_call, dict) else None
+        elif payload.get("sessionUpdate") == "tool_call_update":
+            content = payload.get("content")
+        elif payload.get("sessionUpdate") == "tool_call_content_chunk":
+            content = payload.get("content")
+        else:
+            continue
+        items = content if isinstance(content, list) else [content]
+        diffs.extend(item for item in items if isinstance(item, dict) and item.get("type") == "diff")
+    return diffs
+
+
+def _git_patches(turn) -> list[tuple[dict[str, Any], str]]:
+    """`(diff item, patch text)` for each reported diff with a `git_patch` string `patch.text`."""
+    result = []
+    for diff in _diff_contents(turn):
+        patch = diff.get("patch")
+        if isinstance(patch, dict) and patch.get("format") == "git_patch" and isinstance(patch.get("text"), str):
+            result.append((diff, patch["text"]))
+    return result
+
+
+def _change_entries(diff: dict[str, Any]) -> list[dict[str, Any]]:
+    changes = diff.get("changes")
+    return [change for change in changes if isinstance(change, dict)] if isinstance(changes, list) else []
+
+
+@pytest.mark.requirement("ACP-PATCH-213")
+@pytest.mark.capability("capabilities.session")
+async def test_diff_change_paths_are_absolute_and_unique(agent_launch, tmp_path):
+    """ACP-PATCH-213 (CAPABILITY). In every `diff` content item, each `changes[].path` and
+    `oldPath` is an absolute native path, and each `path` value appears in at most one entry of
+    `changes` (`tool-calls.mdx:615,622,690-696`;
+    `schema/v2/schema.unstable.json#/$defs/DiffChange`). A move or copy's `oldPath` may repeat
+    another entry's `path`. `AbsolutePath` is a bare string in the schema, so a relative path
+    is only caught here."""
+    turn = await _drive_one_turn(agent_launch, tmp_path)
+    diffs = _diff_contents(turn)
+    if not diffs:
+        pytest.skip("no diff content observed during this turn")
+    problems = []
+    for diff in diffs:
+        seen: set[str] = set()
+        for change in _change_entries(diff):
+            for field in ("path", "oldPath"):
+                value = change.get(field)
+                if isinstance(value, str) and not is_absolute_path(value):
+                    problems.append(f"changes[].{field} {value!r} is not an absolute native path")
+            path = change.get("path")
+            if isinstance(path, str):
+                if path in seen:
+                    problems.append(f"changes[].path {path!r} appears in more than one entry")
+                seen.add(path)
+    assert not problems, f"ACP-PATCH-213: {'; '.join(problems)}"
+
+
+@pytest.mark.requirement("ACP-PATCH-214")
+@pytest.mark.capability("capabilities.session")
+async def test_git_patch_paths_are_absolute_and_match_changes(agent_launch, tmp_path):
+    """ACP-PATCH-214 (CAPABILITY). Every path in a `git_patch`'s `---`, `+++`, `rename from/to`
+    and `copy from/to` lines, once Git-unquoted, is absolute (`/dev/null` for the missing side of
+    an added or deleted file in `---`/`+++`) with no `a/`/`b/` prefix, and is the same string as
+    a `path` or `oldPath` of a `changes` entry (`tool-calls.mdx:615-617,653-660`;
+    `schema/v2/schema.unstable.json#/$defs/DiffPatch`). The `diff --git` line is not read: it is
+    ambiguous when a path has spaces (:674-676)."""
+    turn = await _drive_one_turn(agent_launch, tmp_path)
+    patches = _git_patches(turn)
+    if not patches:
+        pytest.skip("no git_patch diff observed during this turn")
+    problems = []
+    for diff, text in patches:
+        listed = {
+            value
+            for change in _change_entries(diff)
+            for field in ("path", "oldPath")
+            if isinstance(value := change.get(field), str)
+        }
+        for prefix, path in git_patch_paths(text):
+            if path == "/dev/null" and prefix in ("---", "+++"):
+                continue
+            if not is_absolute_path(path):
+                problems.append(f"{prefix} {path!r} is not an absolute path")
+            elif path not in listed:
+                problems.append(f"{prefix} {path!r} matches no changes entry (changes: {sorted(listed)!r})")
+    assert not problems, f"ACP-PATCH-214: {'; '.join(problems)}"
+
+
+@pytest.mark.requirement("ACP-PATCH-215")
+@pytest.mark.capability("capabilities.session")
+async def test_git_patch_has_no_commit_metadata_envelope(agent_launch, tmp_path):
+    """ACP-PATCH-215 (CAPABILITY). A `git_patch`'s text starts at its first `diff --git` line:
+    surrounding commit metadata and email envelopes (`From <sha> ...`, `Subject:`) are not included
+    (`tool-calls.mdx:653-654,661`; `schema/v2/schema.unstable.json#/$defs/DiffPatch`). An empty
+    text is not judged here."""
+    turn = await _drive_one_turn(agent_launch, tmp_path)
+    texts = [text for _, text in _git_patches(turn) if text]
+    if not texts:
+        pytest.skip("no non-empty git_patch observed during this turn")
+    wrapped = [text.split("\n", 1)[0] for text in texts if not text.startswith("diff --git ")]
+    assert not wrapped, (
+        f"ACP-PATCH-215: a git_patch text must begin with a `diff --git ` line, but begins with "
+        f"{wrapped!r} (commit metadata or an email envelope)"
+    )
+
+
+@pytest.mark.requirement("ACP-PATCH-216")
+@pytest.mark.capability("capabilities.session")
+async def test_no_terminal_output_chunk_after_exit_status(agent_launch, tmp_path):
+    """ACP-PATCH-216 (ADVISORY). Agents send all output before a concrete `exitStatus`: no
+    `terminal_output_chunk` follows a `terminal_update` that set one (`tool-calls.mdx:578-579`). A
+    later `exitStatus: null` reopens the terminal. SKIPs when no terminal reported a concrete
+    `exitStatus` during the turn."""
+    turn = await _drive_one_turn(agent_launch, tmp_path)
+    exited: set[str] = set()
+    ever_exited = False
+    late: list[str] = []
+    for _, kind, payload in session_events(turn):
+        terminal_id = payload.get("terminalId") if kind == "update" else None
+        if not isinstance(terminal_id, str):
+            continue
+        if payload.get("sessionUpdate") == "terminal_update" and "exitStatus" in payload:
+            if isinstance(payload["exitStatus"], dict):
+                exited.add(terminal_id)
+                ever_exited = True
+            else:
+                exited.discard(terminal_id)
+        elif payload.get("sessionUpdate") == "terminal_output_chunk" and terminal_id in exited:
+            late.append(terminal_id)
+    if not ever_exited:
+        pytest.skip("no terminal reported a concrete exitStatus during this turn")
+    assert not late, (
+        f"terminal_output_chunk arrived after the terminal's concrete exitStatus (terminalId: "
+        f"{sorted(set(late))!r})"
+    )

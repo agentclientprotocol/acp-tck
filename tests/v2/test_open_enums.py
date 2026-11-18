@@ -147,7 +147,7 @@ def test_permission_request_options_and_subject_tool_call_are_scanned():
             },
         }
     )
-    assert scan.violations == [] and scan.checked == 5
+    assert scan.violations == [] and scan.checked == 6
 
     bad = OpenEnumScan()
     bad.scan_permission_request(
@@ -162,9 +162,24 @@ def test_permission_request_options_and_subject_tool_call_are_scanned():
     ]
 
 
-def test_subject_type_itself_is_not_judged():
+@pytest.mark.parametrize("subject_type", ["tool_call", "command", "_vendor_subject"])
+def test_defined_or_prefixed_subject_type_passes(subject_type):
+    scan = OpenEnumScan()
+    scan.scan_permission_request({"options": [], "subject": {"type": subject_type}})
+    assert scan.checked == 1 and scan.violations == []
+
+
+def test_unprefixed_unknown_subject_type_is_flagged():
     scan = OpenEnumScan()
     scan.scan_permission_request({"options": [], "subject": {"type": "hologram"}})
+    assert scan.violations == ["permission subject type='hologram'"]
+
+
+def test_missing_or_non_object_subject_is_not_judged():
+    scan = OpenEnumScan()
+    scan.scan_permission_request({"options": []})
+    scan.scan_permission_request({"options": [], "subject": None})
+    scan.scan_permission_request({"options": [], "subject": {"toolCall": {}}})
     assert scan.checked == 0 and scan.violations == []
 
 

@@ -112,7 +112,7 @@ STATE_UPDATE_STATE = frozenset({"running", "idle", "requires_action", "unknown"}
 TOOL_CALL_CONTENT_TYPE = frozenset({"content", "diff", "terminal", "session"})
 PERMISSION_OPTION_KIND = frozenset({"allow_once", "allow_always", "reject_once", "reject_always"})
 # More `ACP-ENUM-201` sites: `PlanUpdateContent.type`, the diff-content enums,
-# `AvailableCommand.type`, `BackgroundWork.type`, `CursorAnchor.type` and `CursorAnchorPosition`. Cross-checked against the schema the same way as the sets above.
+# `AvailableCommand.type`, `BackgroundWork.type`, `CursorAnchor.type`, `CursorAnchorPosition` and `RequestPermissionSubject.type`. Cross-checked against the schema the same way as the sets above.
 PLAN_CONTENT_TYPE = frozenset({"items", "markdown"})
 DIFF_OPERATION = frozenset({"add", "delete", "modify", "move", "copy"})
 DIFF_FILE_TYPE = frozenset({"text", "binary", "directory", "symlink"})
@@ -127,6 +127,9 @@ CURSOR_ANCHOR_TYPE = frozenset(
     {"user_message", "agent_message", "agent_thought", "session_message", "tool_call", "compaction"}
 )
 CURSOR_ANCHOR_POSITION = frozenset({"before", "after"})
+# `RequestPermissionSubject.type`; the `other` branch accepts any string and reserves non-`_` values
+# for future ACP variants.
+PERMISSION_SUBJECT_TYPE = frozenset({"tool_call", "command"})
 
 
 def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:

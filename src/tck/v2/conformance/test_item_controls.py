@@ -1,5 +1,5 @@
-"""Cancelling a tool call or a terminal on its own: ACP-TOOLCANCEL-201/202/204-209 and
-ACP-TERMCANCEL-201/202/204-209.
+"""Cancelling a tool call or a terminal on its own: ACP-TOOLCANCEL-201/202/204-211 and
+ACP-TERMCANCEL-201/202/204-211.
 
 A tool call (or terminal) that advertises `capabilities.cancel` may be cancelled with
 `tool_call/cancel` (`terminal/cancel`) without cancelling the session's other work. The agent
@@ -13,7 +13,7 @@ SKIP themselves when no item advertises `cancel` while live (same encoding as `t
 hence `v2_only_agent`).
 
 One driven turn (`drive_item_cancel`: the cancel prompt, so a real agent is still working) serves
-all sixteen rows, made by the first test that asks and reused by the rest. The request is sent only
+all twenty rows, made by the first test that asks and reused by the rest. The request is sent only
 for an item that advertises `cancel` and is not final, since a client MUST NOT send it otherwise.
 `-32602` is the documented answer for an item that is unknown, already final or not cancellable
 (tool-calls.mdx:459,605), so one for an item the agent finalized or stopped advertising `cancel`
@@ -40,6 +40,13 @@ a further request went to, so no row judges the answer to a repeat request; a ro
 target for that reason SKIPs and says so. The item may turn final as the request crosses; `-32602`
 is still the answer. It may also start advertising `cancel` before the agent reads the request, so
 a result that comes with such an advertisement is a race and SKIPs.
+
+Once the `-201` request was accepted and the item is final (`-202`), the run sends the same request
+again when the item no longer advertises `cancel`: `-210` judges that it is rejected, `-211`
+(ADVISORY) the code. That request breaks the client rule at :456/:602 like the unknown-id probe, and
+tool-calls.mdx:459,605 define its answer ("a request that the Client sends again after the first one
+was accepted"). An item that still advertises `cancel` gets the already-final request instead
+(`-204`), so no item is asked twice and `-210` SKIPs.
 
 The module and its tests are named without "cancel": the CLI self-tests select the cancellation
 suite with `-k cancel`, and a defect fixture that hangs on `session/cancel` must not be judged here.
@@ -194,6 +201,22 @@ def _judge_code(probe: FollowUpCancel, method: str, target: str) -> None:
     assert code == INVALID_PARAMS, (
         f"{method} for {target} {probe.item_id!r} was rejected with {probe.error!r}; the agent "
         f"responds with -32602 (Invalid params)"
+    )
+
+
+def _judge_repeat_rejected(repeat: FollowUpCancel, noun: str, method: str) -> None:
+    if repeat.outcome == "stale":
+        pytest.skip(
+            f"the {noun} cancelled by the main request still advertises capabilities.cancel, so "
+            f"the already-final request for it is the repeat -- see the already-final row"
+        )
+    _judge_rejected(
+        repeat,
+        method,
+        f"{noun} {repeat.item_id!r}, whose first {method} was accepted and which is now final,",
+        f"a repeat request after the first was accepted and the {noun} reached a final state",
+        f"no {noun} was cancelled by an accepted {method} and then confirmed final during the "
+        f"driven turn",
     )
 
 
@@ -386,3 +409,49 @@ async def test_uncancellable_terminal_request_gets_invalid_params(
     (tool-calls.mdx:605). SKIPs when that request was not made or not rejected."""
     run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
     _judge_code(run.terminal_uncancellable, "terminal/cancel", "a terminal that is not cancellable")
+
+
+@pytest.mark.requirement("ACP-TOOLCANCEL-210")
+async def test_repeat_tool_call_request_is_rejected(request, agent_launch, tmp_path, cancel_prompt_text):
+    """ACP-TOOLCANCEL-210 (CAPABILITY, `inferred:toolCallCancel`). `tool_call/cancel` sent again
+    for a tool call whose first request was accepted and which has since reached a final status
+    gets an error, not a result (tool-calls.mdx:459, declarative; the code is
+    `ACP-TOOLCANCEL-211`). The probe breaks the client rule at :456 because :459 defines the answer
+    to exactly this request. SKIPs unless the `-201` request was accepted and confirmed, or the
+    tool call still advertises `cancel` (`-204`'s request is then the repeat)."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_repeat_rejected(run.tool_call_repeat, "tool call", "tool_call/cancel")
+
+
+@pytest.mark.requirement("ACP-TOOLCANCEL-211")
+async def test_repeat_tool_call_request_gets_invalid_params(
+    request, agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-TOOLCANCEL-211 (ADVISORY). The rejection of a repeated `tool_call/cancel`
+    (`ACP-TOOLCANCEL-210`'s request) uses `-32602` (tool-calls.mdx:459). SKIPs when that request
+    was not made or not rejected."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_code(run.tool_call_repeat, "tool_call/cancel", "a repeated request for a final tool call")
+
+
+@pytest.mark.requirement("ACP-TERMCANCEL-210")
+async def test_repeat_terminal_request_is_rejected(request, agent_launch, tmp_path, cancel_prompt_text):
+    """ACP-TERMCANCEL-210 (CAPABILITY, `inferred:terminalCancel`). `terminal/cancel` sent again
+    for a terminal whose first request was accepted and which has since reported `exitStatus` gets
+    an error, not a result (tool-calls.mdx:605, declarative; the code is `ACP-TERMCANCEL-211`). The
+    probe breaks the client rule at :602 because :605 defines the answer to exactly this request.
+    SKIPs unless the `-201` request was accepted and confirmed, or the terminal still advertises
+    `cancel` (`-204`'s request is then the repeat)."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_repeat_rejected(run.terminal_repeat, "terminal", "terminal/cancel")
+
+
+@pytest.mark.requirement("ACP-TERMCANCEL-211")
+async def test_repeat_terminal_request_gets_invalid_params(
+    request, agent_launch, tmp_path, cancel_prompt_text
+):
+    """ACP-TERMCANCEL-211 (ADVISORY). The rejection of a repeated `terminal/cancel`
+    (`ACP-TERMCANCEL-210`'s request) uses `-32602` (tool-calls.mdx:605). SKIPs when that request
+    was not made or not rejected."""
+    run = await _item_cancel_run(request, agent_launch, tmp_path, cancel_prompt_text)
+    _judge_code(run.terminal_repeat, "terminal/cancel", "a repeated request for an exited terminal")

@@ -714,14 +714,19 @@ statement = "A `terminalId` is stable for the terminal's lifetime and MUST NOT b
 reason = "Unobservable: whether a later terminal is \"different\" is internal to the agent, and the TCK cannot force an agent to run several terminals. This is the `terminalId` case of the general entity-ID rule at prompt-lifecycle.mdx:70."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:578,579 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Agents SHOULD send all of a terminal's output before a concrete `exitStatus`."
-reason = "Deferred: a passive per-terminal check of `terminal_output_chunk` after `exitStatus` is possible but not yet built, and it is vacuous against agents that never report a terminal."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:528,529 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD provide a terminal's `command` on its first update when applicable."
+reason = "Not decidable: whether a command applies to a terminal (rather than an interactive shell or an agent-managed process) is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:622,653-661 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "A `git_patch` diff's paths (including `rename`/`copy` lines) MUST be absolute or `/dev/null` with no `a/` or `b/` prefix, each matches a `changes` entry, and each `path` appears in at most one `changes` entry."
-reason = "Deferred: a passive check of agent-emitted `diff` content is possible but not yet built, and it is vacuous against agents that emit no diff in a short turn."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:617,618,648 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD provide a diff's `patch` whenever feasible."
+reason = "Not decidable: whether renderable patch text is feasible for a change (a binary file, a directory, a very large edit) is internal to the agent, and the TCK cannot tell it from a choice to omit it."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/tool-calls.mdx:753,754 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that sends new `content` on a `tool_call_update` includes the session references again, because `content` replaces the whole array."
+reason = "Not decidable: a reference missing from new content cannot be told from one the agent meant to drop, since the TCK does not know which sessions the tool call still addresses."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:460 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

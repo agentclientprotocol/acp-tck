@@ -3944,6 +3944,67 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PATCH-213",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "In every `diff` content item, each `changes[].path` and `changes[].oldPath` is an "
+            "absolute native path, and each `path` value appears in at most one entry of "
+            "`changes` (a move or copy's `oldPath` may repeat another entry's `path`). "
+            "`AbsolutePath` is a bare string in the schema, so a relative path is only caught "
+            "here. Passive over the driven turn's tool-call updates, content chunks and "
+            "permission subjects; SKIPPED when the agent reported no diff."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:615,622,690-696; "
+            "schema/v2/schema.unstable.json#/$defs/DiffChange"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-214",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every path in a `git_patch`'s `---`, `+++`, `rename from`/`rename to` and "
+            "`copy from`/`copy to` lines, once Git-unquoted (and with a trailing TAB dropped), is "
+            "absolute and unprefixed (no `a/` or `b/`; `/dev/null` names the missing side of an "
+            "added or deleted file in `---`/`+++`), and equals the `path` or `oldPath` of a "
+            "`changes` entry of the same diff. The `diff --git` line is not read, since it is "
+            "ambiguous when a path has spaces. SKIPPED when the agent reported no `git_patch`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:615-617,653-660; "
+            "schema/v2/schema.unstable.json#/$defs/DiffPatch"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-215",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `git_patch`'s `text` includes no surrounding commit metadata or email envelope: it "
+            "begins with a `diff --git ` line. An empty text is not judged. SKIPPED when the "
+            "agent reported no non-empty `git_patch`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:653-654,661; "
+            "schema/v2/schema.unstable.json#/$defs/DiffPatch"
+        ),
+    ),
+    Requirement(
+        id="ACP-PATCH-216",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent sends all of a terminal's output before a concrete `exitStatus`: no "
+            "`terminal_output_chunk` follows a `terminal_update` that set one (a later "
+            "`exitStatus: null` reopens the terminal). Passive. SKIPPED when no terminal "
+            "reported a concrete `exitStatus` during the turn. The test is gated on "
+            "`capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:578-579"),
+    ),
+    Requirement(
         id="ACP-TOOLCANCEL-201",
         tier=Tier.CAPABILITY,
         capability="inferred:toolCallCancel",
@@ -4100,6 +4161,44 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
     ),
     Requirement(
+        id="ACP-TOOLCANCEL-210",
+        tier=Tier.CAPABILITY,
+        capability="inferred:toolCallCancel",
+        text=(
+            "`tool_call/cancel` sent again for a tool call whose first request was accepted "
+            "(`ACP-TOOLCANCEL-201`) and which has since reached a final status is rejected with "
+            "an error, not answered with a result (\"This includes a request that the Client "
+            "sends again after the first one was accepted and the tool call has since reached a "
+            "final status\"; declarative, no RFC keyword). The code is judged separately "
+            "(`ACP-TOOLCANCEL-211`). Sent only when the tool call no longer advertises `cancel`, "
+            "so the probe breaks the client rule that the request is sent only for a tool call "
+            "that currently advertises `capabilities.cancel`, because the spec defines the "
+            "agent's answer to exactly this request; a tool call that still advertises `cancel` "
+            "is `ACP-TOOLCANCEL-204`'s request instead. Gated by `inferred:toolCallCancel` "
+            "(documentation-only): sent during the `ACP-TOOLCANCEL-201` driven turn, and the "
+            "test SKIPs itself unless that request was accepted and confirmed (a final status "
+            "arrived). A result, or no response within half the run's per-response timeout, "
+            "FAILs. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:456,458-459; "
+            "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TOOLCANCEL-211",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of a repeated `tool_call/cancel` for a tool call that has since "
+            "reached a final status (`ACP-TOOLCANCEL-210`'s request) uses `-32602` (Invalid "
+            "params). The sentence naming the code carries no RFC keyword, so the code is "
+            "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
+            "or was not rejected (`ACP-TOOLCANCEL-210`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:459"),
+    ),
+    Requirement(
         id="ACP-TOOLCANCEL-203",
         tier=Tier.CAPABILITY,
         capability="inferred:toolCallCancel",
@@ -4123,6 +4222,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/tool-calls.mdx:440,456-458; "
+            "docs/protocol/v2/draft/subagents.mdx:374; "
             "schema/v2/schema.unstable.json#/$defs/CancelToolCallRequest; "
             "docs/rfds/subagents.mdx:1081-1084 (Preview RFD)"
         ),
@@ -4274,6 +4374,40 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
     ),
     Requirement(
+        id="ACP-TERMCANCEL-210",
+        tier=Tier.CAPABILITY,
+        capability="inferred:terminalCancel",
+        text=(
+            "`terminal/cancel` sent again for a terminal whose first request was accepted "
+            "(`ACP-TERMCANCEL-201`) and which has since reported `exitStatus` is rejected with an "
+            "error, not answered with a result (\"This includes a request that the Client sends "
+            "again after the first one was accepted and the process has since exited\"; "
+            "declarative, no RFC keyword). The code is judged separately (`ACP-TERMCANCEL-211`). "
+            "Same encoding as `ACP-TOOLCANCEL-210`: sent only when the terminal no longer "
+            "advertises `cancel` (breaking the client rule at :602 because :605 defines the "
+            "answer; a terminal that still advertises it is `ACP-TERMCANCEL-204`'s request), "
+            "gated by `inferred:terminalCancel` (documentation-only), and SKIPPED unless the "
+            "`ACP-TERMCANCEL-201` request was accepted and confirmed. v2-only (`2xx`)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/tool-calls.mdx:602,604-605; "
+            "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-TERMCANCEL-211",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The rejection of a repeated `terminal/cancel` for a terminal that has since "
+            "reported `exitStatus` (`ACP-TERMCANCEL-210`'s request) uses `-32602` (Invalid "
+            "params). The sentence naming the code carries no RFC keyword, so the code is "
+            "ADVISORY while the rejection itself is not. SKIPs when that request was not made "
+            "or was not rejected (`ACP-TERMCANCEL-210`'s concern). v2-only (`2xx`)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/tool-calls.mdx:605"),
+    ),
+    Requirement(
         id="ACP-TERMCANCEL-203",
         tier=Tier.CAPABILITY,
         capability="inferred:terminalCancel",
@@ -4293,6 +4427,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/tool-calls.mdx:600-604; "
+            "docs/protocol/v2/draft/subagents.mdx:374; "
             "schema/v2/schema.unstable.json#/$defs/CancelTerminalRequest; "
             "docs/rfds/subagents.mdx:1081-1084 (Preview RFD)"
         ),
@@ -4313,20 +4448,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`plan_update`'s `plan.type` and plan entries' `priority`/`status`, "
             "`available_commands_update` commands' `type`, a defined state's `background[].type`, "
             "`cursor_update`'s `anchor.type`/`anchor.position`, and `session/request_permission` "
-            "options' `kind` (the permission sites are only observable if the agent asks for "
-            "permission). A curated, non-exhaustive subset of the schema's open-enum sites; "
-            "`subject.type` is not checked."
+            "options' `kind` and `subject.type` (the permission sites are only observable if "
+            "the agent asks for permission). A curated, non-exhaustive subset of the schema's "
+            "open-enum sites."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/extensibility.mdx:238-243; "
-            "docs/protocol/v2/draft/tool-calls.mdx:76,372,419,662,685-686,700-701; "
+            "docs/protocol/v2/draft/tool-calls.mdx:76,259-265,372,419,662,685-686,700-701; "
             "docs/protocol/v2/draft/agent-plan.mdx:137,156,168; "
             "docs/protocol/v2/draft/slash-commands.mdx:113; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:219,984; "
             "schema/v2/schema.unstable.json#/$defs/BackgroundWork; "
             "schema/v2/schema.unstable.json#/$defs/CursorAnchor; "
             "schema/v2/schema.unstable.json#/$defs/CursorAnchorPosition; "
-            "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
+            "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind; "
+            "schema/v2/schema.unstable.json#/$defs/RequestPermissionSubject"
         ),
     ),
     Requirement(

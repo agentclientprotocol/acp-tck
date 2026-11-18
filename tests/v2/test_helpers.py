@@ -22,6 +22,8 @@ from tck.v2.conformance._helpers import (
     agent_requests,
     assert_unknown_session_error,
     child_session_traffic,
+    git_patch_paths,
+    git_unquote,
     is_absolute_path,
     is_agent_initiated,
     is_response_line,
@@ -537,6 +539,57 @@ def test_a_malformed_directory_is_not_judged_here(fields):
 def test_is_absolute_path_accepts_native_absolute_syntaxes_only():
     assert all(is_absolute_path(path) for path in ("/a", "/", "C:\\a", "C:/a", "\\\\srv\\share"))
     assert not any(is_absolute_path(path) for path in ("a", "./a", "", "C:a", "\\a", "file:///a", None, 5))
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        ("/tmp/a.txt", "/tmp/a.txt"),
+        ('"/tmp/with space.txt"', "/tmp/with space.txt"),
+        ('"C:\\\\repo\\\\src\\\\a.rs"', "C:\\repo\\src\\a.rs"),
+        ('"/tmp/q\\"uote\\ttab"', '/tmp/q"uote\ttab'),
+        ('"/tmp/caf\\303\\251"', "/tmp/caf\u00e9"),
+        ('"unterminated', '"unterminated'),
+    ],
+)
+def test_git_unquote(token, expected):
+    assert git_unquote(token) == expected
+
+
+def test_git_patch_paths_reads_header_lines_and_skips_diff_git_and_hunk_bodies():
+    text = (
+        "diff --git /r/a b.txt /r/a b.txt\n"
+        "index 1..2 100644\n"
+        "--- /r/a b.txt\t\n"
+        "+++ /r/a b.txt\t\n"
+        "@@ -1,3 +1,2 @@\n"
+        " keep\n"
+        "--- removed line that looks like a header\n"
+        "+++ added line that looks like a header\n"
+        "\\ No newline at end of file\n"
+        "diff --git /r/old.txt /r/new.txt\n"
+        "similarity index 100%\n"
+        "rename from /r/old.txt\n"
+        'rename to "/r/n\\303\\251w.txt"\n'
+        "diff --git /dev/null /r/added.txt\n"
+        "--- /dev/null\n"
+        "+++ /r/added.txt\n"
+        "@@ -0,0 +1 @@\n"
+        "+x\n"
+    )
+    assert git_patch_paths(text) == [
+        ("---", "/r/a b.txt"),
+        ("+++", "/r/a b.txt"),
+        ("rename from", "/r/old.txt"),
+        ("rename to", "/r/n\u00e9w.txt"),
+        ("---", "/dev/null"),
+        ("+++", "/r/added.txt"),
+    ]
+
+
+def test_git_patch_paths_reports_default_ab_prefixes_as_given():
+    text = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-1\n+2\n"
+    assert git_patch_paths(text) == [("---", "a/x"), ("+++", "b/x")]
 
 
 def _msg(outer: str, message_id: str, **fields: Any) -> dict[str, Any]:
