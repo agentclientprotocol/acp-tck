@@ -46,12 +46,12 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-REPLAY — 0ec3a61 — +RESUME-218..221 CAPABILITY, -222 ADVISORY; RESUME-205 all 7 chunk kinds; ledger +3, -SS:235 notices entry; _base.py sends replay_complete; SUGGEST-004 now PASSes on conforming_full; suite green (1093)
 - V2-CAN — a8c38d8 — CANCEL-213 ADVISORY->CAPABILITY (quiet_period window in text), CANCEL-209 note; elicitation MUST restated as Deferred ledger entry (U10), section header/reasons reworded off TCK-choice; suite green (1093)
 - V2-TOOL — 145356c — +PATCH-213/-214/-215 CAPABILITY, -216 ADVISORY, +TOOLCANCEL/TERMCANCEL-210 CAPABILITY (inferred gates), -211 ADVISORY; ENUM-201 subject.type; ledger -2 +3; TOOL/TERMCANCEL-203 cite subagents.mdx:374 primary; suite green (1111)
+- V2-AUTH+DIRS — b07c1f7 — common plugin allows several `revokes` tests (docs/writing-tests.md); +AUTH-211 ADVISORY (revokes, SKIPs if re-login fails), AUTH-004 standalone path (-32601 only), +ADDDIRS-204 ADVISORY; ledger -SS:528 +AuthAccount.description; suite green (1116)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE and reviewed.
-- Slice 17 V2-AUTH+DIRS: resumed with answer (a). Ledger entry to delete is `session-setup.mdx:528` (not 443).
 - Slice 16 V2-TOOL: in progress. Programmers must run the full suite in the FOREGROUND (timeout 600000, ~8.5 min); background runs force premature hand-backs.
 - Pre-existing (also on main ee2af8a): plain `acp-tck --protocol-version 2` on v2 conforming_full FAILs ACP-DELETE-204 — fixture answers session/delete before the cancelled idle when a permission request is pending. Not a regression; reported to the user; candidate fix slice.
 - For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
