@@ -283,7 +283,7 @@ reason = "Not observable from a single-connection stdio client: the next connect
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/transports.mdx:10,71,73 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD support stdio whenever possible, and an agent that implements a custom transport MUST preserve the JSON-RPC message format, message order and lifecycle requirements."
-reason = "Out of scope: the TCK only launches agents over stdio, so the first rule is vacuous for any agent it can run and a custom transport is never reached."
+reason = "Not observable over stdio: an agent reached over stdio supports stdio by construction, and ACP does not specify custom transports, so no generic client can drive one."
 
 # --- extensibility.mdx ---
 
@@ -332,7 +332,7 @@ reason = "Out of scope as a generic probe: receiver-side equivalence is checked 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/error.mdx:38 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Receivers MUST treat an unrecognized error code as a generic failure."
-reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes. ACP-ERROR-008 covers the error codes the agent itself sends."
+reason = "Not observable: \"generic failure\" has no defined wire shape, so how an agent treats an unknown code in a client's error reply has no defined wire effect. ACP-ERROR-008 covers the error codes the agent itself sends."
 
 # --- authentication.mdx ---
 
@@ -374,7 +374,7 @@ reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
-reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
+reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and probing an unadvertised `auth/status` would break the client MUST on the same line (\"Clients MUST check for this capability before calling the method\")."
 
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:309 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -399,7 +399,7 @@ reason = "Not reliably observable: timing depends on the environment and \"guess
 [[not_requirement]]
 citation = "docs/rfds/get-auth-state.mdx:313 (Draft RFD); schema/v2/schema.unstable.json#/$defs/AuthStatusUpdateNotification @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents that advertise `auth.status` SHOULD send `auth/status_update` when their status changes (including after `auth/login` or `auth/logout`), and only when it differs from the last one sent on the connection."
-reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
+reason = "Not conclusive: a Draft-RFD SHOULD with no deadline for the notification, so its absence never proves a violation, and seeing a change needs a live credential change (`--auth-method`, or the destructive `--allow-logout`) from a state the agent may already be in. Revisit if the RFD stabilizes."
 
 # --- elicitation.mdx (coverage deferred: needs an MCP-stub-forwarded elicitation trigger and a mock client that advertises a mode and holds `elicitation/create`) ---
 
@@ -535,7 +535,7 @@ reason = "Not observable as a pass/fail: \"reasonable\" has no threshold, and a 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-list.mdx:162 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send a `session_info_update` on each connection where the session is active whenever its metadata changes."
-reason = "Not observable: the client cannot trigger or detect a metadata change, since the only client-driven one, `session/set_title`, is deferred and its follow-up notification is only a MAY in the RFD."
+reason = "Not observable as a violation: apart from `session/set_title`, metadata changes are internal to the agent, and for `session/set_title` the Draft RFD makes the follow-up notification a MAY (`rfds/session-set-title.mdx:156`, against the SHOULD here), so a missing notification proves nothing."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-list.mdx:243 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -545,12 +545,12 @@ reason = "Impractical: \"before pagination\" is not observable without an agent 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-list.mdx:248 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/unarchive` never loads or resumes a session."
-reason = "Deferred: seeing it needs the agent to list a TCK-created session, archive it (which closes it), unarchive it and then show it is still not active. Absence of a side effect is only negative evidence, and the TCK does not test it yet."
+reason = "Deferred: seeing it needs the agent to list a created session, archive it (which closes it), unarchive it and then show it is still not active. Absence of a side effect is only negative evidence, so a quiet agent proves nothing; a SKIPpable probe is a follow-up."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-list.mdx:249 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Archive state persists across connections and restarts, and closing, loading or resuming a session does not change it."
-reason = "Out of scope for now: it needs a two-process test against the agent's real persistent store, and the TCK does not restart agents."
+reason = "Deferred: the persistence half needs the harness to restart the agent process mid-test, and an agent with an ephemeral store gives an inconclusive result. The resume half is observable on one connection, but `session/resume` of an archived session MAY be rejected (line 248); a follow-up SKIPpable row can cover it."
 
 # --- session-config-options.mdx and slash-commands.mdx ---
 
@@ -607,7 +607,7 @@ reason = "Not observable: it concerns the agent's internal operation. The observ
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:390 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send a `config_option_update` on each connection where the session is active whenever configuration state changes."
-reason = "Out of scope: whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so fan-out to connections other than the requesting one is not judged. ACP-CONFIG-211 covers the requesting connection."
+reason = "Deferred: needs a second connection to the same agent instance, which stdio cannot provide; whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so multi-connection activity is optional. ACP-CONFIG-211 covers the requesting connection."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:514 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -691,7 +691,7 @@ reason = "Not mechanically decidable: it needs a natural-language judgement of `
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:387 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD perform only the operation the approved permission request described, and SHOULD request again if the command or resolved target changes."
-reason = "Not observable: the TCK cannot tell a changed target from the original, and the operation itself is not on the wire."
+reason = "Not decidable: the approved request describes the operation only in agent-authored free-form fields, so a client cannot tell a changed command or target from the original."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:376-380,388 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -724,9 +724,9 @@ statement = "Agents SHOULD provide a diff's `patch` whenever feasible."
 reason = "Not decidable: whether renderable patch text is feasible for a change (a binary file, a directory, a very large edit) is internal to the agent, and the TCK cannot tell it from a choice to omit it."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:753,754 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "An Agent that sends new `content` on a `tool_call_update` includes the session references again, because `content` replaces the whole array."
-reason = "Not decidable: a reference missing from new content cannot be told from one the agent meant to drop, since the TCK does not know which sessions the tool call still addresses."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:753-756; docs/rfds/subagents.mdx:655-657,659-661 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that sends new `content` on a `tool_call_update` includes the session references again, because `content` replaces the whole array, and when a tool addresses a session by a name or another handle it adds a reference only if it can resolve the handle to a known session, without guessing."
+reason = "Not decidable: a reference missing from new content cannot be told from one the agent meant to drop, since a client does not know which sessions the tool call still addresses. The resolution half carries no RFC 2119 keyword in the docs (the Preview RFD states MUST NOT guess), and is not observable beyond ACP-SUBAGENT-002: a reference to an unknown session FAILs that row, but a guess that lands on a known yet wrong session looks like a correct resolution."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/tool-calls.mdx:460 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -850,6 +850,11 @@ statement = "Agents report a child's configuration with `config_option_update` o
 reason = "Unobservable: whether a child's configuration is available, or has changed, is known only to the agent, so a missing update cannot be told from a configuration that was not available. ACP-SUBAGENT-014 judges what is reported."
 
 [[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:263 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the parent's conversation also records a message to a child, Agents report the outgoing view in the parent's transcript and link the two views with `senderMessageId` and `recipientMessageId` (SHOULD)."
+reason = "Unobservable: whether the parent's conversation records the message is internal to the agent, so a missing outgoing view or link cannot be told from one the agent had no reason to report. Links that are reported are judged by ACP-SUBAGENT-009."
+
+[[not_requirement]]
 citation = "docs/protocol/v2/draft/subagents.mdx:265; docs/protocol/v2/draft/prompt-lifecycle.mdx:149-152 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When the Agent has no evidence of who sent a message a child received, it omits `senderSessionId` and does not assume the parent (MUST NOT), and it links two views only when it can establish that they are the same message."
 reason = "Unobservable: the agent's evidence is internal, so a `senderSessionId` naming the parent, or a link between views, looks the same whether it was established or assumed. An omitted sender still counts as reporting the message in ACP-SUBAGENT-012."
@@ -910,12 +915,12 @@ reason = "Unobservable: what the agent retained, and what was practical, is inte
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/error.mdx:67; docs/protocol/v2/draft/session-list.mdx:250; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SessionStatusRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/status` answers an unknown session with `-32002` and the requested `sessionId` in `data`, reports an archived session as `saved`, and MUST NOT have side effects."
-reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
+reason = "Deferred unstable method: the `saved` and `-32002` answers are observable whenever the agent advertises the method and are left to SKIPpable follow-up rows; absence of side effects is not observable, since a client cannot enumerate the agent's state."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/error.mdx:69; docs/rfds/session-set-title.mdx:178,179 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
-reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
+reason = "Deferred unstable method: the `-32002` and `-32602` answers are observable whenever the agent advertises the method and are left to SKIPpable follow-up rows; when an agent generates titles is internal, so a clean window proves nothing."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/overview.mdx:269; docs/rfds/proxy-chains.mdx:235,236,304,305 (Draft RFD); schema/v2/schema.unstable.json#/$defs/ProxyRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -925,4 +930,4 @@ reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediar
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/security.mdx:81; schema/v2/schema.unstable.json#/$defs/ProviderInfo @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD NOT return provider `headers` from `providers/list`."
-reason = "Deferred unstable method: the TCK never obtains a populated `providers/list` result, and `ProviderInfo` has no `headers` field, so only an off-schema extra key could violate the rule. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-006's."
+reason = "Deferred unstable method: `ProviderInfo` has no `headers` field, so only an off-schema nested key could violate the rule, and a useful check needs a `providers/set` call that plants a canary header, which is a persistent configuration change and unsafe on a real agent. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-006's."
