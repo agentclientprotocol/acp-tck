@@ -1327,6 +1327,125 @@ def unannounced_resumed_child_traffic(
     return judged, problems
 
 
+# Each update kind that reports an entity -> (entity type, its id field). An ID is unique per entity
+# type, and the message types share `messageId` (prompt-lifecycle.mdx:68), so the type is in the key.
+_ENTITY_UPDATE_IDS: dict[str, tuple[str, str]] = {
+    "user_message": ("user_message", "messageId"),
+    "user_message_chunk": ("user_message", "messageId"),
+    "agent_message": ("agent_message", "messageId"),
+    "agent_message_chunk": ("agent_message", "messageId"),
+    "agent_thought": ("agent_thought", "messageId"),
+    "agent_thought_chunk": ("agent_thought", "messageId"),
+    "session_message": ("session_message", "messageId"),
+    "session_message_chunk": ("session_message", "messageId"),
+    "tool_call_update": ("tool_call", "toolCallId"),
+    "tool_call_content_chunk": ("tool_call", "toolCallId"),
+    "terminal_update": ("terminal", "terminalId"),
+    "terminal_output_chunk": ("terminal", "terminalId"),
+    "compaction_update": ("compaction", "compactionId"),
+    "compaction_summary_chunk": ("compaction", "compactionId"),
+}
+
+
+def _entity_key(update: dict[str, Any]) -> tuple[str, str] | None:
+    """`(entity type, id)` of the entity a session update reports, or `None`."""
+    kind = update.get("sessionUpdate")
+    spec = _ENTITY_UPDATE_IDS.get(kind) if isinstance(kind, str) else None
+    if spec is None or not isinstance(update.get(spec[1]), str):
+        return None
+    return spec[0], update[spec[1]]
+
+
+def _addressed_update(msg: dict[str, Any]) -> tuple[Any, dict[str, Any]] | None:
+    """`(params.sessionId, update)` of a `session/update` message, else `None`."""
+    params = msg.get("params")
+    if msg.get("method") != "session/update" or not isinstance(params, dict):
+        return None
+    update = params.get("update")
+    return (params.get("sessionId"), update) if isinstance(update, dict) else None
+
+
+def replayed_child_history_problems(
+    before: list[dict[str, Any]], exchange: list[dict[str, Any]], session_id: str
+) -> tuple[list[str], list[str]]:
+    """Judge replayed child history against what the client saw before a resume
+    (`subagents.mdx:482`): replayed child updates keep their known parent and their order within
+    each session. `before` is the agent's traffic on the connection before the resume, `exchange`
+    the replay resume's traffic from `resume_reaction_start` to the response, both in wire order.
+
+    The tree before the resume is built like `announced_children`'s, from `session_id` down. A
+    session's replayed part is its updates before its own `replay_complete`; a session that sends
+    none in `exchange` is not judged. A replayed `subagent_update` for a child of that tree, sent
+    on `session_id` or a child announced earlier in the exchange, must be sent on the child's
+    parent from before. Each child's replayed updates are compared by entity (`_entity_key`):
+    when one entity's updates all came before another's began, the replay must not report the
+    later one first. Entities replayed under other IDs are not compared (`session-setup.mdx:297`
+    only asks agents to preserve them). Returns `(judged, problems)`: the children with a judged
+    announcement or replayed entity, and one message per violation."""
+    parent: dict[str, Any] = {}
+    spans: dict[str, dict[tuple[str, str], list[int]]] = {}
+    for index, msg in enumerate(before):
+        addressed = _addressed_update(msg)
+        if addressed is None:
+            continue
+        outer, update = addressed
+        key = _entity_key(update)
+        if outer in parent and key is not None:
+            span = spans.setdefault(outer, {}).setdefault(key, [index, index])
+            span[1] = index
+        child = _announcing(msg, {session_id, *parent})
+        if child is not None and child != session_id and child not in parent:
+            parent[child] = outer
+
+    known = {session_id}
+    completed: set[Any] = set()
+    announcements: list[tuple[Any, str]] = []  # (announcing session, child), replayed if it completes
+    firsts: dict[str, dict[tuple[str, str], int]] = {}
+    for index, msg in enumerate(exchange):
+        addressed = _addressed_update(msg)
+        if addressed is None:
+            continue
+        outer, update = addressed
+        if update.get("sessionUpdate") == "replay_complete":
+            completed.add(outer)
+            continue
+        child = _announcing(msg, known)
+        if child is not None:
+            known.add(child)
+            if child in parent and outer not in completed:
+                announcements.append((outer, child))
+        key = _entity_key(update)
+        if outer in parent and outer not in completed and key is not None:
+            firsts.setdefault(outer, {}).setdefault(key, index)
+
+    judged: list[str] = []
+    problems: list[str] = []
+    for outer, child in announcements:
+        if outer not in completed:
+            continue
+        if child not in judged:
+            judged.append(child)
+        if outer != parent[child]:
+            problems.append(
+                f"replayed subagent_update for child {child!r} was sent on {outer!r}, but before "
+                f"the resume its parent was {parent[child]!r}"
+            )
+    for child, replayed in firsts.items():
+        if child not in completed:
+            continue
+        common = [key for key in replayed if key in spans.get(child, {})]
+        if common and child not in judged:
+            judged.append(child)
+        for earlier in common:
+            for later in common:
+                if spans[child][earlier][1] < spans[child][later][0] and replayed[later] < replayed[earlier]:
+                    problems.append(
+                        f"child {child!r} replayed {later!r} before {earlier!r}, but before the resume "
+                        f"{earlier!r} was over before {later!r} began"
+                    )
+    return judged, problems
+
+
 _CHILD_OUTPUT_KINDS = {"agent_message", "agent_message_chunk", "agent_thought", "agent_thought_chunk"}
 _USER_MESSAGE_KINDS = {"user_message", "user_message_chunk"}
 

@@ -564,7 +564,7 @@ reason = "Not observable as a pass/fail: \"reasonable\" has no threshold, and a 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-list.mdx:162 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send a `session_info_update` on each connection where the session is active whenever its metadata changes."
-reason = "Deferred: apart from `session/set_title`, metadata changes are internal to the agent and not observable. A `session/set_title` on an agent that advertises it, followed by no `session_info_update` on the requesting connection, is an observable SHOULD miss under these docs; a SKIPpable follow-up row would judge it. The Draft RFD says MAY (`rfds/session-set-title.mdx:156`), a discrepancy the docs win."
+reason = "Not observable beyond ACP-LIST-208, which judges a `session/set_title` on an agent that advertises it, on the requesting connection: other metadata changes are internal to the agent, so a client cannot tell that one happened without the notification. Other connections are deferred: they need a second connection to the same agent instance, which stdio cannot provide, and whether a session can be active on several connections is the agent's choice (session-setup.mdx:56)."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-list.mdx:243 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -652,11 +652,6 @@ reason = "Not deterministically observable: a change to the session or its histo
 citation = "docs/protocol/v2/draft/session-config-options.mdx:572,574 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The agent applies initial config option entries in list order, each checked against the option set as it stands at that point, on top of a restored session's configuration or the fork's starting configuration, and on `session/resume` before it replays history and before it responds."
 reason = "Not observable: order only matters through dependencies between options, which are agent-specific and not described on the wire, and the entries are applied before the response whichever way the resume replays. The resulting values are judged as far as observable by ACP-OPTIONS-006, -010 and -011."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/session-config-options.mdx:584 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Until the `session/new` or `session/fork` response, the agent SHOULD NOT send other `session/update` notifications caused by applying initial config option entries, such as a notice that a value fell back."
-reason = "Deferred: attributable with a baseline comparison, as the v1 row ACP-OPTIONS-008 does (the same request without entries, on a fresh connection, shows which early updates the agent sends anyway); a follow-up row would judge it for `session/new` and `session/fork`. ACP-SESSION-207 judges early notifications for a new session and ACP-OPTIONS-007 the `config_option_update` for the entries."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:585 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -917,11 +912,6 @@ reason = "Unobservable: what the agent can determine, still has or knows to be m
 citation = "docs/protocol/v2/draft/subagents.mdx:494-496; docs/protocol/v2/draft/prompt-lifecycle.mdx:1055 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A session's reported cost includes the costs of its descendants, and a root session's cost is the Agent's total for the whole tree."
 reason = "Not observable as a violation: the true cost is unknown to the client, and a descendant's cost can reach its ancestors later (`subagents.mdx:494`), with no deadline, so no snapshot comparison proves one. Cost reporting is optional."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/subagents.mdx:482 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Replayed child updates keep their original `sessionId`, their known parent and their order within each session (MUST)."
-reason = "Deferred: observable but not yet judged in full. The resume tests run the subagent prompt first, so the tree and per-session order the client saw are in the same connection's transcript, but no row compares the replayed announcements' parents and each session's replayed order with them; a follow-up row would, and would SKIP when the agent replays no child history (replay of child history is a SHOULD). ACP-RESUME-209 judges the original `sessionId` and the announcement before a child's other updates, ACP-SUBAGENT-005 a reparenting."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/subagents.mdx:436-438 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

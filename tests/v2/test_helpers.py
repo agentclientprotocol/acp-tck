@@ -14,6 +14,7 @@ from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
     announced_children,
     child_replay_complete_problems,
+    replayed_child_history_problems,
     resume_reaction_start,
     unannounced_resumed_child_traffic,
     child_config_selects,
@@ -1194,6 +1195,79 @@ def test_child_traffic_without_a_new_announcement_is_reported():
 def test_traffic_of_sessions_that_are_not_children_is_not_judged():
     messages = [_update("p", {"sessionUpdate": "agent_message_chunk", "messageId": "m"}), _CHILD_CHUNK]
     assert unannounced_resumed_child_traffic(messages, "p", set()) == (0, [])
+
+
+def _agent_chunk(session_id: str, message_id: str) -> dict[str, Any]:
+    return _update(session_id, {"sessionUpdate": "agent_message_chunk", "messageId": message_id})
+
+
+# Before the resume: `c` announced on `p`, `n` on `c`; `c` sent message `a`, then `b`.
+_BEFORE_RESUME = [
+    _sub("p", "c"),
+    _agent_chunk("c", "a"),
+    _agent_chunk("c", "a"),
+    _sub("c", "n"),
+    _agent_chunk("c", "b"),
+]
+
+
+def test_replay_with_the_known_parents_and_order_is_conforming():
+    """A primer before the chunks and an entity under a new ID are fine; a nested child counts."""
+    exchange = [
+        _sub("p", "c"),
+        _update("c", {"sessionUpdate": "agent_message", "messageId": "a", "content": []}),
+        _agent_chunk("c", "a"),
+        _agent_chunk("c", "renamed"),
+        _agent_chunk("c", "b"),
+        _sub("c", "n"),
+        _replay_complete("n"),
+        _replay_complete("c"),
+        _replay_complete("p"),
+    ]
+    assert replayed_child_history_problems(_BEFORE_RESUME, exchange, "p") == (["c", "n"], [])
+
+
+def test_a_replayed_announcement_under_another_parent_is_reported():
+    exchange = [_sub("p", "c"), _sub("p", "n"), _replay_complete("n"), _replay_complete("c"), _replay_complete("p")]
+    judged, problems = replayed_child_history_problems(_BEFORE_RESUME, exchange, "p")
+    assert judged == ["c", "n"]
+    assert len(problems) == 1 and "'n' was sent on 'p'" in problems[0] and "was 'c'" in problems[0]
+
+
+def test_replayed_child_entities_out_of_order_are_reported():
+    exchange = [
+        _sub("p", "c"),
+        _agent_chunk("c", "b"),
+        _agent_chunk("c", "a"),
+        _replay_complete("c"),
+        _replay_complete("p"),
+    ]
+    _, problems = replayed_child_history_problems(_BEFORE_RESUME, exchange, "p")
+    assert len(problems) == 1 and "replayed ('agent_message', 'b') before ('agent_message', 'a')" in problems[0]
+
+
+def test_current_traffic_overlapping_entities_and_unbounded_sessions_are_not_judged():
+    """After its `replay_complete` a session's updates are current; entities whose traffic overlapped
+    before the resume have no order to keep; a session with no `replay_complete` is not judged."""
+    before = [
+        _sub("p", "c"),
+        _agent_chunk("c", "a"),
+        _agent_chunk("c", "b"),
+        _agent_chunk("c", "a"),
+        _sub("p", "d"),
+        _agent_chunk("d", "x"),
+    ]
+    exchange = [
+        _sub("p", "c"),
+        _agent_chunk("c", "b"),
+        _agent_chunk("c", "a"),
+        _replay_complete("c"),
+        _sub("c", "d"),
+        _agent_chunk("d", "y"),
+        _agent_chunk("d", "x"),
+    ]
+    assert replayed_child_history_problems(before, exchange, "p") == (["c"], [])
+    assert replayed_child_history_problems(before, [_agent_chunk("c", "a"), _replay_complete("p")], "p") == ([], [])
 
 
 def test_resume_reaction_starts_at_the_first_message_for_the_resumed_session_or_a_response():

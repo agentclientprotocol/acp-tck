@@ -50,6 +50,9 @@ It advertises `capabilities.session.options`, and `_base.py` answers `session/op
 without a closed or persisted `sessionId`) without creating or resuming a session or launching an
 MCP server, so ACP-OPTIONS-001/002/003/009 PASS non-vacuously.
 
+It advertises `capabilities.session.title`, and `_base.py` follows a `session/set_title` of a live
+session with a `session_info_update` carrying the stored title, so ACP-LIST-208 PASSes.
+
 Every turn also announces a fork-capable cursor before the turn's user message (v2 has no client
 capability for cursors); a full resume replays it with the same `cursorId`, and `session/fork`
 accepts those cursors and rejects any other with `-32602`, so ACP-CURSOR-001..004 PASS
@@ -88,6 +91,7 @@ def main() -> None:
                 "fork": {},
                 "systemPrompt": {"mode": {"override": {}}},
                 "options": {},
+                "title": {},
             },
             "auth": {"status": {}},
         },

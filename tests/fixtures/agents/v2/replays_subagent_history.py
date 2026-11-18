@@ -9,7 +9,8 @@ subagents.mdx:469) and then emits a live child chunk before the response. Must P
 `exposes_subagent.py` does, including `ACP-RESUME-002` and `-205` (live child traffic is not
 history or replayed chunks of the resumed session), `ACP-RESUME-204` (a child's own
 `user_message` is not the parent's), `ACP-RESUME-209` (announced child updates are legal during
-replay), `ACP-RESUME-223` and `ACP-RESUME-225`.
+replay), `ACP-RESUME-223`, `ACP-RESUME-225` and `ACP-RESUME-226` (the child is replayed under its
+parent, and its two messages in their order).
 """
 
 import sys
@@ -61,8 +62,12 @@ class ReplaysSubagentHistoryAgent(ExposesSubagentAgent):
                     },
                 },
             )
-            super()._replay_history(child_id)
+            self._replay_child_history(child_id)
             self._send_child_replay_complete(child_id)
+
+    def _replay_child_history(self, child_id: str) -> None:
+        """Hook: the child's recorded history, in the order it was sent."""
+        super()._replay_history(child_id)
 
     def _send_child_replay_complete(self, child_id: str) -> None:
         """Hook: the child's own `replay_complete`, after its announcement and replayed history."""

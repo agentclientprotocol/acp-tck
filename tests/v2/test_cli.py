@@ -164,6 +164,7 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-223",
     "ACP-RESUME-224",
     "ACP-RESUME-225",
+    "ACP-RESUME-226",
     "ACP-ERROR-003",
     "ACP-ERROR-004",
     "ACP-LIST-001",
@@ -272,6 +273,7 @@ _ADVISORY_IDS = {
     "ACP-RESUME-222",
     "ACP-CURSOR-004",
     "ACP-OPTIONS-007",
+    "ACP-OPTIONS-008",
     "ACP-OPTIONS-009",
     "ACP-CANCEL-204",
     "ACP-JSONRPC-005",
@@ -285,6 +287,7 @@ _ADVISORY_IDS = {
     "ACP-SESSION-207",
     "ACP-SESSION-209",
     "ACP-LIST-207",
+    "ACP-LIST-208",
     "ACP-RESUME-214",
     "ACP-RESUME-216",
     "ACP-MCP-204",
@@ -419,13 +422,15 @@ _CHILD_CONTROL_IDS = {
 # The child replay and withdrawal rows judge only children on the wire: `ACP-RESUME-223` a child
 # announced in a replay resume (`replays_subagent_history.py`), `-224` a `subagent` item in the
 # resume snapshot (`resume_lists_background_subagent.py`), `-225` child traffic after a resume
-# without replay (`replays_subagent_history.py`), `ACP-SUBAGENT-203` a child permission request
+# without replay and `-226` replayed history of a child seen before the resume (both
+# `replays_subagent_history.py`), `ACP-SUBAGENT-203` a child permission request
 # pending at `session/close` (`exposes_subagent.py` and its siblings) and `-204` one pending when
 # a cancellation stops its child (`cancellable_subagent_asks.py`). Every other fixture SKIPs them.
 _CHILD_REPLAY_WITHDRAWAL_IDS = {
     "ACP-RESUME-223",
     "ACP-RESUME-224",
     "ACP-RESUME-225",
+    "ACP-RESUME-226",
     "ACP-SUBAGENT-203",
     "ACP-SUBAGENT-204",
 }
@@ -531,6 +536,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-OPTIONS-005",
     "ACP-OPTIONS-006",
     "ACP-OPTIONS-007",
+    "ACP-OPTIONS-008",
     "ACP-OPTIONS-010",
     "ACP-OPTIONS-011",
     "ACP-OPTIONS-201",
@@ -556,6 +562,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-ARCHIVE-005",
     "ACP-ARCHIVE-006",
     "ACP-ARCHIVE-201",
+    "ACP-LIST-208",
     "ACP-ADDDIRS-001",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -699,6 +706,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-OPTIONS-005",
     "ACP-OPTIONS-006",
     "ACP-OPTIONS-007",
+    "ACP-OPTIONS-008",
     "ACP-OPTIONS-010",
     "ACP-OPTIONS-011",
     "ACP-OPTIONS-201",
@@ -724,6 +732,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-ARCHIVE-005",
     "ACP-ARCHIVE-006",
     "ACP-ARCHIVE-201",
+    "ACP-LIST-208",  # the fixture advertises no `session.title`
     "ACP-ADDDIRS-001",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -1255,14 +1264,17 @@ def test_options_defect_fixtures_fail_only_their_own_row():
 def test_initial_config_defect_fixtures_fail_only_their_own_rows():
     """Each fixture advertises `session.options` with a select and a boolean option and breaks one
     initial-`configOptions` rule. The `options_fork_*` ones also advertise `fork` and break the rule
-    only on `session/fork`. Everything else PASSes or SKIPs. The run is scoped with `-k`, so its
+    only on `session/fork` (`options_fork_notice_before_response.py` sends its early `notice` only
+    for a fork with entries). Everything else PASSes or SKIPs. The run is scoped with `-k`, so its
     verdict is not asserted."""
-    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 10, 11, 201)]
+    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 8, 10, 11, 201)]
     for fixture, expected in (
         ("options_accepts_malformed.py", {"ACP-OPTIONS-004"}),
         ("options_accepts_duplicate.py", {"ACP-OPTIONS-005"}),
         ("options_rejects_unknown_entry.py", {"ACP-OPTIONS-006"}),
         ("options_notifies_initial.py", {"ACP-OPTIONS-007"}),
+        ("options_notice_before_response.py", {"ACP-OPTIONS-008"}),
+        ("options_fork_notice_before_response.py", {"ACP-OPTIONS-008"}),
         ("options_response_hides_values.py", {"ACP-OPTIONS-011"}),
         ("options_ignores_unsupported_type.py", set()),
         ("options_fork_accepts_malformed.py", {"ACP-OPTIONS-004"}),
@@ -1293,7 +1305,7 @@ def test_conforming_initial_config_passes_non_vacuously_and_conforming_skips(tmp
     `conforming.py` advertises no `options` and SKIPs them all. ACP-OPTIONS-201 records `rejected with
     -32602` for the fixture that rejects an unsupported value `type` and `ignored` for the one that
     ignores it."""
-    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 10, 11, 201)]
+    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 8, 10, 11, 201)]
     report_path = tmp_path / "full.json"
     result = _run_cli(
         FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k="test_initial_config",
@@ -1877,6 +1889,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-223",
         "ACP-RESUME-224",
         "ACP-RESUME-225",
+        "ACP-RESUME-226",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -2070,6 +2083,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-223",
         "ACP-RESUME-224",
         "ACP-RESUME-225",
+        "ACP-RESUME-226",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -2618,12 +2632,12 @@ def test_replays_subagent_history_passes_everything():
     """A child announced and replayed under its own `sessionId` on `replayFrom: start` (with its own
     `user_message` and `replay_complete`), plus a re-announcement and a live child chunk before every
     resume response, replay or not, is legal: same outcome as `conforming.py`, and the child replay
-    rows `ACP-RESUME-223`/`-225` PASS."""
+    rows `ACP-RESUME-223`/`-225`/`-226` PASS."""
     result = _run_cli(FIXTURES_DIR_V2, "replays_subagent_history.py", protocol_version=2)
     _assert_conforming_baseline(
         result,
         "replays_subagent_history.py",
-        _SUBAGENT_EXERCISED_IDS | {"ACP-RESUME-223", "ACP-RESUME-225"},
+        _SUBAGENT_EXERCISED_IDS | {"ACP-RESUME-223", "ACP-RESUME-225", "ACP-RESUME-226"},
     )
 
 
@@ -2632,15 +2646,20 @@ def test_replays_subagent_history_passes_everything():
     [
         ("child_missing_replay_complete.py", "ACP-RESUME-223"),
         ("resume_child_traffic_unannounced.py", "ACP-RESUME-225"),
+        ("replays_child_out_of_order.py", "ACP-RESUME-226"),
+        ("replays_child_under_wrong_parent.py", "ACP-RESUME-226"),
     ],
 )
 def test_child_replay_defects_fail_their_row_only(fixture, failing):
     """`child_missing_replay_complete.py` ends no replayed child with its own `replay_complete`;
     `resume_child_traffic_unannounced.py` sends live child chunks after a resume without replay
-    without announcing the child again. Each FAILs its row, and the other child replay row PASSes."""
+    without announcing the child again. `replays_child_out_of_order.py` replays the child's two
+    messages in reverse order, and `replays_child_under_wrong_parent.py` replays the child's
+    nested child under the resumed session. Each FAILs its row, and the other child replay rows
+    PASS."""
     statuses, stdout = _resume_statuses(fixture)
     assert _fails(statuses) == {failing}, stdout
-    for req_id in {"ACP-RESUME-223", "ACP-RESUME-225"} - {failing}:
+    for req_id in {"ACP-RESUME-223", "ACP-RESUME-225", "ACP-RESUME-226"} - {failing}:
         assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
 
 
@@ -2917,6 +2936,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-223",
         "ACP-RESUME-224",
         "ACP-RESUME-225",
+        "ACP-RESUME-226",
         "ACP-RESUME-214",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
@@ -3049,6 +3069,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-223",
         "ACP-RESUME-224",
         "ACP-RESUME-225",
+        "ACP-RESUME-226",
         "ACP-RESUME-214",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
@@ -3179,6 +3200,7 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-RESUME-223",
         "ACP-RESUME-224",
         "ACP-RESUME-225",
+        "ACP-RESUME-226",
         "ACP-RESUME-214",
         "ACP-ENUM-201",
         "ACP-META-001",
@@ -3628,6 +3650,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-OPTIONS-005",
             "ACP-OPTIONS-006",
             "ACP-OPTIONS-007",
+            "ACP-OPTIONS-008",
             "ACP-OPTIONS-010",
             "ACP-OPTIONS-011",
             "ACP-OPTIONS-201",
@@ -4293,6 +4316,14 @@ def test_list_accepts_relative_cwd_fails_list_205_only():
     assert statuses.get("ACP-LIST-003") == "PASS", result.stdout
     assert statuses.get("ACP-LIST-207") == "SKIPPED", result.stdout
     assert "VERDICT: NOT CONFORMANT" in result.stdout, result.stdout
+
+
+def test_set_title_no_info_update_fails_list_208_only():
+    """`set_title_no_info_update.py` advertises `session.title` and stores the title, but sends no
+    `session_info_update` for it: the ADVISORY `ACP-LIST-208` FAILs alone within
+    `-k session_capabilities`. `conforming_full.py` sends it and PASSes (its full run)."""
+    statuses, stdout = _resume_statuses("set_title_no_info_update.py")
+    assert _fails(statuses) == {"ACP-LIST-208"}, stdout
 
 
 def test_list_relative_cwd_wrong_code_fails_list_207_advisory_only():

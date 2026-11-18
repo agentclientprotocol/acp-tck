@@ -87,6 +87,11 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   names (`_mcp_duplicate_name_rejection`, :636) -- all `-32602`. Stdio MCP servers of a
   successful `session/new` are launched and sent an MCP `initialize` (`_launch_mcp_servers`), so
   the TCK's stub server can observe the connection.
+- `session/set_title` (only when `capabilities.session.title` is advertised, else `-32601`) stores
+  the trimmed title of a live or closed session and returns it; a title empty after trimming is
+  `-32602`, any other id `-32002` (`error.mdx:69`). For a session live on the connection it first
+  sends a `session_info_update` with the stored title (`_notify_title_change`,
+  session-list.mdx:162-165).
 - `session/options` (only when `capabilities.session.options` is advertised, else `-32601`) answers
   with the lists a new session would carry (`_options_result`) without creating or resuming a
   session, sending an update or launching an MCP server; a `sessionId` the agent does not know is
@@ -423,6 +428,8 @@ class ConformingAgent:
             self._handle_archive_session(msg_id, params, archived=method == "session/archive")
         elif method == "session/fork" and self._session_capability("fork") is not None:
             self._handle_fork_session(msg_id, params)
+        elif method == "session/set_title" and self._session_capability("title") is not None:
+            self._handle_set_title(msg_id, params)
         elif method == "session/options" and self._session_capability("options") is not None:
             self._handle_options(msg_id, params)
         elif method == "session/set_config_option":
@@ -893,6 +900,28 @@ class ConformingAgent:
         if cursor is None:
             return None
         return f"invalid cursor {cursor!r}"
+
+    def _handle_set_title(self, msg_id: Any, params: dict[str, Any]) -> None:
+        session_id = params.get("sessionId")
+        if session_id not in self._sessions and session_id not in self._closed_sessions:
+            self._unknown_session(msg_id, session_id)
+            return
+        title = params.get("title")
+        stored = title.strip() if isinstance(title, str) else ""
+        if not stored:
+            self._error(msg_id, -32602, "Invalid params: the title must be a non-empty string")
+            return
+        if session_id in self._sessions:
+            self._notify_title_change(session_id, stored)
+        self._reply(msg_id, {"title": stored})
+
+    def _notify_title_change(self, session_id: Any, title: str) -> None:
+        """Hook: the `session_info_update` for a title set on a live session, sent before the
+        `session/set_title` response (session-list.mdx:162-165). Live, not recorded."""
+        self._notify(
+            "session/update",
+            {"sessionId": session_id, "update": {"sessionUpdate": "session_info_update", "title": title}},
+        )
 
     def _handle_resume_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         # A session is resumable while it is live or closed on this connection; a deleted or

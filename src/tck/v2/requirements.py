@@ -2671,6 +2671,35 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-RESUME-226",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Replayed child updates MUST keep their known parent and their order within each "
+            "session, judged against what the same connection saw before the resume, after a "
+            "turn on the session (the `--subagent-prompt` text when given) and a quiet period. "
+            "In a `session/resume` with `replayFrom: {\"type\": \"start\"}`, a replayed "
+            "`subagent_update` (one on a session before that session's own `replay_complete`, "
+            "on the resumed session or a child announced earlier in the exchange) for a child "
+            "announced before the resume FAILs when it is sent on a session other than that "
+            "child's parent then. For each such child, its updates before its own "
+            "`replay_complete` are compared by entity (`messageId` per message type, "
+            "`toolCallId`, `terminalId`, `compactionId`): when one entity's traffic ended before "
+            "another's began before the resume, the replay sending the later one first FAILs. "
+            "Only entities replayed under the IDs they had are compared (preserving other "
+            "entity IDs is a SHOULD), and a session with no `replay_complete` in the exchange is "
+            "not judged (`ACP-RESUME-218`/`-223` judge that). The original `sessionId` and the "
+            "announcement before a child's other updates are `ACP-RESUME-209`'s. Judged from "
+            "the agent's first message naming the resumed session (earlier traffic counts as "
+            "before the resume). SKIPs when the exchange replays nothing of a child announced "
+            "before the resume (replaying child history is a SHOULD)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:463-465,480,482; "
+            "docs/protocol/v2/draft/session-setup.mdx:55,297"
+        ),
+    ),
+    Requirement(
         id="ACP-LIST-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -2788,6 +2817,28 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-list.mdx:64-65; docs/protocol/v2/draft/error.mdx:48"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-208",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD send a `session_info_update` on each connection where a session is "
+            "active whenever its metadata changes, including changes a client requests: after a "
+            "successful `session/set_title` of a session just created on the requesting "
+            "connection, a `session_info_update` for that session whose `title` is the one the "
+            "response reports arrives before the response or within the quiet drain after it. "
+            "Only the requesting connection is judged, and not whether the update precedes the "
+            "response. SKIPs without `session.title`, or when `session/set_title` does not "
+            "succeed. Upstream discrepancy: the Draft RFD `session-set-title` says the agent MAY "
+            "send it; the docs govern. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:162-165; "
+            "docs/protocol/v2/draft/initialization.mdx:361-366; "
+            "docs/rfds/session-set-title.mdx:156 (Draft RFD); "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionTitleResponse"
         ),
     ),
     Requirement(
@@ -3756,6 +3807,27 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:583; "
             "docs/protocol/v2/draft/session-setup.mdx:596"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-008",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Until the `session/new` or `session/fork` response, the agent SHOULD NOT send other "
+            "`session/update` notifications caused by applying initial `configOptions` entries "
+            "(such as a notice that a value fell back); it sends them after the response. "
+            "Judged on the `session/new` of ACP-OPTIONS-007 (a select option of `session/options` "
+            "set to an alternative value), and on a `session/fork` of a fresh session with the "
+            "same entry when `session.fork` is advertised: an update for the new session before "
+            "the response FAILs, except `config_option_update` (ACP-OPTIONS-007's) and kinds "
+            "that the same request without entries, on a fresh connection, also sends before "
+            "its response (they are not caused by the entries). A fork that does not succeed is "
+            "not judged. SKIPs under the conditions of ACP-OPTIONS-007. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-config-options.mdx:584; "
+            "docs/protocol/v2/draft/session-setup.mdx:105,596"
         ),
     ),
     Requirement(

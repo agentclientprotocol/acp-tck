@@ -1,11 +1,11 @@
-"""Initial config option values: ACP-OPTIONS-004..007, -010, -011 and -201.
+"""Initial config option values: ACP-OPTIONS-004..008, -010, -011 and -201.
 
 An agent that advertises `capabilities.session.options` accepts a `configOptions` list of
 `{configId, type, value}` entries on `session/new` (and resume, and fork when supported). Every row
 is gated on that capability (the TCK may not send entries otherwise, `session-config-options.mdx:482`)
 and every test judges its own fresh connection. The entries come from `session/options` of the same
 agent: a select option with an alternative value for the rows that apply one, a real id for the
-duplicate probe. Probes are `session/new` requests, repeated by ACP-OPTIONS-004..006 as
+duplicate probe. Probes are `session/new` requests, repeated by ACP-OPTIONS-004..006 and -008 as
 `session/fork` requests (of a plain session made on the same connection) when
 `capabilities.session.fork` is advertised; ACP-OPTIONS-006 also repeats its unknown-id probe on
 `session/resume`. Boolean options need no client capability in v2.
@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from tck.common.harness import Direction
 from tck.common.plugin import capability_is_supported
 from tck.v2.protocol import INVALID_PARAMS
 from tck.v2.validation import validate_agent_response
@@ -30,6 +31,7 @@ from ._helpers import (
     connected_agent,
     drain_quiet,
     flatten_select_values,
+    iter_messages,
     quiet_period,
     skip_if_auth_gated,
     skip_if_auth_required,
@@ -270,6 +272,8 @@ class _Exchange:
     option: dict[str, Any]
     value: Any
     response: dict[str, Any]
+    before: list
+    """Transcript entries from the request to the response, response included."""
     entries: list
     """Transcript entries from the request through the quiet period after the response."""
 
@@ -277,19 +281,76 @@ class _Exchange:
 async def _initial_value_exchange(agent_launch, tmp_path) -> _Exchange:
     """`session/new` with an alternative value for a select option of `session/options`, SKIPping
     when there is no such option or setup fails (ACP-OPTIONS-006 judges that)."""
+    exchange = await _value_exchange(agent_launch, tmp_path, fork=False)
+    if isinstance(exchange, str):
+        pytest.skip(exchange)
+    return exchange
+
+
+async def _value_exchange(agent_launch, tmp_path, *, fork: bool) -> _Exchange | str:
+    """`session/new` (or, with `fork`, `session/fork` of a plain session made and left quiet
+    first) with an alternative value for a select option of `session/options`, or why it could
+    not be made: there is no such option, or setup failed (ACP-OPTIONS-006 judges that)."""
     timeout = agent_launch.default_timeout
+    method = "session/fork" if fork else "session/new"
     async with connected_agent(agent_launch) as agent:
         picked = _with_alternative(await _advertised_options(agent, tmp_path, timeout=timeout))
         if picked is None:
-            pytest.skip("session/options lists no select option with an alternative value")
+            return "session/options lists no select option with an alternative value"
         option, value = picked
+        entries = [_id_entry(option["configId"], value)]
+        target: tuple[str, str | None] = (method, None)
+        if fork:
+            target = (method, await _source_session(agent, tmp_path, timeout=timeout))
+            await drain_quiet(agent, quiet_period(timeout))
         start = len(agent.transcript)
-        entry = await _new_with_entries(agent, tmp_path, [_id_entry(option["configId"], value)], timeout=timeout)
+        entry = await _setup_with_entries(agent, tmp_path, target, entries, timeout=timeout)
         result = _result(entry)
         if result is None:
-            pytest.skip(f"session/new with an initial entry did not succeed (see ACP-OPTIONS-006): {entry.text!r}")
+            return f"{method} with an initial entry did not succeed (see ACP-OPTIONS-006): {entry.text!r}"
+        end = _index_of(agent, entry, start)
         await drain_quiet(agent, quiet_period(timeout))
-        return _Exchange(option, value, result, agent.transcript[start:])
+        return _Exchange(option, value, result, agent.transcript[start : end + 1], agent.transcript[start:])
+
+
+async def _early_kinds_without_entries(agent_launch, tmp_path, *, fork: bool) -> set[str]:
+    """The update kinds a plain `session/new` (or `session/fork`, made like `_value_exchange`'s)
+    sends for its session before its response, on a fresh connection: kinds that do not come from
+    initial entries. Empty when the request fails."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        if fork:
+            source_id = await _source_session(agent, tmp_path, timeout=timeout)
+            await drain_quiet(agent, quiet_period(timeout))
+            method, params = "session/fork", {"sessionId": source_id, "cwd": str(tmp_path)}
+        else:
+            method, params = "session/new", {"cwd": str(tmp_path)}
+        start = len(agent.transcript)
+        entry = await _call(agent, method, params, timeout=timeout)
+        session_id = (_result(entry) or {}).get("sessionId")
+        if not isinstance(session_id, str):
+            return set()
+        return set(_update_kinds(agent.transcript[start : _index_of(agent, entry, start) + 1], session_id))
+
+
+def _index_of(agent, entry, start: int) -> int:
+    """The transcript index (at or after `start`) of `entry`, a response the TCK just awaited."""
+    return next(i for i in range(len(agent.transcript) - 1, start - 1, -1) if agent.transcript[i] is entry)
+
+
+def _update_kinds(entries: list, session_id: Any) -> list[str]:
+    """The `sessionUpdate` kind of every `session/update` for `session_id` among received `entries`."""
+    return [
+        update["sessionUpdate"]
+        for e in entries
+        if e.direction is Direction.RECEIVED
+        for msg in iter_messages(e)
+        if msg.get("method") == "session/update"
+        and isinstance(params := msg.get("params"), dict)
+        and params.get("sessionId") == session_id
+        and isinstance(update := params.get("update"), dict)
+        and isinstance(update.get("sessionUpdate"), str)
+    ]
 
 
 @pytest.mark.requirement("ACP-OPTIONS-007")
@@ -301,6 +362,31 @@ async def test_no_config_option_update_for_initial_entries(agent_launch, tmp_pat
     session_id = exchange.response.get("sessionId")
     updates = config_updates(exchange.entries, session_id)
     assert not updates, f"config_option_update sent for an initial entry: {updates!r}"
+
+
+@pytest.mark.requirement("ACP-OPTIONS-008")
+@pytest.mark.capability(_OPTIONS_PATH)
+async def test_no_update_before_the_setup_response_for_initial_entries(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-OPTIONS-008 (ADVISORY). No `session/update` for the new session before the `session/new`
+    response, when the request carried an initial entry, other than `config_option_update`
+    (ACP-OPTIONS-007's) and kinds a plain `session/new` also sends before its response (not caused
+    by the entry). Repeated on `session/fork` when advertised; a fork that cannot be made with
+    the entry is left unjudged (ACP-OPTIONS-006's)."""
+    exchanges = [("session/new", await _initial_value_exchange(agent_launch, tmp_path))]
+    init_result = agent_initialize_result.result
+    if init_result is not None and capability_is_supported(init_result, _FORK_PATH):
+        fork_exchange = await _value_exchange(agent_launch, tmp_path, fork=True)
+        if isinstance(fork_exchange, _Exchange):
+            exchanges.append(("session/fork", fork_exchange))
+    problems = []
+    for method, exchange in exchanges:
+        session_id = exchange.response.get("sessionId")
+        kinds = set(_update_kinds(exchange.before, session_id)) - {"config_option_update"}
+        if kinds:
+            kinds -= await _early_kinds_without_entries(agent_launch, tmp_path, fork=method == "session/fork")
+        if kinds:
+            problems.append(f"session/update {sorted(kinds)!r} sent before the {method} response for an initial entry")
+    assert not problems, "; ".join(problems)
 
 
 @pytest.mark.requirement("ACP-OPTIONS-010")
