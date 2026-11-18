@@ -51,6 +51,8 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V1-SA1 — 9137de7 — v1 subagent rows + CLIENTCAP-001..003/-007 cite subagents.mdx first (U13a in SUBAGENT-002); ledger +17, -1 cost, rewrites/re-points; suite green (1117)
 - V1-SA2 — 2800a5a — SUBAGENT-001 post-load scope (only after a successful load), -012 sender-less message counts, -016 unknown-after-cancel SKIPs; 4 fixtures; suite green (1126)
 - V1-SA3 — fd23cab — +SUBAGENT-018 ADVISORY (post-judging probes load/close/delete, U4), +SUBAGENT-019 CAPABILITY close(+delete), +LIST-004 CAPABILITY list, +SUBAGENT-020 ADVISORY; new exposes_subagent_full.py; suite green (1146)
+- V2-SA1 — 8cb3a0e — v2 subagent rows + RESUME-002/-209 docs-first; ledger +13 (incl. 2 Deferred), -1 cost, 13 rewrites; suite green (1146)
+- V2-SA2 — 08a671d — SUBAGENT-012 sender-less counts, -016 needs child's own idle, unknown-after-cancel SKIPs; 4 fixtures; suite green (1152)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
@@ -59,5 +61,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - Slice 16 V2-TOOL: in progress. Programmers must run the full suite in the FOREGROUND (timeout 600000, ~8.5 min); background runs force premature hand-backs.
 - Pre-existing (also on main ee2af8a): plain `acp-tck --protocol-version 2` on v2 conforming_full FAILs ACP-DELETE-204 — fixture answers session/delete before the cancelled idle when a permission request is pending. Not a regression; reported to the user; candidate fix slice.
 - For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
+- For LEDGER-HYGIENE v2: add v2 `SA:263` (outgoing view + link, SHOULD; v1 twin `SA:285`) entry; extend the `TC:753,754` entry to cover `TC:755-756` or note SUBAGENT-002 covers it.
+- User asked about parallelizing with worktrees; I assessed (only ledger/docs slices 25, 27-v1, 28 could overlap, ~45-60 min saved); no change made, mode stays single unless the user says otherwise.
 ## Open questions (waiting on the user)
 - none
