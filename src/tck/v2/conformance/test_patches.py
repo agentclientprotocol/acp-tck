@@ -187,7 +187,7 @@ async def test_plan_updates_carry_plan_id(agent_launch, tmp_path):
 @pytest.mark.capability("capabilities.session")
 async def test_markdown_plan_path_is_an_absolute_native_path(agent_launch, tmp_path):
     """ACP-PLAN-003 (CAPABILITY). Only a string `path` is judged: `null` and omission mean no
-    file, and a non-string `path` is `ACP-SCHEMA-001`'s (`agent-plan.mdx:104-109`;
+    file, and a non-string `path` is `ACP-PROMPT-002`'s (`agent-plan.mdx:104-109`;
     `schema/v2/schema.unstable.json#/$defs/PlanMarkdown/properties/path`). `AbsolutePath` is a bare
     string in the schema, so a relative path or a URI is only caught here."""
     turn = await _drive_one_turn(agent_launch, tmp_path)

@@ -1,5 +1,5 @@
 """Subagent announcement ordering, `session` content references, association integrity and
-the SHOULDs around them (ACP-SUBAGENT-001..014, -018, -019, -201, -205 and ACP-LIST-004).
+the SHOULDs around them (ACP-SUBAGENT-001..014, -018, -019, -201, -205..207 and ACP-LIST-004).
 
 There is no `initialize` marker for subagents in v2 -- support is baseline and *inferred* from the
 agent's traffic, so `Requirement.capability` is the documentation-only `"inferred:subagents"`
@@ -29,6 +29,8 @@ when the agent shows nothing to judge; 011/012 are disjoint by construction in `
 (012 judges only children not told the task as a user message). 205 judges the order of the two
 copies of a child's state transition; it pairs the copies only while the two paths agree and stops
 at the first difference, so a missing, extra or reordered mirror is 201's and a late one 205's alone.
+206 judges the legality of a child's idle `stopReason` (own `state_update` or mirror) and 207 (ADVISORY) that the
+idle ending a child's work carries one; the prompted session's own turn-ending idle is `ACP-STATE-203`/`204`'s.
 
 018/019 and `ACP-LIST-004` judge the connection's last, probe phase (`_probe_children`): the
 `session/list` and the mutating requests naming an announced child, sent after the transcript the
@@ -55,6 +57,7 @@ from ._helpers import (
     child_session_traffic,
     child_state_mirrors,
     child_state_order,
+    child_stop_reasons,
     child_task_reports,
     drain_quiet,
     new_session,
@@ -411,6 +414,32 @@ async def test_both_copies_of_a_child_state_precede_a_later_transition(request, 
     if not found.judged:
         pytest.skip("no announced child reported two state transitions on both its own stream and its parent")
     assert not found.out_of_order, _summary(found.out_of_order)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-206")
+async def test_child_idle_stop_reason_is_defined_or_underscore_prefixed(request, agent_launch, tmp_path):
+    """ACP-SUBAGENT-206. Each `stopReason` an announced child reports on an idle snapshot (its own
+    `state_update`, or mirrored on its parent) is a defined constant or begins with `_`: the
+    turn-ending idle of the prompted session is `ACP-STATE-203`'s. SKIPs when no announced child
+    reports one."""
+    transcript, session_id = await _connection_transcript(request, agent_launch, tmp_path)
+    found = child_stop_reasons(transcript, {session_id})
+    if not found.reported:
+        pytest.skip("no announced child reported a `stopReason` on an idle snapshot")
+    assert not found.invalid, _summary(found.invalid)
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-207")
+async def test_child_idle_that_ends_its_work_carries_a_stop_reason(request, agent_launch, tmp_path):
+    """ACP-SUBAGENT-207 (ADVISORY). The first idle after an announced child's own `running` or
+    `requires_action` carries a non-null `stopReason`: the turn-ending idle of the prompted
+    session is `ACP-STATE-204`'s. SKIPs when no announced child reports an active state and then
+    an idle."""
+    transcript, session_id = await _connection_transcript(request, agent_launch, tmp_path)
+    found = child_stop_reasons(transcript, {session_id})
+    if not found.ended:
+        pytest.skip("no announced child went from an active state to idle in its own `state_update`s")
+    assert not found.missing, _summary(found.missing)
 
 
 def _probe_summary(probes: list[ChildProbe], what: str) -> str:

@@ -1305,13 +1305,11 @@ async def test_list_sessions_cwds_are_absolute(agent_launch, tmp_path, record_pr
 # --- session metadata (ACP-LIST-208, unstable `session/set_title`) ---
 
 
-@pytest.mark.requirement("ACP-LIST-208")
-@pytest.mark.capability("capabilities.session.title")
-async def test_set_title_is_followed_by_a_session_info_update(agent_launch, tmp_path):
-    """ACP-LIST-208 (ADVISORY). `session/set_title` with a nonce title on a session just created
-    on this connection (so it is active there), after a quiet period: a `session_info_update` for
-    the session carrying the title the response reports must arrive before the response or
-    within the quiet drain after it. SKIPs when the call does not succeed: no row judges that."""
+async def _set_title(agent_launch, tmp_path):
+    """`session/set_title` with a nonce title on a session just created on this connection (so it
+    is active there), after a quiet period. Returns `(stored, early, late)`: the title the response
+    reports, and the `session_info_update`s for the session that arrived before the response, or in
+    the quiet drain after it. SKIPs when the call does not succeed: no row judges that."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)
@@ -1326,18 +1324,48 @@ async def test_set_title_is_followed_by_a_session_info_update(agent_launch, tmp_
         if not isinstance(stored, str):
             pytest.skip(f"session/set_title did not succeed: {entry.text!r}")
         await drain_quiet(agent, quiet_period(timeout))
-        infos = [
-            update
-            for received in agent.transcript[start:]
-            if received.direction is Direction.RECEIVED
-            for msg in iter_messages(received)
-            if msg.get("method") == "session/update"
-            and (update := _update_for(msg, session_id)) is not None
-            and update.get("sessionUpdate") == "session_info_update"
-        ]
-    assert any(update.get("title") == stored for update in infos), (
+        transcript = agent.transcript
+        end = next((i for i in range(start, len(transcript)) if transcript[i] is entry), len(transcript))
+
+        def infos(entries):
+            return [
+                update
+                for received in entries
+                if received.direction is Direction.RECEIVED
+                for msg in iter_messages(received)
+                if msg.get("method") == "session/update"
+                and (update := _update_for(msg, session_id)) is not None
+                and update.get("sessionUpdate") == "session_info_update"
+            ]
+
+        return stored, infos(transcript[start:end]), infos(transcript[end + 1 :])
+
+
+@pytest.mark.requirement("ACP-LIST-208")
+@pytest.mark.capability("capabilities.session.title")
+async def test_set_title_is_followed_by_a_session_info_update(agent_launch, tmp_path):
+    """ACP-LIST-208 (ADVISORY). `session/set_title`: a `session_info_update` for the session
+    carrying the title the response reports must arrive before the response or within the quiet
+    drain after it. Whether it precedes the response is `ACP-LIST-209`'s."""
+    stored, early, late = await _set_title(agent_launch, tmp_path)
+    assert any(update.get("title") == stored for update in early + late), (
         f"no session_info_update with the stored title {stored!r} followed session/set_title "
-        f"(session_info_update(s) seen: {infos!r})"
+        f"(session_info_update(s) seen: {early + late!r})"
+    )
+
+
+@pytest.mark.requirement("ACP-LIST-209")
+@pytest.mark.capability("capabilities.session.title")
+async def test_set_title_info_update_precedes_the_response(agent_launch, tmp_path):
+    """ACP-LIST-209 (ADVISORY). Judged on `session_info_update`s carrying the response's title: a
+    later update with another title may be a legitimate subsequent change. SKIPs when none
+    matches (`ACP-LIST-208` judges that one arrives)."""
+    stored, early, late = await _set_title(agent_launch, tmp_path)
+    if not any(update.get("title") == stored for update in early + late):
+        pytest.skip("no session_info_update carrying the response's title was observed")
+    assert any(update.get("title") == stored for update in early), (
+        "the session_info_update duplicating the session/set_title change arrived only after "
+        "the response"
     )
 
 

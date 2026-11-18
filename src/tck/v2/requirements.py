@@ -907,6 +907,55 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-206",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagents",
+        text=(
+            "Every `stopReason` an announced child reports on an `idle` snapshot, in its own "
+            "`state_update` or mirrored in the `state` of a `subagent_update` for it on its "
+            "parent, is one of the six defined constants (`end_turn`, `max_tokens`, "
+            "`max_turn_requests`, `refusal`, `cancelled`, `error`) or begins with `_`: a child's "
+            "`state_update` has the same meaning as any session's, and extensions MUST NOT "
+            "define custom non-underscore values (the schema's fallback branch accepts any "
+            "string, so validation cannot catch it). `ACP-STATE-203` judges only the idle that "
+            "ends the prompted session's turn, and `ACP-ENUM-201` does not scan `stopReason`. "
+            "A non-string `stopReason` is a schema defect (`ACP-PROMPT-002`'s) and is not judged "
+            "here. The rule binds only an agent that exposes subagents, so the row is "
+            "CAPABILITY, gated by `inferred:subagents` (documentation-only). Judged over one "
+            "`session/new`, one prompt turn and a quiet period after it; SKIPs when no announced "
+            "child reports a `stopReason` on an idle snapshot. v2-only (`2xx`): v1 has no "
+            "child-addressed `state_update` stream."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:313,354; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1209; "
+            "docs/protocol/v2/draft/extensibility.mdx:238-243; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/stopReason"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-207",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "When an announced child's foreground work ends, the Agent SHOULD include the "
+            "`stopReason` on the child's `idle` `state_update` (it may omit one it cannot "
+            "determine, `prompt-lifecycle.mdx:1209`): the first `idle` in a child's own "
+            "`state_update`s after its own `running` or `requires_action` carries a non-null "
+            "`stopReason`. Later idle snapshots are not judged, since they may repeat the state "
+            "or follow no work, and a mirror on the parent is not judged. `ACP-STATE-204` judges "
+            "only the idle that ends the prompted session's turn. Judged over one "
+            "`session/new`, one prompt turn and a quiet period after it; SKIPs when no announced "
+            "child goes from an active state to idle in its own `state_update`s. v2-only "
+            "(`2xx`): v1 has no child-addressed `state_update` stream."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:313,354; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1059,1209; "
+            "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/stopReason"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPT-201",
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
@@ -2830,7 +2879,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "connection, a `session_info_update` for that session whose `title` is the one the "
             "response reports arrives before the response or within the quiet drain after it. "
             "Only the requesting connection is judged, and not whether the update precedes the "
-            "response. SKIPs without `session.title`, or when `session/set_title` does not "
+            "response (`ACP-LIST-209`). SKIPs without `session.title`, or when `session/set_title` does not "
             "succeed. Upstream discrepancy: the Draft RFD `session-set-title` says the agent MAY "
             "send it; the docs govern. Unstable feature."
         ),
@@ -2838,6 +2887,28 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/session-list.mdx:162-165; "
             "docs/protocol/v2/draft/initialization.mdx:361-366; "
             "docs/rfds/session-set-title.mdx:156 (Draft RFD); "
+            "schema/v2/schema.unstable.json#/$defs/SetSessionTitleResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-209",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The `session_info_update` that duplicates a `session/set_title` change arrives "
+            "before that request's response: the same response and notification ordering as "
+            "`config_option_update` (`ACP-CONFIG-212`), which `session-list.mdx` says applies to "
+            "metadata changes. Judged only when an update carrying the response's `title` is "
+            "observed on the requesting connection for a session just created on it (a later "
+            "update with another title may be a legitimate subsequent change); FAILs when every "
+            "such update arrives after the response. SKIPs without `session.title`, when "
+            "`session/set_title` does not succeed, or when no such update arrives "
+            "(`ACP-LIST-208` judges that one does). Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-list.mdx:163-165; "
+            "docs/protocol/v2/draft/session-config-options.mdx:392-394; "
+            "docs/protocol/v2/draft/initialization.mdx:361-366; "
             "schema/v2/schema.unstable.json#/$defs/SetSessionTitleResponse"
         ),
     ),
@@ -4219,7 +4290,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "syntax of the agent's machine (POSIX `/...`, a Windows drive path or a UNC path) "
             "and not a URI: `PLAN.md`, `./PLAN.md` and `file:///tmp/PLAN.md` fail. `null` and "
             "an omitted `path` mean the plan has no file and are not judged; a `path` of the "
-            "wrong type is a schema defect (`ACP-SCHEMA-001`'s). Unstable feature: conditional "
+            "wrong type is a schema defect (`ACP-PROMPT-002`'s). Unstable feature: conditional "
             "on at least one markdown `plan_update` with a string `path` being observed, else "
             "SKIP."
         ),

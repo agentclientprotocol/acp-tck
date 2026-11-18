@@ -57,6 +57,8 @@ from ..protocol import (
     METHOD_NOT_FOUND,
     PROTOCOL_VERSION,
     RESOURCE_NOT_FOUND,
+    STOP_REASONS,
+    is_valid_open_enum_value,
 )
 
 
@@ -1199,6 +1201,73 @@ def child_state_order(
                     f"the later {later[2]!r} state (both copies of a transition must precede a "
                     f"later transition on either path)"
                 )
+    return result
+
+
+@dataclass
+class ChildStopReasons:
+    """What `child_stop_reasons` found: how many idle snapshots carrying a `stopReason` were judged
+    and the ones whose value is neither a defined constant nor `_`-prefixed; how many idles ended
+    a child's foreground work and the ones without a `stopReason`."""
+
+    reported: int = 0
+    invalid: list[str] = field(default_factory=list)
+    ended: int = 0
+    missing: list[str] = field(default_factory=list)
+
+
+def child_stop_reasons(
+    transcript: list[TranscriptEntry], client_sessions: set[str]
+) -> ChildStopReasons:
+    """Judge the stop reasons of an announced child's `idle` snapshots, as for any session
+    (`subagents.mdx:313`; `prompt-lifecycle.mdx:1059,1209`; `extensibility.mdx:238-243`).
+
+    A child is judged once a `subagent_update` on a known session announces it. A `stopReason` on
+    one of its idle snapshots, in its own `state_update` or mirrored in a `subagent_update.state`
+    for it on its parent, must be a defined constant or `_`-prefixed (a non-string one is a schema
+    defect, `ACP-PROMPT-002`'s: not judged). The first idle after the child's own `running` or
+    `requires_action` ends its foreground work and should carry a `stopReason`; later idle
+    snapshots are not judged for one, since they may repeat the state or follow no work."""
+    result = ChildStopReasons()
+    parents: dict[str, str] = {}
+    active: set[str] = set()
+
+    def judge(child: str, stop_reason: Any, where: str) -> None:
+        if isinstance(stop_reason, str):
+            result.reported += 1
+            if not is_valid_open_enum_value(stop_reason, STOP_REASONS):
+                result.invalid.append(
+                    f"child {child!r} reported idle with stopReason {stop_reason!r} in {where}, "
+                    f"which is neither a defined constant nor `_`-prefixed"
+                )
+
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        outer = params.get("sessionId")
+        if not isinstance(update, dict) or not isinstance(outer, str):
+            continue
+        kind = update.get("sessionUpdate")
+        child = update.get("sessionId")
+        if kind == "subagent_update" and isinstance(child, str):
+            if outer in known and child != outer and child not in client_sessions:
+                parents.setdefault(child, outer)
+            state = update.get("state")
+            if parents.get(child) == outer and isinstance(state, dict) and state.get("state") == "idle":
+                judge(child, state.get("stopReason"), "its `subagent_update.state`")
+        elif kind == "state_update" and outer in parents:
+            state = update.get("state")
+            if state in ("running", "requires_action"):
+                active.add(outer)
+            elif state == "idle":
+                judge(outer, update.get("stopReason"), "its own `state_update`")
+                if outer in active:
+                    active.discard(outer)
+                    result.ended += 1
+                    if update.get("stopReason") is None:
+                        result.missing.append(
+                            f"child {outer!r} ended its foreground work with an idle `state_update` "
+                            f"that carries no stopReason"
+                        )
     return result
 
 

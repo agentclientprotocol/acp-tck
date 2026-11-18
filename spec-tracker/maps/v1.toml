@@ -484,6 +484,11 @@ statement = "A late response still resolves its original request, but the Agent 
 reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt. Provoking it also needs a non-`cancelled` answer to a request of cancelled work, which breaks the client MUST at `subagents.mdx:466`."
 
 [[not_requirement]]
+citation = "docs/protocol/v1/draft/subagents.mdx:471 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent does not wait for a child's pending requests to resolve before it reports the child's state."
+reason = "Deferred: it is observable only while a child's `session/request_permission` is held unanswered across a stop of that child's work, which the Client may do until the child reports its cancelled `idle` (`subagents.mdx:467`), and the v1 TCK has no mode that holds a child's permission requests open (v2 has one, judged by ACP-SUBAGENT-204). It would be unblocked by porting that hold to the v1 child-cancel driver, gated on a child that advertises `cancel`."
+
+[[not_requirement]]
 citation = "docs/protocol/v1/draft/subagents.mdx:537; docs/rfds/subagents.mdx:1038-1040 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Replay (v1 `session/load` with history) does not reissue recorded permission, elicitation or other Agent-to-Client requests (MUST NOT)."
 reason = "Unobservable: a request sent during replay cannot be told from a newly issued live request, which the RFD allows, and whether it was recorded is internal to the agent."

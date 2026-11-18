@@ -76,6 +76,7 @@ _CAPABILITY_IDS = {
     "ACP-SUBAGENT-203",
     "ACP-SUBAGENT-204",
     "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-206",
     "ACP-LIST-004",
     "ACP-ENUM-201",
     "ACP-ENUM-203",
@@ -265,6 +266,7 @@ _ADVISORY_IDS = {
     "ACP-SUBAGENT-013",
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
+    "ACP-SUBAGENT-207",
     "ACP-SUBAGENT-018",
     "ACP-STATE-204",
     "ACP-STATE-209",
@@ -288,6 +290,7 @@ _ADVISORY_IDS = {
     "ACP-SESSION-209",
     "ACP-LIST-207",
     "ACP-LIST-208",
+    "ACP-LIST-209",
     "ACP-RESUME-214",
     "ACP-RESUME-216",
     "ACP-MCP-204",
@@ -482,6 +485,8 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
     "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-206",
+    "ACP-SUBAGENT-207",
     "ACP-SUBAGENT-018",
     "ACP-SUBAGENT-019",
     "ACP-LIST-004",
@@ -563,6 +568,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-ARCHIVE-006",
     "ACP-ARCHIVE-201",
     "ACP-LIST-208",
+    "ACP-LIST-209",
     "ACP-ADDDIRS-001",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -733,6 +739,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-ARCHIVE-006",
     "ACP-ARCHIVE-201",
     "ACP-LIST-208",  # the fixture advertises no `session.title`
+    "ACP-LIST-209",  # the fixture advertises no `session.title`
     "ACP-ADDDIRS-001",
     "ACP-ADDDIRS-202",
     "ACP-ADDDIRS-203",
@@ -769,6 +776,8 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
     "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-206",
+    "ACP-SUBAGENT-207",
     "ACP-SUBAGENT-018",
     "ACP-SUBAGENT-019",
     "ACP-LIST-004",
@@ -839,6 +848,8 @@ _SUBAGENT_EXERCISED_IDS = {
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
     "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-206",
+    "ACP-SUBAGENT-207",
     "ACP-SUBAGENT-018",
     "ACP-SUBAGENT-019",
     "ACP-LIST-004",
@@ -932,6 +943,8 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-SUBAGENT-014",
     "ACP-SUBAGENT-201",
     "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-206",
+    "ACP-SUBAGENT-207",
     "ACP-SUBAGENT-018",
     "ACP-SUBAGENT-019",
     "ACP-LIST-004",
@@ -2503,6 +2516,7 @@ def test_session_message_inconsistencies_fail_one_row_only(fixture, failing):
         ("child_task_after_output.py", "ACP-SUBAGENT-012"),
         ("session_message_chunk_before_participants.py", "ACP-SUBAGENT-013"),
         ("child_select_with_choices.py", "ACP-SUBAGENT-014"),
+        ("child_idle_without_stop_reason.py", "ACP-SUBAGENT-207"),
     ],
 )
 def test_subagent_should_violations_fail_one_advisory_row_only(fixture, failing):
@@ -2540,7 +2554,8 @@ def test_child_probe_rows_skip_without_a_child():
     """`conforming.py` announces no child: the probe phase sends nothing and the rows SKIP."""
     result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_subagents")
     statuses = _table_statuses(result.stdout)
-    for req_id in (*_CHILD_PROBE_IDS, "ACP-SUBAGENT-205", "ACP-SUBAGENT-004"):
+    skipped = (*_CHILD_PROBE_IDS, *(f"ACP-SUBAGENT-{n}" for n in (205, 206, 207)), "ACP-SUBAGENT-004")
+    for req_id in skipped:
         assert statuses[req_id] == "SKIPPED", f"{req_id}:\n{result.stdout}"
 
 
@@ -2553,6 +2568,7 @@ def test_child_probe_rows_skip_without_a_child():
         ("lists_child_session.py", "ACP-LIST-004"),
         ("child_id_reused_for_new_session.py", "ACP-SUBAGENT-004"),
         ("late_child_state_mirror.py", "ACP-SUBAGENT-205"),
+        ("child_idle_custom_stop_reason.py", "ACP-SUBAGENT-206"),
     ],
 )
 def test_child_probe_and_ordering_violators_fail_exactly_their_row(fixture, failing):
@@ -2566,6 +2582,15 @@ def test_child_probe_and_ordering_violators_fail_exactly_their_row(fixture, fail
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {failing}, result.stdout
     assert statuses["ACP-SUBAGENT-201"] == "PASS", result.stdout
+
+
+def test_child_idle_without_stop_reason_gives_subagent_206_nothing_to_judge():
+    """The child's idle carries no `stopReason`: `ACP-SUBAGENT-207` FAILs it, and `-206` SKIPs
+    instead of PASSing a value it did not judge."""
+    result = _run_cli(FIXTURES_DIR_V2, "child_idle_without_stop_reason.py", protocol_version=2, k=_SUBAGENT_K)
+    statuses = _table_statuses(result.stdout)
+    assert statuses["ACP-SUBAGENT-207"] == "FAIL", result.stdout
+    assert statuses["ACP-SUBAGENT-206"] == "SKIPPED", result.stdout
 
 
 def test_user_message_task_gives_subagent_012_nothing_to_judge():
@@ -3673,6 +3698,8 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-SUBAGENT-014",
             "ACP-SUBAGENT-201",
             "ACP-SUBAGENT-205",
+            "ACP-SUBAGENT-206",
+            "ACP-SUBAGENT-207",
             "ACP-SUBAGENT-018",
             "ACP-SUBAGENT-019",
             "ACP-LIST-004",
@@ -4324,6 +4351,16 @@ def test_set_title_no_info_update_fails_list_208_only():
     `-k session_capabilities`. `conforming_full.py` sends it and PASSes (its full run)."""
     statuses, stdout = _resume_statuses("set_title_no_info_update.py")
     assert _fails(statuses) == {"ACP-LIST-208"}, stdout
+    assert statuses.get("ACP-LIST-209") == "SKIPPED", stdout  # no update to order
+
+
+def test_set_title_info_update_after_response_fails_list_209_only():
+    """`set_title_info_update_after_response.py` sends the `session_info_update` after the
+    `session/set_title` response: the ADVISORY `ACP-LIST-209` FAILs alone and `ACP-LIST-208`
+    PASSes, since the update arrives within the quiet drain."""
+    statuses, stdout = _resume_statuses("set_title_info_update_after_response.py")
+    assert _fails(statuses) == {"ACP-LIST-209"}, stdout
+    assert statuses.get("ACP-LIST-208") == "PASS", stdout
 
 
 def test_list_relative_cwd_wrong_code_fails_list_207_advisory_only():
@@ -5660,6 +5697,8 @@ _SUBAGENT_ROW_IDS = {f"ACP-SUBAGENT-{n:03}" for n in (*range(1, 10), *range(11, 
     "ACP-SUBAGENT-019",
     "ACP-SUBAGENT-201",
     "ACP-SUBAGENT-205",
+    "ACP-SUBAGENT-206",
+    "ACP-SUBAGENT-207",
     "ACP-LIST-004",
 }
 

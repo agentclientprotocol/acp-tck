@@ -20,6 +20,7 @@ from tck.v2.conformance._helpers import (
     child_config_selects,
     child_state_mirrors,
     child_state_order,
+    child_stop_reasons,
     child_task_reports,
     session_message_streams,
     _LIST_ROUTE_MAX_PAGES,
@@ -862,6 +863,56 @@ def test_state_order_ignores_repeats_and_is_judged_per_consecutive_pair():
     )
     found = child_state_order(overlap, {"p"})
     assert found.judged == 2 and len(found.out_of_order) == 1 and "'idle'" in found.out_of_order[0]
+
+
+def _idle(outer: str, **fields: Any) -> dict[str, Any]:
+    return _update(outer, {"sessionUpdate": "state_update", "state": "idle", **fields})
+
+
+def _idle_mirror(**fields: Any) -> dict[str, Any]:
+    return _update(
+        "p", {"sessionUpdate": "subagent_update", "sessionId": "c", "state": {"state": "idle", **fields}}
+    )
+
+
+def test_child_stop_reason_legality_covers_the_own_stream_and_the_mirror():
+    ok = _traffic(
+        _ANNOUNCE, _state("c", "running"), _idle("c", stopReason="end_turn"), _idle_mirror(stopReason="_x/done")
+    )
+    found = child_stop_reasons(ok, {"p"})
+    assert (found.reported, found.invalid, found.ended, found.missing) == (2, [], 1, [])
+    own = child_stop_reasons(_traffic(_ANNOUNCE, _idle("c", stopReason="child_done")), {"p"})
+    assert own.reported == 1 and len(own.invalid) == 1 and "own `state_update`" in own.invalid[0]
+    mirrored = child_stop_reasons(_traffic(_ANNOUNCE, _idle_mirror(stopReason="child_done")), {"p"})
+    assert mirrored.reported == 1 and len(mirrored.invalid) == 1 and "subagent_update" in mirrored.invalid[0]
+    # null, absent and non-string values are not legality's to judge; neither is an unannounced child
+    for fields in ({}, {"stopReason": None}, {"stopReason": 7}):
+        assert child_stop_reasons(_traffic(_ANNOUNCE, _idle("c", **fields)), {"p"}).reported == 0
+    assert child_stop_reasons(_traffic(_idle("c", stopReason="child_done")), {"p"}).reported == 0
+    assert child_stop_reasons(_traffic(_ANNOUNCE, _idle("p", stopReason="child_done")), {"p"}).reported == 0
+
+
+def test_child_stop_reason_presence_judges_only_the_first_idle_after_active_work():
+    missing = child_stop_reasons(_traffic(_ANNOUNCE, _state("c", "running"), _idle("c")), {"p"})
+    assert missing.ended == 1 and len(missing.missing) == 1
+    null = child_stop_reasons(
+        _traffic(_ANNOUNCE, _state("c", "requires_action"), _idle("c", stopReason=None)), {"p"}
+    )
+    assert null.ended == 1 and len(null.missing) == 1
+    # a repeated idle, an idle with no work before it and a mirror alone are not judged
+    repeated = _traffic(
+        _ANNOUNCE, _state("c", "running"), _idle("c", stopReason="end_turn"), _idle("c")
+    )
+    assert (child_stop_reasons(repeated, {"p"}).ended, child_stop_reasons(repeated, {"p"}).missing) == (1, [])
+    assert child_stop_reasons(_traffic(_ANNOUNCE, _idle("c")), {"p"}).ended == 0
+    assert child_stop_reasons(_traffic(_ANNOUNCE, _idle_mirror()), {"p"}).ended == 0
+    # a second round of work is judged again, and the parent's own idle is not a child's
+    again = _traffic(
+        _ANNOUNCE, _state("c", "running"), _idle("c", stopReason="end_turn"),
+        _state("c", "running"), _idle("c"), _state("p", "running"), _idle("p"),
+    )
+    found = child_stop_reasons(again, {"p"})
+    assert found.ended == 2 and len(found.missing) == 1
 
 
 def test_state_order_leaves_missing_and_reordered_mirrors_to_the_mirroring_row():

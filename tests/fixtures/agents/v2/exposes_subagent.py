@@ -38,6 +38,7 @@ _CHILD_DIR = str(Path(__file__).resolve().parent)  # absolute on every platform
 class ExposesSubagentAgent(ConformingAgent):
     announce_child = True
     _mirrors_child_state = True
+    _child_idle_state: dict[str, Any] = {"state": "idle", "stopReason": "end_turn"}
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -129,7 +130,7 @@ class ExposesSubagentAgent(ConformingAgent):
                 "content": {"type": "text", "text": "child output"},
             },
         )
-        self._send_child_state(session_id, child_id, {"state": "idle", "stopReason": "end_turn"})
+        self._send_child_state(session_id, child_id, dict(self._child_idle_state))
         self._after_child_output(session_id, child_id)
         return False
 
