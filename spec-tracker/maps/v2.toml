@@ -396,22 +396,22 @@ citation = "docs/rfds/get-auth-state.mdx:313 (Draft RFD); schema/v2/schema.unsta
 statement = "Agents that advertise `auth.status` SHOULD send `auth/status_update` when their status changes (including after `auth/login` or `auth/logout`), and only when it differs from the last one sent on the connection."
 reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
 
-# --- elicitation.mdx (coverage deferred: the TCK never advertises an elicitation mode) ---
+# --- elicitation.mdx (coverage deferred: needs an MCP-stub-forwarded elicitation trigger and a mock client that advertises a mode and holds `elicitation/create`) ---
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:54 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent that forwards elicitation for an MCP server MUST NOT copy the Client's capability object to that server unchanged."
-reason = "Deferred: observable once the TCK's stdio MCP stub records the `capabilities` of the MCP `initialize` it receives and the mock client advertises an elicitation mode (it advertises none, and would then have to answer `elicitation/create`). Neither is built yet."
+reason = "Deferred: observable once a stdio MCP stub records the `capabilities` of the MCP `initialize` it receives and a mock client advertises an elicitation mode and answers the resulting `elicitation/create`. Neither is built yet."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:56-57 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents MUST NOT request an elicitation mode the Client has not advertised, and SHOULD provide a graceful fallback when the required mode is unavailable."
-reason = "Deferred (elicitation coverage): the TCK only checks the zero-modes case (ACP-CLIENTCAP-003). A partial-mode check needs a client advertising one mode and an agent that elicits, which no prompt can force."
+reason = "Deferred: the zero-modes case is ACP-CLIENTCAP-003. A partial-mode check needs a client advertising one mode and an agent that elicits; no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built)."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:67-74,76-77 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Exactly one of `sessionId` or `requestId` is present in an elicitation request, a `requestId` names a pending Client-to-Agent request on the same connection, and the Agent cancels pending request-scoped elicitations before it responds to that request."
-reason = "Deferred (elicitation coverage): an agent cannot be made to elicit. The shape is schema-enforced wherever an `elicitation/create` is observed, and the ordering rule needs a live elicitation."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). The shape is schema-enforced wherever an `elicitation/create` is observed, and the ordering rule needs a live elicitation."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:157-163,186-187,258-259,271 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -421,17 +421,17 @@ reason = "Not observable: the rules are semantic or concern an out-of-band brows
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:197 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents MUST handle an unknown elicitation response action as `cancel`."
-reason = "Deferred (elicitation coverage): needs an agent with a live elicitation, and \"handled as cancel\" is only weakly observable."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). \"Handled as cancel\" is also only weakly observable."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:211-216 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An `elicitationId` is unique among outstanding URL elicitations, and `elicitation/complete` goes only to the Client that received the original request, carrying the original `elicitationId`."
-reason = "Deferred (elicitation coverage): needs an agent with live URL elicitations."
+reason = "Deferred: needs live URL elicitations; no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built)."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/elicitation.mdx:225-228,236; docs/protocol/v2/draft/session-setup.mdx:476 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "On `session/cancel` the Agent SHOULD cancel with `$/cancel_request` each pending elicitation the cancelled work made irrelevant, and before responding to `session/close` it MUST cancel every pending elicitation scoped to that session."
-reason = "Deferred (elicitation coverage): an agent cannot be made to hold an elicitation. The permission-request half of the `session/close` rule is covered by ACP-CLOSE-205."
+statement = "When the Agent stops waiting for a pending elicitation because the work that needed it was cancelled, it MUST cancel that individual request with `$/cancel_request` (the Agent decides which elicitations the cancelled work no longer needs), and before responding to `session/close` it MUST cancel every pending elicitation scoped to that session."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). The permission-request halves are covered by ACP-CANCEL-213 and ACP-CLOSE-205. Upstream discrepancy: the schema description of `CreateElicitationRequest` still says agents SHOULD cancel pending elicitations no longer needed by cancelled work; the docs state a MUST and govern."
 
 # --- session-setup.mdx ---
 

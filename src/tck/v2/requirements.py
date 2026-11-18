@@ -1709,7 +1709,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "only once the agent withdraws it with `$/cancel_request` (waiting for that answer "
             "is allowed) or the turn has ended. A turn that ends only after the TCK answers it "
             "at the deadline FAILs. SKIPPED when no foreground permission request was pending "
-            "when cancel was sent."
+            "when cancel was sent. The Agent decides which requests belong to the cancelled "
+            "work; the TCK treats the request it holds, pending when cancel was sent, as one "
+            "of them."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:256-257,1426,1446,1452,1460-1464; "
@@ -1766,13 +1768,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     ),
     Requirement(
         id="ACP-CANCEL-213",
-        tier=Tier.ADVISORY,
-        capability=None,
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
         text=(
             "When `session/cancel` cancels work blocked on the agent's own pending "
             "`session/request_permission` (held unanswered, as in `ACP-CANCEL-209`), the agent "
-            "withdraws that request with `$/cancel_request` naming its id, before or shortly "
-            "after the cancelled idle. Same SKIPs as `ACP-CANCEL-209`."
+            "MUST withdraw that request with `$/cancel_request` naming its id. The MUST has no "
+            "deadline: the TCK accepts the withdrawal before the cancelled idle or within a "
+            "short window after it (`quiet_period`, the time `run_prompt` waits before "
+            "answering the held request). The Agent decides which requests belong to the "
+            "cancelled work, so a request it legitimately treats as belonging to background "
+            "work it does not list would be a false FAIL (a narrow risk). Same SKIPs as "
+            "`ACP-CANCEL-209`."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:1452; "

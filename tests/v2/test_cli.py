@@ -123,6 +123,7 @@ _CAPABILITY_IDS = {
     "ACP-CANCEL-207",
     "ACP-CANCEL-208",
     "ACP-CANCEL-209",
+    "ACP-CANCEL-213",
     "ACP-JSONRPC-007",
     "ACP-CANCEL-214",
     "ACP-SESSION-203",
@@ -249,7 +250,6 @@ _ADVISORY_IDS = {
     "ACP-OPTIONS-007",
     "ACP-OPTIONS-009",
     "ACP-CANCEL-204",
-    "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
     "ACP-BATCH-209",
     "ACP-DELETE-002",
@@ -2494,10 +2494,12 @@ def test_cancel_waits_for_permission_answer_fails_cancel_209_and_213_only():
     assert "only after the TCK answered its held session/request_permission" in result.stdout
 
 
-def test_cancel_without_cancel_request_fails_advisory_cancel_213_only():
+def test_cancel_without_cancel_request_fails_cancel_213_only():
+    """`ACP-CANCEL-213` is CAPABILITY (a MUST upstream), so its FAIL makes the run non-conformant."""
     result = _run_cli(
         FIXTURES_DIR_V2, "cancel_without_cancel_request.py", protocol_version=2, k="cancel"
     )
+    assert result.returncode != 0
     statuses = _table_statuses(result.stdout)
     assert _fails(statuses) == {"ACP-CANCEL-213"}, result.stdout
     assert statuses["ACP-CANCEL-209"] == "PASS", result.stdout

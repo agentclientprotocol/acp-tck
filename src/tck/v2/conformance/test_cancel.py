@@ -12,8 +12,8 @@ A prompt cancelled before insertion is instead answered `-32800`, and then owes 
 foreground work was active (:1446,1466-1467). `ACP-CANCEL-204` is INFORMATIONAL (promptness has
 no wire signal) and always SKIPs after recording what it saw; `ACP-INFO-CANCEL-201` records
 behaviour without asserting. `ACP-JSONRPC-006` and `ACP-CANCEL-211` (`$/cancel_request` for an
-unknown or answered id) are MANDATORY and need no session; `ACP-CANCEL-213` is ADVISORY. Everything else is
-CAPABILITY on `capabilities.session`.
+unknown or answered id) are MANDATORY and need no session. Everything else is CAPABILITY on
+`capabilities.session`.
 
 **The race, and the honest-SKIP pattern**: `run_prompt(..., on_cancel=True)` fires
 `session/cancel` on the first transition to an active state (or after `cancel_wait`).
@@ -435,11 +435,14 @@ async def test_cancel_while_blocked_on_permission(
 async def test_cancel_withdraws_the_pending_permission_request(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
-    """ACP-CANCEL-213 (ADVISORY). The `ACP-CANCEL-209` scenario: after `session/cancel`, the
-    agent sends `$/cancel_request` naming its held permission request, before the cancelled idle
-    or within `quiet_period` after it (`run_prompt` waits that long before answering it). Same
-    SKIPs as `ACP-CANCEL-209`, plus one when the turn never ends: that is `ACP-CANCEL-209`'s
-    finding, and the turn's record is lost with it."""
+    """ACP-CANCEL-213. The `ACP-CANCEL-209` scenario: after `session/cancel`, the agent MUST
+    send `$/cancel_request` naming its held permission request (prompt-lifecycle.mdx:1452,
+    cancellation.mdx:42). The MUST has no deadline, so the TCK accepts it before the cancelled
+    idle or within `quiet_period` after it (`run_prompt` waits that long before answering the
+    request). The Agent decides which requests belong to the cancelled work; a request it
+    treats as unlisted background work would be a false FAIL (narrow). Same SKIPs as
+    `ACP-CANCEL-209`, plus one when the turn never ends: that is `ACP-CANCEL-209`'s finding,
+    and the turn's record is lost with it."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)

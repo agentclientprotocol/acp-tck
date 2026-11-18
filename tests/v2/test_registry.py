@@ -329,7 +329,6 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-SUBAGENT-013",
         "ACP-SUBAGENT-014",
         "ACP-SUBAGENT-201",
-        "ACP-CANCEL-213",
         "ACP-CLOSE-204",
         "ACP-CLOSE-003",
         "ACP-CONFIG-211",
