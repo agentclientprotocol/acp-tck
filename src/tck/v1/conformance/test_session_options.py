@@ -17,17 +17,18 @@ from typing import Any
 
 import pytest
 
-from tck.common.harness import AgentExited, AgentTimeout, Direction
+from tck.common.harness import Direction
 from tck.common.plugin import capability_is_supported
-from tck.v1.protocol import AUTHENTICATION_REQUIRED
 from tck.v1.validation import validate_agent_response
 
 from ._helpers import (
     connected_agent,
+    drain,
     quiet_period,
     run_prompt,
     session_update_kind,
     skip_if_auth_gated,
+    skip_if_auth_required,
     skip_if_version_mismatch,
     stdio_mcp_server,
 )
@@ -42,15 +43,6 @@ async def _options(agent, params: dict[str, Any], *, timeout: float):
     return await agent.wait_for_response(req_id, timeout=timeout)
 
 
-def _skip_if_auth_required(entry) -> None:
-    """SKIP when `entry` is the `-32000` (authentication required) error: nothing was judged."""
-    msg = entry.parsed
-    error = msg.get("error") if isinstance(msg, dict) else None
-    if isinstance(error, dict) and error.get("code") == AUTHENTICATION_REQUIRED:
-        skip_if_auth_gated(entry)
-        pytest.skip("session/options returned -32000 (authentication required)")
-
-
 def _succeeded(entry) -> bool:
     return isinstance(entry.parsed, dict) and isinstance(entry.parsed.get("result"), dict)
 
@@ -58,16 +50,9 @@ def _succeeded(entry) -> bool:
 async def _require_working_method(agent, cwd: Path, *, timeout: float) -> None:
     """SKIP unless a plain `session/options {cwd}` succeeds (ACP-OPTIONS-001 judges it)."""
     entry = await _options(agent, {"cwd": str(cwd)}, timeout=timeout)
-    _skip_if_auth_required(entry)
+    skip_if_auth_required(entry, "session/options")
     if not _succeeded(entry):
         pytest.skip(f"prerequisite not met: session/options {{cwd}} did not succeed (see ACP-OPTIONS-001): {entry.text!r}")
-
-
-async def _drain(agent, seconds: float) -> None:
-    try:
-        await agent.wait_for_message(lambda _entry: False, timeout=seconds)
-    except (AgentTimeout, AgentExited):
-        pass
 
 
 async def _listed_ids(agent, cwd: Path, *, timeout: float) -> set[Any] | None:
@@ -101,7 +86,7 @@ async def test_session_options_succeeds_with_a_valid_result(agent_launch, agent_
         skip_if_version_mismatch(agent_initialize_result.result)
     async with connected_agent(agent_launch) as agent:
         entry = await _options(agent, {"cwd": str(tmp_path)}, timeout=agent_launch.default_timeout)
-        _skip_if_auth_required(entry)
+        skip_if_auth_required(entry, "session/options")
         msg = entry.parsed
         assert _succeeded(entry), (
             f"session/options did not succeed although the agent advertises {_OPTIONS_PATH}: {entry.text!r}"
@@ -130,7 +115,7 @@ async def test_session_options_sends_no_update_and_lists_no_session(
         start = len(agent.transcript)
         entry = await _options(agent, {"cwd": str(tmp_path)}, timeout=timeout)
         assert _succeeded(entry), f"session/options stopped succeeding: {entry.text!r}"
-        await _drain(agent, quiet_period(timeout))
+        await drain(agent, quiet_period(timeout))
         updates = [
             e.text
             for e in agent.transcript[start:]
@@ -217,13 +202,13 @@ async def test_session_options_with_a_session_id_does_not_connect_mcp_servers(
     marker.unlink(missing_ok=True)
     async with connected_agent(agent_launch) as agent:
         entry = await _options(agent, {"cwd": str(tmp_path), "sessionId": session_id}, timeout=timeout)
-        _skip_if_auth_required(entry)
+        skip_if_auth_required(entry, "session/options")
         if not _succeeded(entry):
             pytest.skip(
                 "the agent cannot answer session/options for the session from a fresh process "
                 f"(it does not persist sessions): {entry.text!r}"
             )
-        await _drain(agent, quiet_period(timeout))
+        await drain(agent, quiet_period(timeout))
     assert not marker.exists(), (
         "session/options with a sessionId connected to the session's MCP server (the stub's marker reappeared)"
     )

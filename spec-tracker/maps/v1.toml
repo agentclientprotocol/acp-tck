@@ -239,6 +239,16 @@ reason = "Out of scope: the TCK only launches agents over stdio, so the first ru
 # --- session-config-options.mdx ---
 
 [[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:236,238 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "In a `boolean` `speed` option `true` is the faster setting, and agents SHOULD list the values of a `select` `speed` option from slowest to fastest."
+reason = "Not observable: the protocol carries no measure of speed for option values, so which value is faster is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:240 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD NOT use the `speed` category for an option that mainly selects a model, reasoning level or session mode."
+reason = "Not observable: whether an option mainly selects a model is a semantic judgement the wire format does not express."
+
+[[not_requirement]]
 citation = "docs/protocol/v1/draft/session-config-options.mdx:258-262 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Every config option's `currentValue` is the value the agent uses until the client changes it, and agents MUST be able to operate with it even if the client does not support, display or recognize the option."
 reason = "Not observable: it concerns the agent's internal operation. The observable part, `currentValue` being present and valid, is checked by schema validation and ACP-CONFIG-001."
@@ -247,6 +257,21 @@ reason = "Not observable: it concerns the agent's internal operation. The observ
 citation = "docs/protocol/v1/draft/session-config-options.mdx:248 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD place higher-priority config options first in the `configOptions` array."
 reason = "Not observable: which option is higher priority is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:507 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With a `sessionId`, `session/options` returns what `session/load` or `session/resume` with the same `cwd` and `additionalDirectories` would return."
+reason = "Not deterministically observable: the response is a snapshot and options can change between `session/options` and session setup, so a later difference is not a violation. ACP-OPTIONS-003 and ACP-OPTIONS-009 judge the parts a client can observe."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:537 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "`session/options` MUST NOT resume a session or change an existing session, and it writes nothing to the history of `sessionId`."
+reason = "Not deterministically observable: resuming has no client-visible marker, and comparing `session/load` replays before and after does not work because replays need not be identical. ACP-OPTIONS-002 judges the observable parts (no session created, no `session/update`, no `session/list` entry)."
+
+[[not_requirement]]
+citation = "docs/protocol/v1/draft/session-config-options.mdx:559 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The agent applies initial config option entries in list order, each checked against the option set as it stands at that point, on top of a restored session's configuration or the fork's starting configuration."
+reason = "Not observable: order only matters through dependencies between options, which are agent-specific and not described on the wire. The resulting values are judged as far as observable by ACP-OPTIONS-006, -010 and -011."
 
 [[not_requirement]]
 citation = "docs/protocol/v1/draft/session-config-options.mdx:572-581 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

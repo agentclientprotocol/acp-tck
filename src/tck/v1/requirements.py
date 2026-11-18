@@ -903,6 +903,135 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest"
         ),
     ),
+
+    Requirement(
+        id="ACP-OPTIONS-004",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "An initial `configOptions` entry that does not match the schema fails the setup "
+            "request with `-32602`. Checked on `session/new` with `[{\"value\": \"x\"}]` (no "
+            "`configId`) and `[{\"configId\": \"x\", \"value\": 42}]` (a value that is "
+            "neither a string nor, with `type: \"boolean\"`, a boolean). The probes break a "
+            "client rule (send schema-valid entries) on purpose, because the docs define the "
+            "agent's answer. The docs list `session/new`, `session/load` and `session/resume`, "
+            "and `session/fork` when supported; only `session/new` is probed. Unstable feature. "
+            "A `-32000` reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,541,563; "
+            "docs/protocol/v1/draft/session-setup.mdx:456; "
+            "schema/v1/schema.unstable.json#/$defs/InitialSessionConfigOption; "
+            "schema/v1/schema.unstable.json#/$defs/NewSessionRequest/properties/configOptions"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-005",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "Two initial `configOptions` entries with the same `configId` fail the setup "
+            "request with `-32602`. Checked on `session/new` with a real option of "
+            "`session/options` (a non-boolean one, at its current value) sent twice; an agent "
+            "with none gets a synthetic id, since the rule has no exception for unknown ids. "
+            "The probe breaks a client rule (no duplicate entries) on purpose, because the docs "
+            "define the agent's answer. Unstable feature. A `-32000` reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,541,564; "
+            "docs/protocol/v1/draft/session-setup.mdx:456; "
+            "schema/v1/schema.unstable.json#/$defs/NewSessionRequest/properties/configOptions"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-006",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "An initial `configOptions` entry the agent cannot apply does not fail setup: the "
+            "request succeeds and the option keeps a value valid for its type (not the one "
+            "sent). Probed on `session/new` with an unknown `configId`, a value no option lists, "
+            "and, on a connection that advertises `clientCapabilities.session.configOptions."
+            "boolean: {}`, a `type: \"boolean\"` entry for a select option and a string value "
+            "for a boolean option (the docs and schema descriptions name the gate "
+            "`sessionCapabilities.configOptions.boolean`, a path that does not exist; the real "
+            "one is the client capability); the unknown-id probe is repeated on `session/load` "
+            "and `session/resume` when advertised. Entries that apply are not probed (their "
+            "values may legitimately be refused at runtime). Unstable feature. A `-32000` reply "
+            "SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,541,565-566; "
+            "docs/protocol/v1/draft/session-setup.mdx:456; "
+            "schema/v1/schema.unstable.json#/$defs/InitialSessionConfigOption"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-007",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD NOT send `config_option_update` notifications for initial "
+            "`configOptions` entries; the setup response carries the resulting values. Judged "
+            "on `session/new` with a select option of `session/options` set to an alternative "
+            "value, from the request until a quiet period after the response (the connection "
+            "has no other session, so any such update is attributed to the entries). SKIPs "
+            "without `sessionCapabilities.options`, without such an option, or when setup "
+            "fails. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:567; "
+            "docs/protocol/v1/draft/session-setup.mdx:456"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-008",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Until the `session/new` response, the agent SHOULD NOT send other `session/update` "
+            "notifications caused by applying initial `configOptions` entries (such as a notice "
+            "that a value fell back, or a `current_mode_update`); it sends them after the "
+            "response. Judged on the exchange of ACP-OPTIONS-007, for `current_mode_update` and "
+            "`config_option_update` before the response only. SKIPs under the same conditions. "
+            "Unstable feature."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-config-options.mdx:568"),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-010",
+        tier=Tier.INFORMATIONAL,
+        capability=None,
+        text=(
+            "Records whether a valid initial value (an alternative value of a select option of "
+            "`session/options`, sent on `session/new`) shows in the setup response's "
+            "`configOptions`. Asserts nothing: the agent may ignore a value its runtime refuses "
+            "or one that changed since `session/options`. SKIPs without "
+            "`sessionCapabilities.options`, without such an option, or when setup fails. "
+            "Unstable feature."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-config-options.mdx:559,561,565-566"),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-011",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "The `configOptions` in a setup response contain the values the session actually "
+            "has. Checked on `session/new` with an initial entry, on a connection that "
+            "advertises `clientCapabilities.session.configOptions.boolean: {}` (so a second "
+            "option is visible): a no-op `session/set_config_option` of a *different* option "
+            "(to the `currentValue` the response reported) must return the same "
+            "`(id, currentValue)` pairs as the setup response. Setting the entry's own option "
+            "would overwrite the evidence. SKIPs without a select option with an alternative "
+            "value, without a second settable option, or when a `config_option_update` arrived "
+            "meanwhile (the agent may change its own configuration). Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:566; "
+            "docs/protocol/v1/draft/session-setup.mdx:456"
+        ),
+    ),
     Requirement(
         id="ACP-PROMPTCAP-001",
         tier=Tier.CAPABILITY,

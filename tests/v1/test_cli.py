@@ -105,6 +105,8 @@ _ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | {
     "ACP-PERM-002",
     "ACP-SUGGEST-004",
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-007",
+    "ACP-OPTIONS-008",
     "ACP-OPTIONS-009",
     # ACP-AUTH-001: its only assertion, AUTH-A5 (auth method ids are unique), is advisory in
     # the auth research -- not in _MANDATORY_IDS.
@@ -115,6 +117,7 @@ _INFORMATIONAL_IDS = {
     "ACP-STDERR-001",
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
+    "ACP-OPTIONS-010",
 }
 _CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
     "ACP-LOAD-001",
@@ -153,6 +156,10 @@ _CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
     "ACP-OPTIONS-001",
     "ACP-OPTIONS-002",
     "ACP-OPTIONS-003",
+    "ACP-OPTIONS-004",
+    "ACP-OPTIONS-005",
+    "ACP-OPTIONS-006",
+    "ACP-OPTIONS-011",
     # ACP-AUTH-003: CAPABILITY with capability="inferred:authMethods" -- runs only when
     # `authMethods` is non-empty and `--tck-auth-method` was given, otherwise SKIPPED.
     "ACP-AUTH-003",
@@ -179,14 +186,17 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS | {
     "ACP-PERM-002",
     "ACP-SUGGEST-004",
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-007",
+    "ACP-OPTIONS-008",
     "ACP-OPTIONS-009",
+    "ACP-OPTIONS-010",
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
 (including `ACP-AUTH-003`, `capability="inferred:authMethods"` and the `inferred:subagents` rows),
-plus the ADVISORY `ACP-SUBAGENT-011..014` and the twelve ADVISORY ids
+plus the ADVISORY `ACP-SUBAGENT-011..014`, the INFORMATIONAL `ACP-OPTIONS-010` and the fourteen ADVISORY ids
 (`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-AUTH-008`, `ACP-ERROR-004`, `ACP-ERROR-007`,
-`ACP-PERM-001`, `ACP-PERM-002`, `ACP-SUGGEST-004`, `ACP-CURSOR-004`, `ACP-OPTIONS-009`) whose tests are still gated (by a `@pytest.mark.capability(...)`
+`ACP-PERM-001`, `ACP-PERM-002`, `ACP-SUGGEST-004`, `ACP-CURSOR-004`, `ACP-OPTIONS-007`, `ACP-OPTIONS-008`, `ACP-OPTIONS-009`) whose tests are still gated (by a `@pytest.mark.capability(...)`
 marker, for `ACP-ERROR-004`/`007` by what `session/new` returned, for `ACP-PERM-*` by the agent
 never sending `session/request_permission`) even though their `Requirement.tier` itself is
 ADVISORY, not CAPABILITY (see `test_session_capabilities.py` module docstring)."""
@@ -2348,6 +2358,37 @@ def test_conforming_options_pass_non_vacuously_and_conforming_skips():
     assert full["ACP-CONFIG-003"] == "PASS", full
     plain = _table_statuses(_run_cli("conforming.py", k=scope).stdout)
     assert {plain[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)} == {"SKIPPED"}, plain
+
+
+def test_initial_config_defect_fixtures_fail_only_their_own_rows():
+    """Each fixture advertises `sessionCapabilities.options` with a select and a boolean option and
+    breaks one initial-`configOptions` rule. Everything else PASSes or SKIPs. The run is scoped with
+    `-k`, so its verdict is not asserted."""
+    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 8, 10, 11)]
+    for fixture, expected in (
+        ("options_accepts_malformed.py", {"ACP-OPTIONS-004"}),
+        ("options_accepts_duplicate.py", {"ACP-OPTIONS-005"}),
+        ("options_rejects_unknown_entry.py", {"ACP-OPTIONS-006"}),
+        ("options_notifies_initial.py", {"ACP-OPTIONS-007", "ACP-OPTIONS-008"}),
+        ("options_announces_mode.py", {"ACP-OPTIONS-008"}),
+        ("options_response_hides_values.py", {"ACP-OPTIONS-011"}),
+    ):
+        result = _run_cli(fixture, k="test_initial_config")
+        assert _output_fail_ids(result.stdout) == expected, f"{fixture}:\n{result.stdout}"
+        statuses = _table_statuses(result.stdout)
+        for req_id in set(ids) - expected:
+            assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_conforming_initial_config_passes_non_vacuously_and_conforming_skips():
+    """`conforming_full.py` applies initial entries, ignores inapplicable ones and reports the real
+    values, so every ACP-OPTIONS row of the initial-value family PASSes (010 records and PASSes);
+    `conforming.py` advertises no `options` and SKIPs them all."""
+    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 8, 10, 11)]
+    full = _table_statuses(_run_cli("conforming_full.py", k="test_initial_config").stdout)
+    assert {full[i] for i in ids} == {"PASS"}, full
+    plain = _table_statuses(_run_cli("conforming.py", k="test_initial_config").stdout)
+    assert {plain[i] for i in ids} == {"SKIPPED"}, plain
 
 
 def test_late_state_updates_pass_cancel_002_and_load_002():

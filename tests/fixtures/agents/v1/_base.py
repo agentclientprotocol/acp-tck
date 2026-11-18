@@ -105,12 +105,23 @@ class ConformingAgent:
     `_persist_sessions` on, sessions are also kept in `<cwd>/.tck-fixture-sessions.json`, so a
     later connection to a fresh process can load or resume one (off by default: it writes a
     file into the session's `cwd`).
+
+    Initial config option values (`configOptions` on `session/new`, `session/load` and
+    `session/resume`) are handled as `session-config-options.mdx:563-566` says: an entry that does
+    not match the schema, or a repeated `configId`, gets `-32602` before anything happens; an entry
+    whose id is unknown, whose type does not match the option's or whose value is not allowed is
+    ignored; the rest are applied in order, and the setup response reports the resulting values.
+    Defect fixtures switch each rule off with the class attributes `_validate_initial_config`,
+    `_reject_duplicate_initial_config` and `_ignore_inapplicable_initial_config`.
     """
 
     _require_initialize = True
     _gate_unadvertised = True
     _validate_set_params = True
     _persist_sessions = False
+    _validate_initial_config = True
+    _reject_duplicate_initial_config = True
+    _ignore_inapplicable_initial_config = True
 
     def __init__(
         self,
@@ -330,11 +341,14 @@ class ConformingAgent:
         if system_prompt_error is not None:
             self._error(msg_id, -32602, f"Invalid params: {system_prompt_error}")
             return
+        if self._refuses_initial_config(msg_id, params):
+            return
         self._launch_mcp_servers(params.get("mcpServers") or [])
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
         self._persist(session_id)
+        self._apply_initial_config(params)
         result: dict[str, Any] = {"sessionId": session_id}
         if self._modes is not None:
             result["modes"] = self._modes
@@ -363,6 +377,70 @@ class ConformingAgent:
         if visible_config is not None:
             result["configOptions"] = visible_config
         self._reply(msg_id, result)
+
+    def _initial_config_error(self, entries: Any) -> str | None:
+        """Why `entries` (a request's `configOptions`) must fail the request, else `None`: an
+        entry that is not `{configId: str, value: str}` or `{configId: str, type: "boolean",
+        value: bool}`, or a repeated `configId` (`session-config-options.mdx:563-564`)."""
+        if entries is None:
+            return None
+        if not isinstance(entries, list):
+            return "configOptions must be an array"
+        seen: set[str] = set()
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("configId"), str):
+                if self._validate_initial_config:
+                    return f"configOptions entry without a string configId: {entry!r}"
+                continue
+            value = entry.get("value")
+            if entry.get("type") == "boolean":
+                well_formed = isinstance(value, bool)
+            else:
+                well_formed = isinstance(value, str)
+            if not well_formed and self._validate_initial_config:
+                return f"configOptions entry {entry['configId']!r} has a value that does not match its type"
+            if entry["configId"] in seen and self._reject_duplicate_initial_config:
+                return f"configOptions names {entry['configId']!r} twice"
+            seen.add(entry["configId"])
+        return None
+
+    def _refuses_initial_config(self, msg_id: Any, params: dict[str, Any]) -> bool:
+        """Answer `-32602` and return `True` if the request's `configOptions` must fail it."""
+        error = self._initial_config_error(params.get("configOptions"))
+        if error is None:
+            return False
+        self._error(msg_id, -32602, f"Invalid params: {error}")
+        return True
+
+    def _apply_initial_config(self, params: dict[str, Any]) -> None:
+        """Apply the request's `configOptions` entries in order. An entry whose id is unknown,
+        whose type does not match the option's or whose value is not allowed is ignored
+        (`session-config-options.mdx:565`)."""
+        for entry in params.get("configOptions") or []:
+            if not isinstance(entry, dict):
+                continue
+            option = next(
+                (o for o in self._visible_config_options() or [] if o.get("id") == entry.get("configId")),
+                None,
+            )
+            if option is None:
+                continue
+            is_boolean = option.get("type") == "boolean"
+            if self._ignore_inapplicable_initial_config:
+                if is_boolean != (entry.get("type") == "boolean"):
+                    continue
+                if not is_boolean and entry.get("value") not in self._select_values(option):
+                    continue
+            option["currentValue"] = entry.get("value")
+
+    @staticmethod
+    def _select_values(option: dict[str, Any]) -> set[Any]:
+        values = set()
+        for entry in option.get("options") or []:
+            # flat `{value, name}` entries, or `{group, name, options: [...]}` groups
+            for choice in entry.get("options") or [entry]:
+                values.add(choice.get("value"))
+        return values
 
     @staticmethod
     def _store_path(cwd: Any) -> Path | None:
@@ -569,8 +647,17 @@ class ConformingAgent:
             self._persist(session_id)
         self._notify("session/update", update_params)
 
+    def _setup_result(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Apply the `session/load`/`session/resume` request's initial `configOptions` and return the
+        result: the config options the session now has, reported only when the request carried any."""
+        if params.get("configOptions") is None:
+            return {}
+        self._apply_initial_config(params)
+        visible_config = self._visible_config_options()
+        return {"configOptions": visible_config} if visible_config is not None else {}
+
     def _handle_load(self, msg_id: Any, params: dict[str, Any]) -> None:
-        if self._refuses_system_prompt(msg_id, params):
+        if self._refuses_system_prompt(msg_id, params) or self._refuses_initial_config(msg_id, params):
             return
         session_id = params.get("sessionId")
         self._restore(session_id, params.get("cwd"))
@@ -580,10 +667,10 @@ class ConformingAgent:
             return
         for update_params in session["history"]:
             self._notify("session/update", update_params)
-        self._reply(msg_id, {})
+        self._reply(msg_id, self._setup_result(params))
 
     def _handle_resume(self, msg_id: Any, params: dict[str, Any]) -> None:
-        if self._refuses_system_prompt(msg_id, params):
+        if self._refuses_system_prompt(msg_id, params) or self._refuses_initial_config(msg_id, params):
             return
         session_id = params.get("sessionId")
         self._restore(session_id, params.get("cwd"))
@@ -592,7 +679,7 @@ class ConformingAgent:
             return
         # Deliberately no replay -- ACP-RESUME-002 requires history-kind updates not be sent
         # before this response.
-        self._reply(msg_id, {})
+        self._reply(msg_id, self._setup_result(params))
 
     def _handle_list(self, msg_id: Any, params: dict[str, Any]) -> None:
         # The fixture never paginates, so it never issues a cursor and every one is invalid.

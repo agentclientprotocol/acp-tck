@@ -25,7 +25,13 @@ from tck.common.harness import AgentExited, AgentTimeout, Direction
 from tck.common.plugin import capability_is_supported
 from tck.v1.validation import validate_agent_response
 
-from ._helpers import connected_agent, quiet_period, session_update_kind, skip_if_auth_gated
+from ._helpers import (
+    connected_agent,
+    flatten_select_values,
+    quiet_period,
+    session_update_kind,
+    skip_if_auth_gated,
+)
 
 
 async def _new_session_full_result(agent, cwd, *, timeout):
@@ -41,23 +47,6 @@ async def _new_session_full_result(agent, cwd, *, timeout):
     issues = validate_agent_response("session/new", msg)
     assert not issues, f"session/new result failed schema validation: {issues!r}"
     return msg["result"]
-
-
-def _flatten_select_values(options) -> list[Any]:
-    """`SessionConfigSelectOptions` is `anyOf` a flat array of `{value, name, ...}` or a grouped
-    array of `{group, name, options: [{value, ...}]}` -- flatten either shape down to the set of
-    legal `value`s."""
-    values = []
-    for entry in options:
-        if not isinstance(entry, dict):
-            continue
-        if "value" in entry:
-            values.append(entry["value"])
-        elif "options" in entry:
-            for sub in entry["options"]:
-                if isinstance(sub, dict) and "value" in sub:
-                    values.append(sub["value"])
-    return values
 
 
 # --- modes ---
@@ -180,7 +169,7 @@ async def test_config_options_current_values_are_valid(agent_launch, tmp_path):
                 )
             else:
                 # Default/select variant: currentValue must be one of the declared options.
-                legal_values = _flatten_select_values(option.get("options") or [])
+                legal_values = flatten_select_values(option.get("options") or [])
                 assert current_value in legal_values, (
                     f"config option {option['id']!r} currentValue {current_value!r} is not "
                     f"among its declared options {legal_values!r}"
@@ -213,7 +202,7 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
                 "value": new_value,
             }
         else:
-            legal_values = _flatten_select_values(target.get("options") or [])
+            legal_values = flatten_select_values(target.get("options") or [])
             remaining = [value for value in legal_values if value != target.get("currentValue")]
             if not remaining:
                 pytest.skip(f"config option {target['id']!r} has no alternative value to switch to")
@@ -295,7 +284,7 @@ async def test_no_boolean_config_option_without_client_capability(
         )
         alternatives = [
             value
-            for value in _flatten_select_values((select or {}).get("options") or [])
+            for value in flatten_select_values((select or {}).get("options") or [])
             if value != (select or {}).get("currentValue")
         ]
         if alternatives:

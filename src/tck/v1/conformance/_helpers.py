@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
 import pytest
 
-from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction, TranscriptEntry
+from tck.common.harness import AgentExited, AgentLaunch, AgentProcess, AgentTimeout, Direction, TranscriptEntry
 from tck.common.plugin import (
     current_auth_method_id,
     current_initialize_auth_methods,
@@ -107,6 +107,23 @@ async def connected_agent(
         yield agent
 
 
+def flatten_select_values(options: Any) -> list[Any]:
+    """`SessionConfigSelectOptions` is `anyOf` a flat array of `{value, name, ...}` or a grouped
+    array of `{group, name, options: [{value, ...}]}` -- flatten either shape down to the set of
+    legal `value`s."""
+    values = []
+    for entry in options if isinstance(options, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if "value" in entry:
+            values.append(entry["value"])
+        elif "options" in entry:
+            for sub in entry["options"]:
+                if isinstance(sub, dict) and "value" in sub:
+                    values.append(sub["value"])
+    return values
+
+
 def unusable_auth_method_reason(auth_methods: Any, method_id: str) -> str | None:
     """Why `authenticate` must not be called with `method_id` given the agent's advertised
     `authMethods`, or `None` if it may. The id must be one the agent advertised, and clients
@@ -159,6 +176,16 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     )
 
 
+def skip_if_auth_required(entry: TranscriptEntry, method: str) -> None:
+    """SKIP when `entry` (the answer to `method`) is the `-32000` (authentication required) error:
+    nothing was judged. Marks the SKIP `AUTH-GATED:` when `skip_if_auth_gated` does."""
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    if isinstance(error, dict) and error.get("code") == AUTHENTICATION_REQUIRED:
+        skip_if_auth_gated(entry)
+        pytest.skip(f"{method} returned -32000 (authentication required)")
+
+
 async def new_session(agent: AgentProcess, cwd: Path, *, timeout: float | None = None) -> str:
     """Send `session/new` with an absolute `cwd` and no MCP servers; return the `sessionId`
     from the response.
@@ -198,6 +225,15 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
             f"{PROTOCOL_VERSION!r} -- this agent does not speak v1, so its result cannot be "
             "judged against v1-only shape requirements"
         )
+
+
+async def drain(agent: AgentProcess, seconds: float) -> None:
+    """Wait `seconds` for anything the agent still sends (it all lands in `agent.transcript`);
+    the agent exiting meanwhile ends the wait early."""
+    try:
+        await agent.wait_for_message(lambda _entry: False, timeout=seconds)
+    except (AgentTimeout, AgentExited):
+        pass
 
 
 def quiet_period(timeout: float) -> float:
