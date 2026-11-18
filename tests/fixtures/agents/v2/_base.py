@@ -1917,6 +1917,12 @@ class AsksPermissionAgent(ConformingAgent):
         self._withdraw_pending_permission(params.get("sessionId"))
         super()._handle_close_session(msg_id, params)
 
+    def _handle_delete_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        # ACP-DELETE-204: deleting cancels the work as `session/close` does, so a permission
+        # request it is blocked on is withdrawn and the cancelled idle sent before the response.
+        self._withdraw_pending_permission(params.get("sessionId"))
+        super()._handle_delete_session(msg_id, params)
+
     def _close_for_archive(self, session_id: Any) -> None:
         # Archiving closes the session, so a permission request it is blocked on is withdrawn too.
         self._withdraw_pending_permission(session_id)

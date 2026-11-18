@@ -970,6 +970,26 @@ def test_v2_conforming_full_agent_without_allow_logout_only_skips_auth_004():
     assert "VERDICT: CONFORMANT" in result.stdout, result.stdout
 
 
+def test_v2_conforming_full_agent_default_cancel_prompt_passes_close_and_delete_cancel():
+    """Without `--cancel-prompt __hang__` (the whole-suite run above passes it, which preempts the
+    permission request) `conforming_full.py`'s default cancel turn ends blocked on a pending
+    `session/request_permission`. `session/close` and `session/delete` must withdraw it and send
+    the cancelled idle before answering, so `ACP-CLOSE-002/203/205` and `ACP-DELETE-204` PASS
+    (not SKIP, not FAIL): the permission request is always pending when the trigger lands."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "conforming_full.py",
+        protocol_version=2,
+        k="test_close_cancels_foreground_work or test_close_sends_cancelled_idle_before_responding "
+        "or test_close_withdraws_the_pending_permission_request or test_delete_cancels_foreground_work",
+    )
+    statuses = _table_statuses(result.stdout)
+    fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+    assert fails == set(), result.stdout
+    for req_id in ("ACP-CLOSE-002", "ACP-CLOSE-203", "ACP-CLOSE-205", "ACP-DELETE-204"):
+        assert statuses.get(req_id) == "PASS", f"{req_id}:\n{result.stdout}"
+
+
 def test_asks_permission_fixture_passes_perm_201_but_skips_promptcap():
     """`asks_permission.py` isolates `ACP-PERM-201` from `conforming_full.py`'s broader
     capability set: it asks for permission on every turn but advertises no prompt-content
