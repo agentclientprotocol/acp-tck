@@ -24,6 +24,9 @@ For a client that advertised `clientCapabilities.session.cursors` it reports eac
 with a `messageId` and announces a fork-capable cursor after it (replayed on `session/load` with
 the same id), and `session/fork` accepts those cursors and rejects any other with `-32602`, so
 ACP-CURSOR-001..004 PASS non-vacuously (`_cursors.py`).
+It advertises `sessionCapabilities.options`, and `_base.py` answers `session/options` (with or without a
+persisted `sessionId`) without creating a session or touching MCP servers, so ACP-OPTIONS-001/002/003/009
+PASS non-vacuously.
 It also inherits `HonorsPermissionAgent`'s permission probe, so ACP-PERM-001/002 PASS
 non-vacuously; ordinary prompts never request permission.
 """
@@ -49,6 +52,7 @@ CAPABILITIES = {
         "fork": {},
         "additionalDirectories": {},
         "systemPrompt": {},
+        "options": {},
     },
     "promptCapabilities": {
         "image": True,

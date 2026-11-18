@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
@@ -20,6 +21,20 @@ from tck.common.plugin import (
 )
 from tck.v1.protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
 from tck.v1.validation import validate_against_def
+
+
+_MCP_STUB = Path(__file__).with_name("_mcp_stub.py")
+
+
+def stdio_mcp_server(marker: Path, env: list[dict] | None = None) -> dict:
+    """A stdio `McpServer` entry for the TCK's stub server (`_mcp_stub.py`), which writes `marker`
+    when an agent connects to it. `command` must be an absolute path, which `sys.executable` is."""
+    return {
+        "name": "acp-tck-stub",
+        "command": sys.executable,
+        "args": [str(_MCP_STUB), str(marker)],
+        "env": env or [],
+    }
 
 
 @contextlib.asynccontextmanager

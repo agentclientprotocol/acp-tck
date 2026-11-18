@@ -105,6 +105,7 @@ _ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | {
     "ACP-PERM-002",
     "ACP-SUGGEST-004",
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-009",
     # ACP-AUTH-001: its only assertion, AUTH-A5 (auth method ids are unique), is advisory in
     # the auth research -- not in _MANDATORY_IDS.
     "ACP-AUTH-001",
@@ -149,6 +150,9 @@ _CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
     # unless the agent sent a non-empty suggestion list before the second prompt.
     "ACP-SUGGEST-003",
     "ACP-CURSOR-003",
+    "ACP-OPTIONS-001",
+    "ACP-OPTIONS-002",
+    "ACP-OPTIONS-003",
     # ACP-AUTH-003: CAPABILITY with capability="inferred:authMethods" -- runs only when
     # `authMethods` is non-empty and `--tck-auth-method` was given, otherwise SKIPPED.
     "ACP-AUTH-003",
@@ -175,13 +179,14 @@ _CAPABILITY_GATED_IDS = _CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS | {
     "ACP-PERM-002",
     "ACP-SUGGEST-004",
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-009",
 }
 """Every id that SKIPs (rather than PASSes) against `conforming.py`, which advertises
 `agentCapabilities: {}` and no modes/configOptions/authMethods -- every CAPABILITY-tier id
 (including `ACP-AUTH-003`, `capability="inferred:authMethods"` and the `inferred:subagents` rows),
-plus the ADVISORY `ACP-SUBAGENT-011..014` and the eleven ADVISORY ids
+plus the ADVISORY `ACP-SUBAGENT-011..014` and the twelve ADVISORY ids
 (`ACP-LOAD-003`, `ACP-LIST-003`, `ACP-DELETE-002`, `ACP-CLOSE-003`, `ACP-AUTH-008`, `ACP-ERROR-004`, `ACP-ERROR-007`,
-`ACP-PERM-001`, `ACP-PERM-002`, `ACP-SUGGEST-004`, `ACP-CURSOR-004`) whose tests are still gated (by a `@pytest.mark.capability(...)`
+`ACP-PERM-001`, `ACP-PERM-002`, `ACP-SUGGEST-004`, `ACP-CURSOR-004`, `ACP-OPTIONS-009`) whose tests are still gated (by a `@pytest.mark.capability(...)`
 marker, for `ACP-ERROR-004`/`007` by what `session/new` returned, for `ACP-PERM-*` by the agent
 never sending `session/request_permission`) even though their `Requirement.tier` itself is
 ADVISORY, not CAPABILITY (see `test_session_capabilities.py` module docstring)."""
@@ -2309,6 +2314,40 @@ def test_boolean_option_on_set_fails_config_003_only():
     statuses = _table_statuses(result.stdout)
     assert statuses.get("ACP-CONFIG-001") == "PASS", result.stdout
     assert statuses.get("ACP-CONFIG-002") == "PASS", result.stdout
+
+
+def test_options_defect_fixtures_fail_only_their_own_row():
+    """Each fixture advertises `sessionCapabilities.options` (and `list`/`loadSession` where its row
+    needs them) and breaks one `session/options` rule. ACP-OPTIONS-001 FAILs only for a method that
+    errors; the others SKIP on that prerequisite, never pass vacuously. The run is scoped with
+    `-k`, so its verdict is not asserted."""
+    ids = [f"ACP-OPTIONS-00{n}" for n in (1, 2, 3, 9)]
+    for fixture, expected in (
+        ("options_method_errors.py", {"ACP-OPTIONS-001"}),
+        ("options_creates_session.py", {"ACP-OPTIONS-002"}),
+        ("options_accepts_unknown_session.py", {"ACP-OPTIONS-003"}),
+        ("options_connects_mcp.py", {"ACP-OPTIONS-009"}),
+        ("boolean_option_on_options.py", {"ACP-CONFIG-003"}),
+    ):
+        result = _run_cli(fixture, k="test_session_options or test_session_config")
+        assert _output_fail_ids(result.stdout) == expected, f"{fixture}:\n{result.stdout}"
+        statuses = _table_statuses(result.stdout)
+        for req_id in set(ids) - expected:
+            assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+    errors = _table_statuses(_run_cli("options_method_errors.py", k="test_session_options").stdout)
+    assert [errors[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)] == ["FAIL", "SKIPPED", "SKIPPED", "SKIPPED"], errors
+
+
+def test_conforming_options_pass_non_vacuously_and_conforming_skips():
+    """`conforming_full.py` advertises `options`, `list`, `loadSession` and persists sessions, so
+    ACP-OPTIONS-001/002/003/009 PASS (009 reconnects from a fresh process) and ACP-CONFIG-003 stays
+    PASS with `session/options` judged; `conforming.py` advertises nothing and SKIPs all four."""
+    scope = "test_session_options or test_session_config"
+    full = _table_statuses(_run_cli("conforming_full.py", k=scope).stdout)
+    assert [full[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)] == ["PASS"] * 4, full
+    assert full["ACP-CONFIG-003"] == "PASS", full
+    plain = _table_statuses(_run_cli("conforming.py", k=scope).stdout)
+    assert {plain[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)} == {"SKIPPED"}, plain
 
 
 def test_late_state_updates_pass_cancel_002_and_load_002():

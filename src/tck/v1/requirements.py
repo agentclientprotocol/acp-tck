@@ -816,14 +816,91 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`clientCapabilities.session.configOptions.boolean: {}` -- a genuine client- "
             "controlled MUST NOT. Checked on `session/new`'s result, a "
             "`session/set_config_option` result, `session/load`/`session/resume` results when "
-            "advertised, and any `config_option_update` seen meanwhile. Passes vacuously if the "
-            "agent has no config options, or none of `type: \"boolean\"`, at all."
+            "advertised, a `session/options` result when `sessionCapabilities.options` is "
+            "advertised (its `configOptions` follow \"the same type and rules as on "
+            "`NewSessionResponse`\"), and any `config_option_update` seen meanwhile. Passes "
+            "vacuously if the agent has no config options, or none of `type: \"boolean\"`, at "
+            "all. Upstream discrepancy: the `session/options` docs and schema descriptions name "
+            "the gate `sessionCapabilities.configOptions.boolean`, which does not exist; the "
+            "client capability that gates it is `clientCapabilities.session.configOptions.boolean`."
         ),
         citation=_cite(
             "schema/v1/schema.unstable.json#/$defs/SessionConfigOption/oneOf/1; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigBoolean (SessionConfigOption "
-            "boolean variant); docs/protocol/v1/draft/session-config-options.mdx:207-209 "
-            "(normative MUST NOT text); docs/protocol/v1/draft/initialization.mdx:189-198"
+            "boolean variant); docs/protocol/v1/draft/session-config-options.mdx:207-209,535 "
+            "(normative MUST NOT text); docs/protocol/v1/draft/initialization.mdx:189-198; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-001",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "An agent that advertises `sessionCapabilities.options` supports `session/options`: "
+            "`session/options` with an absolute `cwd` (and no `sessionId`) succeeds, and its "
+            "result validates as `SessionOptionsResponse`. Unstable feature. The docs state this "
+            "declaratively, with no RFC keyword; advertising the capability is the opt-in. A "
+            "`-32000` (authentication required) reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,479-500,511-535; "
+            "docs/protocol/v1/draft/initialization.mdx:424-429; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-002",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "`session/options` MUST NOT create a session, send a `session/update` notification "
+            "or add an entry to `session/list`. Checked on a connection with no session: no "
+            "`session/update` arrives from the request until a quiet period after its response, "
+            "and, when `sessionCapabilities.list` is advertised, a `session/list` for the same "
+            "`cwd` shows no session it did not show before. Without `list`, only the "
+            "notification half is checked. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:537; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "`session/options` with a `sessionId` the agent never issued fails with an error "
+            "rather than a result. The docs give the code (`-32002`) without an RFC keyword and "
+            "`error.mdx` lists it only as a SHOULD, so the code is not asserted. The probe "
+            "breaks a client MUST (send `sessionId` only when the agent supports `loadSession` "
+            "or `sessionCapabilities.resume`) only on an agent that advertises one of them; "
+            "SKIPs otherwise. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:507; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest/properties/sessionId"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-009",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/options` with a `sessionId` SHOULD NOT connect to MCP servers (the request "
+            "has no `mcpServers`, so an agent that does reconnects those the session was "
+            "created with). Checked with a session created with the TCK's stub stdio MCP server "
+            "on one connection, the stub's marker deleted, then `session/options` for that "
+            "session on a fresh connection: the marker must not reappear. SKIPs without "
+            "`sessionCapabilities.options`, without `loadSession` or `sessionCapabilities.resume`, "
+            "when the agent never connected to the stub, or when the second connection cannot "
+            "answer for the session (the agent does not persist sessions). Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:507,509; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest"
         ),
     ),
     Requirement(

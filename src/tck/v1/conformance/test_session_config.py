@@ -273,7 +273,7 @@ async def test_no_boolean_config_option_without_client_capability(
     """ACP-CONFIG-003 (MANDATORY). Connects with `clientCapabilities: {}` explicitly (no
     `session.configOptions.boolean`) and asserts no `type: "boolean"` option appears in any
     `configOptions` payload: `session/new`'s result, a `session/set_config_option` result (when
-    a select option has an alternative value), `session/load`/`session/resume` results (when
+    a select option has an alternative value), `session/load`/`session/resume`/`session/options` results (when
     advertised), and any `config_option_update` seen on the connection. Passes vacuously if the
     agent has no config options at all, or none of type boolean."""
     init_result = agent_initialize_result.result or {}
@@ -322,6 +322,11 @@ async def test_no_boolean_config_option_without_client_capability(
                 timeout=timeout,
             )
             payloads["session/resume"] = resume_result.get("configOptions")
+        if capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.options"):
+            options_result = await _result_of(
+                agent, "session/options", {"cwd": str(tmp_path)}, timeout=timeout
+            )
+            payloads["session/options"] = options_result.get("configOptions")
 
         payloads["config_option_update"] = [
             option

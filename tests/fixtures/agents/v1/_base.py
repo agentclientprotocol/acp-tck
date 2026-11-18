@@ -30,6 +30,7 @@ _SESSION_CAPABILITY_KEYS = {
     "session/delete": "delete",
     "session/archive": "archive",
     "session/unarchive": "archive",
+    "session/options": "options",
 }
 
 # `schema/v1/schema.unstable.json#/$defs/SessionArchiveFilter`: the values every agent
@@ -252,6 +253,8 @@ class ConformingAgent:
             self._handle_archive(msg_id, params, archived=True)
         elif method == "session/unarchive":
             self._handle_archive(msg_id, params, archived=False)
+        elif method == "session/options":
+            self._handle_options(msg_id, params)
         elif method == "session/set_mode":
             self._handle_set_mode(msg_id, params)
         elif method == "session/set_config_option":
@@ -333,6 +336,27 @@ class ConformingAgent:
         self._sessions[session_id] = {"cwd": params.get("cwd"), "history": []}
         self._persist(session_id)
         result: dict[str, Any] = {"sessionId": session_id}
+        if self._modes is not None:
+            result["modes"] = self._modes
+        visible_config = self._visible_config_options()
+        if visible_config is not None:
+            result["configOptions"] = visible_config
+        self._reply(msg_id, result)
+
+    def _handle_options(self, msg_id: Any, params: dict[str, Any]) -> None:
+        """`session/options`: the modes and config options a session would start with, without
+        creating or resuming one, sending an update or connecting to an MCP server. With a
+        `sessionId` it answers for that session, an unknown one getting `-32002`."""
+        if not isinstance(params.get("cwd"), str):
+            self._error(msg_id, -32602, "Invalid params: missing 'cwd'")
+            return
+        session_id = params.get("sessionId")
+        if session_id is not None:
+            self._restore(session_id, params.get("cwd"))
+            if session_id not in self._sessions:
+                self._unknown_session(msg_id, session_id)
+                return
+        result: dict[str, Any] = {}
         if self._modes is not None:
             result["modes"] = self._modes
         visible_config = self._visible_config_options()
