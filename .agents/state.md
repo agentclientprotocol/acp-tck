@@ -53,19 +53,10 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V1-SA3 — fd23cab — +SUBAGENT-018 ADVISORY (post-judging probes load/close/delete, U4), +SUBAGENT-019 CAPABILITY close(+delete), +LIST-004 CAPABILITY list, +SUBAGENT-020 ADVISORY; new exposes_subagent_full.py; suite green (1146)
 - V2-SA1 — 8cb3a0e — v2 subagent rows + RESUME-002/-209 docs-first; ledger +13 (incl. 2 Deferred), -1 cost, 13 rewrites; suite green (1146)
 - V2-SA2 — 08a671d — SUBAGENT-012 sender-less counts, -016 needs child's own idle, unknown-after-cancel SKIPs; 4 fixtures; suite green (1152)
+- V2-SA3 — 0e649c6 — +SUBAGENT-018 ADVISORY / -019 CAPABILITY child probes (list, new, resume, delete, close last), +LIST-004, +SUBAGENT-205 (delayed mirror; 201 keeps missing/swapped), SUBAGENT-004 ext; 7 fixtures; suite green (1167). For review: error.mdx cite is :58 not :57; probes share the subagents connection.
 ## Next
-Order (plan section 5): area slices 23-28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
-- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-22 done (plus R-FIX, typo fix, DEL204-FIX).
-- Slice 23 V2-SA3: STOPPED GRACEFULLY, NOT COMMITTED (user request, before an orchestrator restart). The working tree holds the
-  complete implementation, uncommitted: SUBAGENT-018/-019/-205, LIST-004, SUBAGENT-004 extension. Handoff with details and
-  decisions: `.agents/research/v2-sa3-handoff.md`. Modified: src/tck/v2/requirements.py, src/tck/v2/conformance/_helpers.py,
-  src/tck/v2/conformance/test_subagents.py, tests/fixtures/agents/v2/exposes_subagent.py, tests/v2/test_cli.py,
-  tests/v2/test_helpers.py, tests/v2/test_registry.py. New fixtures in tests/fixtures/agents/v2/: exposes_subagent_full.py,
-  child_close_wrong_code.py, child_close_succeeds.py, child_delete_succeeds.py, lists_child_session.py,
-  child_id_reused_for_new_session.py, late_child_state_mirror.py. Last results: test_helpers, test_registry and spec-tracker
-  green; subagent part of test_cli had 1 failure that was fixed but not re-run; the full suite was NEVER run.
-  FIRST ACTION on resume: spawn a programmer (single mode, tip a1dd1c8 plus this tree) to read the handoff, run the FULL suite in the
-  foreground, fix what fails, and commit by explicit paths as `feat(v2): child-session probes, list and state-ordering rows`.
+Order (plan section 5): area slices 24-28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
+- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-23 done (plus R-FIX, typo fix, DEL204-FIX).
 - Slice 24 V2-SA4 (plan 5.2 row 24; 1.2 ~lines 199-201, 206-207): +RESUME-223/-224/-225, +SUBAGENT-203 (CAPABILITY cap.session,
   pending child requests get $/cancel_request before the session/close response), +SUBAGENT-204 (CAPABILITY inferred:subagentCancel;
   harness change in _child_cancel.py, run_prompt hold mode). Needs replay_complete (0ec3a61) and CANCEL-213 (a8c38d8), both done.
