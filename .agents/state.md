@@ -50,6 +50,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - DEL204-FIX — 98673e1 — AsksPermissionAgent now withdraws the pending permission before answering session/delete (close already did); new CLI test runs close/delete cancel rows without __hang__; plain v2 run on conforming_full is CONFORMANT; suite green (1117)
 - V1-SA1 — 9137de7 — v1 subagent rows + CLIENTCAP-001..003/-007 cite subagents.mdx first (U13a in SUBAGENT-002); ledger +17, -1 cost, rewrites/re-points; suite green (1117)
 - V1-SA2 — 2800a5a — SUBAGENT-001 post-load scope (only after a successful load), -012 sender-less message counts, -016 unknown-after-cancel SKIPs; 4 fixtures; suite green (1126)
+- V1-SA3 — fd23cab — +SUBAGENT-018 ADVISORY (post-judging probes load/close/delete, U4), +SUBAGENT-019 CAPABILITY close(+delete), +LIST-004 CAPABILITY list, +SUBAGENT-020 ADVISORY; new exposes_subagent_full.py; suite green (1146)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
