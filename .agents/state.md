@@ -36,12 +36,14 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-CURSOR — a239149 — +CURSOR-001..004 (CAPABILITY cap.session / cap.session.fork / ADVISORY), ENUM-201 cursor anchor sites, ledger +4 (one Deferred: positive fork-at-cursor); _base.py rejects unissued cursorId by default; suite green (1040). CURSOR-001 also requires an anchor on the first replayed update after load (SS:156 'like a first update'); accepted.
 - V1-OPT1 — a2a47c4 — +OPTIONS-001/-002/-003 CAPABILITY options, -009 ADVISORY, CONFIG-003 scans session/options (U1 noted); suite green (1042)
 - V1-OPT2 — 586c37e — +OPTIONS-004/-005/-006/-011 CAPABILITY, -007/-008 ADVISORY, -010 INFORMATIONAL; ledger +5; suite green (1044). For review: OPTIONS-008 also flags config_option_update (overlaps -007; plan says 'other' updates); fork initial entries not probed.
+- V2-OPT1 — 93b3b14 — +OPTIONS-001/-002/-003 (-32002, U5) CAPABILITY, -009 ADVISORY; ERROR-006 probes session/options; CONFIG-001/-210, COMMANDS-201, CLIENTCAP-203 scan session/options; suite green (1047)
+- V2-OPT2 — 252d13a — +OPTIONS-004/-005/-006/-011 CAPABILITY, -007 ADVISORY, -010/-201 INFORMATIONAL (U6/U7); ledger +8; suite green (1049)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE and reviewed.
-- Slices 10 V2-OPT1 + 11 V2-OPT2 (one programmer, two commits): in progress.
+- Slice 12 V2-SKILL (+ separate tiny commit fixing v1 test-name typos `astdio`/`thestdio` from a2a47c4): in progress.
 - For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
 - none
