@@ -22,6 +22,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - VENDORED.md keeps `git show <commit>:<path>` (fix slice drops the pointless HEAD step, aligns docs/spec-updates.md).
 - AUTH-211: relax the common plugin to allow several `revokes` tests, run last in collection order (user, 2026-11-18).
 - Pre-existing ACP-DELETE-204 fixture bug: fix in this PR as a small fixture-only slice + a test running DELETE-204 without the hang prompt (user).
+- Slice 28: PL "Prompt suggestions (unstable)" and "Session cursors (unstable)" STAY in the v2 left-out list (user, 2026-11-18); not core_doc sections.
 - No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
@@ -55,18 +56,15 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-SA2 — 08a671d — SUBAGENT-012 sender-less counts, -016 needs child's own idle, unknown-after-cancel SKIPs; 4 fixtures; suite green (1152)
 - V2-SA3 — 0e649c6 — +SUBAGENT-018 ADVISORY / -019 CAPABILITY child probes (list, new, resume, delete, close last), +LIST-004, +SUBAGENT-205 (delayed mirror; 201 keeps missing/swapped), SUBAGENT-004 ext; 7 fixtures; suite green (1167). For review: error.mdx cite is :58 not :57; probes share the subagents connection.
 - V2-SA4 — 4dfbf16 — +RESUME-223/-224/-225, +SUBAGENT-203 (cap.session), +SUBAGENT-204 (inferred:subagentCancel); run_prompt(hold_children=) + ChildPermissionHold, _child_cancel holds child requests; docs/mock-client.md section; 8 fixtures; CLI_SUBPROCESS_TIMEOUT 60->120 (conforming_full ~61 s); suite green (1189). For review: 204 also judges parent-cascade stops (gate narrower than judged); 016 PASS + 204 FAIL possible now; 202 may SKIP if parent waits on held child request; 225 judges only params.sessionId traffic; 224 doesn't judge update fields; U13c RFD line is :1268. Possibly flaky under load: test_mcp_unsupported_transport_fixtures_fail_mcp_203_only, test_permission_before_requires_action_judges_cancel_while_blocked. Follow-up: elicitation $/cancel_request on close/cancel.
+- LEDGER v1 (25) — 1c1a02c — D10 rewords (error:37, transports, TC:250, get-auth-state 297/313, session-list:258 Deferred, status/set_title), +AuthAccount.description (:174-176)
+- LEDGER v2 (26) — 6fe8518 — same rewords + SCO:390 (plan's :375) cites SS:56, session-list 162/248/249, security:81, TC:387, +SA:263, TC:753-756 extended (resolve half not observable beyond SUBAGENT-002)
+- BACKFILL (27) — 311ef10 — v1 9 elicitation + agent-plan:53; v2 5 meta-patch + security:59; spec-tracker 120, full suite green (1189)
 ## Next
-Order (plan section 5): area slices 25-28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
-- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-24 done (plus R-FIX, typo fix, DEL204-FIX).
-- Slices 25/26 LEDGER-HYGIENE v1/v2: D10 rewords (plan 1.1 removed/rewritten table: error.mdx:37 / :38, transports.mdx:10,45, TC:250,
-  get-auth-state.mdx:297/:313, session-list.mdx:258 Deferred, session/status + session/set_title reasons; v2 SCO:375 fan-out ->
-  cite SS:56 NOT SS:54); +v1 AuthAccount.description entry if missing (v2 has it from b07c1f7). v2 extras: add an entry for
-  `SA:263` (outgoing view + link SHOULD; v1 twin SA:285); extend the `TC:753,754` entry to cover TC:755-756 or say SUBAGENT-002 covers it.
-- Slice 27 BACKFILL (D11, included): v1 elicitation 9 entries + agent-plan.mdx:53; v2 meta-patch 5 entries + security.mdx:59.
+Order (plan section 5): area slice 28 -> milestone-2 review -> fix slice(s) -> id alignment -> cross-check refresh -> final review.
+- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-27 done (plus R-FIX, typo fix, DEL204-FIX).
 - Slice 28 DOCS + rfd_audit: remove "Active > v2" stage wording from docs/requirements.md and docs/spec-updates.md (no Active stage
   upstream; also check spec-tracker/src/spec_tracker/impact.py:915 wording); add `inferred:promptSuggestions` to the inferred list
-  (`inferred:skills` already added); decide whether PL "Prompt suggestions (unstable)"/"Session cursors (unstable)" become core_doc
-  sections (currently left out in spec-tracker/tests/test_maps_v2.py); core_doc `code` lists gain the new modules
+  (`inferred:skills` already added); PL suggestions/cursors sections stay left out (decided); core_doc `code` lists gain the new modules
   (test_prompt_suggestions, test_cursors, test_session_options/test_initial_config, test_idempotency); set
   `rfd_audit = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"` at the top of both maps.
 - Then milestone-2 review: one reviewer over the area-slice range 3039958..HEAD (product commits from 1c04f52 on), decisions D1-D13,
