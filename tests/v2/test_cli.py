@@ -81,6 +81,13 @@ _CAPABILITY_IDS = {
     "ACP-PROMPT-207",
     "ACP-PROMPT-209",
     "ACP-PROMPT-211",
+    "ACP-PROMPT-212",
+    "ACP-PROMPT-213",
+    "ACP-PROMPT-214",
+    "ACP-PROMPT-215",
+    "ACP-PROMPT-217",
+    "ACP-PROMPT-218",
+    "ACP-PROMPT-219",
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
@@ -221,6 +228,7 @@ _CAPABILITY_IDS = {
     "ACP-SUBAGENT-009",
 }
 _ADVISORY_IDS = {
+    "ACP-PROMPT-216",
     "ACP-PROMPT-220",
     "ACP-INIT-215",
     "ACP-SUBAGENT-011",
@@ -327,6 +335,7 @@ _CANCEL_RACE_SKIP_IDS = {
     "ACP-DELETE-204",
     "ACP-INFO-CONCURRENT-201",
     "ACP-PROMPT-209",
+    "ACP-PROMPT-215",
 }
 
 # The background-work rows judge only an agent that reports a `background` list, which no
@@ -398,6 +407,7 @@ _BACKGROUND_OTHER_SKIP_IDS = {
 # SKIP ("no <variant> observed") rather than PASS, exactly as they do for `conforming.py` itself
 # (see `test_v2_conforming_agent_passes_everything` above).
 _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
+    "ACP-PROMPT-218",  # the fixture keeps no session across processes
     "ACP-SUBAGENT-001",  # the fixture exposes no subagent
     "ACP-SUBAGENT-002",  # nor any `session` content
     "ACP-SUBAGENT-003",
@@ -607,6 +617,7 @@ def test_help_mentions_protocol_version_option():
 
 
 _CONFORMING_EXPECTED_SKIPS = {
+    "ACP-PROMPT-218",  # the fixture keeps no session across processes
     "ACP-SUGGEST-001",  # the fixture sends no suggestion
     "ACP-SUGGEST-002",
     "ACP-SUGGEST-003",
@@ -3316,6 +3327,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         | _ITEM_CANCEL_IDS
         | _CHILD_CONTROL_IDS
         | {
+            "ACP-PROMPT-218",  # the fixture keeps no session across processes
             "ACP-PROMPT-207",
             "ACP-PROMPTCAP-201",  # every prompt capability is advertised
             "ACP-SUGGEST-001",  # the fixture sends no suggestion
@@ -4339,6 +4351,64 @@ def test_conforming_agents_pass_prompt_220():
     for fixture in ("conforming.py", "conforming_full.py"):
         result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_no_skill_block_outside_user_messages")
         assert _table_statuses(result.stdout).get("ACP-PROMPT-220") == "PASS", f"{fixture}:\n{result.stdout}"
+
+
+# --- prompt idempotency keys (`ACP-PROMPT-212..219`) -- self-tests ---
+
+_IDEMPOTENCY_IDS = {f"ACP-PROMPT-{n}" for n in range(212, 220)}
+
+
+def _idempotency_run(fixture: str) -> tuple[set[str], dict[str, str], str]:
+    """Run only `test_idempotency.py` (with `--cancel-prompt __hang__`, which `ACP-PROMPT-215`
+    needs) and return the FAIL set, every status and the output."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_idempotency", cancel_prompt="__hang__"
+    )
+    statuses = _table_statuses(result.stdout)
+    return _fails(statuses), statuses, result.stdout
+
+
+def test_conforming_agents_pass_idempotency_rows():
+    """`conforming_full.py` persists sessions with their history and keys, so a fresh process
+    resumes the session, replays the message and still recognizes the key: all eight rows PASS,
+    `ACP-PROMPT-218` included. `conforming.py` keeps nothing across processes, so only
+    `ACP-PROMPT-218` SKIPs."""
+    fails, statuses, out = _idempotency_run("conforming_full.py")
+    assert not fails and {statuses[i] for i in _IDEMPOTENCY_IDS} == {"PASS"}, out
+    fails, statuses, out = _idempotency_run("conforming.py")
+    assert not fails, out
+    assert statuses["ACP-PROMPT-218"] == "SKIPPED", out
+    assert {statuses[i] for i in _IDEMPOTENCY_IDS - {"ACP-PROMPT-218"}} == {"PASS"}, out
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("retry_inserts_second_message.py", {"ACP-PROMPT-212", "ACP-PROMPT-214"}),
+        ("accepts_malformed_idempotency_key.py", {"ACP-PROMPT-213"}),
+        ("held_retry_rejected_as_duplicate.py", {"ACP-PROMPT-215"}),
+        ("echoes_idempotency_key.py", {"ACP-PROMPT-216"}),
+        ("key_scoped_across_sessions.py", {"ACP-PROMPT-217"}),
+        ("forgets_key_across_connections.py", {"ACP-PROMPT-218"}),
+        ("rejected_prompt_records_key.py", {"ACP-PROMPT-219"}),
+    ],
+)
+def test_idempotency_defect_fixtures_fail_only_their_rows(fixture, failing):
+    """Each idempotency fixture has one defect and FAILs exactly the rows it names; every other
+    idempotency row PASSes or, for `ACP-PROMPT-218` on a fixture that keeps no session across
+    processes, SKIPs."""
+    fails, statuses, out = _idempotency_run(fixture)
+    assert fails == failing, out
+    for req_id in _IDEMPOTENCY_IDS - failing:
+        assert statuses[req_id] in {"PASS", "SKIPPED"}, f"{req_id}:\n{out}"
+    assert statuses["ACP-PROMPT-215"] != "SKIPPED", out
+
+
+def test_idempotency_held_retry_row_skips_without_a_held_prompt():
+    """Without `--cancel-prompt` the short turn ends before the second prompt is read, so
+    `ACP-PROMPT-215` SKIPs ("not exercised") instead of passing vacuously."""
+    result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_idempotency")
+    assert _table_statuses(result.stdout)["ACP-PROMPT-215"] == "SKIPPED", result.stdout
 
 
 # --- authentication (`ACP-AUTH-001..008/206/208/210`) -- self-tests ---

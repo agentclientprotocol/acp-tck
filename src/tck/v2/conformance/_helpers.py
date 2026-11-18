@@ -2385,6 +2385,11 @@ class ActiveWorkPrompt:
     `"held"` (still unanswered when `session/cancel` was sent). `None` when not exercised."""
     not_exercised: str | None
     """Why the scenario does not show a prompt sent during active work, else `None`."""
+    retry_id: Any = None
+    """With an `idempotency_key`, the JSON-RPC id of the second prompt's retry (same params, sent
+    right after it), else `None`."""
+    retry_response: TranscriptEntry | None = None
+    """The retry's response, or `None` if none arrived in time (or there was no retry)."""
 
     @property
     def second_error(self) -> dict[str, Any] | None:
@@ -2394,7 +2399,12 @@ class ActiveWorkPrompt:
 
 
 async def prompt_during_active_work(
-    agent: AgentProcess, session_id: str, first_text: str, *, timeout: float
+    agent: AgentProcess,
+    session_id: str,
+    first_text: str,
+    *,
+    timeout: float,
+    idempotency_key: str | None = None,
 ) -> ActiveWorkPrompt:
     """Send a second `session/prompt` while the first prompt's foreground work is active, then
     `session/cancel` (prompt-lifecycle.mdx:400-404,1446).
@@ -2411,13 +2421,19 @@ async def prompt_during_active_work(
     `not_exercised`: the first work may have ended before the agent read the second prompt.
     Raises `AgentTimeout` if the first turn never ends."""
     second_id: Any = None
+    retry_id: Any = None
 
     async def _send_second() -> Any:
-        nonlocal second_id
-        second_id = await agent.send_request(
-            "session/prompt",
-            {"sessionId": session_id, "prompt": [{"type": "text", "text": SECOND_PROMPT_TEXT}]},
-        )
+        nonlocal second_id, retry_id
+        params: dict[str, Any] = {
+            "sessionId": session_id,
+            "prompt": [{"type": "text", "text": SECOND_PROMPT_TEXT}],
+        }
+        if idempotency_key is not None:
+            params["idempotencyKey"] = idempotency_key
+        second_id = await agent.send_request("session/prompt", params)
+        if idempotency_key is not None:
+            retry_id = await agent.send_request("session/prompt", dict(params))
         return second_id
 
     turn = await run_prompt(
@@ -2437,6 +2453,21 @@ async def prompt_during_active_work(
         except AgentTimeout:
             response = None
     response_index = agent.transcript.index(response) if response is not None else None
+    retry_response: TranscriptEntry | None = None
+    if retry_id is not None:
+        retry_response = next(
+            (
+                e
+                for e in agent.transcript
+                if e.direction is Direction.RECEIVED and e.matches_id(retry_id)
+            ),
+            None,
+        )
+        if retry_response is None:
+            try:
+                retry_response = await agent.wait_for_response(retry_id, timeout=timeout)
+            except AgentTimeout:
+                retry_response = None
 
     def _result(outcome: str | None, not_exercised: str | None) -> ActiveWorkPrompt:
         return ActiveWorkPrompt(
@@ -2446,6 +2477,8 @@ async def prompt_during_active_work(
             second_response_index=response_index,
             outcome=outcome,
             not_exercised=not_exercised,
+            retry_id=retry_id,
+            retry_response=retry_response,
         )
 
     if turn.action_sent_at_index is None:
@@ -2985,16 +3018,18 @@ async def assert_prompt_rejected_not_inserted(
     *,
     what: str,
     timeout: float,
+    extra_params: dict[str, Any] | None = None,
 ) -> None:
     """Send a prompt the agent must refuse and assert it was answered `-32602` and not inserted
-    (prompt-lifecycle.mdx:323,413). Shared by `ACP-PROMPT-211` and `ACP-PROMPTCAP-201`.
+    (prompt-lifecycle.mdx:323,413). Shared by `ACP-PROMPT-211`, `ACP-PROMPT-213` (whose probe is
+    an `idempotencyKey` in `extra_params`) and `ACP-PROMPTCAP-201`.
 
     The prompt goes through `run_prompt` on a fresh session, so any `user_message`/
     `user_message_chunk` or `running`/`requires_action` update for that session means it was
     inserted (an accepted prompt also fails the "error" check; both are reported). A
     rejection owes no state transition (:415), so a short `quiet_period` after the response
     catches late updates too. `what` names the probe in the failure message."""
-    turn = await run_prompt(agent, session_id, blocks, timeout=timeout)
+    turn = await run_prompt(agent, session_id, blocks, extra_params=extra_params, timeout=timeout)
     entry = turn.response_entry
     skip_if_auth_gated(entry)
     late = await drain_quiet(agent, quiet_period(timeout))
@@ -3020,3 +3055,87 @@ async def assert_prompt_rejected_not_inserted(
             elif kind == "state_update" and is_active_state(update.get("state")):
                 problems.append(f"state {update.get('state')!r} was reported for it (it was inserted)")
     assert not problems, f"{what}: {'; '.join(dict.fromkeys(problems))} ({entry.text!r})"
+
+
+def user_message_ids(entries: list[TranscriptEntry], session_id: str) -> set[str]:
+    """The `messageId`s of the `user_message`/`user_message_chunk` updates for `session_id` in
+    `entries` (an update without a string `messageId` is the schema rows' concern)."""
+    ids: set[str] = set()
+    for entry in entries:
+        for message in iter_messages(entry):
+            params = message.get("params")
+            if message.get("method") != "session/update" or not isinstance(params, dict):
+                continue
+            update = params.get("update")
+            if params.get("sessionId") != session_id or not isinstance(update, dict):
+                continue
+            if update.get("sessionUpdate") in _USER_MESSAGE_UPDATES and isinstance(
+                update.get("messageId"), str
+            ):
+                ids.add(update["messageId"])
+    return ids
+
+
+@dataclass
+class PromptAttempt:
+    """One raw `session/prompt` attempt made by `send_prompt_attempt`."""
+
+    response_entry: TranscriptEntry
+    entries: list[TranscriptEntry]
+    """Every line the agent sent from the request until the end of the quiet period, in order."""
+
+    @property
+    def error(self) -> dict[str, Any] | None:
+        msg = self.response_entry.parsed
+        error = msg.get("error") if isinstance(msg, dict) else None
+        return error if isinstance(error, dict) else None
+
+    @property
+    def message_id(self) -> str | None:
+        msg = self.response_entry.parsed
+        result = msg.get("result") if isinstance(msg, dict) else None
+        message_id = result.get("messageId") if isinstance(result, dict) else None
+        return message_id if isinstance(message_id, str) else None
+
+
+async def send_prompt_attempt(
+    agent: AgentProcess,
+    session_id: str,
+    blocks: list[dict[str, Any]],
+    *,
+    idempotency_key: str,
+    timeout: float,
+) -> PromptAttempt:
+    """Send one `session/prompt` carrying `idempotency_key` and collect what follows: wait for
+    its response (`AgentTimeout` if none), then read for `quiet_period(timeout)` more, since the
+    user-message update may arrive after the response (prompt-lifecycle.mdx:341) and a retry
+    that starts no work never ends in the `idle` that `run_prompt` waits for. Agent -> client
+    requests are left unanswered."""
+    start = len(agent.transcript)
+    req_id = await agent.send_request(
+        "session/prompt",
+        {"sessionId": session_id, "prompt": blocks, "idempotencyKey": idempotency_key},
+    )
+    response = await agent.wait_for_response(req_id, timeout=timeout)
+    skip_if_auth_gated(response)
+    await drain_quiet(agent, quiet_period(timeout))
+    entries = [e for e in agent.transcript[start:] if e.direction is Direction.RECEIVED]
+    return PromptAttempt(response_entry=response, entries=entries)
+
+
+def retry_problems(attempt: PromptAttempt, session_id: str, original_id: str) -> list[str]:
+    """What is wrong with `attempt` as the answer to a retry of the message `original_id`
+    (prompt-lifecycle.mdx:452,457): an error, another `messageId`, or a user-message update for
+    any other message. An update repeating `original_id` is not an insertion."""
+    problems = []
+    error = attempt.error
+    if error is not None:
+        problems.append(f"it was answered with an error ({error!r}), not the original messageId")
+    elif attempt.message_id != original_id:
+        problems.append(
+            f"it was answered with messageId {attempt.message_id!r}, not the original {original_id!r}"
+        )
+    inserted = user_message_ids(attempt.entries, session_id) - {original_id}
+    if inserted:
+        problems.append(f"a second message was inserted (user-message update for {sorted(inserted)!r})")
+    return problems

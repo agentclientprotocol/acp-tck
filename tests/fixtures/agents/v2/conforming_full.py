@@ -54,6 +54,12 @@ Every turn also announces a fork-capable cursor before the turn's user message (
 capability for cursors); a full resume replays it with the same `cursorId`, and `session/fork`
 accepts those cursors and rejects any other with `-32602`, so ACP-CURSOR-001..004 PASS
 non-vacuously (`_cursors.py`).
+
+It supports `idempotencyKey` (`_base.py`: a retry gets the original `messageId`, a malformed key is
+`-32602`, a rejected prompt leaves its key unused, keys are per session and never echoed), and
+`persist_sessions` also keeps each session's history and keys, so a fresh process resumes the
+session, replays the message and still recognizes the key: ACP-PROMPT-212..219 PASS non-vacuously
+(`--cancel-prompt __hang__` for ACP-PROMPT-215).
 """
 
 import sys

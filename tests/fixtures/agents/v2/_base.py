@@ -65,8 +65,18 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   neither created nor resumed (session-setup.mdx:566).
 - `persist_sessions` (opt-in, default `False`): each created session's `cwd` is also written to
   `<cwd>/.tck-fixture-sessions.json`, so `session/resume` on a fresh process can restore it
-  (`_restore`; history and closed state are not persisted). Off by default because it writes a
-  file into the session's `cwd`.
+  (`_restore`). Its message history (not cursors), recorded `idempotencyKey`s and message counter
+  go to `<cwd>/.tck-fixture-history.json` (`_save_session_state`) and are restored with it; the
+  closed state is not persisted. Off by default because it writes files into the session's `cwd`.
+- `idempotencyKey` on `session/prompt` (prompt-lifecycle.mdx:439-473): a key that is present but
+  not a string of 1 to 255 characters is `-32602` (`_key_rejection`); a key recorded for a message
+  of the session answers with that message's `messageId` and inserts nothing
+  (`_recorded_message_id`, `_answer_recorded_key`); the key is recorded when the message is
+  inserted (`_record_key`) and never for a rejected prompt (`_after_prompt_rejection`). Keys are
+  scoped to their session (`_key_scope`), never echoed, and persist with `persist_sessions`
+  (`_persist_idempotency_keys`). Two requests for one key held while a `__hang__` turn runs are
+  both answered by the cancel (`_prompt_while_busy`). Each step is a hook a defect fixture can
+  override.
 - `session/new`/`session/resume` params are validated by `_setup_rejection`, each rule an
   overridable hook so a defect fixture can drop exactly one: a relative `cwd` (`_cwd_rejection`,
   session-setup.mdx:613), a relative `additionalDirectories` entry when the capability is
@@ -201,6 +211,10 @@ class ConformingAgent:
     _reject_duplicate_initial_config = True
     _ignore_inapplicable_initial_config = True
 
+    # Recorded `idempotencyKey`s survive a restart together with the persisted history
+    # (prompt-lifecycle.mdx:465). `forgets_key_across_connections.py` switches it off.
+    _persist_idempotency_keys = True
+
     # Versions reported in a `-32022`'s `data.supported`. A subclass that answers other versions
     # itself (e.g. `conforming_dual.py`) widens this.
     SUPPORTED_VERSIONS: tuple[int, ...] = (PROTOCOL_VERSION,)
@@ -261,6 +275,8 @@ class ConformingAgent:
         self._hanging_sessions: dict[Any, bool] = {}  # sessionId -> awaiting session/cancel
         # sessionId -> (id, params) of each prompt held while that session hangs, in order
         self._held_prompts: dict[Any, list[tuple[Any, dict[str, Any]]]] = {}
+        # `_key_scope(sessionId)` -> `idempotencyKey` -> `messageId` of the message inserted with it
+        self._recorded_keys: dict[Any, dict[str, str]] = {}
         # `session/new`/`session/resume`'s `configOptions`, mutated in place by
         # `session/set_config_option` (each entry's own dict, deep-copied from the constructor
         # argument so callers can safely reuse the same literal across several agent instances).
@@ -343,7 +359,8 @@ class ConformingAgent:
     def _prompt_while_busy(self, msg_id: Any, params: dict[str, Any]) -> None:
         """A prompt for a session whose `__hang__` prompt is still running: held until the hang
         ends (prompt-lifecycle.mdx:400-404). The hang only ends by cancel or close, which answer
-        it `-32800`, so a held prompt is never inserted."""
+        it `-32800`, so a held prompt is never inserted. A retry of a held `idempotencyKey` is
+        held with it and answered by the same cancel (:453; `ACP-PROMPT-215`)."""
         self._held_prompts.setdefault(params.get("sessionId"), []).append((msg_id, params))
 
     def _cancel_held_prompts(self, session_id: Any) -> None:
@@ -767,6 +784,42 @@ class ConformingAgent:
         stored[session_id] = cwd
         path.write_text(json.dumps(stored))
 
+    @staticmethod
+    def _history_store_path(cwd: Any) -> Path | None:
+        return Path(cwd) / ".tck-fixture-history.json" if isinstance(cwd, str) and cwd else None
+
+    def _save_session_state(self, session_id: Any) -> None:
+        """Write the session's message history (cursors excluded), recorded keys and the message
+        counter next to its persisted `cwd`, for `_restore`."""
+        cwd = self._sessions.get(session_id) or self._closed_sessions.get(session_id)
+        path = self._history_store_path(cwd)
+        if not self._persist_sessions or path is None or not isinstance(session_id, str):
+            return
+        stored = self._read_store(path)
+        keys = self._recorded_keys.get(self._key_scope(session_id), {})
+        stored[session_id] = {
+            "history": [
+                entry
+                for entry in self._history.get(session_id, [])
+                if entry.get("sessionUpdate") in self._WHOLE_MESSAGE_KINDS | self._CHUNK_MESSAGE_KINDS
+            ],
+            "keys": dict(keys) if self._persist_idempotency_keys else {},
+            "messageCount": self._message_count,
+        }
+        path.write_text(json.dumps(stored))
+
+    def _restore_session_state(self, session_id: Any, cwd: Any) -> None:
+        path = self._history_store_path(cwd)
+        state = self._read_store(path).get(session_id) if path is not None else None
+        if not isinstance(state, dict):
+            return
+        self._history[session_id] = list(state.get("history") or [])
+        for update in self._history[session_id]:
+            if update.get("sessionUpdate") in self._CHUNK_MESSAGE_KINDS:
+                self._primed_message_ids.setdefault(session_id, set()).add(update.get("messageId"))
+        self._recorded_keys.setdefault(self._key_scope(session_id), {}).update(state.get("keys") or {})
+        self._message_count = max(self._message_count, int(state.get("messageCount") or 0))
+
     def _restore(self, session_id: Any, cwd: Any) -> bool:
         """Bring a session persisted by an earlier process into `_sessions`, if there is one.
         Returns whether it was restored by this call."""
@@ -779,6 +832,7 @@ class ConformingAgent:
         if not isinstance(stored_cwd, str):
             return False
         self._sessions[session_id] = stored_cwd
+        self._restore_session_state(session_id, stored_cwd)
         return True
 
     def _handle_list_sessions(self, msg_id: Any, params: dict[str, Any]) -> None:
@@ -1025,6 +1079,12 @@ class ConformingAgent:
             stored = self._read_store(path)
             if stored.pop(session_id, None) is not None:
                 path.write_text(json.dumps(stored))
+        history_path = self._history_store_path(cwd)
+        if self._persist_sessions and history_path is not None:
+            stored = self._read_store(history_path)
+            if stored.pop(session_id, None) is not None:
+                history_path.write_text(json.dumps(stored))
+        self._recorded_keys.pop(self._key_scope(session_id), None)
         self._reply(msg_id, {})
 
     def _current_config_options(self) -> list[dict[str, Any]]:
@@ -1092,16 +1152,23 @@ class ConformingAgent:
             self._unknown_session(msg_id, session_id)
             return
         prompt = params.get("prompt") or []
-        rejection = self._prompt_rejection(prompt)
+        key = params.get("idempotencyKey")
+        rejection = self._key_rejection(key) or self._prompt_rejection(prompt)
         if rejection is not None:
             code, error_message = rejection
+            self._after_prompt_rejection(session_id, params)
             self._error(msg_id, code, error_message)
+            return
+        recorded = self._recorded_message_id(session_id, key)
+        if recorded is not None:
+            self._answer_recorded_key(msg_id, session_id, recorded, params)
             return
         if session_id in self._hanging_sessions:
             self._prompt_while_busy(msg_id, params)
             return
         self._message_count += 1
         message_id = f"msg-{self._message_count:04d}"
+        self._record_key(session_id, key, message_id)
         self._reply_to_prompt(msg_id, message_id)
         self._send_user_message_update(session_id, message_id, prompt)
         if self._is_hang_prompt(prompt):
@@ -1264,6 +1331,46 @@ class ConformingAgent:
                 "capabilities": None,
             },
         )
+
+    @staticmethod
+    def _key_rejection(key: Any) -> tuple[int, str] | None:
+        """Hook: an `idempotencyKey` that is present (not omitted or `null`) but not a string of 1
+        to 255 characters is `-32602`, never treated as omitted (prompt-lifecycle.mdx:441;
+        `ACP-PROMPT-213`)."""
+        if key is None or (isinstance(key, str) and 1 <= len(key) <= 255):
+            return None
+        return -32602, "Invalid params: idempotencyKey must be a string of 1 to 255 characters"
+
+    @staticmethod
+    def _key_scope(session_id: Any) -> Any:
+        """Hook: what a key is recorded under. A key is scoped to its session
+        (prompt-lifecycle.mdx:461; `ACP-PROMPT-217`)."""
+        return session_id
+
+    def _recorded_message_id(self, session_id: Any, key: Any) -> str | None:
+        """Hook: the `messageId` of the message inserted with `key` in this session, else `None`
+        (prompt-lifecycle.mdx:451-452; `ACP-PROMPT-212`/`214`)."""
+        if not isinstance(key, str):
+            return None
+        return self._recorded_keys.get(self._key_scope(session_id), {}).get(key)
+
+    def _record_key(self, session_id: Any, key: Any, message_id: str) -> None:
+        """Record `key` with the message inserted for it (prompt-lifecycle.mdx:451)."""
+        if not isinstance(key, str):
+            return
+        self._recorded_keys.setdefault(self._key_scope(session_id), {})[key] = message_id
+        self._save_session_state(session_id)
+
+    def _after_prompt_rejection(self, session_id: Any, params: dict[str, Any]) -> None:
+        """Hook: a rejected prompt records nothing for its key (prompt-lifecycle.mdx:456;
+        `ACP-PROMPT-219`)."""
+
+    def _answer_recorded_key(
+        self, msg_id: Any, session_id: Any, message_id: str, params: dict[str, Any]
+    ) -> None:
+        """Hook: a retry of a recorded key (whatever its prompt: agents are not required to compare
+        prompts, prompt-lifecycle.mdx:457) gets the original `messageId` and inserts nothing."""
+        self._reply(msg_id, {"messageId": message_id})
 
     def _prompt_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
         """Hook: return `(code, message)` to reject this prompt outright with a JSON-RPC error
@@ -1614,6 +1721,7 @@ class ConformingAgent:
                     {"sessionUpdate": whole_kind, "messageId": message_id, "content": []}
                 )
         history.append(dict(update))
+        self._save_session_state(session_id)
 
     def _send_update(self, session_id: Any, update: dict[str, Any]) -> None:
         if self._report_background_work and update.get("sessionUpdate") == "state_update":

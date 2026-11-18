@@ -207,6 +207,26 @@ statement = "The Agent does not reuse an entity ID for a different entity of the
 reason = "Partly unobservable: an update that repeats an ID is an upsert of the same entity, so reuse for a different entity cannot be told from a legitimate update. The observable cases are judged by rows: ACP-PATCH-203 (two prompts on a session answered with the same `messageId`, which are two user messages) and ACP-CANCEL-002 (an `agent_message*`/`agent_thought*` update reusing a `messageId` of the cancelled turn after its idle). A `terminalId` is ledgered on its own (tool-calls.mdx:496,497)."
 
 [[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:455 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A retry of a recorded `idempotencyKey` starts no second round of work for the message; whether it continues work that stopped before it finished is up to the Agent."
+reason = "Not decidable: what counts as a second round of work is internal to the agent, and the activity a retry may legitimately resume is left to it, so a `running` state after a retry is no evidence. ACP-PROMPT-212 judges that no second message is inserted."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:405,458 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that honors `$/cancel_request` for any pending request with an `idempotencyKey` withdraws the prompt if it is not inserted yet, and answers every pending request for that key with `-32800`."
+reason = "Deferred: the held-prompt driver (`prompt_during_active_work`) only sends `session/cancel`, and a check needs it extended to send `$/cancel_request` for one of two held requests with the key. Request cancellation is optional for the receiver, so the check must also SKIP an agent that does not honor it (the prompt is then inserted as usual). ACP-PROMPT-215 judges the same-outcome rule for two held requests answered by `session/cancel`."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:466 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "For a prompt whose message the Agent does not retain, such as a locally handled command, the Agent MUST recognize the key while the session stays active on a connection."
+reason = "Unsafe: it needs a prompt the agent handles locally without recording it, which means invoking an advertised command (`/clear`, `/compact`, `/logout`) whose side effects the TCK cannot predict (the blocker of slash-commands.mdx:152,160-163). ACP-PROMPT-212 judges the same recognition on an ordinary prompt."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:469 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD store the idempotency key in the same step as the message, for example as part of the message's ID."
+reason = "Not observable from a client: how and when an agent writes the key is internal. A key lost with a message that was never written is a permitted outcome, and ACP-PROMPT-218 judges recognition across connections for a message the agent replays."
+
+[[not_requirement]]
 citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:754 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent predicts a prompt-suggestion list from the conversation as it stands when it sends it, and discards a prediction the conversation outgrew before it was sent, for example because a `session/prompt` arrived."
 reason = "Not observable from a client: it sees only the lists sent, never the predictions an agent discarded, and whether a sent list was predicted from the current conversation cannot be told from its content."

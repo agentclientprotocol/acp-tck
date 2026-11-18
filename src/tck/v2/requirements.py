@@ -996,6 +996,125 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PROMPT-212",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "An agent that advertises `capabilities.session` supports the `idempotencyKey` of "
+            "`session/prompt`: a keyed prompt that was inserted as message M, sent again with the "
+            "same key (a new JSON-RPC `id`), gets a success carrying M's original `messageId` and "
+            "no second message is inserted (no `user_message`/`user_message_chunk` update for "
+            "another message within a short quiet period). A prompt with a valid key that is "
+            "answered with an error FAILs. Judged on one connection. Whether a retry continues "
+            "unfinished work is up to the agent and not judged."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:439,451-452,455,457,465-466; "
+            "schema/v2/schema.unstable.json#/$defs/PromptRequest/properties/idempotencyKey"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-213",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/prompt` whose `idempotencyKey` is present but not a string of 1 to 255 "
+            "characters (`\"\"`, 256 characters, the number `42`) is answered with `-32602` and is "
+            "not treated as omitted: nothing is inserted (no `user_message`/`user_message_chunk` "
+            "update and no `running`/`requires_action` state follows within a short quiet period). "
+            "A client never sends such a key; the probe breaks that rule on purpose because the "
+            "spec defines the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:333,441; "
+            "schema/v2/schema.unstable.json#/$defs/IdempotencyKey"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPT-214",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A key already recorded for an inserted message, sent with a different prompt, never "
+            "inserts a second message: the agent answers as for a retry (the original "
+            "`messageId`) or, if it notices the difference, with `-32602`. After such a "
+            "`-32602` the key stays recorded for the first prompt, so the original prompt sent "
+            "again gets the original `messageId`. A client MUST NOT send a key with a different "
+            "prompt; the probe breaks that rule on purpose because the spec defines the agent's "
+            "answer."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:444,457"),
+    ),
+    Requirement(
+        id="ACP-PROMPT-215",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Two requests for one `idempotencyKey` that are both still pending, because the "
+            "prompt is held while foreground work is active (the `ACP-PROMPT-209` scenario), get "
+            "the same outcome: both succeed with one `messageId` and at most one message is "
+            "inserted, or both get the same error (`-32800` after the TCK's `session/cancel`). A "
+            "mixed outcome, two inserted messages or one request left unanswered FAILs. SKIPPED "
+            "when the first work may have ended before the agent read the second prompt, when "
+            "the prompt was rejected (`ACP-PROMPT-209`'s finding) and when neither request was "
+            "answered (`ACP-CANCEL-214`'s)."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:400-404,453,1446"),
+    ),
+    Requirement(
+        id="ACP-PROMPT-216",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent does not echo an `idempotencyKey` in session updates, `session/list` "
+            "results or replayed history. Read over a connection that sends a keyed prompt, its "
+            "retry, `session/list` and a `session/resume` with `replayFrom: start` (best effort); "
+            "the key is a random UUID, so any occurrence in a line the agent sent is an echo. The "
+            "sentence has no RFC keyword. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:459"),
+    ),
+    Requirement(
+        id="ACP-PROMPT-217",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "An `idempotencyKey` is scoped to the session named by `sessionId`: the same key and "
+            "prompt sent in another session is a new submission, answered with a success whose "
+            "`messageId` is inserted in that session (a user-message update for it follows), "
+            "not as a retry of the first session's message. The ids themselves are not compared, "
+            "since they are only unique within a session."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:461"),
+    ),
+    Requirement(
+        id="ACP-PROMPT-218",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "The agent recognizes an `idempotencyKey` for as long as it retains the message, "
+            "across connections: a keyed prompt inserted as message M on one process, then (on a "
+            "fresh process, after `initialize` and `session/resume` with `replayFrom: start`) sent "
+            "again with the key, gets M and inserts nothing. SKIPPED when the fresh process "
+            "cannot resume the session or its replay does not carry M, since an agent that does "
+            "not retain a message may forget its key."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:465,467,471"),
+    ),
+    Requirement(
+        id="ACP-PROMPT-219",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "An error response to `session/prompt` leaves the `idempotencyKey` unused: after a "
+            "keyed prompt with a `_tck_unknown` content block was rejected (`ACP-PROMPT-211`'s "
+            "probe; SKIPPED when the agent accepts it), a valid prompt with the same key is "
+            "accepted and inserted (a user-message update for the returned `messageId` follows), "
+            "not answered as a retry."
+        ),
+        citation=_cite("docs/protocol/v2/draft/prompt-lifecycle.mdx:451,456"),
+    ),
+    Requirement(
         id="ACP-PROMPT-220",
         tier=Tier.ADVISORY,
         capability=None,
