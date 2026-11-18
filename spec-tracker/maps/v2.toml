@@ -535,6 +535,26 @@ statement = "Invoking a command (a prompt whose first text block starts with `/`
 reason = "Unsafe: invoking an arbitrary advertised command (`/compact`, `/clear`, `/logout`) has side effects the TCK cannot predict. The generic turn lifecycle is judged by the STATE rows."
 
 [[not_requirement]]
+citation = "docs/protocol/v2/draft/slash-commands.mdx:194-197 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that has a shorter description of a skill meant for users SHOULD send that one as the entry's `description`."
+reason = "Not observable: the client cannot see the skill's frontmatter or any other description the agent holds, so it cannot tell a long description from a user-facing one."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/slash-commands.mdx:210 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD advertise only skills the user can invoke."
+reason = "Unsafe: the only evidence is invoking a listed skill, which runs arbitrary user-installed code the TCK cannot predict. ACP-PROMPTCAP-202 judges the unlisted-name rejection with a name that resolves nowhere."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/slash-commands.mdx:238-239,255 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With `session.prompt.skill: {}` (no `inline`), the Agent rejects with `-32602`, without inserting it, a prompt whose `skill` block is not first or that holds more than one `skill` block."
+reason = "Unsafe: a prompt that would pass the position rule needs a skill name the agent lists, and accepting it runs that skill. A name that resolves nowhere is rejected for the name whatever the position, so it cannot isolate the rule. ACP-PROMPTCAP-202 judges the first-position case with an unknown name."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/content.mdx:252; docs/protocol/v2/draft/slash-commands.mdx:254,256 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent treats each `skill` block as the user explicitly invoking that skill for the prompt, and reports the block as part of the inserted user message in `user_message` and in replay."
+reason = "Unsafe: it needs an accepted prompt that invokes a skill the agent lists, and running an arbitrary user-installed skill has side effects the TCK cannot predict (the same blocker as invoking a command, slash-commands.mdx:152,160-163). ACP-PROMPT-220 judges where a `skill` block may not appear."
+
+[[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:209 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD list the values of a `select` `thought_level` option from lowest to highest."
 reason = "Not observable: the protocol carries no measure of a reasoning level, so which value is higher is the agent's own judgement."

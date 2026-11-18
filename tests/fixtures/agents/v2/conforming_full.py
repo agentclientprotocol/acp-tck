@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Conforming fixture that advertises every capability the suite exercises and asks for
 permission on every turn: `capabilities.session.prompt.{image,audio,embeddedContext}`,
+`session.prompt.skill` (plus one `skill` command entry, listed only to a client that advertised
+`session.commands.skill`, so `ACP-COMMANDS-202` and `ACP-PROMPTCAP-202` PASS non-vacuously),
 `session.delete`/`archive`/`additionalDirectories`/`mcp: {stdio, http}`/`fork`/`systemPrompt` (with
 `mode.override`), plus a `select`-type and a
 `boolean`-type `configOptions` entry (`_base.ConformingAgent`'s `config_options` param; the second
@@ -72,7 +74,7 @@ def main() -> None:
     ConformingFullAgent(
         capabilities={
             "session": {
-                "prompt": {"image": {}, "audio": {}, "embeddedContext": {}},
+                "prompt": {"image": {}, "audio": {}, "embeddedContext": {}, "skill": {}},
                 "delete": {},
                 "archive": {},
                 "additionalDirectories": {},
@@ -104,6 +106,14 @@ def main() -> None:
         ],
         available_commands=[
             {"type": "command", "name": "tck", "description": "A TCK command"},
+        ],
+        skill_commands=[
+            {
+                "type": "skill",
+                "name": "tck-skill",
+                "description": "A TCK skill",
+                "path": "/tmp/skills/tck-skill/SKILL.md",
+            },
         ],
         auth_methods=[
             {"methodId": "tck", "type": "agent", "name": "TCK"},

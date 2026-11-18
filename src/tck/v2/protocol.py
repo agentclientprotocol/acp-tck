@@ -145,6 +145,55 @@ def is_valid_open_enum_value(value: Any, defined: frozenset[str]) -> bool:
     return value in defined or value.startswith("_")
 
 
+def agent_content_blocks(method: Any, params: Any) -> list[tuple[str, Any]]:
+    """Every `ContentBlock` an agent-authored message carries, as `(where, block)`. Reads a
+    `session/update`'s `update` (agent message and thought, tool-call content, compaction summary,
+    prompt-suggestion prompts) and a `session/request_permission`'s `subject.toolCall.content`.
+    User messages (`user_message`, `user_message_chunk`) and inter-session messages
+    (`session_message*`, whose participants the spec does not call users) are not read, so a
+    caller finds content that appears outside user messages (`content.mdx:252`). A malformed
+    value yields nothing for its site."""
+    if not isinstance(params, dict):
+        return []
+    found: list[tuple[str, Any]] = []
+
+    def add(where: str, blocks: Any) -> None:
+        found.extend((where, block) for block in (blocks if isinstance(blocks, list) else []))
+
+    def tool_call_blocks(items: Any) -> list[Any]:
+        return [
+            item.get("content")
+            for item in (items if isinstance(items, list) else [])
+            if isinstance(item, dict) and item.get("type") == "content"
+        ]
+
+    if method == "session/request_permission":
+        subject = params.get("subject")
+        tool_call = subject.get("toolCall") if isinstance(subject, dict) else None
+        if isinstance(tool_call, dict):
+            add("session/request_permission subject.toolCall", tool_call_blocks(tool_call.get("content")))
+    elif method == "session/update" and isinstance(params.get("update"), dict):
+        update = params["update"]
+        kind = update.get("sessionUpdate")
+        where = f"session/update {kind}"
+        if kind in ("agent_message_chunk", "agent_thought_chunk", "compaction_summary_chunk"):
+            add(where, [update.get("content")])
+        elif kind in ("agent_message", "agent_thought"):
+            add(where, update.get("content"))
+        elif kind == "compaction_update":
+            add(where, update.get("summary"))
+        elif kind in ("tool_call", "tool_call_update"):
+            add(where, tool_call_blocks(update.get("content")))
+        elif kind == "tool_call_content_chunk":
+            add(where, tool_call_blocks([update.get("content")]))
+        elif kind == "prompt_suggestions_update":
+            suggestions = update.get("suggestions")
+            for suggestion in suggestions if isinstance(suggestions, list) else []:
+                if isinstance(suggestion, dict):
+                    add(where, suggestion.get("prompt"))
+    return found
+
+
 _HEX_LOWER = frozenset("0123456789abcdef")
 
 

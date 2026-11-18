@@ -85,6 +85,7 @@ _CAPABILITY_IDS = {
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
     "ACP-PROMPTCAP-201",
+    "ACP-PROMPTCAP-202",
     "ACP-PERM-201",
     "ACP-PERM-202",
     "ACP-PERM-203",
@@ -180,6 +181,7 @@ _CAPABILITY_IDS = {
     "ACP-CONFIG-209",
     "ACP-CONFIG-210",
     "ACP-COMMANDS-201",
+    "ACP-COMMANDS-202",
     "ACP-AUTH-004",
     "ACP-AUTH-003",
     "ACP-AUTH-208",
@@ -219,6 +221,7 @@ _CAPABILITY_IDS = {
     "ACP-SUBAGENT-009",
 }
 _ADVISORY_IDS = {
+    "ACP-PROMPT-220",
     "ACP-INIT-215",
     "ACP-SUBAGENT-011",
     "ACP-SUBAGENT-012",
@@ -414,6 +417,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
+    "ACP-PROMPTCAP-202",
     "ACP-PERM-201",
     "ACP-PERM-202",
     "ACP-PERM-203",
@@ -508,6 +512,7 @@ _SESSION_MGMT_EXTRAS_SKIP_IDS = {
     "ACP-CONFIG-211",
     "ACP-CONFIG-212",
     "ACP-COMMANDS-201",
+    "ACP-COMMANDS-202",
     "ACP-RESUME-210",  # neither `configOptions` nor `availableCommands` to carry over
 }
 
@@ -626,6 +631,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-PROMPTCAP-001",
     "ACP-PROMPTCAP-002",
     "ACP-PROMPTCAP-003",
+    "ACP-PROMPTCAP-202",
     "ACP-PERM-201",
     "ACP-PERM-202",
     "ACP-PERM-203",
@@ -661,6 +667,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CONFIG-211",
     "ACP-CONFIG-212",
     "ACP-COMMANDS-201",
+    "ACP-COMMANDS-202",
     "ACP-RESUME-210",
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
@@ -1697,6 +1704,7 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-PROMPT-220",
         "ACP-SUGGEST-001",
         "ACP-SUGGEST-002",
         "ACP-SUGGEST-003",
@@ -1877,6 +1885,7 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-PROMPT-220",
         "ACP-SUGGEST-001",
         "ACP-SUGGEST-002",
         "ACP-SUGGEST-003",
@@ -2624,6 +2633,7 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-PROMPT-220",
         "ACP-SUGGEST-001",
         "ACP-SUGGEST-002",
         "ACP-SUGGEST-003",
@@ -2744,6 +2754,7 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-PROMPT-220",
         "ACP-SUGGEST-001",
         "ACP-SUGGEST-002",
         "ACP-SUGGEST-003",
@@ -2862,6 +2873,7 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
         "ACP-CLIENTCAP-203",
+        "ACP-PROMPT-220",
         "ACP-SUGGEST-001",
         "ACP-SUGGEST-002",
         "ACP-SUGGEST-003",
@@ -4253,11 +4265,80 @@ def test_commands_untyped_in_update_fails_commands_201():
     assert "AvailableCommand" in out, out
 
 
-def test_conforming_full_passes_commands_201():
+def test_conforming_full_passes_commands_201_and_202():
+    """`conforming_full.py` lists one skill, but only to a client advertising `session.commands.skill`
+    (and advertises `session.prompt.skill`), so COMMANDS-201 and -202 both PASS non-vacuously."""
     result = _run_cli(
         FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=_COMMANDS_K
     )
-    assert _table_statuses(result.stdout).get("ACP-COMMANDS-201") == "PASS", result.stdout
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-COMMANDS-201") == "PASS", result.stdout
+    assert statuses.get("ACP-COMMANDS-202") == "PASS", result.stdout
+
+
+def test_commands_202_skips_for_an_agent_that_lists_no_skill():
+    """`conforming.py` lists no commands at all, so -201 and -202 both SKIP."""
+    result = _run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=_COMMANDS_K)
+    statuses = _table_statuses(result.stdout)
+    assert statuses.get("ACP-COMMANDS-201") == "SKIPPED", result.stdout
+    assert statuses.get("ACP-COMMANDS-202") == "SKIPPED", result.stdout
+
+
+def test_skills_without_prompt_skill_fails_commands_202_only():
+    """`skills_without_prompt_skill.py` lists a skill to a client that advertised `commands.skill`
+    and advertises no `session.prompt.skill`; it lists none to any other client, so
+    ACP-CLIENTCAP-203 is not in scope here and COMMANDS-201 PASSes."""
+    fails, statuses, out = _fails_for("skills_without_prompt_skill.py", _COMMANDS_K)
+    assert fails == {"ACP-COMMANDS-202"}, out
+    assert statuses.get("ACP-COMMANDS-201") == "PASS", out
+    assert "prompt.skill" in out, out
+
+
+def test_skill_duplicating_a_command_name_fails_commands_201_only():
+    """Only the `commands.skill` connection sees the skill, whose name repeats a command's."""
+    fails, statuses, out = _fails_for("skill_duplicates_command_name.py", _COMMANDS_K)
+    assert fails == {"ACP-COMMANDS-201"}, out
+    assert statuses.get("ACP-COMMANDS-202") == "PASS", out
+    assert "not unique" in out, out
+
+
+def test_skill_fixtures_leave_the_client_capability_gate_clean():
+    """The two fixtures above list a skill only to a client advertising `commands.skill`, so
+    ACP-CLIENTCAP-203 PASSes for both."""
+    for fixture in ("skills_without_prompt_skill.py", "skill_duplicates_command_name.py"):
+        fails, statuses, out = _fails_for(fixture, "client_capabilities")
+        assert not fails, f"{fixture}:\n{out}"
+        assert statuses.get("ACP-CLIENTCAP-203") == "PASS", f"{fixture}:\n{out}"
+
+
+def test_accepts_unknown_skill_fails_promptcap_202_only():
+    """`accepts_unknown_skill.py` advertises `prompt.skill` and accepts a `skill` block naming no
+    skill. `ACP-PROMPTCAP-201`'s `skill` case SKIPs (advertised)."""
+    fails, statuses, out = _fails_for("accepts_unknown_skill.py", "test_prompt_capabilities")
+    assert fails == {"ACP-PROMPTCAP-202"}, out
+    assert statuses.get("ACP-PROMPTCAP-201") == "PASS", out
+
+
+def test_conforming_full_passes_promptcap_202_and_conforming_skips_it():
+    scope = "test_prompt_capabilities"
+    full = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=scope).stdout)
+    assert full["ACP-PROMPTCAP-202"] == "PASS", full
+    plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=scope).stdout)
+    assert plain["ACP-PROMPTCAP-202"] == "SKIPPED", plain
+    assert plain["ACP-PROMPTCAP-201"] == "PASS", plain
+
+
+def test_sends_skill_in_agent_message_fails_prompt_220_only():
+    """The ADVISORY row FAILs on an agent message chunk holding a `skill` block."""
+    fails, _statuses, out = _fails_for("sends_skill_in_agent_message.py", "test_no_skill_block_outside_user_messages")
+    assert fails == {"ACP-PROMPT-220"}, out
+    assert "agent_message_chunk" in out, out
+
+
+def test_conforming_agents_pass_prompt_220():
+    for fixture in ("conforming.py", "conforming_full.py"):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_no_skill_block_outside_user_messages")
+        assert _table_statuses(result.stdout).get("ACP-PROMPT-220") == "PASS", f"{fixture}:\n{result.stdout}"
 
 
 # --- authentication (`ACP-AUTH-001..008/206/208/210`) -- self-tests ---

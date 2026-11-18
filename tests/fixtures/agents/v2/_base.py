@@ -92,7 +92,11 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `config_option_update`, and replies with the complete list (`_reply_config_set`);
   `session/new`/`session/resume`/`session/fork` include `configOptions` (and `availableCommands`,
   from the opt-in `available_commands` argument) whenever any are configured
-  (`_initial_state_fields`, session-setup.mdx:110).
+  (`_initial_state_fields`, session-setup.mdx:110). The opt-in `skill_commands` argument adds
+  `type: "skill"` entries to those lists only for a client that advertised
+  `capabilities.session.commands.skill` (slash-commands.mdx:171); `session.prompt.skill`, if the
+  fixture advertises it, accepts a `skill` block naming one of them and rejects any other name
+  with `-32602` (`_unknown_skill_rejection`, slash-commands.mdx:255).
   A valid `additionalDirectories`/`mcpServers` is accepted and otherwise ignored.
 - `emit_rich_turn_updates` (opt-in, default `False`; only `conforming_full.py` sets it):
   `_send_rich_turn_updates` fires once per turn after the running update, emitting two
@@ -219,6 +223,7 @@ class ConformingAgent:
         report_background_work: bool = False,
         persist_sessions: bool = False,
         available_commands: list[dict[str, Any]] | None = None,
+        skill_commands: list[dict[str, Any]] | None = None,
         background_on_resume: bool = False,
         cancellable_work: bool = False,
         uncancellable_work: bool = False,
@@ -235,6 +240,7 @@ class ConformingAgent:
         self._uncancellable_work = uncancellable_work
         self._fixed_items: dict[Any, list[tuple[str, str]]] = {}  # sessionId -> (kind, id), live
         self._available_commands: list[dict[str, Any]] = [dict(cmd) for cmd in (available_commands or [])]
+        self._skill_commands: list[dict[str, Any]] = [dict(cmd) for cmd in (skill_commands or [])]
         self._background_on_resume = background_on_resume
         self._session_count = 0
         self._message_count = 0
@@ -622,9 +628,19 @@ class ConformingAgent:
         fields: dict[str, Any] = {}
         if self._config_options:
             fields["configOptions"] = self._current_config_options()
-        if self._available_commands:
-            fields["availableCommands"] = [dict(cmd) for cmd in self._available_commands]
+        commands = [dict(cmd) for cmd in self._available_commands]
+        if self._skills_advertised_by_client():
+            commands += [dict(cmd) for cmd in self._skill_commands]
+        if commands:
+            fields["availableCommands"] = commands
         return fields
+
+    def _skills_advertised_by_client(self) -> bool:
+        """Whether the client supplied `capabilities.session.commands.skill` (`{}` counts; omitted
+        or `null` at any level does not, slash-commands.mdx:171)."""
+        session_caps = self._client_capabilities.get("session")
+        commands = session_caps.get("commands") if isinstance(session_caps, dict) else None
+        return isinstance(commands, dict) and commands.get("skill") is not None
 
     def _handle_new_session(self, msg_id: Any, params: dict[str, Any]) -> None:
         if self._require_auth and not self._authenticated:
@@ -1253,15 +1269,24 @@ class ConformingAgent:
         """Hook: return `(code, message)` to reject this prompt outright with a JSON-RPC error
         instead of accepting it (e.g. `rejects_image_when_advertised.py`). By default a block
         the agent cannot take is rejected with `-32602` and nothing is inserted: an unknown
-        type or an unadvertised `image`/`audio`/`resource`
+        type or an unadvertised `image`/`audio`/`resource`/`skill`
         (`_unsupported_content_rejection`, `ACP-PROMPT-211`/`ACP-PROMPTCAP-201`), then an embedded
         `resource` with neither `text` nor `blob` (a closed site, `ACP-ENUM-204`)."""
-        return self._unsupported_content_rejection(prompt) or self._contentless_resource_rejection(prompt)
+        return (
+            self._unsupported_content_rejection(prompt)
+            or self._unknown_skill_rejection(prompt)
+            or self._contentless_resource_rejection(prompt)
+        )
 
     # Baseline content types, and the prompt capability each optional type needs
     # (initialization.mdx:386-411).
     _BASELINE_PROMPT_TYPES = frozenset({"text", "resource_link"})
-    _PROMPT_CAPABILITY_FOR_TYPE = {"image": "image", "audio": "audio", "resource": "embeddedContext"}
+    _PROMPT_CAPABILITY_FOR_TYPE = {
+        "image": "image",
+        "audio": "audio",
+        "resource": "embeddedContext",
+        "skill": "skill",
+    }
 
     def _unsupported_content_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
         """`-32602` for a block that is neither baseline nor advertised, or of an unknown type
@@ -1278,6 +1303,15 @@ class ConformingAgent:
                 or advertised.get(capability) is None
             ):
                 return -32602, f"Invalid params: unsupported content type {block_type!r}"
+        return None
+
+    def _unknown_skill_rejection(self, prompt: list[Any]) -> tuple[int, str] | None:
+        """`-32602` for a `skill` block whose `name` is not one of the agent's skill entries
+        (slash-commands.mdx:255). Only reached once `skill` is advertised."""
+        listed = {cmd.get("name") for cmd in self._skill_commands}
+        for block in prompt:
+            if isinstance(block, dict) and block.get("type") == "skill" and block.get("name") not in listed:
+                return -32602, f"Invalid params: no invocable skill named {block.get('name')!r}"
         return None
 
     @staticmethod

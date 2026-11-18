@@ -996,6 +996,25 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-PROMPT-220",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "No `skill` content block appears in agent-authored content: an agent message or "
+            "thought, tool-call content, a compaction summary, a prompt suggestion or a "
+            "permission request's tool call. A skill reference \"appears only in user messages\" "
+            "(`user_message`, `user_message_chunk` and the prompt itself), but the sentence has no "
+            "RFC keyword and the schema's `ContentBlock` union admits `skill` everywhere. "
+            "Inter-session messages (`session_message*`) are not judged. Read over a "
+            "`session/new`, a prompt turn and a quiet period; passes vacuously for an agent that "
+            "sends no skill block. The test is gated on `capabilities.session`. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/content.mdx:252; "
+            "schema/v2/schema.unstable.json#/$defs/SkillReference"
+        ),
+    ),
+    Requirement(
         id="ACP-PROMPTCAP-001",
         tier=Tier.CAPABILITY,
         capability="capabilities.session.prompt.image",
@@ -1048,7 +1067,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "For each of `image`, `audio` and `resource` (embedded context) that the agent does "
+            "For each of `image`, `audio`, `resource` (embedded context) and `skill` (unstable) "
+            "that the agent does "
             "NOT advertise under `capabilities.session.prompt`, a well-formed prompt containing "
             "that block type alongside text is answered with a JSON-RPC error with code "
             "`-32602`, and the prompt is not inserted (no user-message update and no active "
@@ -1062,10 +1082,31 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:323,413; "
-            "docs/protocol/v2/draft/content.mdx:24,64-66,97-99,133-135; "
+            "docs/protocol/v2/draft/content.mdx:24,64-66,97-99,133-135,244-246; "
+            "docs/protocol/v2/draft/slash-commands.mdx:255; "
             "docs/protocol/v2/draft/initialization.mdx:386-411; "
             "schema/v2/schema.unstable.json#/$defs/PromptCapabilities; "
+            "schema/v2/schema.unstable.json#/$defs/PromptSkillCapabilities; "
             "schema/v2/schema.unstable.json#/$defs/ContentBlock"
+        ),
+    ),
+    Requirement(
+        id="ACP-PROMPTCAP-202",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.prompt.skill",
+        text=(
+            "A `session/prompt` whose first block is a `skill` block naming no skill the user can "
+            "invoke (`_tck_no_such_skill_<uuid>`), followed by text, is answered with a JSON-RPC "
+            "error with code `-32602`, and the prompt is not inserted (no user-message update and "
+            "no active state follows within a short quiet period). Judged when the agent advertises "
+            "`capabilities.session.prompt.skill`; the first position is allowed with or without "
+            "`inline`, so only the name can make the prompt invalid. Safe: the name resolves "
+            "nowhere, so no skill runs. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/slash-commands.mdx:253,255; "
+            "docs/protocol/v2/draft/content.mdx:244-250; "
+            "schema/v2/schema.unstable.json#/$defs/SkillReference/properties/name"
         ),
     ),
     Requirement(
@@ -3253,20 +3294,46 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Every command the agent advertises (in a setup response's `availableCommands`, "
             "an `available_commands_update` or, when `session.options` is advertised, a "
             "`session/options` result's `availableCommands`) validates as `AvailableCommand` -- it carries a "
-            "`type` discriminator (`command`, or a `_`-prefixed custom type) -- and within each "
-            "list every `name` contains no whitespace and is unique. Only the command items are "
-            "judged, not the rest of the carrying message. No `availableCommands` capability "
-            "marker exists, so support is inferred from the agent advertising any command "
-            "(`capability=\"inferred:availableCommands\"` is documentation-only); SKIPs when "
-            "none is observed. A leading `/` in `name` is not judged: the spec says \"without the "
-            "leading `/`\" with no RFC keyword."
+            "`type` discriminator (`command`, `skill` (unstable) or a `_`-prefixed custom type) -- "
+            "and within each list every `name` contains no whitespace and is unique across "
+            "commands and skills. Judged on the default connection and on one advertising "
+            "`session.commands.skill: {}`, the only one where a `skill` entry may appear. Only the "
+            "command items are judged, not the rest of the carrying message. No "
+            "`availableCommands` capability marker exists, so support is inferred from the agent "
+            "advertising any command (`capability=\"inferred:availableCommands\"` is "
+            "documentation-only); SKIPs when none is observed. A leading `/` in `name` is not "
+            "judged: the spec says \"without the leading `/`\" with no RFC keyword, and the "
+            "schema's `name` description of a custom-type command drops the clause that "
+            "`slash-commands.mdx:101` and `Command.name` keep (an upstream discrepancy)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/slash-commands.mdx:12,37-43,91-113; "
+            "docs/protocol/v2/draft/slash-commands.mdx:12,37-43,91-113,186-192; "
             "docs/protocol/v2/draft/session-config-options.mdx:549; "
             "schema/v2/schema.unstable.json#/$defs/AvailableCommand; "
             "schema/v2/schema.unstable.json#/$defs/Command; "
+            "schema/v2/schema.unstable.json#/$defs/Skill; "
             "schema/v2/schema.unstable.json#/$defs/AvailableCommandsUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-COMMANDS-202",
+        tier=Tier.CAPABILITY,
+        capability="inferred:skills",
+        text=(
+            "An agent that lists a `skill` command entry (in a setup response's "
+            "`availableCommands`, an `available_commands_update` or a `session/options` result) "
+            "to a client advertising `session.commands.skill: {}` advertises "
+            "`capabilities.session.prompt.skill` as an object in its `initialize` result. Skills "
+            "are unstable and have no marker for the agent listing them, so support is inferred "
+            "from the agent listing a skill (`capability=\"inferred:skills\"` is "
+            "documentation-only: the row checks the agent's own marker, so it cannot be gated on "
+            "it); SKIPs when no skill entry is observed."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/slash-commands.mdx:173; "
+            "docs/protocol/v2/draft/initialization.mdx:417-418; "
+            "schema/v2/schema.unstable.json#/$defs/Skill; "
+            "schema/v2/schema.unstable.json#/$defs/PromptSkillCapabilities"
         ),
     ),
     Requirement(

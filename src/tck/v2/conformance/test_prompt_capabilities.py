@@ -1,6 +1,7 @@
 """Prompt content capabilities: `image`, `audio`, `embeddedContext`
-(ACP-PROMPTCAP-001/002/003, ACP-PROMPTCAP-201) -- gated on the **object-marker** capability
-`capabilities.session.prompt.{image,audio,embeddedContext}`, since v2 has no boolean-encoded
+(ACP-PROMPTCAP-001/002/003, ACP-PROMPTCAP-201) and the unstable `skill` block
+(ACP-PROMPTCAP-202) -- gated on the **object-marker** capability
+`capabilities.session.prompt.{image,audio,embeddedContext,skill}`, since v2 has no boolean-encoded
 capabilities anywhere (see `ACP-INIT-204`).
 
 A non-error `session/prompt` result is sufficient for 001..003: `run_prompt`'s turn-end predicate
@@ -10,13 +11,19 @@ receipt, `ACP-PROMPT-201`).
 
 `ACP-PROMPTCAP-201` is the inverse: an agent MUST reject a content type that is neither baseline
 nor advertised with `-32602`, without inserting it (prompt-lifecycle.mdx:323). It is a runtime
-negative gate -- each block type is probed only when its capability is *not* advertised.
+negative gate -- each block type is probed only when its capability is *not* advertised. That
+includes an unstable `skill` block (slash-commands.mdx:255).
+
+`ACP-PROMPTCAP-202` is the advertised side of `skill`: a block naming no invocable skill is
+rejected with `-32602` and not inserted. Skills are the one prompt capability with no accepting
+row (`001..003`), since accepting a `skill` block runs whatever skill the agent lists.
 """
 
 from __future__ import annotations
 
 import base64
 import struct
+import uuid
 import zlib
 
 import pytest
@@ -125,6 +132,12 @@ def _resource_block(tmp_path) -> dict:
     }
 
 
+def _skill_block() -> dict:
+    """A `skill` block naming a skill no agent lists: it cannot resolve whether or not the agent
+    supports skills, and a conforming agent runs nothing for it."""
+    return {"type": "skill", "name": f"_tck_no_such_skill_{uuid.uuid4().hex}"}
+
+
 def _advertised(init_result: dict | None, path: str) -> bool:
     """Whether `path` holds a capability object. v2's prompt capabilities are `object | null`
     (a client reads `true` as not advertised), so only an object counts."""
@@ -146,6 +159,7 @@ _UNADVERTISED_CASES = {
         lambda tmp_path: {"type": "audio", "data": _tiny_wav_base64(), "mimeType": "audio/wav"},
     ),
     "resource": ("capabilities.session.prompt.embeddedContext", _resource_block),
+    "skill": ("capabilities.session.prompt.skill", lambda tmp_path: _skill_block()),
 }
 
 
@@ -155,15 +169,16 @@ _UNADVERTISED_CASES = {
 async def test_unadvertised_content_block_is_rejected_without_insertion(
     block_type, agent_launch, agent_initialize_result, tmp_path
 ):
-    """ACP-PROMPTCAP-201. A well-formed `image`/`audio`/`resource` block the agent did not
+    """ACP-PROMPTCAP-201. A well-formed `image`/`audio`/`resource`/`skill` block the agent did not
     advertise under `capabilities.session.prompt` is answered `-32602` and not inserted
     (prompt-lifecycle.mdx:323; content.mdx:24). The gate is inverted -- the case runs only for a
     capability that is *absent* -- so it is computed here from the cached `initialize` result
     (`_advertised`) instead of by a capability marker, which only gates on presence; the marker
     above is the baseline `session` one. Only an object value counts as advertised: `true` is
     read as not advertised, so such an agent is probed. SKIPs for a type the agent advertises
-    (`ACP-PROMPTCAP-001..003` judge that side). A client never sends an unadvertised block; the
-    probe breaks that rule on purpose because the spec defines the agent's answer."""
+    (`ACP-PROMPTCAP-001..003` judge that side; `-202` the `skill` side). A client never sends an
+    unadvertised block; the probe breaks that rule on purpose because the spec defines the agent's
+    answer."""
     capability_path, make_block = _UNADVERTISED_CASES[block_type]
     if _advertised(agent_initialize_result.result, capability_path):
         pytest.skip(f"{capability_path} is advertised -- ACP-PROMPTCAP-001..003 judge accepting it")
@@ -175,5 +190,26 @@ async def test_unadvertised_content_block_is_rejected_without_insertion(
             session_id,
             [{"type": "text", "text": "use this"}, make_block(tmp_path)],
             what=f"a prompt with an unadvertised {block_type!r} block ({capability_path})",
+            timeout=timeout,
+        )
+
+
+@pytest.mark.requirement("ACP-PROMPTCAP-202")
+@pytest.mark.capability("capabilities.session.prompt.skill")
+async def test_skill_block_naming_no_skill_is_rejected_without_insertion(agent_launch, tmp_path):
+    """ACP-PROMPTCAP-202. The agent advertises `session.prompt.skill`, so a `skill` block as the
+    first block is allowed whatever the capability's `inline`; only its `name` can make the
+    prompt invalid. A `name` that is not a skill the user can invoke is answered `-32602` and
+    the prompt is not inserted (slash-commands.mdx:253,255). Safe: nothing resolves, so no skill
+    runs."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        block = _skill_block()
+        await assert_prompt_rejected_not_inserted(
+            agent,
+            session_id,
+            [block, {"type": "text", "text": "use this"}],
+            what=f"a prompt with a skill block naming no invocable skill ({block['name']!r})",
             timeout=timeout,
         )

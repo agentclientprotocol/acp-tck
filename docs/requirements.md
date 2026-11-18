@@ -68,7 +68,7 @@ RFD does too.
 Some features have no `initialize` marker; an agent opts in by behaviour (it returns `modes`, it exposes a child
 session, it lists commands). A `CAPABILITY` row for such a feature uses a documentation-only `capability` string,
 `inferred:<feature>` (`inferred:modes`, `inferred:configOptions`, `inferred:authMethods`,
-`inferred:availableCommands`).
+`inferred:availableCommands`, `inferred:skills`).
 
 - The plugin never parses it: `@pytest.mark.capability(...)` and `_tck_capability_gate` only understand real
   `initialize`-result paths, so an `inferred:` row carries no `capability` marker. Never pass an `inferred:` path to

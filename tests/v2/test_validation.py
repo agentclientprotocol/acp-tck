@@ -133,6 +133,61 @@ def test_defined_stop_reason_is_valid():
     assert protocol.is_valid_open_enum_value("end_turn", protocol.STOP_REASONS)
 
 
+# --- agent_content_blocks: the content an agent authors (never a user message) ---
+
+_SKILL = {"type": "skill", "name": "s"}
+_TEXT = {"type": "text", "text": "t"}
+
+
+def _blocks(method: str, params: dict) -> list:
+    return [block for _where, block in protocol.agent_content_blocks(method, params)]
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"sessionUpdate": "agent_message_chunk", "content": _SKILL},
+        {"sessionUpdate": "agent_thought_chunk", "content": _SKILL},
+        {"sessionUpdate": "compaction_summary_chunk", "content": _SKILL},
+        {"sessionUpdate": "agent_message", "content": [_TEXT, _SKILL]},
+        {"sessionUpdate": "agent_thought", "content": [_SKILL]},
+        {"sessionUpdate": "compaction_update", "summary": [_SKILL]},
+        {"sessionUpdate": "tool_call_update", "content": [{"type": "content", "content": _SKILL}]},
+        {"sessionUpdate": "tool_call_content_chunk", "content": {"type": "content", "content": _SKILL}},
+        {"sessionUpdate": "prompt_suggestions_update", "suggestions": [{"prompt": [_SKILL]}]},
+    ],
+)
+def test_agent_content_blocks_reads_every_agent_authored_site(update):
+    assert _SKILL in _blocks("session/update", {"sessionId": "s", "update": update})
+
+
+def test_agent_content_blocks_reads_a_permission_request_tool_call():
+    params = {"subject": {"type": "tool_call", "toolCall": {"content": [{"type": "content", "content": _SKILL}]}}}
+    assert _blocks("session/request_permission", params) == [_SKILL]
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"sessionUpdate": "user_message_chunk", "content": _SKILL},
+        {"sessionUpdate": "user_message", "content": [_SKILL]},
+        {"sessionUpdate": "session_message_chunk", "content": _SKILL},
+        {"sessionUpdate": "available_commands_update", "availableCommands": [{**_SKILL, "description": "d"}]},
+        {"sessionUpdate": "tool_call_update", "content": [{"type": "diff"}, {"type": "terminal"}]},
+        {"sessionUpdate": "agent_message", "content": None},
+    ],
+)
+def test_agent_content_blocks_ignores_user_messages_and_non_content(update):
+    assert _blocks("session/update", {"sessionId": "s", "update": update}) == []
+
+
+def test_agent_content_blocks_tolerates_malformed_input():
+    assert protocol.agent_content_blocks("session/update", None) == []
+    assert protocol.agent_content_blocks("session/update", {"update": "x"}) == []
+    assert protocol.agent_content_blocks("session/request_permission", {"subject": 1}) == []
+    assert protocol.agent_content_blocks("session/update", {"update": {"sessionUpdate": "agent_message", "content": 5}}) == []
+
+
 # --- find_unknown_root_keys: named branch vs. open "other" fallback carve-out ---
 
 
