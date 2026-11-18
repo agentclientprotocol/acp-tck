@@ -79,6 +79,14 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   with the lists a new session would carry (`_options_result`) without creating or resuming a
   session, sending an update or launching an MCP server; a `sessionId` the agent does not know is
   `-32002` (`_handle_options`).
+- Initial `configOptions` on `session/new`, `session/resume` and `session/fork` are handled as
+  `session-config-options.mdx:578-582` says (`_initial_config_error`, `_apply_initial_config`): a
+  malformed entry, a value `type` other than `id`/`boolean` and a repeated `configId` get `-32602`
+  before anything happens; an entry whose id is unknown, whose type does not match the option's or
+  whose value is not allowed is ignored; the rest are applied in order, and the setup response
+  reports the resulting values. Defect fixtures switch each rule off with the class attributes
+  `_validate_initial_config`, `_reject_unsupported_initial_type`, `_reject_duplicate_initial_config`
+  and `_ignore_inapplicable_initial_config`.
 - `session/set_config_option` rejects an unknown `configId` or an invalid value with `-32602`
   (state untouched), otherwise updates `currentValue`, sends the duplicate
   `config_option_update`, and replies with the complete list (`_reply_config_set`);
@@ -178,6 +186,16 @@ class ConformingAgent:
     # A failed `initialize` can be retried (initialization.mdx:92).
     # `no_retry_after_failed_initialize.py` switches it off.
     _allow_initialize_retry = True
+    # Initial `configOptions` entries on `session/new`/`session/resume`/`session/fork`
+    # (session-config-options.mdx:578-581): a malformed entry, a value `type` the agent does not
+    # support and a repeated `configId` get `-32602`; an entry for an unknown `configId`, of the
+    # wrong type or with a value not allowed is ignored. `options_accepts_malformed.py`,
+    # `options_ignores_unsupported_type.py`, `options_accepts_duplicate.py` and
+    # `options_rejects_unknown_entry.py` switch one rule off.
+    _validate_initial_config = True
+    _reject_unsupported_initial_type = True
+    _reject_duplicate_initial_config = True
+    _ignore_inapplicable_initial_config = True
 
     # Versions reported in a `-32022`'s `data.supported`. A subclass that answers other versions
     # itself (e.g. `conforming_dual.py`) widens this.
@@ -510,6 +528,7 @@ class ConformingAgent:
             or self._additional_directories_rejection(params.get("additionalDirectories"))
             or self._mcp_transport_rejection(params.get("mcpServers"))
             or self._mcp_duplicate_name_rejection(params.get("mcpServers"))
+            or self._initial_config_error(params.get("configOptions"))
         )
 
     @staticmethod
@@ -622,8 +641,56 @@ class ConformingAgent:
         self._sessions[session_id] = params.get("cwd", "")
         self._persist(session_id)
         self._launch_mcp_servers(params.get("mcpServers") or [])
+        self._apply_initial_config(params)
         self._before_new_response(session_id)
         self._reply(msg_id, self._new_session_result(session_id))
+
+    def _initial_config_error(self, entries: Any) -> str | None:
+        """Why `entries` (a setup request's `configOptions`) must fail the request, else `None`: an
+        entry that is not `{configId: str, type: "id", value: str}` or `{configId: str, type:
+        "boolean", value: bool}` or of another `type` (`-32602`, session-config-options.mdx:578-579),
+        or a repeated `configId` (:580)."""
+        if entries is None:
+            return None
+        if not isinstance(entries, list):
+            return "configOptions must be an array"
+        seen: set[str] = set()
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("configId"), str):
+                if self._validate_initial_config:
+                    return f"configOptions entry without a string configId: {entry!r}"
+                continue
+            value_type, value = entry.get("type"), entry.get("value")
+            if value_type == "id":
+                well_formed = isinstance(value, str)
+            elif value_type == "boolean":
+                well_formed = isinstance(value, bool)
+            else:
+                well_formed = False
+                if isinstance(value_type, str) and not self._reject_unsupported_initial_type:
+                    continue
+            if not well_formed and self._validate_initial_config:
+                return f"configOptions entry {entry['configId']!r} has a missing, unsupported or mismatched type or value"
+            if entry["configId"] in seen and self._reject_duplicate_initial_config:
+                return f"configOptions names {entry['configId']!r} twice"
+            seen.add(entry["configId"])
+        return None
+
+    def _apply_initial_config(self, params: dict[str, Any]) -> None:
+        """Apply the request's `configOptions` entries in order, as `session/set_config_option` would.
+        An entry whose id is unknown, whose type does not match the option's or whose value is not
+        allowed is ignored (session-config-options.mdx:581)."""
+        for entry in params.get("configOptions") or []:
+            if not isinstance(entry, dict):
+                continue
+            option = next((o for o in self._config_options if o.get("configId") == entry.get("configId")), None)
+            if option is None:
+                continue
+            if self._ignore_inapplicable_initial_config and not self._config_value_is_valid(
+                option, entry.get("type"), entry.get("value")
+            ):
+                continue
+            option["currentValue"] = entry.get("value")
 
     def _handle_options(self, msg_id: Any, params: dict[str, Any]) -> None:
         """`session/options` (only when `capabilities.session.options` is advertised, else `-32601`):
@@ -775,6 +842,7 @@ class ConformingAgent:
             return
         if session_id in self._closed_sessions:
             self._sessions[session_id] = self._closed_sessions.pop(session_id)
+        self._apply_initial_config(params)
         if self._should_replay(params.get("replayFrom")):
             self._replay_history(session_id)
         self._send_resume_session_info(session_id)
@@ -856,11 +924,16 @@ class ConformingAgent:
             return
         if self._fork_cursor_rejected(msg_id, params):
             return
+        rejection = self._initial_config_error(params.get("configOptions"))
+        if rejection is not None:
+            self._error(msg_id, -32602, f"Invalid params: {rejection}")
+            return
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
         self._history[session_id] = [dict(update) for update in self._history.get(source_id, [])]
         self._fork_background(source_id, session_id)
+        self._apply_initial_config(params)
         self._reply(msg_id, {"sessionId": session_id, **self._fork_state_fields()})
 
     def _fork_cursor_rejected(self, msg_id: Any, params: dict[str, Any]) -> bool:

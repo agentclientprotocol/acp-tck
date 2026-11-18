@@ -119,7 +119,14 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-OPTIONS-001",
         "ACP-OPTIONS-002",
         "ACP-OPTIONS-003",
+        "ACP-OPTIONS-004",
+        "ACP-OPTIONS-005",
+        "ACP-OPTIONS-006",
+        "ACP-OPTIONS-007",
         "ACP-OPTIONS-009",
+        "ACP-OPTIONS-010",
+        "ACP-OPTIONS-011",
+        "ACP-OPTIONS-201",
         "ACP-INFO-CONCURRENT-201",
         "ACP-INFO-BACKGROUND-201",
         "ACP-INFO-BACKGROUND-202",
@@ -349,6 +356,7 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-STATE-204",
         "ACP-SUGGEST-004",
         "ACP-CURSOR-004",
+        "ACP-OPTIONS-007",
         "ACP-OPTIONS-009",
     }
 
@@ -367,6 +375,8 @@ def test_informational_tier_is_exactly_these_ids():
         "ACP-INFO-PARSE-001",
         "ACP-MCP-201",
         "ACP-MCP-202",
+        "ACP-OPTIONS-010",
+        "ACP-OPTIONS-201",
         "ACP-STDERR-001",
     }
 

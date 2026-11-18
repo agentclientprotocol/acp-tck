@@ -42,13 +42,15 @@ from typing import Any
 
 import pytest
 
-from tck.common.harness import Direction
 from tck.common.plugin import capability_is_supported
 from tck.v2.protocol import INVALID_PARAMS
 from tck.v2.validation import validate_agent_message, validate_agent_response, validate_def_value
 
 from ._helpers import (
+    config_state,
+    config_updates,
     drain_quiet,
+    flatten_select_values,
     iter_messages,
     new_session_result,
     obtain_resumable_session,
@@ -68,23 +70,6 @@ async def _new_session_full_result(agent, cwd, *, timeout):
     `configOptions`. Not schema-validated: only the shape rows judge the `configOptions` items,
     and `ACP-SESSION-001` judges the rest of the result."""
     return await new_session_result(agent, cwd, timeout=timeout)
-
-
-def _flatten_select_values(options: Any) -> list[Any]:
-    """`SessionConfigSelectOptions` is `anyOf` a flat array of `{value, name, ...}` or a grouped
-    array of `{groupId, name, options: [{value, ...}]}` -- flatten either shape down to the set
-    of legal `value`s."""
-    values: list[Any] = []
-    for entry in options or []:
-        if not isinstance(entry, dict):
-            continue
-        if "value" in entry:
-            values.append(entry["value"])
-        elif "options" in entry:
-            for sub in entry["options"]:
-                if isinstance(sub, dict) and "value" in sub:
-                    values.append(sub["value"])
-    return values
 
 
 def _assert_config_options_shape_valid(config_options: list[Any]) -> None:
@@ -150,7 +135,7 @@ def _pick_settable_option(config_options: list[Any]) -> tuple[dict[str, Any], st
     if target.get("type") == "boolean":
         return target, "boolean", not target.get("currentValue")
     if target.get("type") == "select":
-        legal_values = _flatten_select_values(target.get("options"))
+        legal_values = flatten_select_values(target.get("options"))
         remaining = [value for value in legal_values if value != target.get("currentValue")]
         if not remaining:
             pytest.skip(f"config option {target['configId']!r} has no alternative value to switch to")
@@ -246,7 +231,7 @@ async def test_select_config_option_current_value_is_declared(agent_launch, tmp_
             agent, tmp_path, init_result, timeout=agent_launch.default_timeout
         )
         for source, option in _select_options(lists):
-            legal_values = _flatten_select_values(option.get("options"))
+            legal_values = flatten_select_values(option.get("options"))
             assert option.get("currentValue") in legal_values, (
                 f"{source}: config option {option.get('configId')!r} currentValue "
                 f"{option.get('currentValue')!r} is not among its declared options {legal_values!r}"
@@ -311,15 +296,6 @@ async def test_config_option_update_is_complete_if_observed(agent_launch, tmp_pa
             returned_ids = {o.get("configId") for o in returned if isinstance(o, dict)}
             keeps_all_ids = keeps_all_ids and original_ids <= returned_ids
         record_property("acp_tck_config_option_update_keeps_all_ids", keeps_all_ids)
-
-
-def _config_state(options: Any) -> dict[Any, Any]:
-    """`{configId: currentValue}` of a `configOptions` list, for before/after comparisons."""
-    return {
-        option["configId"]: option.get("currentValue")
-        for option in options or []
-        if isinstance(option, dict) and "configId" in option
-    }
 
 
 async def _advertised_config(agent, cwd, *, timeout) -> tuple[str, list[Any]]:
@@ -491,7 +467,7 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
         if len(settable) > 1:
             probes.append((settable[0]["configId"], "id", _UNKNOWN_VALUE))
 
-        state = _config_state(config_options)
+        state = config_state(config_options)
         rejected = 0
         changed: dict[Any, Any] = {}
         for config_id, probe_type, probe_value in probes:
@@ -500,7 +476,7 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
                 agent, session_id, config_id, type=probe_type, value=probe_value, timeout=timeout
             )
             # Before the follow-up: the valid no-op set may legitimately notify.
-            if _config_updates(agent.transcript[start:], session_id):
+            if config_updates(agent.transcript[start:], session_id):
                 pytest.skip("config_option_update observed after a probe; the agent changed its own state")
             value_type, value = _no_op_value(follow_up)
             entry = await set_config_option(
@@ -512,7 +488,7 @@ async def test_rejected_config_set_leaves_configuration_unchanged(agent_launch, 
             if not isinstance(returned, list):
                 pytest.skip(f"the follow-up no-op set did not return a list (ACP-CONFIG-002): {entry.text!r}")
             # An option the reply omits is `ACP-CONFIG-002`'s concern, not a state change.
-            after = _config_state(returned)
+            after = config_state(returned)
             if _is_error(probe):
                 rejected += 1
                 changed.update(
@@ -535,27 +511,12 @@ async def test_select_values_are_unique_within_an_option(agent_launch, tmp_path)
             agent, tmp_path, init_result, timeout=agent_launch.default_timeout
         )
         for source, option in _select_options(lists):
-            values = _flatten_select_values(option.get("options"))
+            values = flatten_select_values(option.get("options"))
             duplicates = sorted({v for v in values if values.count(v) > 1}, key=repr)
             assert not duplicates, (
                 f"{source}: config option {option.get('configId')!r} declares value(s) {duplicates!r} "
                 f"more than once (across groups included): {values!r}"
             )
-
-
-def _config_updates(entries: list[Any], session_id: str) -> list[dict[str, Any]]:
-    """Every `config_option_update` `session/update` for `session_id` among received `entries`."""
-    return [
-        message
-        for entry in entries
-        if entry.direction is Direction.RECEIVED
-        for message in iter_messages(entry)
-        if message.get("method") == "session/update"
-        and isinstance(message.get("params"), dict)
-        and message["params"].get("sessionId") == session_id
-        and isinstance(message["params"].get("update"), dict)
-        and message["params"]["update"].get("sessionUpdate") == "config_option_update"
-    ]
 
 
 async def _state_changing_set(agent_launch, agent, tmp_path):
@@ -567,7 +528,7 @@ async def _state_changing_set(agent_launch, agent, tmp_path):
         agent, tmp_path, timeout=agent_launch.default_timeout
     )
     target, set_type, new_value = _pick_settable_option(config_options)
-    before = _config_state(config_options)
+    before = config_state(config_options)
     start = len(agent.transcript)
     entry = await set_config_option(
         agent,
@@ -588,13 +549,13 @@ async def _state_changing_set(agent_launch, agent, tmp_path):
     await drain_quiet(agent, quiet_period(agent_launch.default_timeout))
     transcript = agent.transcript
     end = next((i for i in range(start, len(transcript)) if transcript[i] is entry), len(transcript))
-    state = _config_state(returned)
+    state = config_state(returned)
     if state == before:
         pytest.skip("session/set_config_option changed nothing")
     return (
         state,
-        _config_updates(transcript[start:end], session_id),
-        _config_updates(transcript[end + 1 :], session_id),
+        config_updates(transcript[start:end], session_id),
+        config_updates(transcript[end + 1 :], session_id),
     )
 
 
@@ -618,7 +579,7 @@ async def test_config_option_update_precedes_the_set_response(agent_launch, tmp_
         state, early, late = await _state_changing_set(agent_launch, agent, tmp_path)
 
         def matches(message: dict[str, Any]) -> bool:
-            return _config_state(message["params"]["update"].get("configOptions")) == state
+            return config_state(message["params"]["update"].get("configOptions")) == state
 
         if not any(matches(m) for m in early + late):
             pytest.skip("no config_option_update carrying the response's state was observed")

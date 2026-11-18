@@ -535,6 +535,21 @@ statement = "Invoking a command (a prompt whose first text block starts with `/`
 reason = "Unsafe: invoking an arbitrary advertised command (`/compact`, `/clear`, `/logout`) has side effects the TCK cannot predict. The generic turn lifecycle is judged by the STATE rows."
 
 [[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:209 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD list the values of a `select` `thought_level` option from lowest to highest."
+reason = "Not observable: the protocol carries no measure of a reasoning level, so which value is higher is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:215,217 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "In a `boolean` `speed` option `true` is the faster setting, and agents SHOULD list the values of a `select` `speed` option from slowest to fastest."
+reason = "Not observable: the protocol carries no measure of speed for option values, so which value is faster is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:219 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD NOT use the `speed` category for an option that mainly selects a model, reasoning level or session mode."
+reason = "Not observable: whether an option mainly selects a model is a semantic judgement the wire format does not express."
+
+[[not_requirement]]
 citation = "docs/protocol/v2/draft/session-config-options.mdx:237 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Every config option's `currentValue` is the value the agent uses, and agents MUST be able to operate with it even if the client does not support, display or recognize the option."
 reason = "Not observable: it concerns the agent's internal operation. The observable part, `currentValue` being present and valid, is checked by schema validation and ACP-CONFIG-201."
@@ -553,6 +568,21 @@ reason = "Not deterministically observable: the response is a snapshot and optio
 citation = "docs/protocol/v2/draft/session-config-options.mdx:551 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/options` MUST NOT change an existing session, and it stores no session and writes nothing to the history of `sessionId`."
 reason = "Not deterministically observable: a change to the session or its history has no client-visible marker, and comparing `session/resume` replays before and after does not work because replays need not be identical. ACP-OPTIONS-002 judges the observable parts (no session created or resumed, no `session/update`, no `session/list` entry)."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:572,574 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The agent applies initial config option entries in list order, each checked against the option set as it stands at that point, on top of a restored session's configuration or the fork's starting configuration, and on `session/resume` before it replays history and before it responds."
+reason = "Not observable: order only matters through dependencies between options, which are agent-specific and not described on the wire, and the entries are applied before the response whichever way the resume replays. The resulting values are judged as far as observable by ACP-OPTIONS-006, -010 and -011."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:584 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Until the `session/new` or `session/fork` response, the agent SHOULD NOT send other `session/update` notifications caused by applying initial config option entries, such as a notice that a value fell back."
+reason = "Not attributable: an update before the response cannot be tied to the entries rather than to the agent's own activity. ACP-SESSION-207 judges early notifications for a new session and ACP-OPTIONS-007 the `config_option_update` for the entries."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:585 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A `session/resume` with initial config option entries that reaches a session active on other connections changes its configuration, so the agent SHOULD send `config_option_update` on those connections."
+reason = "Deferred: the TCK drives each agent instance over one stdio connection, so it cannot hold a second connection to the same session."
 
 # --- content.mdx and security.mdx ---
 

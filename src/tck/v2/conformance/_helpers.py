@@ -1244,6 +1244,47 @@ def child_config_selects(
     return result
 
 
+def flatten_select_values(options: Any) -> list[Any]:
+    """`SessionConfigSelectOptions` is `anyOf` a flat array of `{value, name, ...}` or a grouped
+    array of `{groupId, name, options: [{value, ...}]}` -- flatten either shape down to the set
+    of legal `value`s."""
+    values: list[Any] = []
+    for entry in options or []:
+        if not isinstance(entry, dict):
+            continue
+        if "value" in entry:
+            values.append(entry["value"])
+        elif "options" in entry:
+            for sub in entry["options"]:
+                if isinstance(sub, dict) and "value" in sub:
+                    values.append(sub["value"])
+    return values
+
+
+def config_state(options: Any) -> dict[Any, Any]:
+    """`{configId: currentValue}` of a `configOptions` list, for before/after comparisons."""
+    return {
+        option["configId"]: option.get("currentValue")
+        for option in options or []
+        if isinstance(option, dict) and "configId" in option
+    }
+
+
+def config_updates(entries: list[Any], session_id: str) -> list[dict[str, Any]]:
+    """Every `config_option_update` `session/update` for `session_id` among received `entries`."""
+    return [
+        message
+        for entry in entries
+        if entry.direction is Direction.RECEIVED
+        for message in iter_messages(entry)
+        if message.get("method") == "session/update"
+        and isinstance(message.get("params"), dict)
+        and message["params"].get("sessionId") == session_id
+        and isinstance(message["params"].get("update"), dict)
+        and message["params"]["update"].get("sessionUpdate") == "config_option_update"
+    ]
+
+
 def is_response_line(entry: TranscriptEntry) -> bool:
     """True if `entry` carries a reply: any JSON-RPC object without `method`, bare or inside an
     array line, even a malformed one missing `id`/`result`/`error`.

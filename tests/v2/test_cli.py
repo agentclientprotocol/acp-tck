@@ -103,6 +103,10 @@ _CAPABILITY_IDS = {
     "ACP-OPTIONS-001",
     "ACP-OPTIONS-002",
     "ACP-OPTIONS-003",
+    "ACP-OPTIONS-004",
+    "ACP-OPTIONS-005",
+    "ACP-OPTIONS-006",
+    "ACP-OPTIONS-011",
     "ACP-CANCEL-001",
     "ACP-CANCEL-002",
     "ACP-CANCEL-203",
@@ -226,6 +230,7 @@ _ADVISORY_IDS = {
     "ACP-STATE-210",
     "ACP-SUGGEST-004",
     "ACP-CURSOR-004",
+    "ACP-OPTIONS-007",
     "ACP-OPTIONS-009",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
@@ -280,6 +285,8 @@ _INFORMATIONAL_IDS = {
     "ACP-STDERR-001",
     "ACP-INFO-PARSE-001",
     "ACP-INFO-INVALIDREQ-001",
+    "ACP-OPTIONS-010",
+    "ACP-OPTIONS-201",
 }
 _ALL_IDS = _MANDATORY_IDS | _CAPABILITY_IDS | _ADVISORY_IDS | _INFORMATIONAL_IDS
 
@@ -443,6 +450,13 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-OPTIONS-002",
     "ACP-OPTIONS-003",
     "ACP-OPTIONS-009",
+    "ACP-OPTIONS-004",
+    "ACP-OPTIONS-005",
+    "ACP-OPTIONS-006",
+    "ACP-OPTIONS-007",
+    "ACP-OPTIONS-010",
+    "ACP-OPTIONS-011",
+    "ACP-OPTIONS-201",
 } | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
@@ -600,6 +614,13 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-OPTIONS-002",
     "ACP-OPTIONS-003",
     "ACP-OPTIONS-009",
+    "ACP-OPTIONS-004",
+    "ACP-OPTIONS-005",
+    "ACP-OPTIONS-006",
+    "ACP-OPTIONS-007",
+    "ACP-OPTIONS-010",
+    "ACP-OPTIONS-011",
+    "ACP-OPTIONS-201",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",
     "ACP-PROMPTCAP-001",
@@ -1106,6 +1127,55 @@ def test_options_defect_fixtures_fail_only_their_own_row():
         _run_cli(FIXTURES_DIR_V2, "options_method_errors.py", protocol_version=2, k="test_session_options").stdout
     )
     assert [errors[f"ACP-OPTIONS-00{n}"] for n in (1, 2, 3, 9)] == ["FAIL", "SKIPPED", "SKIPPED", "SKIPPED"], errors
+
+
+def test_initial_config_defect_fixtures_fail_only_their_own_rows():
+    """Each fixture advertises `session.options` with a select and a boolean option and breaks one
+    initial-`configOptions` rule. Everything else PASSes or SKIPs. The run is scoped with `-k`, so its
+    verdict is not asserted."""
+    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 10, 11, 201)]
+    for fixture, expected in (
+        ("options_accepts_malformed.py", {"ACP-OPTIONS-004"}),
+        ("options_accepts_duplicate.py", {"ACP-OPTIONS-005"}),
+        ("options_rejects_unknown_entry.py", {"ACP-OPTIONS-006"}),
+        ("options_notifies_initial.py", {"ACP-OPTIONS-007"}),
+        ("options_response_hides_values.py", {"ACP-OPTIONS-011"}),
+        ("options_ignores_unsupported_type.py", set()),
+    ):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_initial_config")
+        statuses = _table_statuses(result.stdout)
+        fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+        assert fails == expected, f"{fixture}:\n{result.stdout}"
+        for req_id in set(ids) - expected:
+            assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_conforming_initial_config_passes_non_vacuously_and_conforming_skips(tmp_path):
+    """`conforming_full.py` applies initial entries, ignores inapplicable ones and reports the real
+    values, so every ACP-OPTIONS row of the initial-value family PASSes (010 and 201 record and PASS);
+    `conforming.py` advertises no `options` and SKIPs them all. ACP-OPTIONS-201 records `rejected with
+    -32602` for the fixture that rejects an unsupported value `type` and `ignored` for the one that
+    ignores it."""
+    ids = [f"ACP-OPTIONS-{n:03}" for n in (4, 5, 6, 7, 10, 11, 201)]
+    report_path = tmp_path / "full.json"
+    result = _run_cli(
+        FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k="test_initial_config",
+        report_json=str(report_path),
+    )
+    full = _table_statuses(result.stdout)
+    assert {full[i] for i in ids} == {"PASS"}, full
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    assert _recorded(by_id, "ACP-OPTIONS-201")["acp_tck_options_unsupported_type_outcome"] == "rejected with -32602"
+    assert _recorded(by_id, "ACP-OPTIONS-010")["acp_tck_initial_value_applied"] == "True"
+    report_path = tmp_path / "ignores.json"
+    _run_cli(
+        FIXTURES_DIR_V2, "options_ignores_unsupported_type.py", protocol_version=2, k="test_initial_config",
+        report_json=str(report_path),
+    )
+    by_id = {req["id"]: req for req in json.loads(report_path.read_text())["requirements"]}
+    assert _recorded(by_id, "ACP-OPTIONS-201")["acp_tck_options_unsupported_type_outcome"] == "ignored"
+    plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k="test_initial_config").stdout)
+    assert {plain[i] for i in ids} == {"SKIPPED"}, plain
 
 
 def test_answers_unadvertised_options_fails_error_006_only():
@@ -3248,6 +3318,13 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-OPTIONS-002",
             "ACP-OPTIONS-003",
             "ACP-OPTIONS-009",
+            "ACP-OPTIONS-004",
+            "ACP-OPTIONS-005",
+            "ACP-OPTIONS-006",
+            "ACP-OPTIONS-007",
+            "ACP-OPTIONS-010",
+            "ACP-OPTIONS-011",
+            "ACP-OPTIONS-201",
             "ACP-CANCEL-209",
             "ACP-CANCEL-213",
             "ACP-CLOSE-205",
