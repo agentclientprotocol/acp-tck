@@ -20,6 +20,8 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
   D12(a) mcp-over-acp deferred to a follow-up PR, transport RFD out of scope, no ledger entries for either; D13 all defaults.
 - Plan errata (from review-revendor.md): v2 ledger reword uses `SS:56` not `SS:54`; impact-v2-prompt-lifecycle.md has an off-by-one near PL:403-405 (CANCEL-214 -> :404, JSONRPC-007 -> 404-405). Programmers must verify every line number against 3ea94133 themselves.
 - VENDORED.md keeps `git show <commit>:<path>` (fix slice drops the pointless HEAD step, aligns docs/spec-updates.md).
+- AUTH-211: relax the common plugin to allow several `revokes` tests, run last in collection order (user, 2026-11-18).
+- Pre-existing ACP-DELETE-204 fixture bug: fix in this PR as a small fixture-only slice + a test running DELETE-204 without the hang prompt (user).
 - No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
@@ -43,15 +45,15 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-IDEM — 5aa7c71 — +PROMPT-212..215/-217..219 CAPABILITY cap.session, -216 ADVISORY; ledger +3 and +1 Deferred ($/cancel_request variant, PL:405,458); fixture base records keys + persists history; 7 fixtures; suite green (1083, run by orchestrator)
 - V2-REPLAY — 0ec3a61 — +RESUME-218..221 CAPABILITY, -222 ADVISORY; RESUME-205 all 7 chunk kinds; ledger +3, -SS:235 notices entry; _base.py sends replay_complete; SUGGEST-004 now PASSes on conforming_full; suite green (1093)
 - V2-CAN — a8c38d8 — CANCEL-213 ADVISORY->CAPABILITY (quiet_period window in text), CANCEL-209 note; elicitation MUST restated as Deferred ledger entry (U10), section header/reasons reworded off TCK-choice; suite green (1093)
+- V2-TOOL — 145356c — +PATCH-213/-214/-215 CAPABILITY, -216 ADVISORY, +TOOLCANCEL/TERMCANCEL-210 CAPABILITY (inferred gates), -211 ADVISORY; ENUM-201 subject.type; ledger -2 +3; TOOL/TERMCANCEL-203 cite subagents.mdx:374 primary; suite green (1111)
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE and reviewed.
-- Slice 17 V2-AUTH+DIRS: PAUSED (no edits) on design question: AUTH-211 needs a second `revokes` test but the common plugin allows only one. Options (a) relax plugin to allow several in collection order, (b) v2 conftest ordering hack, (c) record second outcome inside AUTH-004 test. Asked the user. Plan line fix: ledger entry to delete is `session-setup.mdx:528` (not 443). Resume the same programmer with the answer.
+- Slice 17 V2-AUTH+DIRS: resumed with answer (a). Ledger entry to delete is `session-setup.mdx:528` (not 443).
 - Slice 16 V2-TOOL: in progress. Programmers must run the full suite in the FOREGROUND (timeout 600000, ~8.5 min); background runs force premature hand-backs.
 - Pre-existing (also on main ee2af8a): plain `acp-tck --protocol-version 2` on v2 conforming_full FAILs ACP-DELETE-204 — fixture answers session/delete before the cancelled idle when a permission request is pending. Not a regression; reported to the user; candidate fix slice.
 - For V2-REPLAY (slice 14): once `_base.py` sends `replay_complete`, drop the explicit `replay_complete` from `replays_suggestions.py` and remove SUGGEST-004 from `_FULL_EXPECTED_SKIPS` in tests/v2/test_cli.py. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
-- AUTH-211 revokes design (see Next).
-- Pre-existing ACP-DELETE-204 fixture bug (v2 conforming_full): fix in this PR or later?
+- none
