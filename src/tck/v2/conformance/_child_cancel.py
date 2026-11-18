@@ -34,6 +34,17 @@ child (its `capabilities.cancel`, its latest state from its own `state_update` o
    latest list may be background work no list names yet, and a list never reported leaves the
    TCK unable to tell (:214). Nothing is judged for those.
 
+The turn holds every child `session/request_permission` unanswered (`ChildPermissionHold`), the
+evidence for `ACP-SUBAGENT-204`: when the Agent stops a session's cancelled work it cancels that
+work's pending permission requests with `$/cancel_request`, descendants' included
+(`subagents.mdx:417`), and the Client leaves a child's request open until the child reports its
+cancelled `idle` (`subagents.mdx:419`). A withdrawn request is answered `cancelled`. If the target
+has not settled within `timeout / 2` of its cancel while its own or its descendants' requests are
+still held, the TCK answers them per the `allow` policy and gives it `timeout / 2` more, so a child
+that waits for its requests before reporting its state (`subagents.mdx:421`) still has its
+confirmation judged by `ACP-SUBAGENT-016`, and the wait is `ACP-SUBAGENT-204`'s alone. Requests
+still held when the parent's turn ends are answered then (`run_prompt`).
+
 Every wait is bounded per step (`timeout` to find something to cancel, `timeout / 2` for each
 response or state), never by one overall deadline that a long turn could exhaust, so a slow or
 chatty agent is judged on what it did, not on the TCK running out of time. The parent turn's own
@@ -51,6 +62,8 @@ from typing import Any
 from tck.common.harness import AgentProcess, AgentTimeout, Direction, TranscriptEntry
 
 from ._helpers import (
+    ChildPermissionHold,
+    HeldRequest,
     ItemCancel,
     PatchTracker,
     PromptTurn,
@@ -112,6 +125,18 @@ class ChildCancelRun:
     tool_call_child: str | None = None
     terminal: ItemCancel = field(default_factory=ItemCancel)
     terminal_child: str | None = None
+    held: list[HeldRequest] = field(default_factory=list)
+    """Every child `session/request_permission` the turn held (`ChildPermissionHold`)."""
+    stopped: dict[str, int] = field(default_factory=dict)
+    """Child -> transcript index of its first own `idle`/`cancelled` `state_update` after a TCK
+    cancellation that covers it: the target's (for the target and its descendants) or the
+    parent's (for every child)."""
+    released: bool = False
+    """The target had not settled within `timeout / 2` of its cancel while its own or its
+    descendants' requests were still held, so the TCK answered them (`ChildPermissionHold.release`)
+    and waited `timeout / 2` more."""
+    settled_after_release: bool = False
+    """The target settled only after that release."""
 
 
 def _is_idle_cancelled(state: Any) -> bool:
@@ -143,6 +168,8 @@ class _Driver:
         self.cascade_targets: list[str] = []
         self.finishing = False
         self.turn_timed_out = False
+        self.hold = ChildPermissionHold()
+        self.released_at: float | None = None
 
     # --- reading the wire
 
@@ -201,7 +228,21 @@ class _Driver:
             return
         self.children[sid].background = background_keys(update)
         self.children[sid].background_at = index
+        if _is_idle_cancelled(update) and sid not in self.result.stopped and self._covered(index, sid):
+            self.result.stopped[sid] = index
         self._report(index, sid, update, own=True)
+
+    def _covered(self, index: int, child_id: str) -> bool:
+        """Whether a TCK cancellation sent before transcript index `index` covers `child_id`."""
+        if self.parent_cancel_index is not None and index > self.parent_cancel_index:
+            return True
+        target = self.result.target
+        return (
+            self.target_sent_index is not None
+            and index > self.target_sent_index
+            and target is not None
+            and (child_id == target or self._descends_from(child_id, target))
+        )
 
     def _report(self, index: int, child_id: str, state: Any, own: bool = False) -> None:
         child = self.children[child_id]
@@ -211,6 +252,7 @@ class _Driver:
         if child_id == self.result.target:
             if own and self.result.outcome == "none" and child.state.get("state") == "idle":
                 self.result.outcome = self._settle(index, child.state)
+                self.result.settled_after_release = self.result.released
                 self.target_settled_at = asyncio.get_running_loop().time()
             elif child.state.get("state") == "unknown":
                 self.target_unknown = True
@@ -335,7 +377,19 @@ class _Driver:
             or now - last_activity > self.silence
         )
         if self.result.target is not None and self.result.outcome == "none":
-            if now - self.target_sent_at > self.window:
+            target = self.result.target
+            covered = {target, *(c for c in self.children if self._descends_from(c, target))}
+            if self.released_at is None and now - self.target_sent_at > self.window:
+                if self.hold.pending(covered):
+                    # A child that waits for its requests before reporting its state
+                    # (`subagents.mdx:421`) gets them answered, so its confirmation can still be
+                    # judged (`ACP-SUBAGENT-016`) and the wait is `ACP-SUBAGENT-204`'s.
+                    await self.hold.release(self.agent, covered)
+                    self.released_at = now
+                    self.result.released = True
+                else:
+                    self.released_at = self.target_sent_at
+            if self.released_at is not None and now - self.released_at > self.window:
                 self.result.outcome = "unobservable" if self.target_unknown else "unconfirmed"
                 self.target_settled_at = now
         target_settled = search_over and (
@@ -369,7 +423,8 @@ class _Driver:
         if turn_done and self.parent_ended_at is None:
             self.parent_ended_at = now
         if self.parent_ended_at is None:
-            if now - self.parent_cancel_at > self.window:
+            # `run_prompt` returns `quiet` after the turn's idle while child requests are held.
+            if now - self.parent_cancel_at > self.window + self.quiet:
                 self.result.cascade_skip = "the parent's turn did not end after session/cancel"
                 return True
             return False
@@ -395,7 +450,13 @@ async def drive_child_cancel(
     # Several times the per-response timeout: the waits above are bounded one by one and add up
     # to less, so the turn's own deadline never fires first in a normal run.
     turn_task = asyncio.ensure_future(
-        run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout * 3)
+        run_prompt(
+            agent,
+            session_id,
+            [{"type": "text", "text": prompt_text}],
+            hold_children=driver.hold,
+            timeout=timeout * 3,
+        )
     )
     try:
         while True:
@@ -426,6 +487,7 @@ async def drive_child_cancel(
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await turn_task
     result = driver.result
+    result.held = list(driver.hold.requests)
     if turn_task.done() and not turn_task.cancelled() and turn_task.exception() is None:
         result.turn = turn_task.result()
     _judge_cascade(driver, result)

@@ -816,6 +816,62 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-SUBAGENT-203",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Before it responds to `session/close`, the Agent cancels the pending "
+            "`session/request_permission` requests of the closed session's descendants with "
+            "`$/cancel_request`, as it does for the closed session's own (`ACP-CLOSE-205`): the "
+            "TCK holds every child request of a turn unanswered, sends `session/close` for the "
+            "prompted session when the first arrives, and requires a `$/cancel_request` naming "
+            "each request of an announced descendant that arrived before the close response and "
+            "that the TCK had not answered by then. The docs state it as a MUST; the Preview RFD "
+            "does not state it. Elicitations, which the rule also covers, are not exercised: the "
+            "TCK advertises no elicitation capability. One turn of the `--subagent-prompt` text "
+            "(else a built-in one). SKIPs when no child request was held when the close was "
+            "sent, the close did not succeed, or the turn never ended. v2-only (`2xx`): v1 "
+            "leaves the cleanup of a child's pending requests to the Client."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:427; "
+            "docs/protocol/v2/draft/session-setup.mdx:476; "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-204",
+        tier=Tier.CAPABILITY,
+        capability="inferred:subagentCancel",
+        text=(
+            "When the Agent stops a session's cancelled work it cancels that work's pending "
+            "permission requests with `$/cancel_request`, including those of the descendants the "
+            "cancellation stopped, and it does not wait for a child's pending requests to resolve "
+            "before it reports the child's state. In the driven turn of `ACP-SUBAGENT-016` the TCK "
+            "holds every child `session/request_permission` unanswered, as a Client must until "
+            "the child reports `idle` with `stopReason: \"cancelled\"` (the docs; the Preview RFD "
+            "and the prompt-lifecycle page let the Client answer a request it knows belongs to the "
+            "cancelled work earlier, and the TCK follows the docs). For each child that reports its "
+            "own cancelled `idle` after a TCK cancellation covering it (the child's own "
+            "`session/cancel` for it and its descendants, the parent's for every child), each "
+            "request it sent before that `idle` and still held then must be withdrawn before the "
+            "`idle` or within `quiet_period` after it. A cancelled child that has not settled "
+            "within `timeout / 2` while requests of it or its descendants are held gets them "
+            "answered per the `allow` policy and `timeout / 2` more: settling only after that "
+            "FAILs here (it waited for them), while `ACP-SUBAGENT-016` judges the confirmation "
+            "itself. The rule binds only an agent that exposes children, so the row is "
+            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). SKIPs when no "
+            "held request was pending when a cancellation stopped its session and no release "
+            "happened. v2-only (`2xx`): in v1 `$/cancel_request` for these requests is optional."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:417,419,421; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:1452; "
+            "docs/rfds/subagents.mdx:1264-1269 (Preview RFD); "
+            "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
+        ),
+    ),
+    Requirement(
         id="ACP-SUBAGENT-205",
         tier=Tier.CAPABILITY,
         capability="inferred:subagents",
@@ -2523,6 +2579,73 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:388; "
             "docs/protocol/v2/draft/subagents.mdx:488"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-223",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "In a `session/resume` with `replayFrom: {\"type\": \"start\"}`, every child session "
+            "announced between the request and the response (by a `subagent_update` on the resumed "
+            "session or on a child announced earlier in the exchange) gets exactly one "
+            "`replay_complete` update on its own `sessionId` before the response, after that "
+            "announcement, and no `state_update` for the child precedes it: each session has its "
+            "own `replay_complete`, a child with no replayed history gets one too, and a child's "
+            "`state_update` is never replayed, so it follows the child's `replay_complete`. None "
+            "or a second one FAILs. A child's `replay_complete` before its announcement is not "
+            "counted (an update for a child not yet announced in the exchange is "
+            "`ACP-RESUME-209`'s), and the resumed session's own is `ACP-RESUME-218`'s. Checked "
+            "after a turn on the session (the `--subagent-prompt` text when given). SKIPs when no "
+            "child was announced in the exchange."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:412-418; "
+            "docs/protocol/v2/draft/subagents.mdx:463-465,486; "
+            "docs/rfds/subagents.mdx:1249-1253 (Preview RFD); "
+            "schema/v2/schema.unstable.json#/$defs/ReplayComplete"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-224",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Each `subagent` item in the `background` list of the current-state snapshot (the last "
+            "`state_update` for the resumed session before the response) of a `session/resume` "
+            "with `replayFrom: {\"type\": \"start\"}` is preceded by a current `subagent_update` "
+            "for that child on the resumed session, sent after the resumed session's "
+            "`replay_complete` and before the snapshot: a replayed `subagent_update` never "
+            "delivers a child's current capabilities or state, so one before `replay_complete` "
+            "does not count. The draft docs state it as a MUST (the Preview RFD states it without "
+            "a keyword; the docs govern). The fields the update carries are not judged. Checked "
+            "after a turn on the session (the `--subagent-prompt` text when given). SKIPs when the snapshot lists no `subagent` item, or "
+            "no `replay_complete` was observed (`ACP-RESUME-218` judges that)."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:431; "
+            "docs/protocol/v2/draft/subagents.mdx:470; "
+            "docs/rfds/subagents.mdx:1255-1261 (Preview RFD); "
+            "schema/v2/schema.unstable.json#/$defs/BackgroundWork"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-225",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "After a `session/resume` with `replayFrom` omitted, every `session/update` and agent "
+            "request carrying a child's `sessionId` follows a `subagent_update` announcing that "
+            "child, made since that resume request on the resumed session or on a child already "
+            "announced since then (ancestors first, parent before child): the announcement rule "
+            "applies again on every resume, and without a replay every child update is current. "
+            "An announcement from before the resume does not count. Judged over the resume "
+            "exchange and a quiet period after the response, after a turn on the session (the "
+            "`--subagent-prompt` text when given), for every session ID announced as a child on "
+            "the connection. SKIPs when no such traffic arrived."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/subagents.mdx:70,462,469"
         ),
     ),
     Requirement(

@@ -16,7 +16,9 @@ permission request or `session` content (`_SUBAGENT_EXERCISED_IDS` in `tests/v2/
 mock client answers the permission requests; the child's is not awaited. A Client-initiated
 request naming an announced child gets `-32602` (`_answer_child_request`, `subagents.mdx:380`), so
 the child-session probes (`ACP-SUBAGENT-018`, `-019`) and `ACP-LIST-004` PASS: the child is never
-listed, and a later `session/new` never reuses its ID.
+listed, and a later `session/new` never reuses its ID. `session/close` for a session first cancels
+its descendants' still-unanswered permission requests with `$/cancel_request`
+(`_withdraw_child_requests_on_close`, `subagents.mdx:427`), so `ACP-SUBAGENT-203` PASSes.
 
 The `_`-hooks below are the seams the violator fixtures override.
 """
@@ -42,6 +44,8 @@ class ExposesSubagentAgent(ConformingAgent):
         self._child_count = 0
         self._turn_child: str | None = None  # the child of the turn in flight, until it ends
         self._announced_children: set[str] = set()  # every child announced so far
+        self._parent_of: dict[str, Any] = {}  # child sessionId -> the session it was announced on
+        self._pending_child_requests: dict[Any, Any] = {}  # request id -> child sessionId
 
     def _send_update(self, session_id: Any, update: dict[str, Any]) -> None:
         child = update.get("sessionId")
@@ -52,7 +56,43 @@ class ExposesSubagentAgent(ConformingAgent):
             and child not in self._sessions
         ):
             self._announced_children.add(child)
+            self._parent_of.setdefault(child, session_id)
         super()._send_update(session_id, update)
+
+    def _write(self, obj: dict[str, Any]) -> None:
+        params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+        if (
+            obj.get("method") == "session/request_permission"
+            and "id" in obj
+            and params.get("sessionId") not in self._sessions
+        ):
+            self._pending_child_requests[obj["id"]] = params.get("sessionId")
+        super()._write(obj)
+
+    def _handle_response(self, message: dict[str, Any]) -> None:
+        self._pending_child_requests.pop(message.get("id"), None)
+        super()._handle_response(message)
+
+    def _descends_from(self, session_id: Any, ancestor: Any) -> bool:
+        seen = set()
+        while session_id in self._parent_of and session_id not in seen:
+            seen.add(session_id)
+            session_id = self._parent_of[session_id]
+            if session_id == ancestor:
+                return True
+        return False
+
+    def _handle_close_session(self, msg_id: Any, params: dict[str, Any]) -> None:
+        if params.get("sessionId") in self._sessions:
+            self._withdraw_child_requests_on_close(params["sessionId"])
+        super()._handle_close_session(msg_id, params)
+
+    def _withdraw_child_requests_on_close(self, session_id: Any) -> None:
+        """Hook: before the close response, cancel the descendants' pending permission requests."""
+        for request_id, child in list(self._pending_child_requests.items()):
+            if self._descends_from(child, session_id):
+                del self._pending_child_requests[request_id]
+                self._notify("$/cancel_request", {"requestId": request_id})
 
     def _handle_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
         if (

@@ -1,5 +1,5 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-001/002/202/204..210/
-212..214/216..222, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
+212..214/216..225, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
 `session/close`'s own contract (ACP-CLOSE-001/003/203/204/206 -- `ACP-CLOSE-002` is covered by
 `test_cancel.py`'s `test_close_cancels_foreground_work`, see its row text), `session/delete`
 (ACP-DELETE-001..003/204/205), `session/archive`/`session/unarchive` (ACP-ARCHIVE-002..006,
@@ -43,6 +43,8 @@ from ..protocol import AUTHENTICATION_REQUIRED, INVALID_PARAMS, REQUEST_CANCELLE
 from ._helpers import (
     BACKGROUND_ID_FIELDS,
     JSON_NULL,
+    announced_children,
+    child_replay_complete_problems,
     assert_unknown_session_error,
     close_session,
     connected_agent,
@@ -66,6 +68,7 @@ from ._helpers import (
     skip_if_auth_gated,
     skip_if_turn_end_race_not_exercised,
     stdio_mcp_server,
+    unannounced_resumed_child_traffic,
 )
 
 _HISTORY_KINDS = {"user_message", "agent_message", "agent_thought"}
@@ -740,11 +743,12 @@ def _replay_complete_orders(
     return [i for i, (_, update) in enumerate(ordered) if update.get("sessionUpdate") == "replay_complete"]
 
 
-async def _resume_replay_after_turn(agent, session_id, resume_cwd, *, timeout):
-    """Run a turn on the session, let its trailing traffic settle (work that outlives the turn
-    may still report), then `session/resume` it with `replayFrom: start`. Returns the response
-    entry and the session's `session/update`s observed before it, in wire order."""
-    await _add_history(agent, session_id, timeout=timeout)
+async def _resume_replay_after_turn(agent, session_id, resume_cwd, *, timeout, text=None):
+    """Run a turn on the session (of `text` when given), let its trailing traffic settle (work
+    that outlives the turn may still report), then `session/resume` it with `replayFrom: start`.
+    Returns the response entry and the session's `session/update`s observed before it, in wire
+    order."""
+    await _add_history(agent, session_id, timeout=timeout, text=text)
     await drain_quiet(agent, quiet_period(timeout))
     response_entry, updates = await resume_session(
         agent, session_id, resume_cwd, replay_from={"type": "start"}, timeout=timeout
@@ -966,6 +970,120 @@ async def test_agent_requests_wait_for_replay_complete(agent_launch, tmp_path):
             pytest.skip("the agent sent no request for the session during the resume")
         early = [messages[index] for index in requests if index < complete_at]
         assert not early, f"agent request(s) arrived before replay_complete: {early!r}"
+
+
+# --- child sessions on resume (ACP-RESUME-223..225) ---
+
+
+@pytest.mark.requirement("ACP-RESUME-223")
+@pytest.mark.capability("capabilities.session")
+async def test_each_child_announced_in_a_replay_gets_its_own_replay_complete(
+    agent_launch, tmp_path, subagent_prompt_text, record_property
+):
+    """ACP-RESUME-223. After a turn of the `--subagent-prompt` text (else an ordinary one), a
+    `replayFrom: start` resume: every child announced in the exchange gets one `replay_complete`
+    of its own before the response, after its announcement, with no `state_update` of its own
+    before it (`child_replay_complete_problems`)."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        await _add_history(agent, session_id, timeout=timeout, text=subagent_prompt_text)
+        await drain_quiet(agent, quiet_period(timeout))
+        response_entry, _updates = await resume_session(
+            agent, session_id, resume_cwd, replay_from={"type": "start"}, timeout=timeout
+        )
+        _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
+        children, problems = child_replay_complete_problems(
+            exchange_received(agent, response_entry), session_id
+        )
+    record_property("acp_tck_replayed_children", children)
+    if not children:
+        pytest.skip("no child session was announced during the replay resume")
+    assert not problems, f"child replay_complete rule broken: {problems}"
+
+
+@pytest.mark.requirement("ACP-RESUME-224")
+@pytest.mark.capability("capabilities.session")
+async def test_listed_background_child_gets_a_current_update_after_replay_complete(
+    agent_launch, tmp_path, subagent_prompt_text
+):
+    """ACP-RESUME-224. A `replayFrom: start` resume after a turn of the `--subagent-prompt` text
+    (else an ordinary one): each `subagent` item of the
+    snapshot's `background` list needs a `subagent_update` for that child on the resumed session
+    between the session's `replay_complete` and the snapshot (session-setup.mdx:431)."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        _response_entry, ordered = await _resume_replay_after_turn(
+            agent, session_id, resume_cwd, timeout=timeout, text=subagent_prompt_text
+        )
+    snapshots = [i for i, (_, update) in enumerate(ordered) if update.get("sessionUpdate") == "state_update"]
+    if not snapshots:
+        pytest.skip("session/resume sent no current-state snapshot (ACP-RESUME-206 judges that)")
+    snapshot_at = snapshots[-1]
+    listed = sorted(
+        child for kind, child in background_keys(ordered[snapshot_at][1]) or set() if kind == "subagent"
+    )
+    if not listed:
+        pytest.skip("the resume snapshot lists no subagent background item")
+    positions = _replay_complete_orders(ordered)
+    if not positions:
+        pytest.skip("no replay_complete observed (ACP-RESUME-218 judges that)")
+    current = {
+        update.get("sessionId")
+        for _, update in ordered[positions[0] + 1 : snapshot_at]
+        if update.get("sessionUpdate") == "subagent_update"
+    }
+    missing = [child for child in listed if child not in current]
+    assert not missing, (
+        f"the resume snapshot lists background child(ren) {missing} with no subagent_update for "
+        "them between the session's replay_complete and the snapshot (a replayed one is "
+        f"historical): {[update for _, update in ordered]!r}"
+    )
+
+
+@pytest.mark.requirement("ACP-RESUME-225")
+@pytest.mark.capability("capabilities.session")
+async def test_child_traffic_after_a_resume_without_replay_follows_a_new_announcement(
+    agent_launch, tmp_path, subagent_prompt_text, record_property
+):
+    """ACP-RESUME-225. After a turn of the `--subagent-prompt` text (else an ordinary one) and a
+    quiet period, a resume with `replayFrom` omitted: from the request through a quiet period
+    after the response, each update or request for a child announced anywhere on the connection
+    follows an announcement made since the resume (`unannounced_resumed_child_traffic`)."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        await _add_history(agent, session_id, timeout=timeout, text=subagent_prompt_text)
+        await drain_quiet(agent, quiet_period(timeout))
+        start = len(agent.transcript)
+        response_entry, _updates = await resume_session(agent, session_id, resume_cwd, timeout=timeout)
+        _assert_resume_succeeded(response_entry, "session/resume")
+        await drain_quiet(agent, quiet_period(timeout))
+        children = set(announced_children(agent.transcript, {session_id}))
+        messages = [
+            msg
+            for entry in agent.transcript[start:]
+            if entry.direction is Direction.RECEIVED
+            for msg in iter_messages(entry)
+        ]
+    judged, problems = unannounced_resumed_child_traffic(messages, session_id, children)
+    record_property("acp_tck_resumed_child_messages", judged)
+    if not judged:
+        pytest.skip("no update or request for a child arrived after the resume without replay")
+    assert not problems, f"child traffic after the resume was not re-announced: {problems}"
 
 
 # --- session/list (ACP-LIST-001/002/203/204) ---

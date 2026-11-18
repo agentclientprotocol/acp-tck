@@ -20,6 +20,7 @@ import pytest
 from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction
 from tck.common.plugin import _TEST_PROPERTIES
 from tck.v2.conformance._helpers import (
+    ChildPermissionHold,
     UNKNOWN_PERMISSION_OPTION_ID,
     UNKNOWN_PERMISSION_OUTCOME,
     background_keys,
@@ -899,3 +900,111 @@ def test_a_subagents_unsatisfiable_request_is_declined_without_any_session_cance
     assert turn.permission_cancels == []
     assert turn.permission_fallbacks == [f"{_NO_ALLOW_NOTE}; answered cancelled for session {_CHILD!r}"]
     assert turn.stop_reason == "end_turn"
+
+
+# --- holding other sessions' permission requests (`hold_children`) ---
+
+_CHILD_WITHDRAWAL = {"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": "perm-child"}}
+
+
+def test_hold_children_answers_a_withdrawn_child_request_cancelled():
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE), {"sleep": 0.1},
+         _CHILD_WITHDRAWAL, {"wait_id": "perm-child"}, _state("idle", stopReason="end_turn")],
+        hold_children=hold,
+    )
+    (held,) = hold.requests
+    assert (held.session_id, held.request_id, held.answered_on) == (_CHILD, "perm-child", "cancel_request")
+    answer_index, answer = _sent_answer(agent, "perm-child")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    assert held.index < held.withdrawn_at < held.answered_at == answer_index < turn.idle_index
+
+
+def test_hold_children_answers_a_still_held_request_per_policy_at_the_turn_end():
+    """The prompted session's own request is not held; the child's is answered only once the turn
+    has ended (after the wait for a late withdrawal), and per the policy: nobody cancelled it."""
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _permission_request(_ALLOW_ONCE), {"wait_id": "perm-1"},
+         _child_request("perm-child", _ALLOW_ONCE), _state("idle", stopReason="end_turn")],
+        hold_children=hold,
+    )
+    (held,) = hold.requests
+    assert held.answered_on == "turn_end" and held.withdrawn_at is None
+    _assert_answered(agent, "perm-1", _selected("yes"))
+    answer_index, answer = _sent_answer(agent, "perm-child")
+    assert answer["result"]["outcome"] == _selected("yes")
+    assert turn.idle_index < answer_index
+
+
+def test_hold_children_answers_cancelled_once_the_cancelled_child_reported_its_cancelled_idle():
+    """A child the TCK cancelled that then reports `idle`/`cancelled` may have its request answered
+    `cancelled` (`subagents.mdx:419`); one that did not is still answered per the policy."""
+    for child_idle, expected in ((True, {"outcome": "cancelled"}), (False, _selected("yes"))):
+        hold = ChildPermissionHold()
+        steps = [_RESPONSE, _state("running"), {"wait_method": "session/cancel"},
+                 _child_request("perm-child", _ALLOW_ONCE)]
+        if child_idle:
+            steps.append(_state("idle", _CHILD, stopReason="cancelled"))
+        agent, _ = _drive_cancelling(
+            [*steps, _state("idle", stopReason="end_turn")], _CHILD, hold_children=hold
+        )
+        assert hold.requests[0].answered_on == "turn_end"
+        _assert_answered(agent, "perm-child", expected)
+
+
+def test_hold_children_fires_the_trigger_on_the_first_held_request():
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE),
+         {"wait_method": "session/cancel"}, _CHILD_WITHDRAWAL, _state("idle", stopReason="cancelled")],
+        hold_children=hold,
+        on_cancel=True,
+        cancel_wait=2.5,
+    )
+    assert hold.requests[0].index < turn.cancelled_at_index
+    assert hold.requests[0].answered_on == "cancel_request"
+    assert turn.stop_reason == "cancelled"
+
+
+def test_hold_children_answers_at_the_deadline_and_holds_no_later_request():
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE),
+         {"wait_id": "perm-child"}, _child_request("perm-late", _ALLOW_ONCE), {"wait_id": "perm-late"},
+         _state("idle", stopReason="end_turn")],
+        hold_children=hold,
+    )
+    assert [held.request_id for held in hold.requests] == ["perm-child"]
+    assert hold.requests[0].answered_on == "timeout"
+    _assert_answered(agent, "perm-late", _selected("yes"))
+    assert turn.stop_reason == "end_turn"
+
+
+def test_released_child_requests_are_answered_per_policy_while_the_turn_runs():
+    hold = ChildPermissionHold()
+    steps = [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE),
+             _child_request("perm-other", _ALLOW_ONCE, "s1-other"), {"wait_id": "perm-child"},
+             _state("idle", stopReason="end_turn")]
+
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            task = asyncio.ensure_future(
+                run_prompt(agent, _SESSION, [{"type": "text", "text": "hi"}], hold_children=hold, timeout=3.0)
+            )
+            while len(hold.requests) < 2:
+                await asyncio.sleep(0.01)
+            assert await hold.release(agent, {_CHILD}) == 1
+            assert await hold.release(agent, {_CHILD}) == 0
+            return agent, await task
+
+    agent, _ = asyncio.run(go())
+    by_id = {held.request_id: held for held in hold.requests}
+    assert by_id["perm-child"].answered_on == "released"
+    assert by_id["perm-other"].answered_on == "turn_end"
+    _assert_answered(agent, "perm-child", _selected("yes"))

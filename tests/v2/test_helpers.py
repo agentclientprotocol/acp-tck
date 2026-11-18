@@ -13,6 +13,8 @@ import pytest
 from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
     announced_children,
+    child_replay_complete_problems,
+    unannounced_resumed_child_traffic,
     child_config_selects,
     child_state_mirrors,
     child_state_order,
@@ -1036,3 +1038,89 @@ def test_a_child_select_with_other_values_is_flagged():
 def test_selects_of_the_clients_own_or_an_unannounced_session_are_not_judged():
     transcript = _traffic(_config("p", _select("a", "a", "b")), _config("c", _select("a", "a", "b")))
     assert child_config_selects(transcript, {"p"}).selects == 0
+
+
+def _replay_complete(session_id: str) -> dict[str, Any]:
+    return _update(session_id, {"sessionUpdate": "replay_complete"})
+
+
+def _child_state(session_id: str) -> dict[str, Any]:
+    return _update(session_id, {"sessionUpdate": "state_update", "state": "running"})
+
+
+def test_each_announced_child_with_one_own_replay_complete_is_conforming():
+    """Nested children count; a child with no replayed history still needs one; its state follows."""
+    messages = [
+        _sub("p", "c"),
+        _update("c", {"sessionUpdate": "agent_message", "messageId": "m", "content": []}),
+        _sub("c", "n"),
+        _replay_complete("n"),
+        _replay_complete("c"),
+        _child_state("c"),
+        _replay_complete("p"),
+    ]
+    assert child_replay_complete_problems(messages, "p") == (["c", "n"], [])
+
+
+def test_a_missing_or_repeated_child_replay_complete_is_reported():
+    children, problems = child_replay_complete_problems(
+        [_sub("p", "c1"), _sub("p", "c2"), _replay_complete("c2"), _replay_complete("c2")], "p"
+    )
+    assert children == ["c1", "c2"]
+    assert len(problems) == 2
+    assert "'c1'" in problems[0] and "got 0" in problems[0]
+    assert "'c2'" in problems[1] and "got 2" in problems[1]
+
+
+def test_a_child_state_update_before_its_replay_complete_is_reported():
+    _, problems = child_replay_complete_problems(
+        [_sub("p", "c"), _child_state("c"), _replay_complete("c")], "p"
+    )
+    assert len(problems) == 1 and "state_update before its replay_complete" in problems[0]
+
+
+def test_a_child_replay_complete_before_its_announcement_is_not_counted():
+    """Traffic for a child not yet announced is `ACP-RESUME-209`'s: the early one does not count,
+    and a child announced on an unknown session is no child of the exchange."""
+    children, problems = child_replay_complete_problems(
+        [_replay_complete("c"), _sub("p", "c"), _sub("ghost", "orphan"), _replay_complete("orphan")], "p"
+    )
+    assert children == ["c"]
+    assert len(problems) == 1 and "got 0" in problems[0]
+    assert child_replay_complete_problems([_replay_complete("p")], "p") == ([], [])
+
+
+def test_child_traffic_after_a_new_announcement_is_conforming():
+    messages = [
+        _sub("p", "c"),
+        _CHILD_CHUNK,
+        _sub("c", "n"),
+        _update("n", {"sessionUpdate": "agent_message_chunk", "messageId": "x"}),
+        {**_CHILD_PERMISSION, "jsonrpc": "2.0"},
+    ]
+    assert unannounced_resumed_child_traffic(messages, "p", {"c", "n"}) == (4, [])
+
+
+def test_child_traffic_without_a_new_announcement_is_reported():
+    """An update and a request for a child, and a nested child announced on a child that was not
+    announced since the resume (ancestors first)."""
+    messages = [
+        _CHILD_CHUNK,
+        _CHILD_PERMISSION,
+        _sub("c", "n"),
+        _update("n", {"sessionUpdate": "agent_message_chunk", "messageId": "x"}),
+        _sub("p", "c"),
+        _CHILD_CHUNK,
+    ]
+    judged, problems = unannounced_resumed_child_traffic(messages, "p", {"c", "n"})
+    assert judged == 5
+    assert len(problems) == 4
+    assert "agent_message_chunk for child 'c'" in problems[0]
+    assert "request session/request_permission for child 'c'" in problems[1]
+    assert "subagent_update for child 'c'" in problems[2]
+    assert "agent_message_chunk for child 'n'" in problems[3]
+
+
+def test_traffic_of_sessions_that_are_not_children_is_not_judged():
+    messages = [_update("p", {"sessionUpdate": "agent_message_chunk", "messageId": "m"}), _CHILD_CHUNK]
+    assert unannounced_resumed_child_traffic(messages, "p", set()) == (0, [])

@@ -1225,6 +1225,93 @@ def announced_children(transcript: list[TranscriptEntry], client_sessions: set[s
     return children
 
 
+def _announcing(msg: dict[str, Any], known: set[str]) -> str | None:
+    """The child a `session/update` `msg` announces: a `subagent_update` sent on a session in
+    `known`, naming another session. `None` otherwise."""
+    params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+    update = params.get("update") if msg.get("method") == "session/update" else None
+    if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+        return None
+    outer, child = params.get("sessionId"), update.get("sessionId")
+    if outer in known and isinstance(child, str) and child != outer:
+        return child
+    return None
+
+
+def child_replay_complete_problems(
+    messages: list[dict[str, Any]], session_id: str
+) -> tuple[list[str], list[str]]:
+    """Judge the per-child `replay_complete` rule over the messages of one replay resume exchange,
+    request to response, in wire order (`session-setup.mdx:414-415`; `subagents.mdx:464,486`).
+    A child is announced by a `subagent_update` on `session_id` or on a child already announced
+    in the exchange. Each announced child gets exactly one `replay_complete` on its own
+    `sessionId` after its announcement, and no `state_update` of its own before that. Returns
+    `(children, problems)`: the announced children in announcement order, and one message per
+    violation. Updates for a child before its announcement are not judged (`ACP-RESUME-209`)."""
+    known = {session_id}
+    children: list[str] = []
+    completes: dict[str, int] = {}
+    problems: list[str] = []
+    for msg in messages:
+        if msg.get("method") != "session/update":
+            continue
+        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        update = params.get("update") if isinstance(params.get("update"), dict) else {}
+        outer = params.get("sessionId")
+        if outer in children:
+            kind = update.get("sessionUpdate")
+            if kind == "replay_complete":
+                completes[outer] = completes.get(outer, 0) + 1
+            elif kind == "state_update" and not completes.get(outer):
+                problems.append(
+                    f"child {outer!r} sent a state_update before its replay_complete (a child's "
+                    f"state_update is never replayed history): {update!r}"
+                )
+        child = _announcing(msg, known)
+        if child is not None and child not in known:
+            known.add(child)
+            children.append(child)
+    for child in children:
+        count = completes.get(child, 0)
+        if count != 1:
+            problems.append(
+                f"child {child!r} was announced during the replay resume but got {count} "
+                "replay_complete update(s) of its own before the response, not exactly one"
+            )
+    return children, problems
+
+
+def unannounced_resumed_child_traffic(
+    messages: list[dict[str, Any]], session_id: str, children: set[str]
+) -> tuple[int, list[str]]:
+    """Judge the announcement rule after a resume without replay (`subagents.mdx:70,462,469`)
+    over the messages from the resume request on, in wire order: every `session/update` or agent
+    request whose `params.sessionId` is one of `children` follows a `subagent_update` announcing
+    it, sent within `messages` on `session_id` or on a child already announced there (ancestors
+    first). Returns `(judged, problems)`: how many such messages were judged, and one message per
+    violation."""
+    known = {session_id}
+    judged = 0
+    problems: list[str] = []
+    for msg in messages:
+        method = msg.get("method")
+        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        carried = params.get("sessionId")
+        if isinstance(method, str) and (method == "session/update" or "id" in msg) and carried in children:
+            judged += 1
+            if carried not in known:
+                update = params.get("update") if isinstance(params.get("update"), dict) else {}
+                what = update.get("sessionUpdate") if method == "session/update" else f"request {method}"
+                problems.append(
+                    f"{what} for child {carried!r} arrived before any subagent_update announced it "
+                    f"since the resume (announced since then: {sorted(known - {session_id})!r})"
+                )
+        child = _announcing(msg, known)
+        if child is not None:
+            known.add(child)
+    return judged, problems
+
+
 _CHILD_OUTPUT_KINDS = {"agent_message", "agent_message_chunk", "agent_thought", "agent_thought_chunk"}
 _USER_MESSAGE_KINDS = {"user_message", "user_message_chunk"}
 
@@ -1827,6 +1914,89 @@ def _answer_permission(options: Any, policy: PermissionPolicy) -> tuple[dict[str
     return outcome, note
 
 
+def _same_request_id(a: Any, b: Any) -> bool:
+    return type(a) is type(b) and a == b
+
+
+def reported_cancelled_idle(agent: AgentProcess, session_id: str, since: int) -> bool:
+    """Whether `session_id` reported `idle` with `stopReason: "cancelled"` in a `state_update` of
+    its own at or after transcript index `since`."""
+    for entry in agent.transcript[since:]:
+        if entry.direction is not Direction.RECEIVED:
+            continue
+        for msg in iter_messages(entry):
+            update = session_state_update(msg, session_id)
+            if update is not None and update.get("state") == "idle" and update.get("stopReason") == "cancelled":
+                return True
+    return False
+
+
+@dataclass
+class HeldRequest:
+    """A `session/request_permission` of another session (a subagent's) that `run_prompt` holds
+    unanswered (`ChildPermissionHold`)."""
+
+    request_id: Any
+    session_id: str
+    options: Any
+    index: int
+    """Transcript index of the request."""
+    withdrawn_at: int | None = None
+    """Transcript index of the agent's `$/cancel_request` naming it, read while it was held."""
+    answered_on: str | None = None
+    """Why the TCK answered it: `"cancel_request"` (withdrawn), `"released"` (the caller released
+    it), `"turn_end"` or `"timeout"`; `None` while held."""
+    answered_at: int | None = None
+    """Transcript index of the TCK's answer."""
+
+
+@dataclass
+class ChildPermissionHold:
+    """`run_prompt`'s hold mode for the permission requests of sessions other than the prompted
+    one (v2): each is left unanswered until the agent withdraws it with `$/cancel_request`
+    (answered `cancelled`), the caller `release`s it, or the turn ends. The caller keeps the
+    object, so it can see the requests while the turn is still running."""
+
+    policy: PermissionPolicy = "allow"
+    requests: list[HeldRequest] = field(default_factory=list)
+
+    def pending(self, sessions: Any = None) -> list[HeldRequest]:
+        """The still-held requests, of `sessions` only when given."""
+        return [
+            held
+            for held in self.requests
+            if held.answered_on is None and (sessions is None or held.session_id in sessions)
+        ]
+
+    def find(self, request_id: Any) -> HeldRequest | None:
+        return next((held for held in self.requests if _same_request_id(held.request_id, request_id)), None)
+
+    async def answer(self, agent: AgentProcess, held: HeldRequest, reason: str, outcome: dict[str, Any]) -> None:
+        """Answer `held` with `outcome`, once."""
+        if held.answered_on is not None:
+            return
+        held.answered_on = reason
+        start = len(agent.transcript)
+        await agent.send_message({"jsonrpc": "2.0", "id": held.request_id, "result": {"outcome": outcome}})
+        # Another task may read lines while the write drains, so find the answer itself.
+        held.answered_at = next(
+            index
+            for index in range(start, len(agent.transcript))
+            if agent.transcript[index].direction is Direction.SENT
+        )
+
+    async def release(self, agent: AgentProcess, sessions: Any) -> int:
+        """Answer every still-held request of `sessions` per `policy`, as a user who answers the
+        prompt would: a response that arrives after the work was cancelled still resolves its
+        request (`subagents.mdx:420`). When no option fits the policy it is answered `cancelled`,
+        without any `session/cancel`. Returns how many were answered."""
+        released = self.pending(sessions)
+        for held in released:
+            outcome, _note = _answer_permission(held.options, self.policy)
+            await self.answer(agent, held, "released", outcome)
+        return len(released)
+
+
 @dataclass(frozen=True)
 class PromptTurn:
     """The outcome of one v2 `session/prompt` turn driven by `run_prompt`.
@@ -1910,6 +2080,7 @@ async def run_prompt(
     cancel_wait: float = 0.5,
     cancel_meta: dict[str, Any] | None = None,
     hold_permission: bool = False,
+    hold_children: ChildPermissionHold | None = None,
     cancel_after_action: float | None = None,
     permission: PermissionPolicy = "allow",
     extra_params: dict[str, Any] | None = None,
@@ -1953,6 +2124,17 @@ async def run_prompt(
     driver answers it and waits `quiet_period(timeout)` more, so a caller can tell "ended only
     once answered" (`held_answered_on == "timeout"`) from "never ended" (`AgentTimeout`).
     `cancel_wait` remains the fallback trigger.
+
+    With `hold_children` (a `ChildPermissionHold` the caller keeps), every
+    `session/request_permission` carrying another session's ID (a subagent's) is held instead
+    of answered, and a trigger without `hold_permission` fires when the first one arrives. A held
+    request is answered `cancelled` once the agent withdraws it with `$/cancel_request`, or when
+    the caller releases it (`ChildPermissionHold.release`). When the turn ends, the driver waits
+    `quiet_period(timeout)` for late withdrawals, then answers the rest: `cancelled` for a
+    session that reported its own cancelled `idle` after the TCK cancelled it (the Client MAY
+    answer then, and leaves the request open before that, `subagents.mdx:419`), else per
+    `permission`. At the deadline it answers them the same way, once; requests read after that
+    are answered as without the hold.
 
     With `on_cancel`, `on_action` and `cancel_after_action` all set, the trigger fires only
     `on_action`. `session/cancel` follows once the action's response arrives or
@@ -2023,8 +2205,10 @@ async def run_prompt(
     action_id: Any = None
 
     trigger_armed = on_cancel or on_action is not None
-    trigger_on_active = trigger_armed and not hold_permission
+    trigger_on_active = trigger_armed and not hold_permission and hold_children is None
     trigger_sent = False
+    # Cleared once the held child requests were answered at the turn end or the deadline.
+    holding_children = hold_children is not None
     trigger_deadline = loop.time() + cancel_wait
     delay_cancel = on_cancel and on_action is not None and cancel_after_action is not None
     # When the delayed `session/cancel` is due (set once `on_action` fired).
@@ -2086,6 +2270,28 @@ async def run_prompt(
         request_id = params["requestId"]
         held_id = held_permission.parsed["id"]
         return type(request_id) is type(held_id) and request_id == held_id
+
+    def _holding() -> bool:
+        """Whether a held request (the prompted session's or another session's) is unanswered."""
+        return (held_permission is not None and held_answered_on is None) or (
+            holding_children and hold_children is not None and bool(hold_children.pending())
+        )
+
+    async def _answer_held_children(reason: str) -> None:
+        """Answer every still-held request of another session (see the docstring) and stop
+        holding new ones."""
+        nonlocal holding_children
+        if not holding_children or hold_children is None:
+            return
+        holding_children = False
+        for held in hold_children.pending():
+            if client_cancelled(agent, held.session_id, turn_start) and reported_cancelled_idle(
+                agent, held.session_id, turn_start
+            ):
+                outcome: dict[str, Any] = {"outcome": "cancelled"}
+            else:
+                outcome, _note = _answer_permission(held.options, permission)
+            await hold_children.answer(agent, held, reason, outcome)
 
     def _pending_end_deadline() -> float | None:
         """When a not-yet-final turn end (early idle, error peek or fallback idle) becomes
@@ -2202,6 +2408,18 @@ async def run_prompt(
                 await _fire_trigger()
                 return  # left unanswered; see `_answer_held`
             target = req_params.get("sessionId")
+            if holding_children and hold_children is not None and not for_this_session and isinstance(target, str):
+                hold_children.requests.append(
+                    HeldRequest(
+                        request_id=msg["id"],
+                        session_id=target,
+                        options=req_params.get("options"),
+                        index=line_index,
+                    )
+                )
+                if trigger_armed and not hold_permission and not trigger_sent:
+                    await _fire_trigger()
+                return  # left unanswered; see `ChildPermissionHold`
             cancelled = (
                 for_this_session
                 and for_foreground
@@ -2260,6 +2478,12 @@ async def run_prompt(
                 if held_cancel_request_index is None and held_answered_on is None:
                     held_cancel_request_index = line_index
                 await _answer_held("cancel_request")
+            withdrawal = msg.get("params")
+            if method == "$/cancel_request" and hold_children is not None and isinstance(withdrawal, dict):
+                held_child = hold_children.find(withdrawal.get("requestId"))
+                if held_child is not None and held_child.answered_on is None:
+                    held_child.withdrawn_at = line_index
+                    await hold_children.answer(agent, held_child, "cancel_request", {"outcome": "cancelled"})
 
     def _clamped(seconds: float) -> float:
         # A non-positive value still resolves: `read_line` forwards it to `asyncio.wait_for`,
@@ -2271,10 +2495,11 @@ async def run_prompt(
         now = loop.time()
         remaining = overall_deadline - now
         if remaining <= 0:
-            if held_permission is not None and held_answered_on is None:
+            if _holding():
                 # Answer once, then allow a short grace only to tell "ended once answered" from
                 # "never ended".
                 await _answer_held("timeout")
+                await _answer_held_children("timeout")
                 overall_deadline = loop.time() + confirm_window
                 continue
             detail = ""
@@ -2330,17 +2555,18 @@ async def run_prompt(
 
     assert response_entry is not None and response_index is not None and terminated_by is not None
 
-    if held_permission is not None and held_answered_on is None:
-        # The turn ended with the request still pending. A `$/cancel_request` may still follow
+    if _holding():
+        # The turn ended with a request still pending. A `$/cancel_request` may still follow
         # the idle (it has no ordering rule); give it `confirm_window`, then answer anyway.
         grace_end = loop.time() + confirm_window
-        while held_answered_on is None and (left := grace_end - loop.time()) > 0:
+        while _holding() and (left := grace_end - loop.time()) > 0:
             try:
                 entry = await agent.read_line(timeout=left)
             except AgentTimeout:
                 break
             await _handle_one(entry)
         await _answer_held("turn_end")
+    await _answer_held_children("turn_end")
 
     if terminated_by != "error" and action_id is not None and action_response is None:
         # One short trailing peek for `on_action`'s response arriving just after the turn ended.

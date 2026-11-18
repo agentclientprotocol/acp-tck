@@ -23,7 +23,7 @@ import pytest
 
 FIXTURES_DIR_V2 = Path(__file__).parent.parent / "fixtures" / "agents" / "v2"
 FIXTURES_DIR_V1 = Path(__file__).parent.parent / "fixtures" / "agents" / "v1"
-CLI_SUBPROCESS_TIMEOUT = 60
+CLI_SUBPROCESS_TIMEOUT = 120
 
 _MANDATORY_IDS = {
     "ACP-INIT-001",
@@ -63,6 +63,8 @@ _MANDATORY_IDS = {
 }
 _CAPABILITY_IDS = {
     "ACP-SUBAGENT-019",
+    "ACP-SUBAGENT-203",
+    "ACP-SUBAGENT-204",
     "ACP-SUBAGENT-205",
     "ACP-LIST-004",
     "ACP-ENUM-201",
@@ -149,6 +151,9 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-219",
     "ACP-RESUME-220",
     "ACP-RESUME-221",
+    "ACP-RESUME-223",
+    "ACP-RESUME-224",
+    "ACP-RESUME-225",
     "ACP-ERROR-003",
     "ACP-ERROR-004",
     "ACP-LIST-001",
@@ -401,6 +406,20 @@ _CHILD_CONTROL_IDS = {
     "ACP-TERMCANCEL-203",
 }
 
+# The child replay and withdrawal rows judge only children on the wire: `ACP-RESUME-223` a child
+# announced in a replay resume (`replays_subagent_history.py`), `-224` a `subagent` item in the
+# resume snapshot (`resume_lists_background_subagent.py`), `-225` child traffic after a resume
+# without replay (`replays_subagent_history.py`), `ACP-SUBAGENT-203` a child permission request
+# pending at `session/close` (`exposes_subagent.py` and its siblings) and `-204` one pending when
+# a cancellation stops its child (`cancellable_subagent_asks.py`). Every other fixture SKIPs them.
+_CHILD_REPLAY_WITHDRAWAL_IDS = {
+    "ACP-RESUME-223",
+    "ACP-RESUME-224",
+    "ACP-RESUME-225",
+    "ACP-SUBAGENT-203",
+    "ACP-SUBAGENT-204",
+}
+
 # `ACP-RESUME-213` judges only a resume snapshot that lists background work, and SKIPs otherwise.
 # Only a fixture with `background_on_resume` (`resume_lists_background_work.py` and its defect
 # sibling) leaves live work at resume; no other fixture does, not even
@@ -505,7 +524,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-OPTIONS-010",
     "ACP-OPTIONS-011",
     "ACP-OPTIONS-201",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS | _CHILD_REPLAY_WITHDRAWAL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
 # session-related at all) legitimately SKIPs the session-management extras below -- `delete`,
@@ -777,13 +796,15 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-CANCEL-213",
     "ACP-CLOSE-205",
     "ACP-PROMPT-207",
-} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
+} | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS | _CHILD_REPLAY_WITHDRAWAL_IDS | _CANCEL_RACE_SKIP_IDS | _ALWAYS_SKIPPED_IDS
 
 
 # Skipped for `conforming.py` but exercised by a fixture whose child asks for permission, whose
 # announced child shows up on the wire (a request and a custom session ID are observed) and whose
-# spawn tool call carries `session` content (so the tool-call rows see a report).
+# spawn tool call carries `session` content (so the tool-call rows see a report). The child's
+# requests are still pending when `session/close` arrives, so `ACP-SUBAGENT-203` is judged too.
 _SUBAGENT_EXERCISED_IDS = {
+    "ACP-SUBAGENT-203",
     "ACP-SUBAGENT-001",
     "ACP-SUBAGENT-002",
     "ACP-SUBAGENT-003",
@@ -906,7 +927,7 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-META-204",
     "ACP-FORK-206",  # no listed work at fork time
     "ACP-RESUME-222",  # no agent request during a resume (`requests_before_replay_complete.py` sends one)
-} | _STALE_CANCEL_IDS | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _CHILD_CONTROL_IDS
+} | _STALE_CANCEL_IDS | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _CHILD_CONTROL_IDS | _CHILD_REPLAY_WITHDRAWAL_IDS
 
 
 def test_v2_conforming_full_agent_passes_everything():
@@ -1818,6 +1839,9 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-219",
         "ACP-RESUME-220",
         "ACP-RESUME-222",
+        "ACP-RESUME-223",
+        "ACP-RESUME-224",
+        "ACP-RESUME-225",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -2007,6 +2031,9 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-219",
         "ACP-RESUME-220",
         "ACP-RESUME-222",
+        "ACP-RESUME-223",
+        "ACP-RESUME-224",
+        "ACP-RESUME-225",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -2553,10 +2580,32 @@ def test_session_content_unknown_session_fails_subagent_002_only(fixture):
 
 def test_replays_subagent_history_passes_everything():
     """A child announced and replayed under its own `sessionId` on `replayFrom: start` (with its own
-    `user_message`), plus live child chunks before every resume response, replay or not, is legal:
-    same outcome as `conforming.py`."""
+    `user_message` and `replay_complete`), plus a re-announcement and a live child chunk before every
+    resume response, replay or not, is legal: same outcome as `conforming.py`, and the child replay
+    rows `ACP-RESUME-223`/`-225` PASS."""
     result = _run_cli(FIXTURES_DIR_V2, "replays_subagent_history.py", protocol_version=2)
-    _assert_conforming_baseline(result, "replays_subagent_history.py", _SUBAGENT_EXERCISED_IDS)
+    _assert_conforming_baseline(
+        result,
+        "replays_subagent_history.py",
+        _SUBAGENT_EXERCISED_IDS | {"ACP-RESUME-223", "ACP-RESUME-225"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("child_missing_replay_complete.py", "ACP-RESUME-223"),
+        ("resume_child_traffic_unannounced.py", "ACP-RESUME-225"),
+    ],
+)
+def test_child_replay_defects_fail_their_row_only(fixture, failing):
+    """`child_missing_replay_complete.py` ends no replayed child with its own `replay_complete`;
+    `resume_child_traffic_unannounced.py` sends live child chunks after a resume without replay
+    without announcing the child again. Each FAILs its row, and the other child replay row PASSes."""
+    statuses, stdout = _resume_statuses(fixture)
+    assert _fails(statuses) == {failing}, stdout
+    for req_id in {"ACP-RESUME-223", "ACP-RESUME-225"} - {failing}:
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
 
 
 def test_replays_unannounced_child_fails_resume_209_only():
@@ -2828,6 +2877,9 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-219",
         "ACP-RESUME-220",
         "ACP-RESUME-222",
+        "ACP-RESUME-223",
+        "ACP-RESUME-224",
+        "ACP-RESUME-225",
         "ACP-RESUME-214",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
@@ -2956,6 +3008,9 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-219",
         "ACP-RESUME-220",
         "ACP-RESUME-222",
+        "ACP-RESUME-223",
+        "ACP-RESUME-224",
+        "ACP-RESUME-225",
         "ACP-RESUME-214",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
@@ -3082,6 +3137,9 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-RESUME-219",
         "ACP-RESUME-220",
         "ACP-RESUME-222",
+        "ACP-RESUME-223",
+        "ACP-RESUME-224",
+        "ACP-RESUME-225",
         "ACP-RESUME-214",
         "ACP-ENUM-201",
         "ACP-META-001",
@@ -3507,6 +3565,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
         | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS
         | _ITEM_CANCEL_IDS
         | _CHILD_CONTROL_IDS
+        | _CHILD_REPLAY_WITHDRAWAL_IDS
         | {
             "ACP-PROMPT-218",  # the fixture keeps no session across processes
             "ACP-PROMPT-207",
@@ -3850,6 +3909,24 @@ def test_resume_lists_background_work_passes_resume_213():
     `tool_call_update` announces it first, so `ACP-RESUME-213` PASSes, not SKIPs."""
     statuses, stdout = _resume_statuses("resume_lists_background_work.py")
     assert _fails(statuses) == set(), stdout
+    assert statuses["ACP-RESUME-213"] == "PASS", stdout
+
+
+def test_resume_lists_background_subagent_passes_resume_224():
+    """The positive control: the snapshot lists a background child, and a `subagent_update` for it
+    follows `replay_complete` (with the child's own `replay_complete`, since it is announced during
+    the request): `ACP-RESUME-224` PASSes, as do `-213` and `-223`."""
+    statuses, stdout = _resume_statuses("resume_lists_background_subagent.py")
+    assert _fails(statuses) == set(), stdout
+    for req_id in ("ACP-RESUME-213", "ACP-RESUME-223", "ACP-RESUME-224"):
+        assert statuses[req_id] == "PASS", f"{req_id}:\n{stdout}"
+
+
+def test_resume_background_child_announced_in_replay_fails_resume_224_only():
+    """The child's only `subagent_update` of a replay resume precedes `replay_complete`, so it is
+    history; the resume without replay still announces it (`ACP-RESUME-213` PASSes)."""
+    statuses, stdout = _resume_statuses("resume_background_child_announced_in_replay.py")
+    assert _fails(statuses) == {"ACP-RESUME-224"}, stdout
     assert statuses["ACP-RESUME-213"] == "PASS", stdout
 
 
@@ -5699,6 +5776,53 @@ def test_child_control_defect_fails_its_row_only(fixture: str, failing: str, ski
     for req_id, status in statuses.items():
         expected = "FAIL" if req_id == failing else "SKIPPED" if req_id in skipped else "PASS"
         assert status == expected, f"{req_id}:\n{stdout}"
+
+
+def _withdrawal_statuses(fixture: str) -> tuple[dict[str, str], str]:
+    """`_child_control_statuses` plus `ACP-SUBAGENT-204`, judged over the same driven turn."""
+    result = _run_cli(
+        FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_subagent_controls", cancel_prompt="__hang__"
+    )
+    statuses = _table_statuses(result.stdout)
+    return {r: statuses.get(r) for r in sorted(_CHILD_CONTROL_IDS | {"ACP-SUBAGENT-204"})}, result.stdout
+
+
+def test_stopped_children_withdraw_their_held_permission_requests():
+    """`cancellable_subagent_asks.py`'s children each ask for permission; the TCK holds the
+    requests, and each child withdraws its own when it is stopped (child A by its cancel, child B by
+    the parent's cascade): `ACP-SUBAGENT-204` PASSes, as do the child control rows."""
+    statuses, stdout = _withdrawal_statuses("cancellable_subagent_asks.py")
+    assert set(statuses.values()) == {"PASS"}, stdout
+
+
+def test_withdrawal_row_skips_without_a_held_child_request():
+    """`cancellable_subagent.py`'s children never ask for permission: nothing is held, so
+    `ACP-SUBAGENT-204` SKIPs while the child control rows PASS."""
+    statuses, stdout = _withdrawal_statuses("cancellable_subagent.py")
+    for req_id, status in statuses.items():
+        assert status == ("SKIPPED" if req_id == "ACP-SUBAGENT-204" else "PASS"), f"{req_id}:\n{stdout}"
+
+
+@pytest.mark.parametrize(
+    "fixture", ["child_cancel_keeps_permission_open.py", "child_cancel_waits_for_permission.py"]
+)
+def test_withdrawal_defects_fail_subagent_204_only(fixture):
+    """A stopped child that leaves its request open, or one that stops only once the TCK answers
+    its held request at `timeout / 2` (it waited for it), FAILs `ACP-SUBAGENT-204`. The waiting
+    child still confirms in time, so `ACP-SUBAGENT-016` and the other child control rows PASS."""
+    statuses, stdout = _withdrawal_statuses(fixture)
+    for req_id, status in statuses.items():
+        assert status == ("FAIL" if req_id == "ACP-SUBAGENT-204" else "PASS"), f"{req_id}:\n{stdout}"
+
+
+def test_close_keeps_child_permission_open_fails_subagent_203_only():
+    """`session/close` is answered while the child's permission requests are still pending and
+    unwithdrawn: only `ACP-SUBAGENT-203` FAILs, over the whole run."""
+    result = _run_cli(FIXTURES_DIR_V2, "close_keeps_child_permission_open.py", protocol_version=2)
+    assert result.returncode != 0
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-SUBAGENT-203"}, result.stdout
+    assert statuses["ACP-CLOSE-205"] == "SKIPPED", result.stdout
 
 
 def test_permission_before_requires_action_judges_cancel_while_blocked():
