@@ -22,6 +22,12 @@ With `replay_on_load` (see `replays_subagent_history.py`) `session/load` also re
 subagent update it sent (never a request). With `traffic_after_load` the last child sends one more
 chunk right after the `session/load` response, live (see `child_traffic_after_load_unannounced.py`).
 
+Any Client-initiated request naming an announced child gets `-32602` (`_answer_child_request`),
+as `subagents.mdx` says an Agent does, and children are never listed (they are not sessions of
+the connection), so a fixture that advertises `loadSession`/`list`/`close`/`delete`
+(`exposes_subagent_full.py`) PASSes `ACP-SUBAGENT-018`, `-019`, `-020` and `ACP-LIST-004`;
+this one advertises none of them and those rows SKIP.
+
 The `_`-hooks below are the seams the violator fixtures override.
 """
 
@@ -48,13 +54,35 @@ class ExposesSubagentAgent(ConformingAgent):
         self._turn_child: str | None = None  # the child of the turn in flight, until it ends
         self._last_child: str | None = None  # the child of the latest turn, kept after it ends
         self._subagent_log: list[tuple[str, dict[str, Any]]] = []
+        self._children: set[str] = set()  # every child announced so far
 
     def _exposes_subagents(self, session_id: Any) -> bool:
         return session_id in self._sessions and "subagents" in self._client_capabilities
 
     def _emit(self, session_id: Any, update: dict[str, Any]) -> None:
         self._subagent_log.append((session_id, update))
+        child = update.get("sessionId")
+        if (
+            update.get("sessionUpdate") == "subagent_update"
+            and isinstance(child, str)
+            and child != session_id
+            and child not in self._sessions
+        ):
+            self._children.add(child)
         self._notify("session/update", {"sessionId": session_id, "update": update})
+
+    def _reject_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> bool:
+        if super()._reject_request(method, msg_id, params):
+            return True
+        if method != "initialize" and params.get("sessionId") in self._children:
+            self._answer_child_request(method, msg_id, params)
+            return True
+        return False
+
+    def _answer_child_request(self, method: str, msg_id: Any, params: dict[str, Any]) -> None:
+        """Hook: a Client-initiated request names an announced child, which no Client-initiated
+        request may do (only `session/cancel`, a notification, is allowed): `-32602`."""
+        self._error(msg_id, -32602, f"Invalid params: {params.get('sessionId')!r} is a child session")
 
     def _handle_prompt(self, msg_id: Any, params: dict[str, Any]) -> None:
         session_id = params.get("sessionId")

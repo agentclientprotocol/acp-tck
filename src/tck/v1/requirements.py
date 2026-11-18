@@ -485,6 +485,24 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-LIST-004",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.list",
+        text=(
+            "`session/list` never returns a child session an Agent announced with "
+            "`subagent_update`: a Client learns of children from `subagent_update`, not from the "
+            "list. Judged on the connection that advertised `subagents` (see `ACP-SUBAGENT-001`), "
+            "after its turn and replay: the TCK lists with `params: {}` and follows `nextCursor` "
+            "for at most ten pages, and every announced child is looked for in the result. SKIPs "
+            "when the agent announced no child or the list did not answer with a `sessions` array "
+            "(`ACP-LIST-001`'s finding). Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:430; "
+            "docs/rfds/subagents.mdx:1098-1100 (Preview RFD)"
+        ),
+    ),
+    Requirement(
         id="ACP-DELETE-001",
         tier=Tier.CAPABILITY,
         capability="agentCapabilities.sessionCapabilities.delete",
@@ -1801,6 +1819,76 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         citation=_cite(
             "docs/protocol/v1/draft/subagents.mdx:447; "
             "docs/rfds/subagents.mdx:1113-1117 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-018",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "An Agent rejects a Client-initiated request that names an announced child session "
+            "with `-32602`, any request other than `session/cancel` (which it ignores for a "
+            "child that does not advertise `cancel`). The draft docs state the SHOULD "
+            "(`session/close` and `session/delete` included), so the row is ADVISORY. The probe "
+            "deliberately breaks a Client MUST NOT (the restricted-methods allowlist), because "
+            "the docs define the Agent's answer to exactly that input: after the judged "
+            "transcript of the connection that advertised `subagents`, the TCK sends "
+            "`session/load` (when `loadSession` is advertised), `session/close` (when "
+            "`sessionCapabilities.close` is) and `session/delete` (when `.delete` is) for each of "
+            "the first two announced children. The probes are mutating methods only: the docs "
+            "(`error.mdx`) say an Agent rejects `any other request` that names a child, while "
+            "the Preview RFD leaves read-only operations their normal semantics, so no read-only "
+            "request is probed. Judged only for a probe that came back as an error: a success "
+            "is `ACP-SUBAGENT-019`'s (close/delete) and a missing reply is not judged. SKIPs "
+            "when the agent announced no child, advertised none of the probe methods, or no "
+            "probe was answered with an error. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/error.mdx:57; "
+            "docs/protocol/v1/draft/subagents.mdx:419-428; "
+            "docs/rfds/subagents.mdx:1088-1096 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-019",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.close",
+        text=(
+            "`session/close` and `session/delete` naming an announced child session do not "
+            "report success: the docs say they `do not report success for a child`. The probe "
+            "is the one of `ACP-SUBAGENT-018` (which breaks a Client MUST NOT on purpose, "
+            "because the docs define the Agent's answer): `session/close` is sent for each of "
+            "the first two announced children, `session/delete` too when "
+            "`sessionCapabilities.delete` is advertised. A success FAILs, whatever an error's "
+            "code (the code is `-32602` under `ACP-SUBAGENT-018`). SKIPs when the agent "
+            "announced no child or no probe was answered. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:425,428; "
+            "docs/rfds/subagents.mdx:1093-1096 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-020",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A child's work state in `subagent_update.state` carries a `state` that is one of "
+            "`running`, `idle`, `requires_action`, `unknown` or begins with `_` (the docs "
+            "reserve every other value for the protocol), and an `idle` snapshot's `stopReason` "
+            "is a v1 stop reason (`end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, "
+            "`cancelled`), `error` or begins with `_`. A value of another type is a schema "
+            "defect (`ACP-SUBAGENT-015`). The schema accepts any string as an unrecognized "
+            "state or stop reason, so only this row judges the reserved namespace; the docs "
+            "state a reservation and no RFC keyword, so it is ADVISORY. Judged over the "
+            "connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
+            "SKIPs when no `subagent_update` carries a `state`. v1 only: v2 reports a child's "
+            "state on its own `state_update`."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:356-372,380; "
+            "schema/v1/schema.unstable.json#/$defs/StateUpdate; "
+            "schema/v1/schema.unstable.json#/$defs/IdleStateUpdate"
         ),
     ),
     Requirement(

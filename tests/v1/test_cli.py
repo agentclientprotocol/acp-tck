@@ -76,8 +76,16 @@ _SUBAGENT_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS
 # `--cancel-prompt` turn, which only `cancellable_subagent.py` and its siblings offer. Every other
 # fixture SKIPs them, `exposes_subagent.py` included.
 _SUBAGENT_CANCEL_IDS = {"ACP-SUBAGENT-016", "ACP-SUBAGENT-017"}
+# The child-session probes (`ACP-SUBAGENT-018`, `-019`, `ACP-LIST-004`) ask an agent that advertised
+# `loadSession`/`list`/`close`/`delete` about an announced child, so they SKIP against every fixture
+# that exposes no child or advertises none of those; only `exposes_subagent_full.py` and its
+# siblings PASS them. `ACP-SUBAGENT-020` judges the reported states and PASSes wherever a child
+# reports one.
+_SUBAGENT_PROBE_IDS = {"ACP-SUBAGENT-018", "ACP-SUBAGENT-019", "ACP-LIST-004"}
+_SUBAGENT_STATE_IDS = {"ACP-SUBAGENT-020"}
 
-_ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | {
+_ADVISORY_IDS = _SUBAGENT_ADVISORY_IDS | _SUBAGENT_STATE_IDS | {
+    "ACP-SUBAGENT-018",
     "ACP-JSONRPC-004",
     "ACP-JSONRPC-005",
     "ACP-INIT-004",
@@ -120,6 +128,8 @@ _INFORMATIONAL_IDS = {
     "ACP-OPTIONS-010",
 }
 _CAPABILITY_IDS = _SUBAGENT_CAPABILITY_IDS | _SUBAGENT_CANCEL_IDS | {
+    "ACP-SUBAGENT-019",
+    "ACP-LIST-004",
     "ACP-LOAD-001",
     "ACP-LOAD-002",
     "ACP-RESUME-001",
@@ -174,7 +184,8 @@ immediately, same as `conforming.py`. So for all of them, `session/cancel` (and
 `ACP-JSONRPC-007`'s `$/cancel_request`) always loses the race and the cancel tests SKIP with
 "cancellation not exercised" rather than PASS or FAIL."""
 
-_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS | {
+_CAPABILITY_GATED_IDS = _CAPABILITY_IDS | _SUBAGENT_ADVISORY_IDS | _SUBAGENT_STATE_IDS | {
+    "ACP-SUBAGENT-018",
     "ACP-LOAD-003",
     "ACP-LIST-003",
     "ACP-DELETE-002",
@@ -876,6 +887,7 @@ def test_conforming_full_agent_passes_everything_with_cancel_prompt_hang():
     # The subagent rows SKIP too: `conforming_full.py` exposes no child (`exposes_subagent.py`
     # and `replays_subagent_history.py` exercise them, `cancellable_subagent.py` the cancel rows).
     not_applicable = {"ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS | _SUBAGENT_CANCEL_IDS
+    not_applicable |= _SUBAGENT_PROBE_IDS | _SUBAGENT_STATE_IDS
     for req_id, status in statuses.items():
         if req_id in not_applicable:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED (not applicable):\n{result.stdout}"
@@ -904,6 +916,7 @@ def test_conforming_full_agent_without_allow_logout_only_skips_auth_004():
         f"requirement table missing/extra ids: {result.stdout}"
     )
     expected_skips = {"ACP-AUTH-004", "ACP-AUTH-005", "ACP-ERROR-006"} | _SUBAGENT_IDS | _SUBAGENT_CANCEL_IDS
+    expected_skips |= _SUBAGENT_PROBE_IDS | _SUBAGENT_STATE_IDS
     for req_id, status in statuses.items():
         if req_id in expected_skips:
             assert status == "SKIPPED", f"{req_id} is {status}, expected SKIPPED:\n{result.stdout}"
@@ -1696,7 +1709,7 @@ def test_exposes_subagent_passes_everything():
     assert set(statuses) == _ALL_IDS | _INFORMATIONAL_IDS, (
         f"requirement table missing/extra ids: {result.stdout}"
     )
-    skip_ids = (_CANCEL_IDS | _CAPABILITY_GATED_IDS) - _SUBAGENT_IDS
+    skip_ids = (_CANCEL_IDS | _CAPABILITY_GATED_IDS) - _SUBAGENT_IDS - _SUBAGENT_STATE_IDS
     for req_id, status in statuses.items():
         expected = "SKIPPED" if req_id in skip_ids else "PASS"
         assert status == expected, f"{req_id} is {status}, expected {expected}:\n{result.stdout}"
@@ -1715,6 +1728,32 @@ def test_replays_subagent_history_passes_every_subagent_row(fixture):
     assert _output_fail_ids(result.stdout) == set(), result.stdout
     for req_id in _SUBAGENT_IDS | {"ACP-CLIENTCAP-007"}:
         assert statuses[req_id] == "PASS", f"{req_id}:\n{result.stdout}"
+
+
+def test_exposes_subagent_full_passes_the_child_probe_rows_non_vacuously():
+    """`exposes_subagent_full.py` advertises `loadSession`, `list`, `close` and `delete`, answers
+    every request naming an announced child `-32602` and never lists a child: every subagent row,
+    the probe rows and the state row PASS (none SKIPs). `replays_subagent_history.py` advertises
+    only `loadSession`, so the `session/load` probe is all there is: `-018` PASSes, `-019` and
+    `ACP-LIST-004` SKIP. `exposes_subagent.py` advertises none of them: all three SKIP, `-020`
+    PASSes."""
+    expected = {
+        "exposes_subagent_full.py": dict.fromkeys(_SUBAGENT_PROBE_IDS, "PASS"),
+        "replays_subagent_history.py": {
+            "ACP-SUBAGENT-018": "PASS",
+            "ACP-SUBAGENT-019": "SKIPPED",
+            "ACP-LIST-004": "SKIPPED",
+        },
+        "exposes_subagent.py": dict.fromkeys(_SUBAGENT_PROBE_IDS, "SKIPPED"),
+    }
+    for fixture, probe_statuses in expected.items():
+        result = _run_cli(fixture, k=_SUBAGENT_K)
+        statuses = _table_statuses(result.stdout)
+        assert _output_fail_ids(result.stdout) == set(), f"{fixture}:\n{result.stdout}"
+        for req_id in _SUBAGENT_IDS | _SUBAGENT_STATE_IDS | {"ACP-CLIENTCAP-007"}:
+            assert statuses[req_id] == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
+        for req_id, status in probe_statuses.items():
+            assert statuses[req_id] == status, f"{fixture} {req_id}:\n{result.stdout}"
 
 
 def test_subagent_prompt_reaches_the_subagents_turn():
@@ -1794,6 +1833,11 @@ def test_subagent_rows_skip_without_a_child():
         ("session_message_without_participants.py", "ACP-SUBAGENT-012"),
         ("session_message_chunk_before_participants.py", "ACP-SUBAGENT-013"),
         ("child_select_with_choices.py", "ACP-SUBAGENT-014"),
+        # the child-session probes (after the judged transcript), listing and reported states
+        ("child_close_wrong_code.py", "ACP-SUBAGENT-018"),
+        ("child_close_succeeds.py", "ACP-SUBAGENT-019"),
+        ("lists_child_session.py", "ACP-LIST-004"),
+        ("child_custom_state.py", "ACP-SUBAGENT-020"),
     ],
 )
 def test_subagent_violators_fail_exactly_their_row(fixture, failing):

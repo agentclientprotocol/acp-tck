@@ -12,8 +12,10 @@ import pytest
 
 from tck.common.harness import Direction, TranscriptEntry
 from tck.v1.conformance._helpers import (
+    announced_children,
     child_config_selects,
     child_session_traffic,
+    child_state_values,
     child_task_reports,
     is_absolute_path,
     session_content_references,
@@ -755,3 +757,60 @@ def test_subagent_shape_judgement_ignores_other_messages():
     )
     reply = _entry(json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}))
     assert subagent_shape_issues([*transcript, reply]) == (0, [])
+
+
+# --- announced children and their reported states (ACP-SUBAGENT-018..020) ---
+
+
+def test_announced_children_follow_the_announcement_rule():
+    """First-announcement order, nested children included; a session the client created, the
+    update's own session and a child announced on a session nothing announced are not children."""
+    transcript = _traffic(
+        _sub("p", "c1"),
+        _sub("c1", "nested"),
+        _sub("p", "c1"),
+        _sub("p", "p"),
+        _sub("ghost", "orphan"),
+        _sub("p", "other-client-session"),
+        _sub("p", "c2"),
+    )
+    assert announced_children(transcript, {"p", "other-client-session"}) == ["c1", "nested", "c2"]
+    assert announced_children(_traffic(_update("p", {"sessionUpdate": "agent_message_chunk"})), {"p"}) == []
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_problems"),
+    [
+        ({"state": "running"}, 0),
+        ({"state": "requires_action"}, 0),
+        ({"state": "unknown"}, 0),
+        ({"state": "_vendor_paused"}, 0),
+        ({"state": "paused"}, 1),
+        ({"state": "idle"}, 0),
+        ({"state": "idle", "stopReason": None}, 0),
+        ({"state": "idle", "stopReason": "cancelled"}, 0),
+        ({"state": "idle", "stopReason": "error", "error": {"code": -32000, "message": "x"}}, 0),
+        ({"state": "idle", "stopReason": "_vendor_done"}, 0),
+        ({"state": "idle", "stopReason": "finished"}, 1),
+        ({"state": "running", "stopReason": "finished"}, 0),
+        ({"state": "paused", "stopReason": "finished"}, 1),
+    ],
+)
+def test_child_state_values_judge_the_reserved_namespace(state, expected_problems):
+    found = child_state_values(_traffic(_sub("p", "c", state=state)))
+    assert (found.judged, len(found.problems)) == (1, expected_problems), found.problems
+
+
+def test_child_state_values_skip_what_is_not_a_state_string():
+    """A missing or wrongly typed `state` is not judged (a schema defect, `ACP-SUBAGENT-015`),
+    and neither is a `stopReason` of another type."""
+    found = child_state_values(
+        _traffic(
+            _sub("p", "c"),
+            _sub("p", "c", state="running"),
+            _sub("p", "c", state={"state": 7}),
+            _sub("p", "c", state={"state": "idle", "stopReason": 7}),
+            _update("p", {"sessionUpdate": "agent_message_chunk"}),
+        )
+    )
+    assert (found.judged, found.problems) == (1, [])

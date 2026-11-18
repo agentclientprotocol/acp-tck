@@ -1361,3 +1361,70 @@ def child_config_selects(
                     f"a child permits no Client-initiated configuration change (draft docs)"
                 )
     return result
+
+
+def announced_children(transcript: list[TranscriptEntry], client_sessions: set[str]) -> list[str]:
+    """The child session IDs a `subagent_update` sent on an already-known session announced, in
+    first-announcement order (the rule `child_session_traffic` judges). A session the client
+    created or the update's own session is never a child."""
+    children: list[str] = []
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        outer, child = params.get("sessionId"), update.get("sessionId")
+        if (
+            isinstance(outer, str)
+            and isinstance(child, str)
+            and outer in known
+            and child != outer
+            and child not in client_sessions
+            and child not in children
+        ):
+            children.append(child)
+    return children
+
+
+_STATE_VALUES = frozenset({"running", "idle", "requires_action", "unknown"})
+_STOP_REASONS = frozenset({"end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled", "error"})
+
+
+@dataclass
+class ChildStates:
+    """What `child_state_values` found: how many `state` snapshots carried a string `state`
+    (`judged`) and one message per value outside the protocol's and the `_` namespace."""
+
+    judged: int = 0
+    problems: list[str] = field(default_factory=list)
+
+
+def child_state_values(transcript: list[TranscriptEntry]) -> ChildStates:
+    """Judge the values of every `subagent_update.state` snapshot (`subagents.mdx:380`: a value
+    that begins with `_` is implementation-specific, and other values are reserved for the
+    protocol): `state` is `running`, `idle`, `requires_action`, `unknown` or `_`-prefixed, and an
+    `idle` snapshot's `stopReason`, when a string, is a v1 `StopReason`, `error` or
+    `_`-prefixed. A `state` or `stopReason` of another type is a schema defect
+    (`subagent_shape_issues`), not judged here."""
+    result = ChildStates()
+    for _msg, method, params, _known in _wire_messages(transcript, set()):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        state = update.get("state")
+        value = state.get("state") if isinstance(state, dict) else None
+        if not isinstance(value, str):
+            continue
+        result.judged += 1
+        child = update.get("sessionId")
+        if value not in _STATE_VALUES and not value.startswith("_"):
+            result.problems.append(
+                f"subagent_update for {child!r} reports state {value!r}, which is neither a "
+                f"protocol state nor `_`-prefixed (draft docs)"
+            )
+        reason = state.get("stopReason") if value == "idle" else None
+        if isinstance(reason, str) and reason not in _STOP_REASONS and not reason.startswith("_"):
+            result.problems.append(
+                f"subagent_update for {child!r} reports idle stopReason {reason!r}, which is "
+                f"neither a stop reason nor `error` nor `_`-prefixed (draft docs)"
+            )
+    return result
