@@ -31,8 +31,10 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   array-handling defect fixtures override).
 - `session/resume` replay: each `session/update` is recorded per session (`_record_history`);
   `replayFrom: {"type": "start"}` replays it verbatim, omitted/`null` replays nothing, and any
-  other or malformed cursor gets `-32602` (`_replay_from_rejection`). Every successful resume
-  sends a `session_info_update` (`_send_resume_session_info`) and a current-state `state_update`
+  other or malformed cursor gets `-32602` (`_replay_from_rejection`). A resume with
+  `replayFrom: {"type": "start"}` ends the replay with one `replay_complete`
+  (`_send_replay_complete`, session-setup.mdx:379-381), before the session info and the snapshot.
+  Every successful resume sends a `session_info_update` (`_send_resume_session_info`) and a current-state `state_update`
   (`_send_resume_snapshot`) before the response. Resume
   accepts a session that is live or closed on this connection (the routes
   `_helpers.obtain_resumable_session` tries first), and answers any other id with `-32002`
@@ -915,6 +917,8 @@ class ConformingAgent:
         self._apply_initial_config(params)
         if self._should_replay(params.get("replayFrom")):
             self._replay_history(session_id)
+        if self._ends_replay(params.get("replayFrom")):
+            self._send_replay_complete(session_id)
         self._send_resume_session_info(session_id)
         self._resume_background(session_id)
         self._send_resume_snapshot(session_id)
@@ -936,6 +940,19 @@ class ConformingAgent:
     @staticmethod
     def _should_replay(replay_from: Any) -> bool:
         return isinstance(replay_from, dict) and replay_from.get("type") == "start"
+
+    @staticmethod
+    def _ends_replay(replay_from: Any) -> bool:
+        """Hook: whether the resume carried a `replayFrom` cursor, so it must end with a
+        `replay_complete` (a rejected cursor never gets here)."""
+        return isinstance(replay_from, dict) and replay_from.get("type") == "start"
+
+    def _send_replay_complete(self, session_id: Any) -> None:
+        """Hook: the one `replay_complete` marking the end of the replay (session-setup.mdx:379).
+        Live, not recorded."""
+        self._notify(
+            "session/update", {"sessionId": session_id, "update": {"sessionUpdate": "replay_complete"}}
+        )
 
     def _replay_history(self, session_id: Any) -> None:
         for update in self._history.get(session_id, []):

@@ -1,5 +1,5 @@
 """Session management: `session/resume` (ACP-SESSION-203, ACP-RESUME-001/002/202/204..210/
-212..214/216/217, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
+212..214/216..222, and ACP-ERROR-004's resume probe), `session/list` (ACP-LIST-001..003/203..205),
 `session/close`'s own contract (ACP-CLOSE-001/003/203/204/206 -- `ACP-CLOSE-002` is covered by
 `test_cancel.py`'s `test_close_cancels_foreground_work`, see its row text), `session/delete`
 (ACP-DELETE-001..003/204/205), `session/archive`/`session/unarchive` (ACP-ARCHIVE-002..006,
@@ -8,7 +8,7 @@
 `session/fork` (ACP-FORK-201..206) and `systemPrompt` (ACP-SYSPROMPT-001/202, and the error paths
 ACP-SYSPROMPT-002/003) surfaces.
 
-Every id here except `ACP-RESUME-214`/`216`, `ACP-CLOSE-003`/`204`, `ACP-DELETE-002`,
+Every id here except `ACP-RESUME-214`/`216`/`222`, `ACP-CLOSE-003`/`204`, `ACP-DELETE-002`,
 `ACP-LIST-207`, `ACP-MCP-201`/`202`/`204` and `ACP-SESSION-006` is
 `Tier.CAPABILITY`; see the requirements module for the exact capability path each uses. Those
 still carry a `@pytest.mark.capability(...)` marker purely for the SKIP gate even though
@@ -42,11 +42,13 @@ from tck.v2.validation import validate_agent_message, validate_agent_response
 from ..protocol import AUTHENTICATION_REQUIRED, INVALID_PARAMS, REQUEST_CANCELLED, RESOURCE_NOT_FOUND
 from ._helpers import (
     BACKGROUND_ID_FIELDS,
+    JSON_NULL,
     assert_unknown_session_error,
     close_session,
     connected_agent,
     delete_session,
     drain_quiet,
+    exchange_received,
     is_active_state,
     iter_messages,
     last_known_background,
@@ -67,8 +69,20 @@ from ._helpers import (
 )
 
 _HISTORY_KINDS = {"user_message", "agent_message", "agent_thought"}
-_CHUNK_KINDS = {"user_message_chunk", "agent_message_chunk", "agent_thought_chunk"}
-_REPLAYED_HISTORY_KINDS = _HISTORY_KINDS | _CHUNK_KINDS
+_MESSAGE_CHUNK_KINDS = {"user_message_chunk", "agent_message_chunk", "agent_thought_chunk"}
+_REPLAYED_HISTORY_KINDS = _HISTORY_KINDS | _MESSAGE_CHUNK_KINDS
+
+# Each replayed chunk kind -> (the whole-entity update that opens it, the entity's id field, the
+# field the chunks fill, that field's JSON type), session-setup.mdx:303-321.
+_CHUNK_PRIMERS: dict[str, tuple[str, str, str, type]] = {
+    "user_message_chunk": ("user_message", "messageId", "content", list),
+    "agent_message_chunk": ("agent_message", "messageId", "content", list),
+    "agent_thought_chunk": ("agent_thought", "messageId", "content", list),
+    "session_message_chunk": ("session_message", "messageId", "content", list),
+    "tool_call_content_chunk": ("tool_call_update", "toolCallId", "content", list),
+    "terminal_output_chunk": ("terminal_update", "terminalId", "output", dict),
+    "compaction_summary_chunk": ("compaction_update", "compactionId", "summary", list),
+}
 
 
 def _session_update_messages(
@@ -277,14 +291,16 @@ async def test_resume_replays_retained_user_message_with_same_message_id(agent_l
 
 @pytest.mark.requirement("ACP-RESUME-205")
 @pytest.mark.capability("capabilities.session")
-async def test_resume_chunk_replay_preceded_by_whole_message_update(
+async def test_resume_chunk_replay_preceded_by_whole_entity_update(
     agent_launch, tmp_path, record_property
 ):
-    """ACP-RESUME-205. Accepts any preceding same-kind, same-`messageId` whole-message update
-    with a `content` array: `[]` (rebuild from the beginning) and full content (chunks append)
-    are wire-indistinguishable. Vacuous -- recorded, never FAILed -- for an agent whose replay
-    uses only whole-message updates (`_base.ConformingAgent`'s own case). Filtered to the
-    resumed session: live child chunks may accompany a replay (Preview Subagents RFD)."""
+    """ACP-RESUME-205. Accepts any preceding same-kind, same-id whole-entity update carrying the
+    chunked field (`_CHUNK_PRIMERS`): the emptied one (rebuild from the beginning) and full
+    content (chunks append) are wire-indistinguishable. Chunks after `replay_complete` are live
+    appends to a replayed entity, so only those before it are judged (all of them when it never
+    arrives -- `ACP-RESUME-218` judges that). Vacuous -- recorded, never FAILed -- for an agent
+    whose replay uses only whole-entity updates (`_base.ConformingAgent`'s own case). Filtered to
+    the resumed session: child sessions keep their own windows."""
     async with obtain_resumable_session(
         agent_launch, tmp_path, timeout=agent_launch.default_timeout
     ) as (agent, session_id, _entry, resume_cwd):
@@ -296,29 +312,29 @@ async def test_resume_chunk_replay_preceded_by_whole_message_update(
             replay_from={"type": "start"},
             timeout=agent_launch.default_timeout,
         )
-        replayed = [
-            update
-            for _, msg in _session_update_messages(updates)
-            if (update := _update_for(msg, session_id)) is not None
-        ]
+        replayed = [update for _, update in _resume_updates_for(updates, session_id)]
+        window_end = next(
+            (i for i, update in enumerate(replayed) if update.get("sessionUpdate") == "replay_complete"),
+            len(replayed),
+        )
         chunk_count = 0
-        for index, update in enumerate(replayed):
+        for index, update in enumerate(replayed[:window_end]):
             kind = update.get("sessionUpdate")
-            if kind not in _CHUNK_KINDS:
+            if kind not in _CHUNK_PRIMERS:
                 continue
             chunk_count += 1
-            message_id = update.get("messageId")
-            whole_kind = kind[: -len("_chunk")]
+            whole_kind, id_field, field, field_type = _CHUNK_PRIMERS[kind]
+            entity_id = update.get(id_field)
             preceded = any(
                 prior.get("sessionUpdate") == whole_kind
-                and prior.get("messageId") == message_id
-                and isinstance(prior.get("content"), list)
+                and prior.get(id_field) == entity_id
+                and isinstance(prior.get(field), field_type)
                 for prior in replayed[:index]
             )
             assert preceded, (
-                f"replayed {kind} for messageId {message_id!r} was not preceded by a matching "
-                f"whole-message update (sessionUpdate={whole_kind!r} with a content array): "
-                f"{replayed!r}"
+                f"replayed {kind} for {id_field} {entity_id!r} was not preceded by a matching "
+                f"whole-entity update (sessionUpdate={whole_kind!r} with a {field!r} "
+                f"{field_type.__name__}): {replayed!r}"
             )
         record_property("acp_tck_resume_replayed_chunk_count", chunk_count)
 
@@ -712,6 +728,244 @@ async def test_resume_of_a_session_active_on_this_connection_succeeds(agent_laun
             agent, session_id, tmp_path, timeout=agent_launch.default_timeout
         )
         _assert_resume_succeeded(entry, "session/resume of a session active on this connection")
+
+
+# --- replay_complete (ACP-RESUME-218..222) ---
+
+
+def _replay_complete_orders(
+    ordered: list[tuple[tuple[int, int], dict[str, Any]]],
+) -> list[int]:
+    """Indexes in `ordered` (`_resume_updates_for`'s output) of the `replay_complete` updates."""
+    return [i for i, (_, update) in enumerate(ordered) if update.get("sessionUpdate") == "replay_complete"]
+
+
+async def _resume_replay_after_turn(agent, session_id, resume_cwd, *, timeout):
+    """Run a turn on the session, let its trailing traffic settle (work that outlives the turn
+    may still report), then `session/resume` it with `replayFrom: start`. Returns the response
+    entry and the session's `session/update`s observed before it, in wire order."""
+    await _add_history(agent, session_id, timeout=timeout)
+    await drain_quiet(agent, quiet_period(timeout))
+    response_entry, updates = await resume_session(
+        agent, session_id, resume_cwd, replay_from={"type": "start"}, timeout=timeout
+    )
+    _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
+    return response_entry, _resume_updates_for(updates, session_id)
+
+
+@pytest.mark.requirement("ACP-RESUME-218")
+@pytest.mark.capability("capabilities.session")
+async def test_replay_resume_sends_exactly_one_replay_complete_before_the_response(
+    agent_launch, tmp_path
+):
+    """ACP-RESUME-218. The first resume runs before any prompt (an empty history, where
+    `replay_complete` is required too), the second after a turn that reached idle. A replayed
+    message update after `replay_complete` is judged on the second only: its turn is over, so no
+    foreground work is left to split at a cut point."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        response_entry, updates = await resume_session(
+            agent, session_id, resume_cwd, replay_from={"type": "start"}, timeout=timeout
+        )
+        _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
+        ordered = _resume_updates_for(updates, session_id)
+        assert len(_replay_complete_orders(ordered)) == 1, (
+            "session/resume with replayFrom: start of a session with no history must send "
+            "exactly one replay_complete for the session before its response, got: "
+            f"{[update for _, update in ordered]!r}"
+        )
+
+        response_entry, ordered = await _resume_replay_after_turn(
+            agent, session_id, resume_cwd, timeout=timeout
+        )
+        positions = _replay_complete_orders(ordered)
+        assert len(positions) == 1, (
+            "session/resume with replayFrom: start must send exactly one replay_complete for "
+            f"the session before its response, got: {[update for _, update in ordered]!r}"
+        )
+        late_history = [
+            update
+            for _, update in ordered[positions[0] + 1 :]
+            if update.get("sessionUpdate") in _REPLAYED_HISTORY_KINDS
+        ]
+        assert not late_history, (
+            "replay_complete must follow the last replayed update, but replayed history "
+            f"followed it: {late_history!r}"
+        )
+
+
+def _replay_completes_for(messages: list[dict[str, Any]], session_id: str) -> list[dict[str, Any]]:
+    return [
+        update
+        for msg in messages
+        if msg.get("method") == "session/update"
+        and (update := _update_for(msg, session_id)) is not None
+        and update.get("sessionUpdate") == "replay_complete"
+    ]
+
+
+@pytest.mark.requirement("ACP-RESUME-219")
+@pytest.mark.capability("capabilities.session")
+async def test_replay_complete_is_not_sent_without_a_replay_cursor(agent_launch, tmp_path):
+    """ACP-RESUME-219. `session/new`, then `session/resume` with `replayFrom` omitted and with an
+    explicit `null`, each watched through the response and a quiet period after it."""
+    timeout = agent_launch.default_timeout
+    problems = []
+    async with connected_agent(agent_launch) as agent:
+        req_id = await agent.send_request("session/new", {"cwd": str(tmp_path)})
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+        skip_if_auth_gated(entry)
+        msg = entry.parsed
+        assert isinstance(msg, dict) and isinstance(msg.get("result"), dict), (
+            f"session/new did not return a result object: {entry.text!r}"
+        )
+        new_id = msg["result"].get("sessionId")
+        assert isinstance(new_id, str) and new_id, f"session/new carried no sessionId: {entry.text!r}"
+        trailing = [m for e in await drain_quiet(agent, quiet_period(timeout)) for m in iter_messages(e)]
+        if _replay_completes_for([*exchange_received(agent, entry), *trailing], new_id):
+            problems.append("session/new")
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        await _add_history(agent, session_id, timeout=timeout)
+        for label, replay_from in (("omitted", None), ("null", JSON_NULL)):
+            response_entry, updates = await resume_session(
+                agent, session_id, resume_cwd, replay_from=replay_from, timeout=timeout
+            )
+            _assert_resume_succeeded(response_entry, f"session/resume with replayFrom {label}")
+            trailing = [m for e in await drain_quiet(agent, quiet_period(timeout)) for m in iter_messages(e)]
+            observed = [m for _, m in _session_update_messages(updates)] + trailing
+            if _replay_completes_for(observed, session_id):
+                problems.append(f"session/resume with replayFrom {label}")
+    assert not problems, f"replay_complete was sent where no replay was requested: {problems}"
+
+
+_STATE_SYNC_KINDS = (
+    "session_info_update",
+    "usage_update",
+    "config_option_update",
+    "available_commands_update",
+)
+
+
+@pytest.mark.requirement("ACP-RESUME-220")
+@pytest.mark.capability("capabilities.session")
+async def test_only_replayed_history_precedes_replay_complete(
+    agent_launch, tmp_path, record_property
+):
+    """ACP-RESUME-220. Judges `state_update`, `notice` and `prompt_suggestions_update` before
+    `replay_complete`. `session_info_update`, `usage_update`, `config_option_update` and
+    `available_commands_update` before it are only recorded: session-setup.mdx:239 says an agent
+    need not replay them, :384 that every update that is not history waits for `replay_complete`."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        _response_entry, ordered = await _resume_replay_after_turn(
+            agent, session_id, resume_cwd, timeout=timeout
+        )
+        positions = _replay_complete_orders(ordered)
+        if not positions:
+            pytest.skip("no replay_complete observed (ACP-RESUME-218 judges that)")
+        before = [update for _, update in ordered[: positions[0]]]
+        record_property(
+            "acp_tck_resume_state_sync_kinds_before_replay_complete",
+            sorted({u["sessionUpdate"] for u in before if u.get("sessionUpdate") in _STATE_SYNC_KINDS}),
+        )
+        misplaced = [
+            update
+            for update in before
+            if update.get("sessionUpdate") in ("state_update", "notice", "prompt_suggestions_update")
+        ]
+        assert not misplaced, (
+            "updates that are not replayed history arrived before replay_complete instead of "
+            f"after it: {misplaced!r}"
+        )
+
+
+@pytest.mark.requirement("ACP-RESUME-221")
+@pytest.mark.capability("capabilities.session")
+async def test_rejected_replay_cursor_sends_no_replay_complete(agent_launch, tmp_path):
+    """ACP-RESUME-221. Runs the probes of `ACP-RESUME-207` (unsupported custom cursor) and
+    `ACP-RESUME-208` (malformed values); only a probe answered `-32602` is judged here."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        rejected = 0
+        sent = []
+        for cursor in ({"type": "_tck_unsupported_cursor"}, "start", {}, {"type": 5}):
+            response_entry, updates = await resume_session(
+                agent, session_id, resume_cwd, replay_from=cursor, timeout=timeout
+            )
+            msg = response_entry.parsed
+            error = msg.get("error") if isinstance(msg, dict) else None
+            if not (isinstance(error, dict) and error.get("code") == INVALID_PARAMS):
+                continue
+            rejected += 1
+            if _replay_completes_for([m for _, m in _session_update_messages(updates)], session_id):
+                sent.append(cursor)
+        if not rejected:
+            pytest.skip("no replayFrom probe was rejected with -32602 (ACP-RESUME-207/208 judge that)")
+        assert not sent, (
+            f"session/resume rejected with -32602 for replayFrom {sent!r} but sent replay_complete first"
+        )
+
+
+@pytest.mark.requirement("ACP-RESUME-222")
+@pytest.mark.capability("capabilities.session")
+async def test_agent_requests_wait_for_replay_complete(agent_launch, tmp_path):
+    """ACP-RESUME-222. Passive: reads the agent requests for the resumed session in the replay
+    resume exchange. The TCK leaves them unanswered, as `resume_session` does."""
+    timeout = agent_launch.default_timeout
+    async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
+        agent,
+        session_id,
+        _entry,
+        resume_cwd,
+    ):
+        response_entry, _ordered = await _resume_replay_after_turn(
+            agent, session_id, resume_cwd, timeout=timeout
+        )
+        messages = exchange_received(agent, response_entry)
+        complete_at = next(
+            (
+                i
+                for i, msg in enumerate(messages)
+                if (update := _update_for(msg, session_id)) is not None
+                and msg.get("method") == "session/update"
+                and update.get("sessionUpdate") == "replay_complete"
+            ),
+            None,
+        )
+        if complete_at is None:
+            pytest.skip("no replay_complete observed (ACP-RESUME-218 judges that)")
+        requests = [
+            index
+            for index, msg in enumerate(messages)
+            if "id" in msg
+            and isinstance(msg.get("method"), str)
+            and isinstance(msg.get("params"), dict)
+            and msg["params"].get("sessionId") == session_id
+        ]
+        if not requests:
+            pytest.skip("the agent sent no request for the session during the resume")
+        early = [messages[index] for index in requests if index < complete_at]
+        assert not early, f"agent request(s) arrived before replay_complete: {early!r}"
 
 
 # --- session/list (ACP-LIST-001/002/203/204) ---

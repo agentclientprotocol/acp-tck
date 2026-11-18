@@ -10,9 +10,9 @@ supports cursors announces them"), so an agent that announces none SKIPs ACP-CUR
 -004. ACP-CURSOR-003 is literal: it probes every agent that advertises `fork`. A turn that
 outlasts `--timeout` FAILs every row, like any broken setup.
 
-The replay window of a resume is its request to its response; the fixture base sends no
-`replay_complete` yet and none of these rows needs one, since entities are delivered before the
-cursors anchored to them and the state starts afresh at the request.
+The replay window of a resume is its request to its response; none of these rows needs
+`replay_complete` to bound it, since entities are delivered before the cursors anchored to them
+and the state starts afresh at the request.
 
 The connection's mock client answers any agent -> client request with `-32601`, as everywhere.
 """

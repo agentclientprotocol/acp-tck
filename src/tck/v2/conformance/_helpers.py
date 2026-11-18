@@ -276,6 +276,10 @@ async def new_session(agent: AgentProcess, cwd: Any, *, timeout: float | None = 
     return (await new_session_result(agent, cwd, timeout=timeout))["sessionId"]
 
 
+# `resume_session(replay_from=JSON_NULL)` sends an explicit `"replayFrom": null`; `None` omits it.
+JSON_NULL: Any = object()
+
+
 async def resume_session(
     agent: AgentProcess,
     session_id: str,
@@ -294,14 +298,16 @@ async def resume_session(
     `run_prompt` there is no separate turn-end predicate to wait for, just the matching response.
 
     `replay_from` is sent verbatim -- even a malformed value, which `ACP-RESUME-208` probes on
-    purpose -- and omitted when `None`.
+    purpose -- and omitted when `None`; `JSON_NULL` sends an explicit `null`.
 
     Returns `(response_entry, updates)`. Any agent -> client request arriving meanwhile (none is
     expected during `session/resume`) is simply left unanswered in the transcript for the caller
     to notice -- answering it here would risk masking a genuine defect with an invented outcome.
     """
     params: dict[str, Any] = {"sessionId": session_id, "cwd": str(cwd)}
-    if replay_from is not None:
+    if replay_from is JSON_NULL:
+        params["replayFrom"] = None
+    elif replay_from is not None:
         params["replayFrom"] = replay_from
     if additional_directories is not None:
         params["additionalDirectories"] = additional_directories
@@ -332,6 +338,28 @@ async def resume_session(
                 updates.append((line_index, entry))
         # Anything else observed on the wire while waiting (an unrelated notification, a
         # malformed line) is not this helper's concern; keep waiting for the response.
+
+
+def exchange_received(agent: AgentProcess, response_entry: TranscriptEntry) -> list[dict[str, Any]]:
+    """Every message the agent sent between the request `response_entry` answers and that
+    response, in wire order (array-carried ones included). Unlike `resume_session`'s `updates`
+    it also holds agent requests and unrelated traffic. Empty when the request is not found."""
+    transcript = agent.transcript
+    end = transcript.index(response_entry)
+    response = response_entry.parsed
+    request_id = response.get("id") if isinstance(response, dict) else None
+    for start in range(end - 1, -1, -1):
+        entry = transcript[start]
+        if entry.direction is Direction.SENT and any(
+            "method" in msg and msg.get("id") == request_id for msg in iter_messages(entry)
+        ):
+            return [
+                msg
+                for between in transcript[start + 1 : end]
+                if between.direction is Direction.RECEIVED
+                for msg in iter_messages(between)
+            ]
+    return []
 
 
 async def drain_quiet(agent: AgentProcess, quiet: float) -> list[TranscriptEntry]:

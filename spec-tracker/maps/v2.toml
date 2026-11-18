@@ -446,14 +446,14 @@ statement = "A replayed tool call whose work is no longer running or waiting SHO
 reason = "Vacuous without control of the history: it needs a replayed tool call whose work was interrupted, and the TCK cannot make an agent leave one behind. A replay of only finished calls passes either way."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:235 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
-statement = "Notices are live-only and SHOULD NOT be replayed."
-reason = "Not observable: a notice that arrives around a resume cannot be told apart from a new live one, which the spec allows if the condition still holds."
-
-[[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:297 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD preserve the IDs of the other replayed entities (agent and thought message IDs, `toolCallId`, `terminalId`, `planId`, `compactionId`) across replay when possible."
 reason = "Not observable: the rule is hedged (\"when possible\", not guaranteed across restarts), and matching a replayed entity to its live original needs content heuristics. The message ID of a prompt is judged by ACP-RESUME-204."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:330-335 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Replay applies top-level `_meta` as a metadata patch and does not reset it; when the Client may hold metadata for an entity, the Agent removes stale keys by setting them to `null`, or sends `_meta: null` before the current object."
+reason = "Not observable: under patch semantics an omitted key means \"unchanged\", so a client cannot tell a stale key left behind from a current one without knowing the entity's current metadata."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:339 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
@@ -464,6 +464,16 @@ reason = "Not observable from a client: which cursors the agent still accepts is
 citation = "docs/protocol/v2/draft/session-setup.mdx:342 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A resume without replay announces no cursors for earlier history. The cursors the Client already holds stay usable."
 reason = "Not observable from a client: a cursor the agent newly offers may legitimately anchor to an earlier entity, and the wire cannot tell it from an announcement for earlier history."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:52,390 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A session that was not active before a `session/resume` becomes active only with its successful response, so `session/prompt` before it fails with `-32002`; `replay_complete` does not make it active."
+reason = "Not observable as pass/fail: a prompt sent after `replay_complete` and before the response is seen may reach the agent after it has sent the response, so an accepted prompt is no evidence of a violation."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:392 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD report known replay gaps after `replay_complete`, for example with a notice. `replay_complete` does not mean that the Agent retained all history."
+reason = "Not observable: the client cannot know what history the agent no longer has."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:440,441 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

@@ -2125,17 +2125,23 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.CAPABILITY,
         capability="capabilities.session",
         text=(
-            "During replay, a `*_chunk` update for the resumed session and a `messageId` is "
-            "preceded, within the same replay window, by a matching whole-message update for that id carrying a `content` "
-            "array -- `[]` when chunks rebuild the message from its beginning, or full content "
-            "the chunks then append to (a client cannot tell the two apart). Vacuous -- "
-            "recorded, never FAILed -- for an agent whose replay uses only whole-message "
-            "updates. Live traffic for other (child) sessions, which may accompany a replay, "
-            "is not judged (Preview Subagents RFD)."
+            "During replay, a chunk update for the resumed session -- `user_message_chunk`, "
+            "`agent_message_chunk`, `agent_thought_chunk`, `session_message_chunk`, "
+            "`tool_call_content_chunk`, `terminal_output_chunk` or `compaction_summary_chunk` -- "
+            "is preceded by a matching whole-entity update for its id: the `user_message`, "
+            "`agent_message`, `agent_thought` or `session_message` with a `content` array, a "
+            "`tool_call_update` with `content`, a `terminal_update` with an `output` object or a "
+            "`compaction_update` with a `summary` array. It is `[]` (`{\"data\": \"\"}` for output) "
+            "when chunks rebuild the entity from its beginning, or full content the chunks then "
+            "append to (a client cannot tell the two apart). The replay window ends at "
+            "`replay_complete`: a chunk after it is a live append to a replayed entity and is not "
+            "judged; with no `replay_complete` (`ACP-RESUME-218` judges that) every chunk before "
+            "the response is. Vacuous -- recorded, never FAILed -- for an agent whose replay uses "
+            "only whole-entity updates. A child session keeps its own window and is not judged here."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-setup.mdx:303-321; "
-            "docs/rfds/subagents.mdx:1038-1045 (Preview RFD)"
+            "docs/protocol/v2/draft/subagents.mdx:463-465,482"
         ),
     ),
     Requirement(
@@ -2302,6 +2308,92 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/session-setup.mdx:431; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:214; "
             "schema/v2/schema.unstable.json#/$defs/IdleStateUpdate/properties/background"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-218",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/resume` with `replayFrom: {\"type\": \"start\"}` sends exactly one "
+            "`replay_complete` update on the resumed session before its response, after the last "
+            "replayed update: none, or a second one, FAILs, as does a replayed message update "
+            "(`user_message`/`agent_message`/`agent_thought` or their `_chunk` forms) after it. "
+            "Checked on a session that has not been prompted yet (empty history, where it is "
+            "required too) and again after a turn that reached idle, so no foreground work is "
+            "left that a replay could split at a cut point. A child session's own "
+            "`replay_complete` is not judged here."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:216,344-346,379-380; "
+            "schema/v2/schema.unstable.json#/$defs/ReplayComplete"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-219",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "No `replay_complete` update arrives for a session created by `session/new`, or for a "
+            "`session/resume` whose `replayFrom` is omitted or an explicit `null`: before the "
+            "response, or within a quiet period after it. The `session/resume`s run after a turn "
+            "that reached idle."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:362,381; "
+            "schema/v2/schema.unstable.json#/$defs/ReplayComplete"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-220",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "Every update for the resumed session between a replay resume's request and its "
+            "`replay_complete` is replayed history, so none of `state_update` (the current-state "
+            "synchronization, never replayed), `notice` or `prompt_suggestions_update` (live-only) "
+            "arrives before it: the agent holds them until after it. Checked after a turn that "
+            "reached idle. SKIPs when no `replay_complete` was observed (`ACP-RESUME-218` judges "
+            "that). The other kinds that are not replay contents -- `session_info_update`, "
+            "`usage_update`, `config_option_update` and `available_commands_update` -- are "
+            "recorded when they precede `replay_complete`, never judged: the docs say both that "
+            "an agent need not replay them and that it holds every update that is not history "
+            "until after `replay_complete`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:232-236,239,345,384"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-221",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `session/resume` whose `replayFrom` cursor the agent rejects with `-32602` -- the "
+            "unsupported custom cursor and the malformed values of `ACP-RESUME-207`/`208` -- "
+            "replays nothing and sends no `replay_complete` before the error response. A probe "
+            "the agent does not reject with `-32602` is not judged here (`ACP-RESUME-207`/`208` "
+            "do); SKIPs when none was."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:382,406; "
+            "schema/v2/schema.unstable.json#/$defs/ReplayComplete"
+        ),
+    ),
+    Requirement(
+        id="ACP-RESUME-222",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Agent requests (`session/request_permission`, `elicitation/create`, ...) for the "
+            "resumed session are not history, so they SHOULD wait until after `replay_complete`: "
+            "none arrives between a replay resume's request and its `replay_complete`. Passive, in "
+            "the exchange of `ACP-RESUME-220`; SKIPs when the agent sent no such request or no "
+            "`replay_complete` was observed. The test is gated on `capabilities.session`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/session-setup.mdx:388; "
+            "docs/protocol/v2/draft/subagents.mdx:488"
         ),
     ),
     Requirement(

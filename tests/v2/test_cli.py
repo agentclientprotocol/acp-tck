@@ -141,6 +141,10 @@ _CAPABILITY_IDS = {
     "ACP-RESUME-212",
     "ACP-RESUME-213",
     "ACP-RESUME-217",
+    "ACP-RESUME-218",
+    "ACP-RESUME-219",
+    "ACP-RESUME-220",
+    "ACP-RESUME-221",
     "ACP-ERROR-003",
     "ACP-ERROR-004",
     "ACP-LIST-001",
@@ -240,6 +244,7 @@ _ADVISORY_IDS = {
     "ACP-STATE-209",
     "ACP-STATE-210",
     "ACP-SUGGEST-004",
+    "ACP-RESUME-222",
     "ACP-CURSOR-004",
     "ACP-OPTIONS-007",
     "ACP-OPTIONS-009",
@@ -456,6 +461,7 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUGGEST-002",
     "ACP-SUGGEST-003",
     "ACP-SUGGEST-004",
+    "ACP-RESUME-222",  # the fixture sends no request during a resume
     "ACP-CURSOR-001",  # the fixture announces no cursor
     "ACP-CURSOR-002",
     "ACP-CURSOR-003",  # ... and advertises no `fork`
@@ -622,6 +628,7 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-SUGGEST-002",
     "ACP-SUGGEST-003",
     "ACP-SUGGEST-004",
+    "ACP-RESUME-222",  # the fixture sends no request during a resume
     "ACP-CURSOR-001",  # the fixture announces no cursor
     "ACP-CURSOR-002",
     "ACP-CURSOR-003",  # ... and advertises no `fork`
@@ -851,7 +858,7 @@ _FULL_EXPECTED_SKIPS = {
     "ACP-META-203",
     "ACP-META-204",
     "ACP-FORK-206",  # no listed work at fork time
-    "ACP-SUGGEST-004",  # the fixture base sends no `replay_complete` yet, so the window is unbounded
+    "ACP-RESUME-222",  # no agent request during a resume (`requests_before_replay_complete.py` sends one)
 } | _STALE_CANCEL_IDS | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _CHILD_CONTROL_IDS
 
 
@@ -1033,8 +1040,8 @@ def test_gated_content_unadvertised_fixtures_fail_only_their_own_clientcap_id():
 def test_prompt_suggestion_defect_fixtures_fail_only_their_own_row():
     """Each fixture sends suggestions only to a client that advertised `promptSuggestions`, so
     ACP-CLIENTCAP-008 stays PASS. Everything but the defective row PASSes (ACP-SUGGEST-004 too: the
-    fixtures send suggestions live, and `replays_suggestions.py` is the only one that sends a
-    `replay_complete`, so for the others the window is unbounded and it SKIPs). The run is scoped
+    fixtures send suggestions live and only `replays_suggestions.py` repeats one after
+    `replay_complete`). The run is scoped
     with `-k`, so its verdict is not asserted."""
     for fixture, expected in (
         ("suggests_image_block.py", "ACP-SUGGEST-001"),
@@ -1055,16 +1062,16 @@ def test_prompt_suggestion_defect_fixtures_fail_only_their_own_row():
         for req_id in {"ACP-SUGGEST-001", "ACP-SUGGEST-002", "ACP-SUGGEST-003"} - {expected}:
             assert statuses[req_id] == "PASS", f"{fixture} {req_id}:\n{result.stdout}"
         if expected != "ACP-SUGGEST-004":
-            assert statuses["ACP-SUGGEST-004"] == "SKIPPED", f"{fixture}:\n{result.stdout}"
+            assert statuses["ACP-SUGGEST-004"] == "PASS", f"{fixture}:\n{result.stdout}"
 
 
 def test_conforming_suggestions_pass_non_vacuously_and_conforming_skips():
     """`conforming_full.py` sends and withdraws suggestions, so ACP-SUGGEST-001..003 PASS (none SKIPs).
-    ACP-SUGGEST-004 SKIPs for it until the fixture base sends `replay_complete` (its resume window
-    cannot be bounded without one). `conforming.py` sends none: all four SKIP."""
+    ACP-SUGGEST-004 PASSes too: the fixture base ends a replay with `replay_complete`, so the window
+    to the resume response is bounded. `conforming.py` sends none: all four SKIP."""
     scope = "test_prompt_suggestions"
     full = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=scope).stdout)
-    assert [full[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)] == ["PASS", "PASS", "PASS", "SKIPPED"], full
+    assert [full[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)] == ["PASS", "PASS", "PASS", "PASS"], full
     plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=scope).stdout)
     assert {plain[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)} == {"SKIPPED"}, plain
 
@@ -1740,6 +1747,10 @@ def test_no_idle_after_running_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-212",
         "ACP-RESUME-213",
         "ACP-RESUME-217",
+        "ACP-RESUME-218",
+        "ACP-RESUME-219",
+        "ACP-RESUME-220",
+        "ACP-RESUME-222",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -1921,6 +1932,10 @@ def test_update_wrong_session_fails_every_run_prompt_dependent_id():
         "ACP-RESUME-212",
         "ACP-RESUME-213",
         "ACP-RESUME-217",
+        "ACP-RESUME-218",
+        "ACP-RESUME-219",
+        "ACP-RESUME-220",
+        "ACP-RESUME-222",
         "ACP-RESUME-214",
         "ACP-TRANSPORT-001",
         "ACP-TRANSPORT-002",
@@ -2671,6 +2686,10 @@ def test_cancel_no_idle_fails_every_cancel_dependent_id():
         "ACP-RESUME-212",
         "ACP-RESUME-213",
         "ACP-RESUME-217",
+        "ACP-RESUME-218",
+        "ACP-RESUME-219",
+        "ACP-RESUME-220",
+        "ACP-RESUME-222",
         "ACP-RESUME-214",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
@@ -2791,6 +2810,10 @@ def test_cancel_returns_error_fails_cancel_203_and_208_only():
         "ACP-RESUME-212",
         "ACP-RESUME-213",
         "ACP-RESUME-217",
+        "ACP-RESUME-218",
+        "ACP-RESUME-219",
+        "ACP-RESUME-220",
+        "ACP-RESUME-222",
         "ACP-RESUME-214",
         "ACP-CLOSE-203",
         "ACP-CLOSE-204",
@@ -2909,6 +2932,10 @@ def test_cancel_wrong_stop_reason_fails_cancel_001_203_206_207_only():
         "ACP-RESUME-212",
         "ACP-RESUME-213",
         "ACP-RESUME-217",
+        "ACP-RESUME-218",
+        "ACP-RESUME-219",
+        "ACP-RESUME-220",
+        "ACP-RESUME-222",
         "ACP-RESUME-214",
         "ACP-ENUM-201",
         "ACP-META-001",
@@ -3334,6 +3361,7 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-SUGGEST-002",
             "ACP-SUGGEST-003",
             "ACP-SUGGEST-004",
+            "ACP-RESUME-222",  # the fixture sends no request during a resume
             "ACP-CURSOR-001",  # the fixture announces no cursor
             "ACP-CURSOR-002",
             "ACP-CURSOR-003",
@@ -3574,11 +3602,66 @@ def _resume_statuses(fixture: str, **kwargs: str) -> tuple[dict[str, str], str]:
     return _table_statuses(result.stdout), result.stdout
 
 
-def test_resume_replays_state_updates_fails_resume_212_only():
+def test_resume_replays_state_updates_fails_resume_212_and_220():
     """`resume_replays_state_updates.py` records and replays every `state_update`, so a replayed
-    `running` precedes the snapshot."""
+    `running` precedes the snapshot (`ACP-RESUME-212`) and, being no history, sits before
+    `replay_complete` (`ACP-RESUME-220`)."""
     statuses, stdout = _resume_statuses("resume_replays_state_updates.py")
-    assert _fails(statuses) == {"ACP-RESUME-212"}, stdout
+    assert _fails(statuses) == {"ACP-RESUME-212", "ACP-RESUME-220"}, stdout
+
+
+# --- replay_complete (`ACP-RESUME-218..222`) -- self-tests ---
+
+_REPLAY_COMPLETE_IDS = {f"ACP-RESUME-{n}" for n in range(218, 223)}
+
+
+def test_conforming_agents_pass_replay_complete_rows():
+    """The fixture base ends every replay with one `replay_complete` before the session info and
+    the snapshot, so `ACP-RESUME-218..221` PASS non-vacuously. No agent request arrives during a
+    resume, so `ACP-RESUME-222` SKIPs."""
+    for fixture in ("conforming.py", "conforming_full.py"):
+        statuses, stdout = _resume_statuses(fixture, cancel_prompt="__hang__")
+        assert _fails(statuses) == set(), f"{fixture}:\n{stdout}"
+        assert {statuses[i] for i in _REPLAY_COMPLETE_IDS - {"ACP-RESUME-222"}} == {"PASS"}, stdout
+        assert statuses["ACP-RESUME-222"] == "SKIPPED", stdout
+
+
+def test_resume_205_judges_every_chunk_kind(monkeypatch):
+    """`replays_entity_chunks.py` replays session-message, tool-call-content, terminal-output and
+    compaction-summary chunks, each after its emptied whole-entity update: nothing FAILs.
+    `replays_unprimed_entity_chunks.py` drops the opener of one kind at a time (and of all of them
+    at once): only `ACP-RESUME-205` FAILs, and it names the kind."""
+    statuses, stdout = _resume_statuses("replays_entity_chunks.py")
+    assert _fails(statuses) == set() and statuses["ACP-RESUME-205"] == "PASS", stdout
+    for kind in ("", "session_message_chunk", "tool_call_content_chunk", "terminal_output_chunk", "compaction_summary_chunk"):
+        monkeypatch.setenv("TCK_FIXTURE_UNPRIMED_CHUNK", kind)
+        statuses, stdout = _resume_statuses("replays_unprimed_entity_chunks.py")
+        assert _fails(statuses) == {"ACP-RESUME-205"}, f"{kind or 'all kinds'}:\n{stdout}"
+        assert (kind or "session_message_chunk") in stdout, stdout
+
+
+@pytest.mark.parametrize(
+    ("fixture", "failing"),
+    [
+        ("resume_omits_replay_complete.py", {"ACP-RESUME-218"}),
+        ("resume_replay_complete_twice.py", {"ACP-RESUME-218"}),
+        ("resume_history_after_replay_complete.py", {"ACP-RESUME-218"}),
+        ("replay_complete_without_replay.py", {"ACP-RESUME-219"}),
+        ("resume_snapshot_before_replay_complete.py", {"ACP-RESUME-220"}),
+        ("resume_notice_before_replay_complete.py", {"ACP-RESUME-220"}),
+        ("rejected_cursor_sends_replay_complete.py", {"ACP-RESUME-221"}),
+        ("requests_before_replay_complete.py", {"ACP-RESUME-222"}),
+    ],
+)
+def test_replay_complete_defect_fixtures_fail_only_their_rows(fixture, failing):
+    """Each fixture has one defect and FAILs exactly the row it names. Without a
+    `replay_complete` (`resume_omits_replay_complete.py`) the rows that need one SKIP."""
+    statuses, stdout = _resume_statuses(fixture)
+    assert _fails(statuses) == failing, stdout
+    for req_id in _REPLAY_COMPLETE_IDS - failing:
+        assert statuses[req_id] in {"PASS", "SKIPPED"}, f"{req_id}:\n{stdout}"
+    if fixture == "resume_omits_replay_complete.py":
+        assert statuses["ACP-RESUME-220"] == "SKIPPED", stdout
 
 
 def test_resume_no_session_info_fails_resume_214_only():
