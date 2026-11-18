@@ -29,11 +29,12 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - V2-PLAN — c7436a6 — +PLAN-003 v2 (CAPABILITY capabilities.session), ledger -agent-plan.mdx:119, base sends abs markdown plan; suite green (1027)
 - Review milestone 1 — review-revendor.md — 0 blocker, 4 should-fix, 5 nit; all go to slice R-FIX
 - R-FIX — 25c0272 — all 9 review findings fixed (29 RFD-SA pointers +44, CANCEL-214/JSONRPC-007 lines, ledger pointers, SUBAGENT-011 v1 aligned to v2, VENDORED.md step 1, spec-updates.md git show); suite green (1027)
+- V1-GATES+SUGGEST — f421609 — +CLIENTCAP-008/-009, +SUGGEST-001..004 (003 CAPABILITY inferred:promptSuggestions, 004 ADVISORY), ledger +2 (PT:411,413), 6 fixtures + _suggests mixin; suite green (1029). DOCS slice must add inferred:promptSuggestions.
 ## Next
 - Step 6 slices in plan order (section 5): R-V1 -> R-V2 -> area slices 1-28 -> id alignment (user approves each rename)
   -> cross-check refresh. One programmer at a time. Review per milestone (milestones: re-vendor; area slices; id
   alignment + cross-check).
 - Milestone 1 (re-vendor) DONE and reviewed.
-- Slice 3 V1-GATES+SUGGEST: in progress. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
+- Slices 4 V2-GATES + 5 V2-SUGGEST (one programmer, two commits): in progress. Left over from R-V1/R-V2 for later slices: cost entry, "stated only by the Subagents RFD" text (V1-SA1/V2-SA1); v2 ledger `agent-plan.mdx:119` (V2-PLAN); TOOLCANCEL/TERMCANCEL-2xx not re-judged vs changed tool-calls.mdx 456-459/600-605 text (V2-TOOL); whether PL prompt-suggestions/cursors sections become core_doc sections (DOCS slice 28).
 ## Open questions (waiting on the user)
 - none
