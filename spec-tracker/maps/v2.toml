@@ -216,6 +216,16 @@ citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:756 @ 3ea94133bb4e7cfdb1
 statement = "Agents SHOULD replace or withdraw the prompt-suggestion list when it stops applying for a reason other than an accepted `session/prompt`, such as foreground work that starts without a prompt."
 reason = "Not observable from a client: it cannot tell whether a list still applies, and the spec sets no deadline, so a list that stays current proves nothing. ACP-SUGGEST-003 judges the one trigger it can drive, an accepted `session/prompt`."
 
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:999,1001-1002 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With a cursor the Agent issued, `session/fork` does not act at a different position: the new session's history is the source session's history before the cursor."
+reason = "Deferred: judging it needs the agent to retain and replay the fork, and the docs do not say whether a fork keeps the source's entity IDs, so the fork's replay cannot be matched to the cursor's anchor. ACP-CURSOR-003 judges the rejection of a cursor the agent did not issue."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:1024-1028 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD accept a cursor for as long as they retain the history at its position. The Agent can stop accepting a cursor at any time, and SHOULD then send a `cursor_update` that clears the cursor's `capabilities`, if the session is active on a connection."
+reason = "Not observable from a client: whether the agent still retains the history, and when it stops accepting a cursor, is internal and may happen at any time, so a rejected cursor proves no violation and no deadline bounds the clearing update."
+
 # --- initialization.mdx ---
 
 [[not_requirement]]
@@ -424,6 +434,16 @@ reason = "Not observable: a notice that arrives around a resume cannot be told a
 citation = "docs/protocol/v2/draft/session-setup.mdx:297 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD preserve the IDs of the other replayed entities (agent and thought message IDs, `toolCallId`, `terminalId`, `planId`, `compactionId`) across replay when possible."
 reason = "Not observable: the rule is hedged (\"when possible\", not guaranteed across restarts), and matching a replayed entity to its live original needs content heuristics. The message ID of a prompt is judged by ACP-RESUME-204."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:339 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When an Agent replays history, it SHOULD send a `cursor_update` for each cursor in that history that it still accepts."
+reason = "Not observable from a client: which cursors the agent still accepts is internal to it and may change at any time (prompt-lifecycle.mdx:1026), so a cursor missing from a replay is no evidence. ACP-CURSOR-001/002 judge the cursors a replay does carry."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:342 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A resume without replay announces no cursors for earlier history. The cursors the Client already holds stay usable."
+reason = "Not observable from a client: a cursor the agent newly offers may legitimately anchor to an earlier entity, and the wire cannot tell it from an announcement for earlier history."
 
 [[not_requirement]]
 citation = "docs/protocol/v2/draft/session-setup.mdx:440,441 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"

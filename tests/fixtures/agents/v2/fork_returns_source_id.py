@@ -22,6 +22,8 @@ class ForkReturnsSourceIdAgent(ConformingAgent):
         if source_id not in self._sessions and source_id not in self._closed_sessions:
             self._unknown_session(msg_id, source_id)
             return
+        if self._fork_cursor_rejected(msg_id, params):
+            return
         self._reply(msg_id, {"sessionId": source_id})
 
 

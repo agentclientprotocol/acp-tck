@@ -58,7 +58,8 @@ the agent to `session/new`, `list`, `resume`, `close`, `prompt`, `cancel`, `upda
   `data.sessionId` (`error.mdx:54-56`). Defect fixtures override it, or the handlers, to break it.
   `session/close` and `session/delete` of an unknown id still succeed.
 - `session/fork` (only when `capabilities.session.fork` is advertised) creates a live session with
-  a copy of the source's history; a source it never created is `-32002` via `_unknown_session`.
+  a copy of the source's history; a source it never created is `-32002` via `_unknown_session`,
+  and a `cursorId` is `-32602` unless `_cursor_rejected` says it was issued (it issues none).
   `systemPrompt` on `session/new` and `session/resume` is
   accepted only in an advertised mode with text content, else `-32602` and the session is
   neither created nor resumed (session-setup.mdx:566).
@@ -809,12 +810,29 @@ class ConformingAgent:
         if source_id not in self._sessions and source_id not in self._closed_sessions:
             self._unknown_session(msg_id, source_id)  # ACP-FORK-203
             return
+        if self._fork_cursor_rejected(msg_id, params):
+            return
         self._session_count += 1
         session_id = f"sess-{self._session_count:04d}"
         self._sessions[session_id] = params.get("cwd", "")
         self._history[session_id] = [dict(update) for update in self._history.get(source_id, [])]
         self._fork_background(source_id, session_id)
         self._reply(msg_id, {"sessionId": session_id, **self._fork_state_fields()})
+
+    def _fork_cursor_rejected(self, msg_id: Any, params: dict[str, Any]) -> bool:
+        """Answer `-32602` and return `True` when `session/fork` names a `cursorId` the source did
+        not issue (`ACP-CURSOR-003`). The `fork_*` defect fixtures that replace
+        `_handle_fork_session` call this too, so they stay conforming on that point."""
+        cursor_id = params.get("cursorId")
+        if cursor_id is None or not self._cursor_rejected(params.get("sessionId"), cursor_id):
+            return False
+        self._error(msg_id, -32602, f"Invalid params: unknown cursorId {cursor_id!r}")
+        return True
+
+    def _cursor_rejected(self, session_id: Any, cursor_id: Any) -> bool:
+        """Hook: this agent issues no cursor, so every `cursorId` is one it did not issue
+        (prompt-lifecycle.mdx:999). `_cursors.py` overrides it to know the cursors it announced."""
+        return True
 
     def _fork_background(self, source_id: Any, session_id: Any) -> None:
         """Hook: a fork starts with no background work (session-setup.mdx:50), so nothing of the

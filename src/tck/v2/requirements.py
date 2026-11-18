@@ -1291,6 +1291,81 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
     ),
     Requirement(
+        id="ACP-CURSOR-001",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "The first `cursor_update` for a `cursorId` on a session carries a non-null "
+            "`anchor`, and no later update for that `cursorId` carries a different anchor (a "
+            "cursor never moves; omitting the anchor or repeating it is fine). The state is per "
+            "session and `cursorId`, and starts afresh at each successful `session/resume` with "
+            "`replayFrom: {\"type\": \"start\"}`, whose full replay rebuilds the session's "
+            "cursors: the first replayed update for a cursor carries its anchor too. Checked over "
+            "a connection of `session/new`, two prompt turns, two such resumes and a "
+            "`session/fork` probe. Unstable feature: SKIPPED when the agent sends no "
+            "`cursor_update`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:947,949,952-954; "
+            "docs/protocol/v2/draft/session-setup.mdx:339,341; "
+            "schema/v2/schema.unstable.json#/$defs/CursorUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-002",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session",
+        text=(
+            "A `cursor_update` whose `anchor` has a defined `type` (`user_message`, "
+            "`agent_message`, `agent_thought`, `session_message`, `tool_call`, `compaction`) "
+            "names an entity the agent already reported on the same session, by the matching "
+            "ID (`messageId`, `toolCallId` or `compactionId`) in an earlier `session/update`. A "
+            "replay delivers each entity before the cursors anchored to it, so the reported set "
+            "starts afresh at each successful full-replay `session/resume`. Anchors of unknown "
+            "`type` are not judged. Judged on the session the TCK created, over the connection "
+            "of ACP-CURSOR-001. Unstable feature: SKIPPED when the agent sends no `cursor_update`."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:966-975,982-983,993; "
+            "docs/protocol/v2/draft/session-setup.mdx:339; "
+            "schema/v2/schema.unstable.json#/$defs/CursorAnchor"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-003",
+        tier=Tier.CAPABILITY,
+        capability="capabilities.session.fork",
+        text=(
+            "`session/fork` with a `cursorId` the agent did not issue for that session is "
+            "rejected with `-32602`: the agent does not fork at another position and does not "
+            "treat the request as if `cursorId` had been omitted (a whole-session fork). Probed "
+            "on every agent that advertises `fork`, whether or not it announced a cursor, with "
+            "a fabricated `cursorId` on the session of ACP-CURSOR-001's connection. The probe "
+            "breaks a client MUST (only pass an announced cursor) on purpose, because the docs "
+            "define the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:997,999,1017-1020; "
+            "schema/v2/schema.unstable.json#/$defs/ForkSessionRequest/properties/cursorId"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD use the same `cursorId` for the same position in every replay. "
+            "Two `session/resume`s with `replayFrom: {\"type\": \"start\"}` of the session of "
+            "ACP-CURSOR-001's connection are compared: a cursor whose anchor (`type`, entity ID "
+            "and `position`) is identical in both replays carries the same `cursorId` in both. "
+            "A replayed cursor may carry a different anchor than before (a `messageId` may "
+            "change across a replay), so anchors that differ are not compared. The test is "
+            "gated on `capabilities.session` and SKIPPED when no cursor anchor matches across "
+            "the two replays."
+        ),
+        citation=_cite("docs/protocol/v2/draft/session-setup.mdx:340-341"),
+    ),
+    Requirement(
         id="ACP-INFO-CONCURRENT-201",
         tier=Tier.INFORMATIONAL,
         capability=None,
@@ -3729,7 +3804,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`diff` content's `changes[].operation`/`changes[].fileType`/`patch.format`, "
             "`plan_update`'s `plan.type` and plan entries' `priority`/`status`, "
             "`available_commands_update` commands' `type`, a defined state's `background[].type`, "
-            "and `session/request_permission` "
+            "`cursor_update`'s `anchor.type`/`anchor.position`, and `session/request_permission` "
             "options' `kind` (the permission sites are only observable if the agent asks for "
             "permission). A curated, non-exhaustive subset of the schema's open-enum sites; "
             "`subject.type` is not checked."
@@ -3739,8 +3814,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v2/draft/tool-calls.mdx:76,372,419,662,685-686,700-701; "
             "docs/protocol/v2/draft/agent-plan.mdx:137,156,168; "
             "docs/protocol/v2/draft/slash-commands.mdx:113; "
-            "docs/protocol/v2/draft/prompt-lifecycle.mdx:219; "
+            "docs/protocol/v2/draft/prompt-lifecycle.mdx:219,984; "
             "schema/v2/schema.unstable.json#/$defs/BackgroundWork; "
+            "schema/v2/schema.unstable.json#/$defs/CursorAnchor; "
+            "schema/v2/schema.unstable.json#/$defs/CursorAnchorPosition; "
             "schema/v2/schema.unstable.json#/$defs/PermissionOptionKind"
         ),
     ),

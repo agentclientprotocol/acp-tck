@@ -38,12 +38,16 @@ def test_conforming_values_at_every_site_pass():
             {"content": "c", "priority": "high", "status": "pending"}]}},
         {"sessionUpdate": "available_commands_update",
          "availableCommands": [{"type": "command", "name": "n", "description": "d"}]},
+        {"sessionUpdate": "cursor_update", "cursorId": "c1",
+         "anchor": {"type": "user_message", "messageId": "m", "position": "before"}},
+        {"sessionUpdate": "cursor_update", "cursorId": "c2",
+         "anchor": {"type": "compaction", "compactionId": "k", "position": "after"}},
     ]
     scan = OpenEnumScan()
     for update in updates:
         scan.scan_update(update)
     assert scan.violations == []
-    assert scan.checked > 15
+    assert scan.checked > 19
 
 
 def test_underscore_prefixed_values_pass_everywhere():
@@ -57,6 +61,19 @@ def test_underscore_prefixed_values_pass_everywhere():
             patch={"format": "_tck_fmt", "text": "x"})],
     }
     assert _scan_update(update).violations == []
+
+
+def test_underscore_prefixed_cursor_anchor_values_pass_and_a_missing_anchor_is_not_judged():
+    custom = {"sessionUpdate": "cursor_update", "cursorId": "c",
+              "anchor": {"type": "_tck_entity", "_tck_id": "x", "position": "_tck_side"}}
+    scan = _scan_update(custom)
+    assert scan.violations == [] and scan.checked == 3  # the discriminator and the two anchor fields
+    for update in (
+        {"sessionUpdate": "cursor_update", "cursorId": "c"},
+        {"sessionUpdate": "cursor_update", "cursorId": "c", "anchor": None},
+    ):
+        scan = _scan_update(update)
+        assert scan.violations == [] and scan.checked == 1  # only the discriminator
 
 
 def test_underscore_prefixed_background_type_passes_and_custom_state_list_is_not_judged():
@@ -97,6 +114,12 @@ def test_underscore_prefixed_background_type_passes_and_custom_state_list_is_not
         ({"sessionUpdate": "state_update", "state": "idle", "background": [
             {"type": "terminal", "terminalId": "t"}, {"type": "task", "id": "x"}]},
          "background item type"),
+        ({"sessionUpdate": "cursor_update", "cursorId": "c",
+          "anchor": {"type": "hologram", "messageId": "m", "position": "before"}},
+         "cursor anchor type"),
+        ({"sessionUpdate": "cursor_update", "cursorId": "c",
+          "anchor": {"type": "user_message", "messageId": "m", "position": "beside"}},
+         "cursor anchor position"),
         ({"sessionUpdate": "surprise"}, "sessionUpdate"),
     ],
 )

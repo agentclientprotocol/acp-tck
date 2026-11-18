@@ -97,6 +97,9 @@ _CAPABILITY_IDS = {
     "ACP-SUGGEST-001",
     "ACP-SUGGEST-002",
     "ACP-SUGGEST-003",
+    "ACP-CURSOR-001",
+    "ACP-CURSOR-002",
+    "ACP-CURSOR-003",
     "ACP-CANCEL-001",
     "ACP-CANCEL-002",
     "ACP-CANCEL-203",
@@ -219,6 +222,7 @@ _ADVISORY_IDS = {
     "ACP-STATE-209",
     "ACP-STATE-210",
     "ACP-SUGGEST-004",
+    "ACP-CURSOR-004",
     "ACP-CANCEL-204",
     "ACP-CANCEL-213",
     "ACP-JSONRPC-005",
@@ -427,6 +431,10 @@ _NOT_ADVERTISED_OR_EXERCISED_SKIP_IDS = {
     "ACP-SUGGEST-002",
     "ACP-SUGGEST-003",
     "ACP-SUGGEST-004",
+    "ACP-CURSOR-001",  # the fixture announces no cursor
+    "ACP-CURSOR-002",
+    "ACP-CURSOR-003",  # ... and advertises no `fork`
+    "ACP-CURSOR-004",
 } | _BACKGROUND_SKIP_IDS | _RESUME_BACKGROUND_SKIP_IDS | _BACKGROUND_OTHER_SKIP_IDS | _ITEM_CANCEL_IDS | _CHILD_CONTROL_IDS
 
 # A fixture that advertises only the bare `capabilities: {"session": {}}}` baseline (or nothing
@@ -576,6 +584,10 @@ _CONFORMING_EXPECTED_SKIPS = {
     "ACP-SUGGEST-002",
     "ACP-SUGGEST-003",
     "ACP-SUGGEST-004",
+    "ACP-CURSOR-001",  # the fixture announces no cursor
+    "ACP-CURSOR-002",
+    "ACP-CURSOR-003",  # ... and advertises no `fork`
+    "ACP-CURSOR-004",
     "ACP-JSONRPC-202",
     "ACP-ERROR-204",
     "ACP-PROMPTCAP-001",
@@ -1004,6 +1016,55 @@ def test_conforming_suggestions_pass_non_vacuously_and_conforming_skips():
     assert [full[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)] == ["PASS", "PASS", "PASS", "SKIPPED"], full
     plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=scope).stdout)
     assert {plain[f"ACP-SUGGEST-00{n}"] for n in (1, 2, 3, 4)} == {"SKIPPED"}, plain
+
+
+def test_cursor_defect_fixtures_fail_only_their_own_row():
+    """Each fixture advertises `fork` and announces cursors on every turn (v2 has no client
+    capability for them). Everything but the defective row PASSes or SKIPs (ACP-CURSOR-004 SKIPs for
+    the fixture whose replayed cursors carry no anchor, so none matches across the two replays). The
+    run is scoped with `-k`, so its verdict is not asserted."""
+    ids = [f"ACP-CURSOR-00{n}" for n in (1, 2, 3, 4)]
+    for fixture, expected in (
+        ("cursor_anchor_moves.py", "ACP-CURSOR-001"),
+        ("replays_cursor_without_anchor.py", "ACP-CURSOR-001"),
+        ("cursor_anchor_unknown_entity.py", "ACP-CURSOR-002"),
+        ("replays_cursor_before_entity.py", "ACP-CURSOR-002"),
+        ("fork_ignores_cursor_id.py", "ACP-CURSOR-003"),
+        ("unstable_cursor_ids.py", "ACP-CURSOR-004"),
+    ):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_cursors")
+        statuses = _table_statuses(result.stdout)
+        fails = {req_id for req_id, status in statuses.items() if status == "FAIL"}
+        assert fails == {expected}, f"{fixture}:\n{result.stdout}"
+        for req_id in set(ids) - {expected}:
+            assert statuses[req_id] in ("PASS", "SKIPPED"), f"{fixture} {req_id}:\n{result.stdout}"
+
+
+def test_conforming_cursors_pass_non_vacuously_and_conforming_skips():
+    """`conforming_full.py` announces cursors, replays them with the same ids on a full resume and
+    rejects an unissued `cursorId` on `session/fork`, so all four ACP-CURSOR rows PASS (none
+    SKIPs). `conforming.py` announces none and advertises no `fork`: all four SKIP. An agent that
+    advertises `fork` but announces no cursor is probed all the same (literal reading of the rule), so
+    `forks_without_cursors.py` PASSes ACP-CURSOR-003 and SKIPs the other three."""
+    scope = "test_cursors"
+    full = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming_full.py", protocol_version=2, k=scope).stdout)
+    assert {full[f"ACP-CURSOR-00{n}"] for n in (1, 2, 3, 4)} == {"PASS"}, full
+    plain = _table_statuses(_run_cli(FIXTURES_DIR_V2, "conforming.py", protocol_version=2, k=scope).stdout)
+    assert {plain[f"ACP-CURSOR-00{n}"] for n in (1, 2, 3, 4)} == {"SKIPPED"}, plain
+    unaware = _table_statuses(
+        _run_cli(FIXTURES_DIR_V2, "forks_without_cursors.py", protocol_version=2, k=scope).stdout
+    )
+    assert [unaware[f"ACP-CURSOR-00{n}"] for n in (1, 2, 3, 4)] == ["SKIPPED", "SKIPPED", "PASS", "SKIPPED"], unaware
+
+
+def test_unprefixed_cursor_anchor_values_fail_only_enum_201(tmp_path):
+    """`anchor.type` is `"hologram"` and `anchor.position` `"beside"`: the `other` branches accept
+    them, `ACP-CURSOR-001..004` ignore an anchor of unknown `type`, and only the open-enum sweep
+    objects."""
+    statuses, _by_id, stdout = _full_run("cursor_anchor_custom_type.py", tmp_path)
+    assert _fails(statuses) == {"ACP-ENUM-201"}, stdout
+    for n in (1, 2, 3, 4):
+        assert statuses[f"ACP-CURSOR-00{n}"] in ("PASS", "SKIPPED"), stdout
 
 
 def test_calls_fs_unadvertised_fails_clientcap_202_only():
@@ -3113,6 +3174,10 @@ def test_v2_emits_batch_updates_fails_transport_001_only():
             "ACP-SUGGEST-002",
             "ACP-SUGGEST-003",
             "ACP-SUGGEST-004",
+            "ACP-CURSOR-001",  # the fixture announces no cursor
+            "ACP-CURSOR-002",
+            "ACP-CURSOR-003",
+            "ACP-CURSOR-004",
             "ACP-CANCEL-209",
             "ACP-CANCEL-213",
             "ACP-CLOSE-205",

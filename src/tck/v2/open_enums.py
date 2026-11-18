@@ -16,6 +16,8 @@ from typing import Any
 from .protocol import (
     AVAILABLE_COMMAND_TYPE,
     BACKGROUND_WORK_TYPE,
+    CURSOR_ANCHOR_POSITION,
+    CURSOR_ANCHOR_TYPE,
     DIFF_FILE_TYPE,
     DIFF_OPERATION,
     DIFF_PATCH_FORMAT,
@@ -64,6 +66,13 @@ class OpenEnumScan:
             self._scan_content_item("tool_call_content_chunk.content", update.get("content"))
         elif kind == "plan_update":
             self._scan_plan(update.get("plan"))
+        elif kind == "cursor_update":
+            anchor = update.get("anchor")
+            if isinstance(anchor, dict):
+                if "type" in anchor:
+                    self.check("cursor anchor type", anchor["type"], CURSOR_ANCHOR_TYPE)
+                if "position" in anchor:
+                    self.check("cursor anchor position", anchor["position"], CURSOR_ANCHOR_POSITION)
         elif kind == "available_commands_update":
             commands = update.get("availableCommands")
             for command in commands if isinstance(commands, list) else []:

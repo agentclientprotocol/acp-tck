@@ -43,6 +43,11 @@ For a client that advertised `capabilities.session.promptSuggestions` (only the 
 do) it withdraws the previous suggestion list when a prompt is accepted and sends a fresh one
 after each turn's idle (`_suggests.py`), so ACP-SUGGEST-001..003 PASS non-vacuously. A resume
 sends none.
+
+Every turn also announces a fork-capable cursor before the turn's user message (v2 has no client
+capability for cursors); a full resume replays it with the same `cursorId`, and `session/fork`
+accepts those cursors and rejects any other with `-32602`, so ACP-CURSOR-001..004 PASS
+non-vacuously (`_cursors.py`).
 """
 
 import sys
@@ -51,10 +56,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _base import AsksPermissionAgent  # noqa: E402
+from _cursors import CursorsMixin  # noqa: E402
 from _suggests import SuggestsMixin  # noqa: E402
 
 
-class ConformingFullAgent(SuggestsMixin, AsksPermissionAgent):
+class ConformingFullAgent(CursorsMixin, SuggestsMixin, AsksPermissionAgent):
     pass
 
 
