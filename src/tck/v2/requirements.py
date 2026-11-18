@@ -681,8 +681,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "not confirm it: the docs name the child's own `state_update` and make the mirror "
             "only a SHOULD, which `ACP-SUBAGENT-201` judges. An Agent that can no longer "
             "observe the child reports `unknown` instead of a confirmation, so the row SKIPs "
-            "when the child's state after the request is `unknown` and no `idle` follows "
-            "within the wait (the cancellation is not observable). The per-child capability and "
+            "when the child's latest state after the request is `unknown` and no `idle` follows "
+            "within the wait, or a non-cancelled `idle` follows it (the work ended out of "
+            "sight): the cancellation is not observable. A later `running` or `requires_action` "
+            "replaces `unknown`, so the wait then judges the child as usual. The per-child "
+            "capability and "
             "the confirmation are stated by the draft docs and schema "
             "(`SubagentSessionCapabilities`: `cancel` `Permits the client to cancel this child's "
             "current work`), and no `initialize` marker announces it, so the row is "
@@ -690,7 +693,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the request only to a child that advertises "
             "`cancel` and was last reported running (the client MUST NOT cancel one that does "
             "not), in the driven turn of the cancel prompt, and gives the child `timeout / 2` to "
-            "confirm. A child that reports an idle that is not a cancellation within "
+            "confirm, extended by `timeout / 2` after the TCK answers the child's held permission "
+            "requests (see `ACP-SUBAGENT-204`), so a child that waits for them is still judged "
+            "here. A child that reports an idle that is not a cancellation within "
             "`quiet_period` of the request, with a stop reason it could have reached on its own "
             "(the race window of `ACP-CANCEL-*`), had ended first: a cancellation racing with "
             "already-ended work does not rewrite its outcome, so that SKIPs. A later one means "
@@ -699,7 +704,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "parent snapshot alone)."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/subagents.mdx:330,373,378,386,398-402; "
+            "docs/protocol/v2/draft/subagents.mdx:330,363,365,373,378,386,398-402; "
             "docs/protocol/v2/draft/schema.mdx:11545; "
             "schema/v2/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
             "docs/rfds/subagents.mdx:1113-1117,1133-1139 (Preview RFD)"
@@ -842,7 +847,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
     Requirement(
         id="ACP-SUBAGENT-204",
         tier=Tier.CAPABILITY,
-        capability="inferred:subagentCancel",
+        capability="inferred:subagents",
         text=(
             "When the Agent stops a session's cancelled work it cancels that work's pending "
             "permission requests with `$/cancel_request`, including those of the descendants the "
@@ -855,17 +860,21 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "own cancelled `idle` after a TCK cancellation covering it (the child's own "
             "`session/cancel` for it and its descendants, the parent's for every child), each "
             "request it sent before that `idle` and still held then must be withdrawn before the "
-            "`idle` or within `quiet_period` after it. A cancelled child that has not settled "
-            "within `timeout / 2` while requests of it or its descendants are held gets them "
-            "answered per the `allow` policy and `timeout / 2` more: settling only after that "
-            "FAILs here (it waited for them), while `ACP-SUBAGENT-016` judges the confirmation "
-            "itself. The rule binds only an agent that exposes children, so the row is "
-            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). SKIPs when no "
+            "`idle` or within `quiet_period` after it, except one whose `subject` names an item "
+            "in the child's latest reported `background` list (work in that list is not "
+            "cancelled). A cancelled child that has not settled within `timeout / 2` while "
+            "requests of it or its descendants are held gets them answered per the `allow` "
+            "policy and `timeout / 2` more: settling within `quiet_period` of that answer FAILs "
+            "here (it waited for them; a later settle is a slow stop), while "
+            "`ACP-SUBAGENT-016` judges the confirmation itself. The rule binds only an agent "
+            "that exposes children, and it covers children stopped by the parent's cancellation "
+            "whether or not they advertise `cancel`, so the row is CAPABILITY, gated by "
+            "`inferred:subagents` (documentation-only), like `ACP-SUBAGENT-202`. SKIPs when no "
             "held request was pending when a cancellation stopped its session and no release "
             "happened. v2-only (`2xx`): in v1 `$/cancel_request` for these requests is optional."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/subagents.mdx:417,419,421; "
+            "docs/protocol/v2/draft/subagents.mdx:405,417,419,421; "
             "docs/protocol/v2/draft/prompt-lifecycle.mdx:1452; "
             "docs/rfds/subagents.mdx:1264-1269 (Preview RFD); "
             "schema/v2/schema.unstable.json#/$defs/CancelRequestNotification"
@@ -882,13 +891,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "The docs state it as the Agent's rule with no RFC keyword, and it binds only an "
             "agent that exposes subagents, so the row is CAPABILITY, gated by "
             "`inferred:subagents` (documentation-only). For each child announced on a known "
-            "session, the distinct consecutive states of each path are aligned as in "
-            "`ACP-SUBAGENT-201` (each own state with the first unused mirror of that state, in "
-            "order); a state with no counterpart is `ACP-SUBAGENT-201`'s and is not judged "
-            "here. Over consecutive aligned transitions, the later transition's first copy on "
+            "session, the distinct consecutive states of each path are paired in order while "
+            "the two paths agree; the pairing stops at the first state whose counterpart differs "
+            "(a missing, extra or swapped mirror, which is `ACP-SUBAGENT-201`'s), so such a "
+            "mirror is never judged here. Over consecutive paired transitions, the later "
+            "transition's first copy on "
             "either path arrives after both copies of the earlier one, else the row FAILs. "
             "Judged over one `session/new`, one prompt turn and a quiet period after it; SKIPs "
-            "when no announced child has two aligned transitions. v2-only (`2xx`): v1 has no "
+            "when no announced child has two paired transitions. v2-only (`2xx`): v1 has no "
             "child-addressed `state_update` stream, so there are no two copies."
         ),
         citation=_cite(
@@ -2596,11 +2606,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "or a second one FAILs. A child's `replay_complete` before its announcement is not "
             "counted (an update for a child not yet announced in the exchange is "
             "`ACP-RESUME-209`'s), and the resumed session's own is `ACP-RESUME-218`'s. Checked "
-            "after a turn on the session (the `--subagent-prompt` text when given). SKIPs when no "
-            "child was announced in the exchange."
+            "after a turn on the session (the `--subagent-prompt` text when given), from the "
+            "agent's first message naming the resumed session: ongoing work continues across a "
+            "resume on the same connection, so earlier child traffic may have been sent before "
+            "the agent read the request. SKIPs when no child was announced in the exchange."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/session-setup.mdx:412-418; "
+            "docs/protocol/v2/draft/session-setup.mdx:55,412-418; "
             "docs/protocol/v2/draft/subagents.mdx:463-465,486; "
             "docs/rfds/subagents.mdx:1249-1253 (Preview RFD); "
             "schema/v2/schema.unstable.json#/$defs/ReplayComplete"
@@ -2635,17 +2647,22 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="capabilities.session",
         text=(
             "After a `session/resume` with `replayFrom` omitted, every `session/update` and agent "
-            "request carrying a child's `sessionId` follows a `subagent_update` announcing that "
-            "child, made since that resume request on the resumed session or on a child already "
+            "request whose `params.sessionId` is a child's follows a `subagent_update` announcing "
+            "that child, made since the resume on the resumed session or on a child already "
             "announced since then (ancestors first, parent before child): the announcement rule "
             "applies again on every resume, and without a replay every child update is current. "
-            "An announcement from before the resume does not count. Judged over the resume "
-            "exchange and a quiet period after the response, after a turn on the session (the "
+            "An announcement from before the resume does not count. Only `params.sessionId` is "
+            "judged (a child named elsewhere, such as in content, is not). Judged from the "
+            "agent's first message naming the resumed session, or the response if that comes "
+            "first (ongoing work continues across a resume on the same connection, so earlier "
+            "child traffic may have been sent before the agent read the request), through a "
+            "quiet period after the response, after a turn on the session (the "
             "`--subagent-prompt` text when given), for every session ID announced as a child on "
             "the connection. SKIPs when no such traffic arrived."
         ),
         citation=_cite(
-            "docs/protocol/v2/draft/subagents.mdx:70,462,469"
+            "docs/protocol/v2/draft/subagents.mdx:70,462,469; "
+            "docs/protocol/v2/draft/session-setup.mdx:55"
         ),
     ),
     Requirement(

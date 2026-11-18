@@ -15,9 +15,11 @@ clears it). Then, in this order:
    racing with ended work does not rewrite its outcome, `subagents.mdx:451`, so nothing is judged; the
    same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
    finished by other means after the cancel. An `unknown` snapshot (the Agent can no longer
-   observe the child, `subagents.mdx:450`) settles nothing: a later `idle` still decides it, and
-   if none comes within `timeout / 2` the cancel is `unobservable`. Other silence for
-   `timeout / 2` is `unconfirmed`. After a
+   observe the child, `subagents.mdx:450`) settles nothing until a later `running` or
+   `requires_action` replaces it (`subagents.mdx:413`): `idle` with `stopReason: "cancelled"`
+   still confirms, but a non-cancelled `idle` straight after `unknown` (the work ended while out
+   of sight, `subagents.mdx:415`) or no `idle` within `timeout / 2` leaves the cancel
+   `unobservable`. Other silence for `timeout / 2` is `unconfirmed`. After a
    short quiet period the parent's prompt response is checked for a cancellation the child's cancel must not have caused, and the
    other children's snapshots are recorded (not judged: the Agent may cancel its own delegated
    work, `subagents.mdx:447`).
@@ -65,9 +67,10 @@ class ChildCancelRun:
     """`none`: no child advertised `cancel` while reported running. `raced`: the child reported
     an idle snapshot that is not a cancellation within the race window (`quiet_period`), with a
     stop reason it could have reached on its own, so it had ended first. `not_cancelled`: any
-    other non-cancelled idle snapshot. `unobservable`: the child reported `unknown` after the
-    cancel and no idle snapshot followed within `timeout / 2`. `unconfirmed`: no snapshot at all
-    within `timeout / 2`. `confirmed`: `idle` with `stopReason: "cancelled"`."""
+    other non-cancelled idle snapshot. `unobservable`: the child's latest state after the cancel was
+    `unknown` when no idle snapshot came within `timeout / 2`, or when a non-cancelled one came.
+    `unconfirmed`: no idle snapshot within `timeout / 2` otherwise. `confirmed`: `idle` with
+    `stopReason: "cancelled"`."""
     parent_cancelled: bool = False
     """The parent's prompt was answered `stopReason: "cancelled"` after the child cancel and
     before the TCK's own parent `session/cancel`."""
@@ -138,8 +141,9 @@ class _Driver:
             if self.result.outcome == "none" and child.state.get("state") == "idle":
                 self.result.outcome = self._settle(index, child.state)
                 self.target_settled_at = asyncio.get_running_loop().time()
-            elif child.state.get("state") == "unknown":
-                self.target_unknown = True
+            elif child.state.get("state") in ("unknown", *_ACTIVE_STATES):
+                # A later `running` or `requires_action` replaces `unknown` (subagents.mdx:413).
+                self.target_unknown = child.state.get("state") == "unknown"
         elif (
             self.parent_cancel_at is None
             and _is_idle_cancelled(child.state)
@@ -151,6 +155,10 @@ class _Driver:
     def _settle(self, index: int, state: dict[str, Any]) -> str:
         if _is_idle_cancelled(state):
             return "confirmed"
+        if self.target_unknown:
+            # The work ended while the Agent could not observe it (subagents.mdx:415), so the
+            # cancel may never have reached it.
+            return "unobservable"
         assert self.target_sent_index is not None
         transcript = self.agent.transcript
         elapsed = transcript[index].timestamp - transcript[self.target_sent_index].timestamp

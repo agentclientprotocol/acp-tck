@@ -1463,7 +1463,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`tool_call_update` `content` array and a `session/request_permission` request's "
             "`toolCall.content`, in wire order over the connection that advertised `subagents` "
             "(see `ACP-SUBAGENT-001` for its scope). A reference to a session no announcement "
-            "preceded FAILs. The draft docs state the rule as a MUST (the announcement precedes "
+            "preceded FAILs. After a successful `session/load` only announcements made during "
+            "that load or since count, as for `ACP-SUBAGENT-001` (the rule applies again on "
+            "every load, and ancestors are announced during this load): a child announced only "
+            "in the earlier turn and referenced after the load FAILs. A failed load leaves the "
+            "earlier announcements counting. The draft docs state the rule as a MUST (the "
+            "announcement precedes "
             "a `session` content item that references the child), but only an agent that emits "
             "`session` content is bound and no agent-side `initialize` marker announces that, so "
             "the row is gated by `inferred:subagents` (documentation-only) and SKIPs when no "
@@ -1478,7 +1483,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "carrying the child's ID, so it never FAILs `ACP-SUBAGENT-001`. Shared id with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/subagents.mdx:90,94; "
+            "docs/protocol/v1/draft/subagents.mdx:90,94,517; "
             "docs/protocol/v1/draft/tool-calls.mdx:349-352,364-365; "
             "docs/rfds/subagents.mdx:647-650 (Preview RFD)"
         ),
@@ -1774,8 +1779,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "current work`); no `initialize` marker announces it, so the row is CAPABILITY, "
             "gated by `inferred:subagentCancel` (documentation-only). An Agent that can no "
             "longer observe the child reports `unknown` instead of a confirmation, so the row "
-            "SKIPs when the child's snapshot after the request is `unknown` and no `idle` "
-            "follows within the wait (the cancellation is not observable). Judged on the connection that "
+            "SKIPs when the child's latest snapshot after the request is `unknown` and no `idle` "
+            "follows within the wait, or a non-cancelled `idle` follows it (the work ended out "
+            "of sight): the cancellation is not observable. A later `running` or "
+            "`requires_action` replaces `unknown`, so the wait then judges the child as usual. "
+            "Judged on the connection that "
             "advertised `subagents`, in a driven turn of the cancel prompt: the TCK sends the "
             "request only to a child that advertises `cancel` and was last reported running (the "
             "client MUST NOT cancel one that does not) and gives the child `timeout / 2` to "
@@ -1788,7 +1796,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`state_update`)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/subagents.mdx:423,435,449-451; "
+            "docs/protocol/v1/draft/subagents.mdx:413,415,423,435,449-451; "
             "docs/protocol/v1/draft/schema.mdx:9694; "
             "schema/v1/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
             "docs/rfds/subagents.mdx:1113-1117,1133-1139 (Preview RFD)"

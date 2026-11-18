@@ -14,6 +14,7 @@ from tck.common.harness import Direction, TranscriptEntry
 from tck.v2.conformance._helpers import (
     announced_children,
     child_replay_complete_problems,
+    resume_reaction_start,
     unannounced_resumed_child_traffic,
     child_config_selects,
     child_state_mirrors,
@@ -858,6 +859,51 @@ def test_state_order_leaves_missing_and_reordered_mirrors_to_the_mirroring_row()
     assert child_state_order(elsewhere, {"p"}).judged == 0
 
 
+def test_a_missing_mirror_is_not_reported_as_a_late_one():
+    """The first `requires_action` has no mirror; every other copy is prompt. Pairing an own state
+    with the mirror of a later transition would report the missing mirror as out of order."""
+    transcript = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _mirror("running"),
+        _state("c", "requires_action"),
+        _state("c", "idle"),
+        _mirror("idle"),
+        _state("c", "requires_action"),
+        _mirror("requires_action"),
+        _state("c", "idle"),
+        _mirror("idle"),
+    )
+    found = child_state_order(transcript, {"p"})
+    assert (found.judged, found.out_of_order) == (0, [])
+    assert child_state_mirrors(transcript, {"p"}).unmirrored  # ACP-SUBAGENT-201's finding
+    # an extra mirror stops the pairing too: it cannot be told apart from a missing own copy
+    extra = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _mirror("running"),
+        _mirror("requires_action"),
+        _state("c", "idle"),
+        _mirror("idle"),
+        _state("c", "requires_action"),
+        _mirror("requires_action"),
+        _state("c", "idle"),
+        _mirror("idle"),
+    )
+    assert child_state_order(extra, {"p"}).out_of_order == []
+    # the agreeing prefix is still judged
+    late_then_missing = _traffic(
+        _ANNOUNCE,
+        _state("c", "running"),
+        _state("c", "idle"),
+        _mirror("running"),
+        _mirror("idle"),
+        _state("c", "running"),
+    )
+    found = child_state_order(late_then_missing, {"p"})
+    assert found.judged == 1 and len(found.out_of_order) == 1
+
+
 def test_announced_children_follow_the_announcement_rule():
     """First-announcement order, nested children included; a session the client created, the
     update's own session and a child announced on a session nothing announced are not children."""
@@ -1124,3 +1170,27 @@ def test_child_traffic_without_a_new_announcement_is_reported():
 def test_traffic_of_sessions_that_are_not_children_is_not_judged():
     messages = [_update("p", {"sessionUpdate": "agent_message_chunk", "messageId": "m"}), _CHILD_CHUNK]
     assert unannounced_resumed_child_traffic(messages, "p", set()) == (0, [])
+
+
+def test_resume_reaction_starts_at_the_first_message_for_the_resumed_session_or_a_response():
+    """Child traffic of ongoing work before the agent acts on the resume may have been written
+    before it read the request (session-setup.mdx:55), so judging starts after it."""
+    in_flight = [_CHILD_CHUNK, _CHILD_PERMISSION]
+    resumed = _update("p", {"sessionUpdate": "state_update", "state": "idle"})
+    response = {"id": 7, "result": {}}
+    assert resume_reaction_start([*in_flight, resumed, _CHILD_CHUNK], "p") == 2
+    assert resume_reaction_start([*in_flight, response, _CHILD_CHUNK], "p") == 2
+    # a request for the resumed session counts; a message for another session does not
+    request = {"id": 4, "method": "session/request_permission", "params": {"sessionId": "p"}}
+    assert resume_reaction_start([_CHILD_CHUNK, request], "p") == 1
+    assert resume_reaction_start(in_flight, "p") == 2
+    # in-flight traffic of a live child is no longer judged against the resume; later traffic is
+    messages = [_CHILD_CHUNK, response, _CHILD_CHUNK]
+    assert len(unannounced_resumed_child_traffic(messages, "p", {"c"})[1]) == 2
+    judged, problems = unannounced_resumed_child_traffic(
+        messages[resume_reaction_start(messages, "p") :], "p", {"c"}
+    )
+    assert judged == 1 and len(problems) == 1
+    # and a live child state_update in flight before the replay no longer breaks its replay_complete
+    replay = [_child_state("c"), _sub("p", "c"), _replay_complete("c")]
+    assert child_replay_complete_problems(replay[resume_reaction_start(replay, "p") :], "p") == (["c"], [])

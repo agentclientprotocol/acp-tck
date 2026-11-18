@@ -193,8 +193,11 @@ tracking each announced child and its `cancel` capability, state, tool calls and
    `stopReason: "cancelled"` confirms (016). Another idle within `quiet_period(timeout)` of the request, with a stop reason
    the child could have reached on its own, is the same race as for `ACP-CANCEL-*` (the child had ended first) and
    SKIPs 016/017; a later one FAILs 016 (the child finished instead of stopping). No idle within `timeout / 2` FAILs
-   016. For `quiet_period(timeout)` after the child settles the driver watches the parent: an `idle`/`cancelled`
-   (v2) or a `cancelled` prompt response (v1) FAILs 017. A sibling that reports `idle`/`cancelled` is only recorded
+   016 (in v2 the wait is extended after a release, below). An `unknown` state after the request (the Agent lost
+   sight of the child) SKIPs 016 when no idle follows, or when the next idle is not a cancellation (the work ended
+   out of sight); a later `running` or `requires_action` replaces `unknown`, and the child is judged as usual. For
+   `quiet_period(timeout)` after the child settles the driver watches the parent: an `idle`/`cancelled` (v2) or a
+   `cancelled` prompt response (v1) FAILs 017. A sibling that reports `idle`/`cancelled` is only recorded
    (`acp_tck_cancelled_siblings`), since the Agent may cancel its own delegated work.
 3. `session/cancel` for the parent, so nothing is left behind. In v2, once its turn ends `cancelled`, every descendant
    that was running and that the parent's work waits on must reach `idle` within `timeout / 2` (202). A descendant counts
@@ -208,7 +211,10 @@ its descendants, step 3 for every child). `ACP-SUBAGENT-204` requires each reque
 and still held then, to be withdrawn with `$/cancel_request` before the idle or within `quiet_period(timeout)` after
 it. If the target has not settled within `timeout / 2` of its cancel while its own or its descendants' requests are
 still held, the driver releases them (answered per the `allow` policy) and waits `timeout / 2` more: a child that
-confirms only then waited for its requests, which FAILs 204 while 016 judges the confirmation.
+confirms within `quiet_period(timeout)` of the release waited for its requests, which FAILs 204 while 016 judges the
+confirmation. A later confirmation is a slow stop and only 016's. A request whose `subject` names an item in the
+child's latest reported `background` list is not judged by 204: that work is not cancelled
+(prompt-lifecycle.mdx:1452).
 
 The turn's own end is not judged (`ACP-CANCEL-*` own that), and agent requests read after the parent's turn ends are
 answered like `run_prompt` does.

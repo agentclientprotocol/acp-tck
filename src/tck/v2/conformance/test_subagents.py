@@ -27,8 +27,8 @@ participants before the first chunk, a child's select restricted to its current 
 mirroring of a child's state on its parent). An ADVISORY row has no `capability`, so each SKIPs itself
 when the agent shows nothing to judge; 011/012 are disjoint by construction in `child_task_reports`
 (012 judges only children not told the task as a user message). 205 judges the order of the two
-copies of a child's state transition; it aligns the copies as 201 does and judges only aligned ones,
-so a missing or reordered mirror is 201's and a late one 205's alone.
+copies of a child's state transition; it pairs the copies only while the two paths agree and stops
+at the first difference, so a missing, extra or reordered mirror is 201's and a late one 205's alone.
 
 018/019 and `ACP-LIST-004` judge the connection's last, probe phase (`_probe_children`): the
 `session/list` and the mutating requests naming an announced child, sent after the transcript the
@@ -402,9 +402,10 @@ async def test_child_state_is_mirrored_on_the_parent(request, agent_launch, tmp_
 @pytest.mark.requirement("ACP-SUBAGENT-205")
 async def test_both_copies_of_a_child_state_precede_a_later_transition(request, agent_launch, tmp_path):
     """ACP-SUBAGENT-205. Per announced child, each two consecutive transitions both reported on
-    the child's own `state_update` and mirrored on its parent (aligned as `ACP-SUBAGENT-201` does)
-    have both copies of the first before the first copy of the second, on either path
-    (`subagents.mdx:351`). SKIPs when no announced child has two aligned transitions."""
+    the child's own `state_update` and mirrored on its parent (paired in order up to the first
+    difference between the paths, which is `ACP-SUBAGENT-201`'s) have both copies of the first
+    before the first copy of the second, on either path (`subagents.mdx:351`). SKIPs when no
+    announced child has two paired transitions."""
     transcript, session_id = await _connection_transcript(request, agent_launch, tmp_path)
     found = child_state_order(transcript, {session_id})
     if not found.judged:

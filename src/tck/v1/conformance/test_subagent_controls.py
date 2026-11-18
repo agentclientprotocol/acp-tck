@@ -89,15 +89,17 @@ async def test_child_stop_is_confirmed_by_the_child(
     running child that advertises `capabilities.cancel`, the parent's snapshot of the child
     (`subagent_update.state`) becomes `idle` with `stopReason: "cancelled"`. SKIPs when no such
     child was running or it ended on its own within the race window, and when the child reported
-    `unknown` after the request and no `idle` followed: an Agent that can no longer observe the
-    child reports `unknown` instead of a confirmation (`subagents.mdx:450`), so the cancellation
-    is not observable."""
+    `unknown` after the request and no `idle` followed, or a non-cancelled one came straight after
+    it: an Agent that can no longer observe the child reports `unknown` instead of a confirmation
+    (`subagents.mdx:450`), so the cancellation is not observable. A later `running` or
+    `requires_action` replaces `unknown` (`subagents.mdx:413`)."""
     run = await _child_run(request, agent_launch, agent_initialize_result, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
     if run.outcome == "unobservable":
         pytest.skip(
             f"cancellation not observable: child {run.target!r} reported `unknown` after "
-            "session/cancel and no idle snapshot followed (the Agent can no longer observe it)"
+            "session/cancel and no idle snapshot, or only a non-cancelled one, followed (the Agent "
+            "could no longer observe it)"
         )
     assert run.outcome != "not_cancelled", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "

@@ -19,6 +19,7 @@ import pytest
 
 from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction
 from tck.common.plugin import _TEST_PROPERTIES
+from tck.v2.conformance._child_cancel import drive_child_cancel, stopped_requests_kept
 from tck.v2.conformance._helpers import (
     ChildPermissionHold,
     UNKNOWN_PERMISSION_OPTION_ID,
@@ -1008,3 +1009,95 @@ def test_released_child_requests_are_answered_per_policy_while_the_turn_runs():
     assert by_id["perm-child"].answered_on == "released"
     assert by_id["perm-other"].answered_on == "turn_end"
     _assert_answered(agent, "perm-child", _selected("yes"))
+
+
+# --- the child-cancel driver (`drive_child_cancel`) ---
+
+_CANCELLABLE = _update(
+    {"sessionUpdate": "subagent_update", "sessionId": _CHILD, "capabilities": {"cancel": {}}}
+)
+_CHILD_RUNNING = [_RESPONSE, _state("running"), _CANCELLABLE, _state("running", _CHILD)]
+_PARENT_CANCELLED = [{"wait_method": "session/cancel"}, _state("idle", stopReason="cancelled")]
+
+
+def _drive_child_cancel(steps: list[dict[str, Any]], before_cancel: list[dict[str, Any]] = ()):
+    """`drive_child_cancel` with `timeout` 2 s (`timeout / 2` waits of 1 s, `quiet_period` 0.5 s)
+    against a turn that runs `_CHILD_RUNNING` and `before_cancel`, reads the child's
+    `session/cancel`, then runs `steps`, then ends on the parent's `session/cancel`."""
+
+    async def go():
+        script = [*_CHILD_RUNNING, *before_cancel, {"wait_method": "session/cancel"}, *steps, *_PARENT_CANCELLED]
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, json.dumps({"pre": [], "steps": script})],
+            startup_timeout=2.0,
+            default_timeout=2.0,
+        )
+        async with AgentProcess(launch) as agent:
+            run = await drive_child_cancel(agent, _SESSION, "hi", timeout=2.0)
+            return agent, run
+
+    return asyncio.run(go())
+
+
+def test_child_cancel_running_after_unknown_is_judged_as_unconfirmed():
+    """A later `running` replaces `unknown` (subagents.mdx:363): no confirmation then FAILs 016."""
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), _state("running", _CHILD)])
+    assert (run.target, run.outcome) == (_CHILD, "unconfirmed")
+    _, run = _drive_child_cancel([_state("unknown", _CHILD)])
+    assert run.outcome == "unobservable"
+
+
+def test_child_cancel_non_cancelled_idle_straight_after_unknown_is_unobservable():
+    """The work ended while the Agent could not see it (subagents.mdx:365): not judged. After a
+    `running` replaced `unknown` the same idle is `not_cancelled`; a cancelled idle confirms."""
+    late_end = [{"sleep": 0.7}, _state("idle", _CHILD, stopReason="end_turn")]
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), *late_end])
+    assert run.outcome == "unobservable"
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), _state("running", _CHILD), *late_end])
+    assert run.outcome == "not_cancelled"
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), _state("idle", _CHILD, stopReason="cancelled")])
+    assert run.outcome == "confirmed"
+
+
+def _held_child_stop(pause: float):
+    """A child that holds a permission request and confirms its cancel `pause` s after the TCK
+    releases it (at `timeout / 2`)."""
+    return _drive_child_cancel(
+        [{"wait_id": "perm-child"}, {"sleep": pause}, _state("idle", _CHILD, stopReason="cancelled")],
+        before_cancel=[_child_request("perm-child", _ALLOW_ONCE)],
+    )
+
+
+def test_child_cancel_confirmed_right_after_the_release_waited_for_it():
+    """Confirming within `quiet_period` of the release is the wait 204 FAILs; a later one is a slow
+    stop, which 016 still confirms."""
+    _, run = _held_child_stop(0.0)
+    assert (run.outcome, run.released, run.settled_after_release) == ("confirmed", True, True)
+    _, run = _held_child_stop(0.8)
+    assert (run.outcome, run.released, run.settled_after_release) == ("confirmed", True, False)
+
+
+def test_stopped_child_requests_for_listed_background_work_are_not_judged():
+    """prompt-lifecycle.mdx:1452: a request whose `subject` names an item in the child's latest
+    `background` list is not cancelled, so 204 does not require its withdrawal."""
+    tool_call = {"sessionUpdate": "tool_call", "toolCallId": "bg", "title": "bg", "status": "in_progress"}
+
+    def steps(listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        request = _child_request("perm-child", _ALLOW_ONCE)
+        request["params"]["subject"] = {"type": "tool_call", "toolCall": {"toolCallId": "bg"}}
+        return [
+            _update(tool_call, _CHILD),
+            _state("running", _CHILD, background=listed),
+            request,
+            {"sleep": 0.1},
+            _state("idle", _CHILD, stopReason="cancelled", background=listed),
+        ]
+
+    cases = (
+        ([{"type": "tool_call", "toolCallId": "bg"}], ([], [])),
+        ([], (["perm-child"], [(_CHILD, "perm-child")])),
+    )
+    for listed, expected in cases:
+        agent, run = _drive_child_cancel(steps(listed))
+        assert run.outcome == "confirmed"
+        assert stopped_requests_kept(run, agent.transcript, 0.5) == expected, listed

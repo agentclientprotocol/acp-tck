@@ -1171,11 +1171,12 @@ def child_state_order(
     Agent sends both copies of a transition before a later transition on either path.
 
     Per announced child, the distinct consecutive states of each path (the child's own
-    `state_update`s, and the `subagent_update.state`s on its parent) are aligned as
-    `child_state_mirrors` does it: each own state with the first mirror of that state after the
-    one the previous own state took. A state without a counterpart is that function's finding,
-    not judged here. For each two consecutive aligned transitions, the later one's first copy
-    must arrive after the earlier one's second copy."""
+    `state_update`s, and the `subagent_update.state`s on its parent) are paired in order, n-th
+    with n-th, while the two paths agree. At the first state that differs (a missing, extra or
+    swapped mirror, `child_state_mirrors`' finding) the pairing stops: scanning ahead would pair
+    an own state with the mirror of a later transition and report a missing mirror as a late
+    one. For each two consecutive paired transitions, the later one's first copy must arrive
+    after the earlier one's second copy."""
     _parents, own, mirrored = _child_state_paths(transcript, client_sessions)
     result = ChildStateOrder()
     for child, states in own.items():
@@ -1184,14 +1185,10 @@ def child_state_order(
             if not copies or copies[-1][1] != state:  # a repeated snapshot is idempotent
                 copies.append((position, state))
         aligned: list[tuple[int, int, str]] = []  # (own position, mirror position, state)
-        cursor = 0
-        for own_position, state in states:
-            while cursor < len(copies) and copies[cursor][1] != state:
-                cursor += 1
-            if cursor == len(copies):
+        for (own_position, state), (mirror_position, copy) in zip(states, copies):
+            if copy != state:
                 break
-            aligned.append((own_position, copies[cursor][0], state))
-            cursor += 1
+            aligned.append((own_position, mirror_position, state))
         for earlier, later in zip(aligned, aligned[1:]):
             result.judged += 1
             if max(earlier[:2]) > min(later[:2]):
@@ -1236,6 +1233,22 @@ def _announcing(msg: dict[str, Any], known: set[str]) -> str | None:
     if outer in known and isinstance(child, str) and child != outer:
         return child
     return None
+
+
+def resume_reaction_start(messages: list[dict[str, Any]], session_id: str) -> int:
+    """The index in `messages` (the agent's traffic from a `session/resume` request on, in wire
+    order) of the first message that shows the agent acting on the resume: a `session/update`
+    or agent request whose `params.sessionId` is `session_id`, or a response. `len(messages)`
+    when there is none. A resume of a session already active on the connection lets its ongoing
+    work continue (`session-setup.mdx:55`), so child traffic before that index may have been
+    written before the agent read the request and is not judged against it."""
+    for index, msg in enumerate(messages):
+        if "method" not in msg and "id" in msg:
+            return index
+        params = msg.get("params")
+        if isinstance(msg.get("method"), str) and isinstance(params, dict) and params.get("sessionId") == session_id:
+            return index
+    return len(messages)
 
 
 def child_replay_complete_problems(
@@ -1941,6 +1954,8 @@ class HeldRequest:
     options: Any
     index: int
     """Transcript index of the request."""
+    subject: frozenset[tuple[str, str]] = frozenset()
+    """The `background` keys its `subject` references (`permission_subject_keys`)."""
     withdrawn_at: int | None = None
     """Transcript index of the agent's `$/cancel_request` naming it, read while it was held."""
     answered_on: str | None = None
@@ -2415,6 +2430,7 @@ async def run_prompt(
                         session_id=target,
                         options=req_params.get("options"),
                         index=line_index,
+                        subject=frozenset(permission_subject_keys(req_params)),
                     )
                 )
                 if trigger_armed and not hold_permission and not trigger_sent:

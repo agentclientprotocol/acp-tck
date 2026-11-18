@@ -293,13 +293,19 @@ async def test_request_naming_a_child_is_rejected_as_invalid_params(
     Agent's answer to exactly that input: any such request gets `-32602` (`error.mdx:57`,
     `subagents.mdx:428`). Only mutating methods are probed (the RFD leaves read-only operations
     their normal semantics). Judged for a probe that came back as an error; a success is
-    `ACP-SUBAGENT-019`'s. SKIPs without an announced child, without a probe method or when no
-    probe was answered with an error."""
+    `ACP-SUBAGENT-019`'s. SKIPs without an announced child, without a probe method, when the agent
+    stopped answering before any probe (during `session/list`) or when no probe was answered with
+    an error."""
     conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
     if not conn.probes.children:
         pytest.skip("the agent announced no child session")
-    if not conn.probes.probes:
+    if not conn.probes.methods:
         pytest.skip("the agent advertised none of `loadSession`, `close` and `delete`: no probe method")
+    if not conn.probes.probes:
+        pytest.skip(
+            "the agent stopped answering during the `session/list` probe, so no request naming a "
+            "child was sent"
+        )
     errored = [probe for probe in conn.probes.probes if probe.errored]
     if not errored:
         pytest.skip("no probe naming a child was answered with an error")

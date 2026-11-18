@@ -5,12 +5,14 @@ no fixture agent exercises stay covered."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 import pytest
 
-from tck.common.harness import Direction, TranscriptEntry
+from tck.common.harness import AgentTimeout, Direction, TranscriptEntry
+from tck.v1.conformance._subagents_connection import ChildProbes, _probe_children
 from tck.v1.conformance._helpers import (
     announced_children,
     child_config_selects,
@@ -292,6 +294,9 @@ def test_session_references_after_a_load_response_follow_the_load_scope():
     # announced during the load, it is known
     transcript = turn + _load_exchange(_ANNOUNCE) + _traffic(reference)
     assert session_content_references(transcript, {"p"}, (1, 4)) == (["c"], [])
+    # a failed load attaches no runtime, so the turn's announcement still counts after it
+    failed = turn + _load_exchange(answer={"id": 77, "error": {"code": -32603, "message": "x"}})
+    assert session_content_references(failed + _traffic(reference), {"p"}, (1, 3)) == (["c"], [])
 
 
 def test_replayed_session_references_are_historical_addresses():
@@ -814,3 +819,46 @@ def test_child_state_values_skip_what_is_not_a_state_string():
         )
     )
     assert (found.judged, found.problems) == (1, [])
+
+
+# --- the probe phase (`_probe_children`) ---
+
+
+class _ScriptedAgent:
+    """Answers each request with the next of `replies` (`None`: never answers)."""
+
+    def __init__(self, *replies: dict[str, Any] | None) -> None:
+        self.replies = list(replies)
+        self.sent: list[str] = []
+
+    async def send_request(self, method: str, params: dict[str, Any]) -> int:
+        self.sent.append(method)
+        return len(self.sent)
+
+    async def wait_for_response(self, request_id: int, timeout: float):
+        reply = self.replies.pop(0) if self.replies else None
+        if reply is None:
+            raise AgentTimeout("no answer", [])
+        return _entry(json.dumps({"jsonrpc": "2.0", "id": request_id, **reply}))
+
+
+def _probe(agent: _ScriptedAgent, capabilities: dict[str, Any], tmp_path) -> ChildProbes:
+    init = {"protocolVersion": 1, "agentCapabilities": capabilities}
+    return asyncio.run(_probe_children(agent, init, tmp_path, 0.1, _traffic(_ANNOUNCE), "p"))
+
+
+def test_probe_phase_records_the_advertised_methods_when_session_list_goes_unanswered(tmp_path):
+    """An agent that stops answering at `session/list` gets no child probe, but its probe methods
+    are still known, so `ACP-SUBAGENT-018` can tell that apart from advertising none."""
+    capabilities = {"loadSession": True, "sessionCapabilities": {"list": {}, "close": {}}}
+    agent = _ScriptedAgent(None)
+    probes = _probe(agent, capabilities, tmp_path)
+    assert agent.sent == ["session/list"]
+    assert (probes.children, probes.probes, probes.methods) == (("c",), (), ("session/load", "session/close"))
+    # answered: the probes go out
+    agent = _ScriptedAgent({"result": {"sessions": []}}, {"error": {"code": -32602, "message": "x"}}, None)
+    probes = _probe(agent, capabilities, tmp_path)
+    assert agent.sent == ["session/list", "session/load", "session/close"]
+    assert [probe.method for probe in probes.probes] == ["session/load", "session/close"]
+    # nothing advertised: no method and no probe
+    assert _probe(_ScriptedAgent(), {}, tmp_path).methods == ()

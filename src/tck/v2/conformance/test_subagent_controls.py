@@ -46,7 +46,7 @@ from tck.common.harness import AgentTimeout
 from tck.common.plugin import register_active_process
 from tck.v2.validation import validate_def_value
 
-from ._child_cancel import ChildCancelRun, drive_child_cancel
+from ._child_cancel import ChildCancelRun, drive_child_cancel, stopped_requests_kept
 from ._helpers import (
     ChildPermissionHold,
     ItemCancel,
@@ -103,15 +103,17 @@ async def test_child_stop_is_confirmed_by_the_child(request, agent_launch, tmp_p
     `stopReason: "cancelled"` in a `state_update` on its own session; a mirror on the parent
     association alone does not confirm it (`subagents.mdx:400`; the mirror is a SHOULD, judged by
     `ACP-SUBAGENT-201`). SKIPs when no such child was running or it ended on its own within the
-    race window, and when the child reported `unknown` after the request and no `idle` followed:
-    an Agent that can no longer observe the child reports `unknown` instead of a confirmation
-    (`subagents.mdx:401`), so the cancellation is not observable."""
+    race window, and when the child reported `unknown` after the request and no `idle` followed, or
+    a non-cancelled one came straight after it: an Agent that can no longer observe the child
+    reports `unknown` instead of a confirmation (`subagents.mdx:401`), so the cancellation is not
+    observable. A later `running` or `requires_action` replaces `unknown` (`subagents.mdx:363`)."""
     run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     _skip_unless_child_cancelled(run)
     if run.outcome == "unobservable":
         pytest.skip(
             f"cancellation not observable: child {run.target!r} reported `unknown` after "
-            "session/cancel and no idle state_update followed (the Agent can no longer observe it)"
+            "session/cancel and no idle state_update, or only a non-cancelled one, followed (the "
+            "Agent could no longer observe it)"
         )
     assert run.outcome != "not_cancelled", (
         f"session/cancel for child {run.target!r}, which advertised capabilities.cancel and was "
@@ -172,26 +174,18 @@ async def test_parent_stop_reaches_the_children_it_waits_on(
 async def test_stopped_childrens_permission_requests_are_withdrawn(
     request, agent_launch, tmp_path, subagent_cancel_prompt_text, record_property
 ):
-    """ACP-SUBAGENT-204 (CAPABILITY, `inferred:subagentCancel`). In the driven turn every child
+    """ACP-SUBAGENT-204 (CAPABILITY, `inferred:subagents`). In the driven turn every child
     permission request is held. For each child that reports its own `idle`/`cancelled` after a TCK
     cancellation covering it, each request it sent before that and the TCK had not answered by then
     is withdrawn with `$/cancel_request` before that `idle` or within `quiet_period` after it
-    (`subagents.mdx:417`). A cancelled child that settled only after the TCK answered its held
-    requests at `timeout / 2` waited for them (`subagents.mdx:421`). SKIPs when no held request
-    was pending when its session was stopped and nothing was released."""
+    (`subagents.mdx:417`), unless its `subject` names an item in the child's latest `background`
+    list as of that `idle` (prompt-lifecycle.mdx:1452; `stopped_requests_kept`). A cancelled child
+    that settled within `quiet_period` after the TCK answered its held requests at `timeout / 2`
+    waited for them (`subagents.mdx:421`). SKIPs when no held request was pending when its
+    session was stopped and no cancelled child waited for its requests."""
     run = await _child_run(request, agent_launch, tmp_path, subagent_cancel_prompt_text)
     transcript = request.config.stash[_RUN_KEY]["agent"].transcript
-    quiet = quiet_period(agent_launch.default_timeout)
-    judged, kept = [], []
-    for held in run.held:
-        stop = run.stopped.get(held.session_id)
-        if stop is None or held.index > stop:
-            continue
-        if held.answered_on in ("released", "turn_end", "timeout") and held.answered_at < stop:
-            continue  # the TCK answered it before the session stopped: nothing left to withdraw
-        judged.append(held.request_id)
-        if held.withdrawn_at is None or transcript[held.withdrawn_at].timestamp - transcript[stop].timestamp > quiet:
-            kept.append((held.session_id, held.request_id))
+    judged, kept = stopped_requests_kept(run, transcript, quiet_period(agent_launch.default_timeout))
     record_property("acp_tck_stopped_child_requests_judged", len(judged))
     waited = run.released and run.settled_after_release and run.outcome == "confirmed"
     if not judged and not waited:
@@ -200,7 +194,7 @@ async def test_stopped_childrens_permission_requests_are_withdrawn(
             "session, and no cancelled child waited for its requests"
         )
     assert not waited, (
-        f"child {run.target!r} confirmed its cancellation only after the TCK answered its held "
+        f"child {run.target!r} confirmed its cancellation right after the TCK answered its held "
         "permission requests: the Agent does not wait for a child's pending requests before it "
         "reports the child's state"
     )

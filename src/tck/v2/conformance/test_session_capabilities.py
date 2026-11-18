@@ -61,6 +61,7 @@ from ._helpers import (
     obtain_resumable_session,
     quiet_period,
     response_error,
+    resume_reaction_start,
     resume_session,
     run_prompt,
     same_dir,
@@ -983,7 +984,9 @@ async def test_each_child_announced_in_a_replay_gets_its_own_replay_complete(
     """ACP-RESUME-223. After a turn of the `--subagent-prompt` text (else an ordinary one), a
     `replayFrom: start` resume: every child announced in the exchange gets one `replay_complete`
     of its own before the response, after its announcement, with no `state_update` of its own
-    before it (`child_replay_complete_problems`)."""
+    before it (`child_replay_complete_problems`). Judged from the agent's first message for the
+    resumed session (`resume_reaction_start`): earlier child traffic of the turn may have been in
+    flight when the TCK sent the request."""
     timeout = agent_launch.default_timeout
     async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
         agent,
@@ -997,8 +1000,9 @@ async def test_each_child_announced_in_a_replay_gets_its_own_replay_complete(
             agent, session_id, resume_cwd, replay_from={"type": "start"}, timeout=timeout
         )
         _assert_resume_succeeded(response_entry, "session/resume with replayFrom: start")
+        exchange = exchange_received(agent, response_entry)
         children, problems = child_replay_complete_problems(
-            exchange_received(agent, response_entry), session_id
+            exchange[resume_reaction_start(exchange, session_id) :], session_id
         )
     record_property("acp_tck_replayed_children", children)
     if not children:
@@ -1056,9 +1060,11 @@ async def test_child_traffic_after_a_resume_without_replay_follows_a_new_announc
     agent_launch, tmp_path, subagent_prompt_text, record_property
 ):
     """ACP-RESUME-225. After a turn of the `--subagent-prompt` text (else an ordinary one) and a
-    quiet period, a resume with `replayFrom` omitted: from the request through a quiet period
-    after the response, each update or request for a child announced anywhere on the connection
-    follows an announcement made since the resume (`unannounced_resumed_child_traffic`)."""
+    quiet period, a resume with `replayFrom` omitted: from the agent's first message for the
+    resumed session or the response (`resume_reaction_start`; earlier child traffic may have been
+    in flight when the TCK sent the request) through a quiet period after the response, each
+    update or request for a child announced anywhere on the connection follows an announcement
+    made since then (`unannounced_resumed_child_traffic`)."""
     timeout = agent_launch.default_timeout
     async with obtain_resumable_session(agent_launch, tmp_path, timeout=timeout) as (
         agent,
@@ -1079,6 +1085,7 @@ async def test_child_traffic_after_a_resume_without_replay_follows_a_new_announc
             if entry.direction is Direction.RECEIVED
             for msg in iter_messages(entry)
         ]
+    messages = messages[resume_reaction_start(messages, session_id) :]
     judged, problems = unannounced_resumed_child_traffic(messages, session_id, children)
     record_property("acp_tck_resumed_child_messages", judged)
     if not judged:

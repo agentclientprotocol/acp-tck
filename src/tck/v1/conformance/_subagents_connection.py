@@ -72,13 +72,16 @@ class ChildProbe:
 
 @dataclass(frozen=True)
 class ChildProbes:
-    """What the probe phase learned. `children` is every announced child; `probes` the requests
-    sent for the first few of them; `listed` the session IDs `session/list` returned over the
-    pages followed, `None` when it was not sent or its first page was not a list result."""
+    """What the probe phase learned. `children` is every announced child; `methods` the probe
+    methods the agent advertised; `probes` the requests sent for the first few children (none
+    when the agent stopped answering during `session/list`); `listed` the session IDs
+    `session/list` returned over the pages followed, `None` when it was not sent or its first
+    page was not a list result."""
 
     children: tuple[str, ...] = ()
     probes: tuple[ChildProbe, ...] = ()
     listed: frozenset[str] | None = None
+    methods: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -226,7 +229,10 @@ async def _probe_children(
             probes.append(ChildProbe(method, child, response))
             answering = response is not None
     return ChildProbes(
-        tuple(children), tuple(probes), None if listed is None else frozenset(listed)
+        tuple(children),
+        tuple(probes),
+        None if listed is None else frozenset(listed),
+        tuple(method for method, _extra in methods),
     )
 
 
