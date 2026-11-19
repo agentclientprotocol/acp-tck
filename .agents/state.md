@@ -81,8 +81,13 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 GOAL DONE (2026-11-19). All milestones, reviews and fixes landed; final `.agents/` grep over src tests cross-check spec-tracker docs README.md is clean.
 - Remaining for the user: delete .agents/prompt.md, .agents/state.md, .agents/research/ before the PR merges (put the same reminder in the PR description). No push / PR unless asked.
 - Follow-ups for a later PR (not in this one): elicitation $/cancel_request on close/cancel (needs an elicitation trigger); SUBAGENT-201 double missing-mirror message; set_title success / -32002 / -32602 rows and other D10(b) -32002 halves; RESUME-226 can't judge children from earlier connections; S4 residual (in-flight traffic on the resumed session itself); v1 has no FORK row, so a broken v1 fork now fails no row (since 57ae389); mcp-over-acp (D12); Rust SDK v5.4.0 when the vendored spec moves to schema 1.19.0.
+## Resume here (fresh session)
+- Branch tip: see `git log -1` (product tip 57ae389; then state-only commits). Tree clean, nothing running, nothing pushed, no PR.
+- Last green runs at 57ae389: full suite 1241, spec-tracker 121 (`uv run --package spec-tracker pytest spec-tracker/tests --spec-repo /Users/eugene/Documents/JetBrains/projects/agent-client-protocol -q`); cross-check tests 20 at c19acff (`uv run --directory cross-check pytest -q`).
+- Reviews on file: .agents/research/review-revendor.md, review-area-slices.md, review-final.md (all findings fixed or accepted).
+- Likely next asks: (a) open the PR (only when the user asks; PR body must summarize milestones + follow-ups above and remind to delete .agents/prompt.md, .agents/state.md, .agents/research/ before merge); (b) start a follow-up slice from the list above (ask the user which; same settings: single mode, reviews on, programmer briefs carry the working notes below); (c) user's local fix of .claude/skills/check-specification/.repo (truncated path; user's file, don't edit).
 ## Working notes for programmers (put in every brief)
-- Full suite ~10 min: run it in the FOREGROUND (timeout 600000); background runs force premature hand-backs.
+- Full suite ~10 min (now ~620 s, just over the 600 s foreground cap): prefer FOREGROUND (timeout 600000); if it must go to background, wait for it before handing back. Save output under gitignored scratch/ with -rfE; never pipe through tail.
 - Commit only after a green full run; never stage `tck-iso-*` temp dirs; verify every citation at 3ea94133 via
   `git -C ../agent-client-protocol-2 show 3ea94133:<path>` (never read that working tree; never modify either spec checkout).
 - No type checker/linter in CI (ruff not installed); Pyright IDE noise on fixtures/tests is expected.
@@ -91,4 +96,4 @@ GOAL DONE (2026-11-19). All milestones, reviews and fixes landed; final `.agents
 - Worktrees assessed but NOT adopted: mode stays single. Only ledger/docs slices 25, 27-v1, 28 could overlap the code chain safely
   (~45-60 min saved); offer again only if the user asks.
 ## Open questions (waiting on the user)
-- none
+- Optional: add a v1 FORK row so a broken v1 session/fork fails something again (since 57ae389 it fails no row). Listed as a follow-up; not yet decided.
