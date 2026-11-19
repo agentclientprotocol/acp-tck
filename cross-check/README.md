@@ -78,5 +78,5 @@ uv run --directory cross-check pytest
 (`--directory`, not `--project`: pytest finds its config from the working directory.)
 
 The informational CI cross-check runs one `cross-check <leg>` job per agent (`run.sh <leg>`, each
-uploading its report), in parallel with the `test` job. A final `cross-check` job runs these tests,
+uploading its report), in parallel with the product and spec-tracker jobs. A final `cross-check` job runs these tests,
 downloads the four reports, and checks them with `summary.py`, so a drifted baseline turns it red.

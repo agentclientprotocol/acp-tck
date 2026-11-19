@@ -48,5 +48,5 @@ uv run --package spec-tracker pytest spec-tracker/tests --spec-repo PATH
 ```
 
 Without `--spec-repo`, or when the clone lacks a pinned revision, the spec-doc checks SKIP locally
-(check the skip count) and FAIL under `CI=true`. The CI `test` job runs these after the root suite,
-against a fetch of each pinned revision.
+(check the skip count) and FAIL under `CI=true`. The CI `spec-tracker` job runs these against a
+fetch of each pinned revision; the required `test` check waits for it.
