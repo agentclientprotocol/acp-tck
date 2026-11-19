@@ -24,6 +24,19 @@ Read before changing code:
   tests, the mock client, the harness, spec updates). Read the page covering what you change.
 - [`README.md`](README.md): running the TCK, its options, and the report.
 
+## Keeping docs current
+
+`README.md`, `docs/` and the `spec-tracker/` and `cross-check/` READMEs must match the code. Update
+them in the same change that makes them stale, not later:
+
+- `README.md`: a new or changed CLI option, report field, tier or verdict rule, or a requirement
+  that changes what ["What is covered"](README.md#what-is-covered) says for either version.
+- `docs/`: a change to the contract a page describes (requirements and citations, test layout,
+  the mock client, the harness, spec updates, CI, commands).
+
+Before finishing, search the docs for the names, paths, ids and options you renamed, moved or
+removed, and fix every hit.
+
 ## Commands
 
 ```
