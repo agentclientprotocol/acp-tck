@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `capabilities.session.systemPrompt` and rejects a non-text
 `systemPrompt` content block on `session/new`, but `session/resume` resumes the session anyway
-(session-setup.mdx:477,481). An unsupported mode is still rejected on both. It persists
+(session-setup.mdx:562,566). An unsupported mode is still rejected on both. It persists
 sessions so the control resume succeeds on a fresh process.
 
 FAILs exactly `ACP-SYSPROMPT-003` (its `session/resume` probe). `ACP-SYSPROMPT-002` PASSes.

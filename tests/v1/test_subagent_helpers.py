@@ -5,15 +5,19 @@ no fixture agent exercises stay covered."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 import pytest
 
-from tck.common.harness import Direction, TranscriptEntry
+from tck.common.harness import AgentTimeout, Direction, TranscriptEntry
+from tck.v1.conformance._subagents_connection import ChildProbes, _probe_children
 from tck.v1.conformance._helpers import (
+    announced_children,
     child_config_selects,
     child_session_traffic,
+    child_state_values,
     child_task_reports,
     is_absolute_path,
     session_content_references,
@@ -150,6 +154,54 @@ def test_replayed_session_message_participants_are_historical_addresses():
     assert children == {"c"} and len(problems) == 1
 
 
+def _load_exchange(*window: dict[str, Any], answer: dict[str, Any] | None = None) -> list[TranscriptEntry]:
+    """A `session/load` exchange: the request, the replayed `window` messages, then `answer` (the
+    response; a success by default, none when `answer` is an empty dict)."""
+    sent = TranscriptEntry.build(
+        Direction.SENT,
+        json.dumps({"jsonrpc": "2.0", "id": 77, "method": "session/load", "params": {}}).encode(),
+        0.0,
+    )
+    response = {"id": 77, "result": {}} if answer is None else answer
+    return [sent, *_traffic(*window), *(_traffic(response) if response else [])]
+
+
+def test_traffic_after_a_load_response_is_judged_on_the_announcements_made_during_the_load():
+    turn = _traffic(_ANNOUNCE, _CHILD_CHUNK)
+    # the load replays nothing about `c`; the chunk after the response relies on the turn's announcement
+    transcript = turn + _load_exchange() + _traffic(_CHILD_CHUNK)
+    window = (2, len(turn) + 2)
+    children, problems = child_session_traffic(transcript, {"p"}, window)
+    assert children == {"c"} and len(problems) == 1
+    assert "agent_message_chunk" in problems[0] and "`session/load`" in problems[0]
+    # a request counts the same way
+    transcript = turn + _load_exchange() + _traffic(_CHILD_PERMISSION)
+    assert len(child_session_traffic(transcript, {"p"}, window)[1]) == 1
+    # without the load scope, the turn's announcement still hides it
+    assert child_session_traffic(turn + _load_exchange() + _traffic(_CHILD_CHUNK), {"p"}) == ({"c"}, [])
+    # announced during the load (replayed or live inside the window): the traffic after it is fine,
+    # and so are children announced after the response
+    transcript = turn + _load_exchange(_ANNOUNCE) + _traffic(_CHILD_CHUNK, _sub("c", "g"), _update("g", {"sessionUpdate": "agent_message_chunk"}))
+    assert child_session_traffic(transcript, {"p"}, (2, 5)) == ({"c", "g"}, [])
+    # announced only after the response: later traffic is fine, the earlier one was not
+    transcript = turn + _load_exchange() + _traffic(_CHILD_CHUNK, _ANNOUNCE, _CHILD_CHUNK)
+    children, problems = child_session_traffic(transcript, {"p"}, window)
+    assert children == {"c"} and len(problems) == 1
+
+
+def test_a_load_that_failed_or_never_answered_does_not_reset_the_announcements():
+    turn = _traffic(_ANNOUNCE, _CHILD_CHUNK)
+    window = (2, len(turn) + 2)
+    failed = turn + _load_exchange(answer={"id": 77, "error": {"code": -32002, "message": "no"}}) + _traffic(_CHILD_CHUNK)
+    assert child_session_traffic(failed, {"p"}, window) == ({"c"}, [])
+    # no response in the range: the load is `ACP-LOAD-001`'s finding, the traffic is judged as before
+    unanswered = turn + _load_exchange(answer={}) + _traffic(_CHILD_CHUNK)
+    assert child_session_traffic(unanswered, {"p"}, (2, len(turn) + 1)) == ({"c"}, [])
+    # a response for another id does not answer the load
+    other = turn + _load_exchange(answer={"id": 5, "result": {}}) + _traffic(_CHILD_CHUNK)
+    assert child_session_traffic(other, {"p"}, window) == ({"c"}, [])
+
+
 # --- `session` content references (ACP-SUBAGENT-002) ---
 
 
@@ -230,6 +282,21 @@ def test_session_reference_judgement_ignores_other_content_and_malformed_items()
         _tool_update("p", "tool_call_content_chunk", content=_ref("ghost")),
     )
     assert session_content_references(transcript, {"p"}) == ([], [])
+
+
+def test_session_references_after_a_load_response_follow_the_load_scope():
+    turn = _traffic(_ANNOUNCE)
+    reference = _tool_update("p", content=[_ref("c")])
+    # a reference after the response names a child only the turn announced
+    transcript = turn + _load_exchange() + _traffic(reference)
+    references, problems = session_content_references(transcript, {"p"}, (1, 3))
+    assert references == ["c"] and len(problems) == 1
+    # announced during the load, it is known
+    transcript = turn + _load_exchange(_ANNOUNCE) + _traffic(reference)
+    assert session_content_references(transcript, {"p"}, (1, 4)) == (["c"], [])
+    # a failed load attaches no runtime, so the turn's announcement still counts after it
+    failed = turn + _load_exchange(answer={"id": 77, "error": {"code": -32603, "message": "x"}})
+    assert session_content_references(failed + _traffic(reference), {"p"}, (1, 3)) == (["c"], [])
 
 
 def test_replayed_session_references_are_historical_addresses():
@@ -418,7 +485,7 @@ def test_conflicting_view_references_are_judged_only_as_unlinked_views():
     ):
         found = session_messages(_traffic(out, incoming), {"p"})
         assert _problems(found) == (0, 0, 1), found.unlinked_views
-        assert "(Active RFD)" in found.unlinked_views[0]
+        assert "(Preview RFD)" in found.unlinked_views[0]
     late = session_messages(
         _traffic(
             out,
@@ -502,6 +569,29 @@ def test_a_task_that_follows_or_misses_the_output_is_unreported():
     assert len(child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK), {"p"}).unreported) == 1
 
 
+def test_an_incoming_task_message_without_a_sender_counts_as_reported():
+    # no evidence of the sender: omitted `senderSessionId`, the recipient (if named) is the child
+    for fields in ({}, {"recipientSessionId": "c"}):
+        found = child_task_reports(_traffic(_ANNOUNCE, _msg("c", "in", **fields), _CHILD_CHUNK), {"p"})
+        assert (found.started, found.judged, found.unreported) == (1, 1, []), fields
+    # the sender may be added by a later upsert; a cleared sender is still no evidence
+    later = _traffic(_ANNOUNCE, _msg("c", "in"), _msg("c", "in", senderSessionId="p"), _CHILD_CHUNK)
+    assert child_task_reports(later, {"p"}).unreported == []
+    cleared = _traffic(_ANNOUNCE, _msg("c", "in", senderSessionId=None), _CHILD_CHUNK)
+    assert child_task_reports(cleared, {"p"}).unreported == []
+
+
+def test_a_task_message_without_a_sender_is_not_incoming_when_it_names_another_recipient():
+    outgoing = _msg("c", "out", recipientSessionId="g")  # the child's own outgoing view, not a task for it
+    assert len(child_task_reports(_traffic(_ANNOUNCE, outgoing, _CHILD_CHUNK), {"p"}).unreported) == 1
+    # a sender that is neither the parent nor absent is still not the parent's task
+    other = _msg("c", "in", senderSessionId="g", recipientSessionId="c")
+    assert len(child_task_reports(_traffic(_ANNOUNCE, other, _CHILD_CHUNK), {"p"}).unreported) == 1
+    # a message that follows the output does not count, sender or not
+    after = child_task_reports(_traffic(_ANNOUNCE, _CHILD_CHUNK, _msg("c", "in")), {"p"})
+    assert len(after.unreported) == 1
+
+
 def test_a_user_message_task_is_judged_only_as_a_user_message():
     found = child_task_reports(_traffic(_ANNOUNCE, _USER, _CHILD_CHUNK), {"p"})
     assert (len(found.user_message_tasks), found.unreported) == (1, [])
@@ -540,7 +630,7 @@ def test_participants_before_the_first_chunk_are_conforming():
 def test_participants_supplied_only_after_the_first_chunk_are_flagged():
     found = session_message_streams(_traffic(_chunk("p", "m"), _msg("p", "m", senderSessionId="p")), {"p"})
     assert found.streamed == 1 and len(found.late_participants) == 1
-    assert "(Active RFD)" in found.late_participants[0]
+    assert "(Preview RFD)" in found.late_participants[0]
     cleared = _traffic(
         _msg("p", "m", senderSessionId="p"),
         _msg("p", "m", senderSessionId=None),
@@ -580,7 +670,7 @@ def test_a_child_select_with_other_values_is_flagged():
     for option in (_select("a", "a", "b"), _select("a", "a", "b", group=True), _select("a", "b")):
         found = child_config_selects(_traffic(_ANNOUNCE, _config("c", option)), {"p"})
         assert found.selects == 1 and len(found.with_choices) == 1, option
-        assert "(Active RFD)" in found.with_choices[0]
+        assert "(draft docs)" in found.with_choices[0]
 
 
 def test_a_grouped_select_counts_values_across_its_groups():
@@ -672,3 +762,103 @@ def test_subagent_shape_judgement_ignores_other_messages():
     )
     reply = _entry(json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}))
     assert subagent_shape_issues([*transcript, reply]) == (0, [])
+
+
+# --- announced children and their reported states (ACP-SUBAGENT-018..020) ---
+
+
+def test_announced_children_follow_the_announcement_rule():
+    """First-announcement order, nested children included; a session the client created, the
+    update's own session and a child announced on a session nothing announced are not children."""
+    transcript = _traffic(
+        _sub("p", "c1"),
+        _sub("c1", "nested"),
+        _sub("p", "c1"),
+        _sub("p", "p"),
+        _sub("ghost", "orphan"),
+        _sub("p", "other-client-session"),
+        _sub("p", "c2"),
+    )
+    assert announced_children(transcript, {"p", "other-client-session"}) == ["c1", "nested", "c2"]
+    assert announced_children(_traffic(_update("p", {"sessionUpdate": "agent_message_chunk"})), {"p"}) == []
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_problems"),
+    [
+        ({"state": "running"}, 0),
+        ({"state": "requires_action"}, 0),
+        ({"state": "unknown"}, 0),
+        ({"state": "_vendor_paused"}, 0),
+        ({"state": "paused"}, 1),
+        ({"state": "idle"}, 0),
+        ({"state": "idle", "stopReason": None}, 0),
+        ({"state": "idle", "stopReason": "cancelled"}, 0),
+        ({"state": "idle", "stopReason": "error", "error": {"code": -32000, "message": "x"}}, 0),
+        ({"state": "idle", "stopReason": "_vendor_done"}, 0),
+        ({"state": "idle", "stopReason": "finished"}, 1),
+        ({"state": "running", "stopReason": "finished"}, 0),
+        ({"state": "paused", "stopReason": "finished"}, 1),
+    ],
+)
+def test_child_state_values_judge_the_reserved_namespace(state, expected_problems):
+    found = child_state_values(_traffic(_sub("p", "c", state=state)))
+    assert (found.judged, len(found.problems)) == (1, expected_problems), found.problems
+
+
+def test_child_state_values_skip_what_is_not_a_state_string():
+    """A missing or wrongly typed `state` is not judged (a schema defect, `ACP-SUBAGENT-015`),
+    and neither is a `stopReason` of another type."""
+    found = child_state_values(
+        _traffic(
+            _sub("p", "c"),
+            _sub("p", "c", state="running"),
+            _sub("p", "c", state={"state": 7}),
+            _sub("p", "c", state={"state": "idle", "stopReason": 7}),
+            _update("p", {"sessionUpdate": "agent_message_chunk"}),
+        )
+    )
+    assert (found.judged, found.problems) == (1, [])
+
+
+# --- the probe phase (`_probe_children`) ---
+
+
+class _ScriptedAgent:
+    """Answers each request with the next of `replies` (`None`: never answers)."""
+
+    def __init__(self, *replies: dict[str, Any] | None) -> None:
+        self.replies = list(replies)
+        self.sent: list[str] = []
+
+    async def send_request(self, method: str, params: dict[str, Any]) -> int:
+        self.sent.append(method)
+        return len(self.sent)
+
+    async def wait_for_response(self, request_id: int, timeout: float):
+        reply = self.replies.pop(0) if self.replies else None
+        if reply is None:
+            raise AgentTimeout("no answer", [])
+        return _entry(json.dumps({"jsonrpc": "2.0", "id": request_id, **reply}))
+
+
+def _probe(agent: _ScriptedAgent, capabilities: dict[str, Any], tmp_path) -> ChildProbes:
+    init = {"protocolVersion": 1, "agentCapabilities": capabilities}
+    return asyncio.run(_probe_children(agent, init, tmp_path, 0.1, _traffic(_ANNOUNCE), "p"))
+
+
+def test_probe_phase_records_the_advertised_methods_when_session_list_goes_unanswered(tmp_path):
+    """An agent that stops answering at `session/list` gets no child probe, but its probe methods
+    are still known, so `ACP-SUBAGENT-018` can tell that apart from advertising none."""
+    capabilities = {"loadSession": True, "sessionCapabilities": {"list": {}, "close": {}}}
+    agent = _ScriptedAgent(None)
+    probes = _probe(agent, capabilities, tmp_path)
+    assert agent.sent == ["session/list"]
+    assert (probes.children, probes.probes, probes.methods) == (("c",), (), ("session/load", "session/close"))
+    # answered: the probes go out
+    agent = _ScriptedAgent({"result": {"sessions": []}}, {"error": {"code": -32602, "message": "x"}}, None)
+    probes = _probe(agent, capabilities, tmp_path)
+    assert agent.sent == ["session/list", "session/load", "session/close"]
+    assert [probe.method for probe in probes.probes] == ["session/load", "session/close"]
+    # nothing advertised: no method and no probe
+    assert _probe(_ScriptedAgent(), {}, tmp_path).methods == ()

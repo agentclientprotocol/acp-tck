@@ -1,7 +1,7 @@
 """Background-work conformance: ACP-STATE-206..210, ACP-INFO-BACKGROUND-201/202.
 
 `running`/`requires_action`/`idle`/`unknown` state updates may carry a `background` snapshot of
-work running independently of foreground work (prompt-lifecycle.mdx:188-210). Each test drives
+work running independently of foreground work (prompt-lifecycle.mdx:198-220). Each test drives
 one prompt turn on a fresh session, drains a quiet period for the background traffic that may
 follow the idle, and judges the session's `session/update`s in wire order. The TCK cannot make an
 agent start background work, so every row here SKIPs for an agent that never reports a list.
@@ -31,11 +31,11 @@ from ._helpers import (
 
 _PROMPT_TEXT = "hi"
 
-# The states that carry `background` (prompt-lifecycle.mdx:188). A custom state's shape is its
+# The states that carry `background` (prompt-lifecycle.mdx:198). A custom state's shape is its
 # own, so it is not judged.
 _BACKGROUND_STATES = frozenset({"running", "requires_action", "idle", "unknown"})
 
-# Each item type's announcing `sessionUpdate` (prompt-lifecycle.mdx:206).
+# Each item type's announcing `sessionUpdate` (prompt-lifecycle.mdx:216).
 _ANNOUNCING_UPDATE = {
     "terminal": "terminal_update",
     "tool_call": "tool_call_update",
@@ -91,7 +91,7 @@ def _is_final(update: dict[str, Any]) -> bool:
 
 def _is_listed(key: tuple[str, str], keys: set[tuple[str, str]], tracker: PatchTracker) -> bool:
     """Whether `keys` lists `key`, or the other half of a tool call and the terminal it references
-    (prompt-lifecycle.mdx:208)."""
+    (prompt-lifecycle.mdx:218)."""
     if key in keys:
         return True
     item_type, item_id = key
@@ -110,7 +110,7 @@ def _is_listed(key: tuple[str, str], keys: set[tuple[str, str]], tracker: PatchT
 async def test_background_list_is_kept_once_reported(agent_launch, tmp_path):
     """ACP-STATE-206. Once a state update for the session carries a `background` array, every
     later `running`/`requires_action`/`idle`/`unknown` update for it carries one too. Omitted
-    and `null` both mean "not reported" (prompt-lifecycle.mdx:204). SKIPs when no list is
+    and `null` both mean "not reported" (prompt-lifecycle.mdx:214). SKIPs when no list is
     reported."""
     updates = await _session_updates(agent_launch, tmp_path)
     reported = False
@@ -133,8 +133,8 @@ async def test_background_list_is_kept_once_reported(agent_launch, tmp_path):
 async def test_background_items_are_announced_before_they_are_listed(agent_launch, tmp_path):
     """ACP-STATE-207. Every `terminal`/`tool_call`/`subagent` item in a `background` list was
     announced earlier for the session by a `terminal_update`/`tool_call_update`/
-    `subagent_update` carrying its id (prompt-lifecycle.mdx:206). Items of other types are not
-    judged (:209). SKIPs when no such item is listed."""
+    `subagent_update` carrying its id (prompt-lifecycle.mdx:216). Items of other types are not
+    judged (:219). SKIPs when no such item is listed."""
     updates = await _session_updates(agent_launch, tmp_path)
     announced: set[tuple[str, str]] = set()
     listed = False
@@ -162,8 +162,8 @@ async def test_background_items_are_finalized_before_idle_removal(
 ):
     """ACP-STATE-208. A `terminal`/`tool_call` item that an `idle` snapshot drops from the
     previous `background` list had its `exitStatus` or final tool-call status reported first
-    (prompt-lifecycle.mdx:206). A removal in an active snapshot is only recorded: foreground work
-    that waits on an item takes it off the list unfinished (:208). Subagents are not judged: no
+    (prompt-lifecycle.mdx:216). A removal in an active snapshot is only recorded: foreground work
+    that waits on an item takes it off the list unfinished (:218). Subagents are not judged: no
     finalization is defined for them. SKIPs when no idle snapshot removes such an item."""
     updates = await _session_updates(agent_launch, tmp_path)
     finalized: set[tuple[str, str]] = set()
@@ -204,7 +204,7 @@ async def test_background_items_are_finalized_before_idle_removal(
 async def test_background_list_is_resent_when_work_ends_while_idle(agent_launch, tmp_path):
     """ACP-STATE-209 (ADVISORY). When a listed `terminal`/`tool_call` item reaches its final
     status while the session is `idle`, a later `state_update` drops it from the list
-    (prompt-lifecycle.mdx:205). Only an end while idle is judged: during active work the next
+    (prompt-lifecycle.mdx:215). Only an end while idle is judged: during active work the next
     snapshot follows anyway. The start half is `ACP-STATE-210`. SKIPs when no listed item ends
     while idle."""
     updates = await _session_updates(agent_launch, tmp_path)
@@ -243,12 +243,12 @@ async def test_background_list_is_resent_when_work_starts_while_idle(
 ):
     """ACP-STATE-210 (ADVISORY). When a live `terminal`/`tool_call` item is first announced while
     the session is `idle` and its latest `background` list is reported, the next `state_update`
-    for the session is an `idle` that lists it (prompt-lifecycle.mdx:205). Foreground work
-    reports `running` when it starts (:152), so an item announced while idle is background work.
-    A tool call and the terminal it references stand for each other in the list (:208). Only that
+    for the session is an `idle` that lists it (prompt-lifecycle.mdx:215). Foreground work
+    reports `running` when it starts (:162), so an item announced while idle is background work.
+    A tool call and the terminal it references stand for each other in the list (:218). Only that
     next `state_update` is judged: a `running`/`requires_action`/`unknown`/custom state, an
     `idle` without a list, or the item ending first leave it unjudged. A visible housekeeping tool
-    call (:186) cannot be told apart and FAILs. The end half is `ACP-STATE-209`. SKIPs when no
+    call (:196) cannot be told apart and FAILs. The end half is `ACP-STATE-209`. SKIPs when no
     item starts while idle."""
     updates = await _session_updates(agent_launch, tmp_path)
     tracker = PatchTracker()
@@ -295,8 +295,8 @@ async def test_background_list_is_resent_when_work_starts_while_idle(
     assert not unresent, (
         f"{sorted(unresent)!r} started while the session was idle and the next state_update did "
         "not list it as background work (or none followed); the Agent SHOULD re-send the state "
-        "with the updated list when background work starts (prompt-lifecycle.mdx:205). A visible "
-        "housekeeping tool call (:186) cannot be told apart"
+        "with the updated list when background work starts (prompt-lifecycle.mdx:215). A visible "
+        "housekeeping tool call (:196) cannot be told apart"
     )
 
 
@@ -308,7 +308,7 @@ async def test_listed_tool_call_with_its_terminal_is_recorded(
     """ACP-INFO-BACKGROUND-201 (INFORMATIONAL). Records the tool calls that a `background` list
     names together with a terminal they reference in `terminal` content. Process-backed work is
     listed as its terminal only, and the Agent MUST NOT also list a tool call whose only live
-    work is that terminal (prompt-lifecycle.mdx:208). The client cannot tell whether such a
+    work is that terminal (prompt-lifecycle.mdx:218). The client cannot tell whether such a
     tool call has other live work, so nothing is asserted. SKIPs when no list is reported."""
     updates = await _session_updates(agent_launch, tmp_path)
     tracker = PatchTracker()
@@ -337,7 +337,7 @@ async def test_listed_work_after_interrupting_the_turn_is_recorded(
     """ACP-INFO-BACKGROUND-202 (INFORMATIONAL). When `session/cancel` is sent while the latest
     `background` list is non-empty, records which listed items reached a final status before the
     cancelled turn's idle and which the idle still lists. `session/cancel` does not cover work
-    in the list (prompt-lifecycle.mdx:1173), but listed work may also end on its own, so nothing
+    in the list (prompt-lifecycle.mdx:1446), but listed work may also end on its own, so nothing
     is asserted. SKIPs when the cancel did not land or no list was reported."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:

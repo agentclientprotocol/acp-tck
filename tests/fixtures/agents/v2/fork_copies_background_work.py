@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `keeps_background_work.py`, except a fork inherits the source session's
 background list, so the fork's snapshots list work it never started. A fork starts with no
-background work (session-setup.mdx:49).
+background work (session-setup.mdx:50).
 
 FAILs exactly `ACP-FORK-206`. The inherited item was announced for the source session only, but
 the background rows judge a fresh, unforked session, so `ACP-STATE-207` does not cascade.

@@ -1,5 +1,6 @@
 """Subagent announcement ordering, `session` content references, association integrity, schema
-validity and the SHOULDs around them (ACP-SUBAGENT-001..009, -011..015).
+validity and the SHOULDs around them (ACP-SUBAGENT-001..009, -011..015, -018..020,
+ACP-LIST-004).
 
 v1 gates subagents on the client: an agent may send `subagent_update`, `session_message`,
 `session_message_chunk` and `session` tool-call content only to a client that advertised
@@ -14,8 +15,9 @@ errors or never answers does not end the connection: that is `ACP-LOAD-001`'s fi
 row here is judged on the traffic seen. The default connections stay as they were (`subagents`
 is never advertised there).
 
-Replay is judged on its own terms. Inside the `session/load` exchange only announcements made
-within it count (001), because the client may be loading on a fresh connection; a replayed
+Replay is judged on its own terms. Inside the `session/load` exchange, and after its successful
+response, only announcements made during that load count (001), because the client may be loading
+on a fresh connection and the rule applies again on every load; a replayed
 `session_message` participant and a replayed `session` reference are historical addresses, not
 announcements, so 001 does not judge the participant and 002 does not judge the reference.
 
@@ -38,6 +40,14 @@ defect there FAILs `ACP-PROMPT-002` or `ACP-SCHEMA-001` and not 015 too. v1 has 
 `state_update`, so the v2-only mirroring row (`ACP-SUBAGENT-201`) has no counterpart; a child's
 work state is only a parent's `subagent_update.state`, whose shape 015 validates.
 
+018/019 and `ACP-LIST-004` judge the connection's last, probe phase (`_subagents_connection.py`):
+the `session/list` and the mutating requests naming an announced child, sent after the transcript
+the other rows judge was read. The probes deliberately break a Client MUST NOT (the
+restricted-methods allowlist), because the docs define the Agent's answer. 018 judges only an
+error's code and 019 only a success, so one defect FAILs one row; each SKIPs when no child was
+announced (018: or nothing was probed). 020 validates a child's reported state values against
+the protocol's and the `_` namespace.
+
 The mock client advertises neither `fs` nor `terminal` on this connection, so it answers any
 such request `-32601` like on every other v1 connection. `ACP-CLIENTCAP-001`..`003` judge those
 requests on this connection too (`test_client_capabilities.py`).
@@ -50,6 +60,7 @@ import pytest
 from ._helpers import (
     child_config_selects,
     child_session_traffic,
+    child_state_values,
     child_task_reports,
     session_content_references,
     session_message_streams,
@@ -57,7 +68,7 @@ from ._helpers import (
     subagent_shape_issues,
     subagent_updates,
 )
-from ._subagents_connection import subagents_connection
+from ._subagents_connection import ChildProbe, subagents_connection
 
 
 def _summary(problems: list[str]) -> str:
@@ -73,8 +84,9 @@ async def test_child_session_traffic_follows_its_announcement(
     """ACP-SUBAGENT-001. Over the whole connection -- turn, replay and quiet periods alike -- no
     `session/update`, agent -> client request (`fs/*` and `terminal/*` included) or live
     `session_message` participant names a session ID the client did not create before a
-    `subagent_update` on a known session announced it. Inside the `session/load` exchange only
-    announcements made within it count, even if the turn announced the child; a replayed
+    `subagent_update` on a known session announced it. Inside the `session/load` exchange, and
+    after a successful response, only announcements made during that load count, even if the turn
+    announced the child (the rule applies again on every load, `subagents.mdx:517`); a replayed
     `session_message` participant is a historical address and is not judged. SKIPs when the agent
     sends no such ID at all."""
     conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
@@ -215,7 +227,8 @@ async def test_child_task_is_an_incoming_session_message_before_its_output(
     request, agent_launch, agent_initialize_result, tmp_path
 ):
     """ACP-SUBAGENT-012. An announced child's first agent output is preceded by an incoming
-    `session_message` whose `senderSessionId` is its parent. A task reported as a user message is
+    `session_message` whose `senderSessionId` is its parent, or that names no sender (an Agent
+    with no evidence of the sender omits it, `subagents.mdx:287`). A task reported as a user message is
     `ACP-SUBAGENT-011`'s. SKIPs when no announced child that was not told the task as a user
     message produces agent output."""
     conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
@@ -264,3 +277,102 @@ async def test_subagent_messages_validate_against_the_schema(
     if not judged:
         pytest.skip("the agent sent no subagent message")
     assert not problems, _summary(problems)
+
+
+def _probe_summary(probes: list[ChildProbe], what: str) -> str:
+    return _summary([f"{probe.method} for child {probe.child!r} {what}" for probe in probes])
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-018")
+async def test_request_naming_a_child_is_rejected_as_invalid_params(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-SUBAGENT-018 (ADVISORY). After the judged transcript, the TCK sends `session/load`,
+    `session/close` and `session/delete` (each only when advertised) naming each of the first two
+    announced children. This deliberately breaks a Client MUST NOT, because the docs define the
+    Agent's answer to exactly that input: any such request gets `-32602` (`error.mdx:57`,
+    `subagents.mdx:428`). Only mutating methods are probed (the RFD leaves read-only operations
+    their normal semantics). Judged for a probe that came back as an error; a success is
+    `ACP-SUBAGENT-019`'s. SKIPs without an announced child, without a probe method, when the agent
+    stopped answering before any probe (during `session/list`) or when no probe was answered with
+    an error."""
+    conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    if not conn.probes.children:
+        pytest.skip("the agent announced no child session")
+    if not conn.probes.methods:
+        pytest.skip("the agent advertised none of `loadSession`, `close` and `delete`: no probe method")
+    if not conn.probes.probes:
+        pytest.skip(
+            "the agent stopped answering during the `session/list` probe, so no request naming a "
+            "child was sent"
+        )
+    errored = [probe for probe in conn.probes.probes if probe.errored]
+    if not errored:
+        pytest.skip("no probe naming a child was answered with an error")
+    wrong = [probe for probe in errored if probe.error_code != -32602]
+    assert not wrong, _summary(
+        [
+            f"{probe.method} for child {probe.child!r} got error {probe.error_code!r}, not "
+            f"-32602 (Invalid params)"
+            for probe in wrong
+        ]
+    )
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-019")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.close")
+async def test_close_and_delete_of_a_child_do_not_succeed(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-SUBAGENT-019. The `session/close` (and, when advertised, `session/delete`) probe naming
+    an announced child (see `ACP-SUBAGENT-018`, whose probe deliberately breaks a Client MUST
+    NOT) is not answered with a success: the docs say they do not report success for a child
+    (`subagents.mdx:428`). Any error passes here, whatever its code. SKIPs without an announced
+    child or when no probe was answered."""
+    conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    if not conn.probes.children:
+        pytest.skip("the agent announced no child session")
+    answered = [
+        probe
+        for probe in conn.probes.probes
+        if probe.method in ("session/close", "session/delete") and probe.response is not None
+    ]
+    if not answered:
+        pytest.skip("no `session/close` or `session/delete` probe naming a child was answered")
+    succeeded = [probe for probe in answered if probe.succeeded]
+    assert not succeeded, _probe_summary(succeeded, "reported success; a child is not closed or deleted")
+
+
+@pytest.mark.requirement("ACP-LIST-004")
+@pytest.mark.capability("agentCapabilities.sessionCapabilities.list")
+async def test_session_list_does_not_return_an_announced_child(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-LIST-004. `session/list`, sent after the turn and replay of the subagents connection
+    (`params: {}`, `nextCursor` followed for at most ten pages), returns no session an earlier
+    `subagent_update` announced as a child (`subagents.mdx:430`). SKIPs without an announced child
+    or when the list did not answer with a `sessions` array (`ACP-LIST-001`'s finding)."""
+    conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    if not conn.probes.children:
+        pytest.skip("the agent announced no child session")
+    if conn.probes.listed is None:
+        pytest.skip("`session/list` did not return a `sessions` array")
+    leaked = [child for child in conn.probes.children if child in conn.probes.listed]
+    assert not leaked, _summary(
+        [f"session/list returned the announced child session {child!r}" for child in leaked]
+    )
+
+
+@pytest.mark.requirement("ACP-SUBAGENT-020")
+async def test_child_state_values_are_protocol_or_extension_values(
+    request, agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-SUBAGENT-020 (ADVISORY). Every `subagent_update.state` has a `state` of `running`,
+    `idle`, `requires_action`, `unknown` or a `_`-prefixed name, and an `idle` `stopReason` that
+    is a v1 stop reason, `error` or `_`-prefixed (`subagents.mdx:380`). SKIPs when no
+    `subagent_update` carries a `state`."""
+    conn = await subagents_connection(request, agent_launch, agent_initialize_result, tmp_path)
+    found = child_state_values(conn.transcript)
+    if not found.judged:
+        pytest.skip("no `subagent_update` carried a `state`")
+    assert not found.problems, _summary(found.problems)

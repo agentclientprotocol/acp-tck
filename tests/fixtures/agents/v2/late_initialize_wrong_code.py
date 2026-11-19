@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: rejects an `initialize` repeated after another request, but with
-`-32602` instead of `-32600` (error.mdx:29,60). FAILs exactly `ACP-INIT-215`; `ACP-INIT-213`
+`-32602` instead of `-32600` (error.mdx:29,62). FAILs exactly `ACP-INIT-215`; `ACP-INIT-213`
 only asks for an error, so it PASSes.
 """
 

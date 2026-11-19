@@ -28,7 +28,7 @@ to judge it. Look for:
   `docs/requirements.md` allows, with ids that follow its rule B and lifecycle. Check against the
   cited research reports. Use the `check-*` skills only to confirm a specific doubtful claim.
 - **Test quality.** Tests that pass trivially, weakened assertions, `skip`/`xfail` that hides a
-  failure, a missing non-conforming fixture, or `test_cli.py` FAIL/PASS sets that don't match the
+  failure, a missing non-conforming fixture, or CLI test (`tests/v{1,2}/cli/`) FAIL/PASS sets that don't match the
   fixtures' docstrings. SKIP-vs-FAIL, probe and error-code choices should follow
   `docs/writing-tests.md`.
 - **Conventions and scope.** v1/v2 cross-imports, plugin-shim footguns, comments and code that cite

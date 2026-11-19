@@ -1,7 +1,7 @@
 """Unit tests for `tck.v1.conformance._helpers.run_prompt`'s permission handling, driven
 against a tiny scripted stdio agent: once it reads `session/prompt` it replays a JSON plan of
 messages to write (`"$ID"` stands for the prompt's request id), `{"wait_id": i}` (read until the
-response to `i`) or `{"wait_method": m}`.
+response to `i`), `{"wait_method": m}` or `{"sleep": s}`.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any
 
 from tck.common.harness import AgentLaunch, AgentProcess, Direction
 from tck.common.plugin import _TEST_PROPERTIES
+from tck.v1.conformance._child_cancel import drive_child_cancel
 from tck.v1.conformance._helpers import (
     UNKNOWN_PERMISSION_OPTION_ID,
     permission_outcome,
@@ -20,7 +21,7 @@ from tck.v1.conformance._helpers import (
 )
 
 _SCRIPT = r"""
-import json, sys
+import json, sys, time
 plan = json.loads(sys.argv[1])
 def out(m):
     sys.stdout.write(json.dumps(m) + "\n"); sys.stdout.flush()
@@ -32,7 +33,9 @@ def read_until(pred):
     sys.exit(0)
 prompt = read_until(lambda m: m.get("method") == "session/prompt")
 for step in plan:
-    if "wait_method" in step:
+    if "sleep" in step:
+        time.sleep(step["sleep"])
+    elif "wait_method" in step:
         read_until(lambda m, w=step["wait_method"]: m.get("method") == w)
     elif "wait_id" in step:
         read_until(lambda m, w=step["wait_id"]: "method" not in m and m.get("id") == w)
@@ -328,7 +331,7 @@ def _sent_cancels(agent) -> list[Any]:
 
 def test_requests_after_a_drivers_own_cancel_are_answered_cancelled_not_allowed():
     """The driver's `session/cancel` for the prompted session or for a subagent resolves that
-    session's later permission requests `cancelled` (prompt-turn.mdx:641); a request of a session
+    session's later permission requests `cancelled` (prompt-turn.mdx:851); a request of a session
     nobody cancelled is still answered per the policy."""
     steps = [
         _UPDATE,
@@ -378,3 +381,53 @@ def test_a_subagents_unsatisfiable_request_is_declined_without_cancelling_the_pr
     assert len(turn.permission_fallbacks) == 1
     assert turn.permission_fallbacks[0].startswith("agent offered no allow_once")
     assert turn.response_entry.parsed["result"]["stopReason"] == "end_turn"
+
+
+# --- the child-cancel driver (`drive_child_cancel`) ---
+
+_CHILD = "s1-child"
+
+
+def _child_state(state: dict[str, Any], **fields: Any) -> dict[str, Any]:
+    update = {"sessionUpdate": "subagent_update", "sessionId": _CHILD, "state": state, **fields}
+    return {"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": _SESSION, "update": update}}
+
+
+def _drive_child_cancel(steps: list[dict[str, Any]]):
+    """`drive_child_cancel` with `timeout` 2 s (`timeout / 2` waits of 1 s, `quiet_period` 0.5 s)
+    against a turn that announces a running cancellable child, reads its `session/cancel`, runs
+    `steps`, then answers the parent's `session/cancel` with `cancelled`."""
+    script = [
+        _child_state({"state": "running"}, capabilities={"cancel": {}}),
+        {"wait_method": "session/cancel"},
+        *steps,
+        {"wait_method": "session/cancel"},
+        {"jsonrpc": "2.0", "id": "$ID", "result": {"stopReason": "cancelled"}},
+    ]
+
+    async def go():
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, json.dumps(script)], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            return await drive_child_cancel(agent, _SESSION, "hi", timeout=2.0)
+
+    return asyncio.run(go())
+
+
+def test_child_cancel_running_after_unknown_is_judged_as_unconfirmed():
+    """A later `running` replaces `unknown` (subagents.mdx:413): no confirmation then FAILs 016."""
+    run = _drive_child_cancel([_child_state({"state": "unknown"}), _child_state({"state": "running"})])
+    assert (run.target, run.outcome) == (_CHILD, "unconfirmed")
+    assert _drive_child_cancel([_child_state({"state": "unknown"})]).outcome == "unobservable"
+
+
+def test_child_cancel_non_cancelled_idle_straight_after_unknown_is_unobservable():
+    """The work ended while the Agent could not see it (subagents.mdx:415): not judged. After a
+    `running` replaced `unknown` the same idle is `not_cancelled`; a cancelled idle confirms."""
+    unknown, running = _child_state({"state": "unknown"}), _child_state({"state": "running"})
+    late_end = [{"sleep": 0.7}, _child_state({"state": "idle", "stopReason": "end_turn"})]
+    assert _drive_child_cancel([unknown, *late_end]).outcome == "unobservable"
+    assert _drive_child_cancel([unknown, running, *late_end]).outcome == "not_cancelled"
+    confirmed = _child_state({"state": "idle", "stopReason": "cancelled"})
+    assert _drive_child_cancel([unknown, confirmed]).outcome == "confirmed"

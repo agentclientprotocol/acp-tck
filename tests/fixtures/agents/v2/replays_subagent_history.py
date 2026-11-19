@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Conforming fixture: `exposes_subagent.py`'s child per turn, and `session/resume` replays that
 child's history under the child's own `sessionId`, announced by a `subagent_update` on the
-resumed session first. The replayed child history also holds a `user_message` carrying the
+resumed session first and ended by the child's own `replay_complete` (`_send_child_replay_complete`,
+session-setup.mdx:414). The replayed child history also holds a `user_message` carrying the
 parent's prompt text under its own `messageId` (the child's task, not the parent's message).
-Every resume, with or without replay, emits live child chunks before the response. Must PASS
-everything `exposes_subagent.py` does, including `ACP-RESUME-002` and `-205` (live child traffic
-is not history or replayed chunks of the resumed session), `ACP-RESUME-204` (a child's own
-`user_message` is not the parent's) and `ACP-RESUME-209` (announced child updates are legal
-during replay).
+Every resume, with or without replay, re-announces each child (`_reannounce_child`,
+subagents.mdx:469) and then emits a live child chunk before the response. Must PASS everything
+`exposes_subagent.py` does, including `ACP-RESUME-002` and `-205` (live child traffic is not
+history or replayed chunks of the resumed session), `ACP-RESUME-204` (a child's own
+`user_message` is not the parent's), `ACP-RESUME-209` (announced child updates are legal during
+replay), `ACP-RESUME-223`, `ACP-RESUME-225` and `ACP-RESUME-226` (the child is replayed under its
+parent, and its two messages in their order).
 """
 
 import sys
@@ -59,10 +62,27 @@ class ReplaysSubagentHistoryAgent(ExposesSubagentAgent):
                     },
                 },
             )
-            super()._replay_history(child_id)
+            self._replay_child_history(child_id)
+            self._send_child_replay_complete(child_id)
+
+    def _replay_child_history(self, child_id: str) -> None:
+        """Hook: the child's recorded history, in the order it was sent."""
+        super()._replay_history(child_id)
+
+    def _send_child_replay_complete(self, child_id: str) -> None:
+        """Hook: the child's own `replay_complete`, after its announcement and replayed history."""
+        self._send_replay_complete(child_id)
+
+    def _reannounce_child(self, session_id: Any, child_id: str) -> None:
+        """Hook: the current `subagent_update` every resume sends before live child traffic."""
+        self._notify(
+            "session/update",
+            {"sessionId": session_id, "update": {"sessionUpdate": "subagent_update", "sessionId": child_id}},
+        )
 
     def _send_resume_snapshot(self, session_id: Any) -> None:
         for child_id in self._children.get(session_id, []):
+            self._reannounce_child(session_id, child_id)
             # Live child traffic, addressed to the child and not recorded into history.
             self._notify(
                 "session/update",

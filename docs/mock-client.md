@@ -5,14 +5,18 @@ Each version's conformance suite drives `session/prompt` through its own `run_pr
 
 - answers `session/request_permission` per a [policy](#permission-policies). A request carrying another
   session's ID (a subagent's) is answered the same way. What the trigger does to it differs by version. **v2**
-  never holds it and does not cancel it: only the prompted session's foreground requests are answered `cancelled`
-  once the trigger has fired. **v1** answers every request `cancelled` once the trigger has fired, whatever its
-  `sessionId`;
+  does not cancel it: only the prompted session's foreground requests are answered `cancelled` once the trigger
+  has fired, and it is held only in the [child hold mode](#holding-child-requests-v2-only). **v1** answers every
+  request `cancelled` once the trigger has fired, whatever its `sessionId`;
 - answers every other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) with `-32601`,
   because the mock client advertises no `fs`, `terminal` or elicitation capability, and records it in
-  `PromptTurn.client_requests_seen`. Two v1 connections advertise one unrelated feature and nothing else, so
-  those requests are still answered `-32601` there: the plan rows (`test_plan.py`, `plan`) and the subagent rows
-  (`_subagents_connection.py`, `subagents`, one turn of `--subagent-prompt`);
+  `PromptTurn.client_requests_seen`. Four v1 connections advertise one unrelated feature and nothing else, so
+  those requests are still answered `-32601` there: the plan rows (`test_plan.py`, `plan`), the prompt-suggestion
+  rows (`test_prompt_suggestions.py`, `session.promptSuggestions`), the cursor rows (`test_cursors.py`,
+  `session.cursors`) and the subagent rows
+  (`_subagents_connection.py`, `subagents`, one turn of `--subagent-prompt`). The one v2 connection that
+  advertises a feature, the prompt-suggestion rows' (`test_prompt_suggestions.py`, `session.promptSuggestions`),
+  likewise answers them `-32601`;
 - records `session/update` notifications in wire order;
 - optionally fires a trigger mid-turn (`on_cancel` sends `session/cancel`, `on_action` sends another request,
   for example `session/close`);
@@ -73,7 +77,7 @@ track which do). Such a request is answered `cancelled` without any `session/can
 
 **After a cancel.** Once the TCK has sent `session/cancel` for a request's session since the turn began, that
 request is answered `cancelled`: a real client resolves a pending prompt that way rather than choosing for the user
-(v1 prompt-turn.mdx:641; v2 prompt-lifecycle.mdx:1177; Subagents RFD, "Pending permission and elicitation requests").
+(v1 prompt-turn.mdx:851; v2 prompt-lifecycle.mdx:1452; Subagents RFD, "Pending permission and elicitation requests").
 This covers the driver's own trigger, and also a `session/cancel` that a driver such as `drive_child_cancel` sent for the
 prompted session or for a child on the same connection, whichever session it names. A request of a session nobody
 cancelled, such as a sibling's, is still answered per the policy, since cancelling one session does not resolve
@@ -85,6 +89,25 @@ first foreground `session/request_permission` arrives, and that request is left 
 with `$/cancel_request`, when the turn ends (after a `quiet_period` wait for a late `$/cancel_request`), or when the
 deadline passes with the turn still open. `PromptTurn.held_answered_on` records which, so a test can tell "ended once
 answered" from "never ended".
+
+### Holding child requests (v2 only)
+
+`hold_children=ChildPermissionHold()` holds every `session/request_permission` that carries another session's ID
+(a subagent's), whatever the trigger, and records each as a `HeldRequest` on the object the caller keeps. With a
+trigger and no `hold_permission`, the trigger fires when the first one arrives. A held request is answered:
+
+- `cancelled` when the agent withdraws it with `$/cancel_request` (`withdrawn_at` records the index);
+- per the policy when the caller calls `release(agent, sessions)`, as a user who answers the prompt would (a late
+  answer still resolves its request, v2 subagents.mdx:420);
+- at the turn end, after a `quiet_period` wait for a late withdrawal: `cancelled` if the TCK cancelled its session and
+  that session then reported its own `idle` with `stopReason: "cancelled"`, else per the policy. Before that idle
+  a Client leaves a child's request open (subagents.mdx:419), which the hold follows although
+  prompt-lifecycle.mdx:1452 and the Subagents RFD let a Client answer earlier;
+- at the deadline, the same way and once. Requests read after the turn end or the deadline are answered as without
+  the hold.
+
+`ACP-SUBAGENT-203` (`session/close` once the first child request is held) and the child-cancel driver
+(`ACP-SUBAGENT-204`, below) use it.
 
 ## Background-work permission requests (v2 only)
 
@@ -153,7 +176,7 @@ per the `allow` policy (`cancelled` for a session the TCK cancelled), anything e
 
 ## Cancelling a subagent (`drive_child_cancel`)
 
-`ACP-SUBAGENT-016`/`017` (v1 and v2), `ACP-SUBAGENT-202` and the child-item rows `ACP-TOOLCANCEL-203` /
+`ACP-SUBAGENT-016`/`017` (v1 and v2), `ACP-SUBAGENT-202`/`204` and the child-item rows `ACP-TOOLCANCEL-203` /
 `ACP-TERMCANCEL-203` (v2 only) share one driven turn of `--subagent-cancel-prompt`, or `--cancel-prompt` when unset (`_child_cancel.py`), so a real agent needs
 a prompt that makes it delegate to a child that can still be cancelled: one that advertises `capabilities.cancel`, or
 whose tool call or terminal does. Otherwise the rows SKIP ("no child advertised `capabilities.cancel` while reported
@@ -170,14 +193,28 @@ tracking each announced child and its `cancel` capability, state, tool calls and
    `stopReason: "cancelled"` confirms (016). Another idle within `quiet_period(timeout)` of the request, with a stop reason
    the child could have reached on its own, is the same race as for `ACP-CANCEL-*` (the child had ended first) and
    SKIPs 016/017; a later one FAILs 016 (the child finished instead of stopping). No idle within `timeout / 2` FAILs
-   016. For `quiet_period(timeout)` after the child settles the driver watches the parent: an `idle`/`cancelled`
-   (v2) or a `cancelled` prompt response (v1) FAILs 017. A sibling that reports `idle`/`cancelled` is only recorded
+   016 (in v2 the wait is extended after a release, below). An `unknown` state after the request (the Agent lost
+   sight of the child) SKIPs 016 when no idle follows, or when the next idle is not a cancellation (the work ended
+   out of sight); a later `running` or `requires_action` replaces `unknown`, and the child is judged as usual. For
+   `quiet_period(timeout)` after the child settles the driver watches the parent: an `idle`/`cancelled` (v2) or a
+   `cancelled` prompt response (v1) FAILs 017. A sibling that reports `idle`/`cancelled` is only recorded
    (`acp_tck_cancelled_siblings`), since the Agent may cancel its own delegated work.
 3. `session/cancel` for the parent, so nothing is left behind. In v2, once its turn ends `cancelled`, every descendant
    that was running and that the parent's work waits on must reach `idle` within `timeout / 2` (202). A descendant counts
    as waited on only if its parent reported a `background` list after announcing it that does not name it; a child
    announced after the parent's latest list, or a parent that reports no list, leaves it unjudged, because the agent may
    re-send the state when the list changes only as a SHOULD.
+
+The turn holds every child permission request ([child hold mode](#holding-child-requests-v2-only)), and records
+each child that reports its own `idle`/`cancelled` after a TCK cancellation covering it (step 2 for the target and
+its descendants, step 3 for every child). `ACP-SUBAGENT-204` requires each request such a child sent before that idle,
+and still held then, to be withdrawn with `$/cancel_request` before the idle or within `quiet_period(timeout)` after
+it. If the target has not settled within `timeout / 2` of its cancel while its own or its descendants' requests are
+still held, the driver releases them (answered per the `allow` policy) and waits `timeout / 2` more: a child that
+confirms within `quiet_period(timeout)` of the release waited for its requests, which FAILs 204 while 016 judges the
+confirmation. A later confirmation is a slow stop and only 016's. A request whose `subject` names an item in the
+child's latest reported `background` list is not judged by 204: that work is not cancelled
+(prompt-lifecycle.mdx:1452).
 
 The turn's own end is not judged (`ACP-CANCEL-*` own that), and agent requests read after the parent's turn ends are
 answered like `run_prompt` does.

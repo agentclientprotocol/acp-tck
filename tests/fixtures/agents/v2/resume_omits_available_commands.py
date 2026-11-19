@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/new` carries `availableCommands` but `session/resume` of
 that session leaves them out, so the client would drop the list it holds
-(session-setup.mdx:108,333-335).
+(session-setup.mdx:110,356-358).
 
 FAILs exactly `ACP-RESUME-210`.
 """

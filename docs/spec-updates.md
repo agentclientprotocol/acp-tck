@@ -27,7 +27,7 @@ The tooling is documented in [`spec-tracker/README.md`](../spec-tracker/README.m
    and removals are decisions: get them confirmed before implementing.
 6. **Slices**, in this order:
    1. [re-vendor](#re-vendor), first and alone;
-   2. one slice per area (registry rows, tests, fixtures, `test_cli.py` expectations, ledger additions);
+   2. one slice per area (registry rows, tests, fixtures, CLI test expectations, ledger additions);
    3. the [final id-alignment step](#id-alignment);
    4. the [cross-check refresh](#cross-check-refresh).
 
@@ -39,13 +39,13 @@ adds a row picks a provisional number that the id-alignment step settles.
 Besides the protocol docs, a spec update tracks RFDs that already govern agent behaviour.
 
 **Stage.** An RFD's stage is the nearest enclosing sidebar group in the spec repo's `docs/docs.json` whose name is a
-stage: Draft, Active, Preview or Completed. RFDs nested under Active, such as the `rfds/v2/*` pages in
-"Active > v2", are Active, and tracked for v2 only.
+stage: Draft, Preview or Completed (upstream has no Active stage). RFDs nested under a stage, such as the
+`rfds/v2/*` pages in "Draft > v2", take that stage, and one that reaches Preview is tracked for v2 only.
 
 **Tracked set:**
 
-- tracked: RFDs that are Active or Preview at the target, which includes those that moved from Draft into Active or
-  Preview within the update range;
+- tracked: RFDs that are Preview at the target, which includes those that moved from Draft into Preview within the
+  update range;
 - never tracked: Completed RFDs, even ones that moved to Completed within the range, because the doc diff covers
   their rules;
 - only those whose wire shapes are in that version's schema (stable or unstable), or that apply to that version.
@@ -80,8 +80,8 @@ First and alone: this slice changes no requirement semantics.
    only, never the pin) and prints "Needs review" first, listing citations inside changed regions that it left as
    written. It is not idempotent and refuses unless `<old-pin>` equals the current `SCHEMA_REVISION`, so bumping the
    pin first blocks it. Fix the "Needs review" citations by hand against the new text.
-2. **Vendor** the schema per `src/tck/v{1,2}/schema/VENDORED.md`: copy the two `.unstable.json` files, update the
-   commit and date there, and update `SCHEMA_REVISION` in `src/tck/v{1,2}/protocol.py`. Do not hand-edit the vendored
+2. **Vendor** the schema per `src/tck/v{1,2}/schema/VENDORED.md`: extract the two `.unstable.json` files with `git show <commit>:<path>`, update
+   the commit and date there, and update `SCHEMA_REVISION` in `src/tck/v{1,2}/protocol.py`. Do not hand-edit the vendored
    JSON.
 3. **Fix what the checks flag.** Run `tests/v{1,2}/test_registry.py` and `tests/v{1,2}/test_validation.py`
    (a changed schema shape, or a hand-written carve-out in a `validation.py` docstring that a refresh could
@@ -107,8 +107,8 @@ after area slices that picked provisional numbers independently per version.
    they are the same rule ("same rule because ..."). Propose renames: a `2xx` row that restates a v1 rule takes the
    v1 id; a shared id that no longer means the same rule is split.
 2. **The user approves each rename.** Borderline pairs are the user's call.
-3. **Apply the renames everywhere:** both registries, test markers, the id sets in `tests/v{1,2}/test_cli.py` and
-   `test_registry.py`, fixture docstrings, prose mentions in code and tests, the `--expect` lines in
+3. **Apply the renames everywhere:** both registries, test markers, the id sets in the CLI tests under
+   `tests/v{1,2}/cli/` and `test_registry.py`, fixture docstrings, prose mentions in code and tests, the `--expect` lines in
    `cross-check/run.sh`, and the mirrored lines in `.github/workflows/ci.yml`. Re-run the blast-radius grep
    afterwards, once the last area slice has landed.
 

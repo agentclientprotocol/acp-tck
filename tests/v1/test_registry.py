@@ -106,32 +106,32 @@ def test_every_registry_id_is_referenced_by_at_least_one_test():
 
 
 def test_cli_selftest_tier_sets_match_the_registry():
-    """`tests/v1/test_cli.py` hand-maintains four id sets
+    """`tests/v1/cli/_expectations.py` hand-maintains four id sets
     (`_MANDATORY_IDS`/`_ADVISORY_IDS`/`_INFORMATIONAL_IDS`/`_CAPABILITY_IDS`) that must mirror
     `REGISTRY`'s own `Tier` field exactly -- this caught the AUTH-001/AUTH-003 retiering
-    silently going stale in `test_cli.py` when `requirements.py`'s tier changed. Deriving the
-    sets directly from `REGISTRY` instead was considered and rejected: `test_cli.py`'s sets
+    silently going stale in the CLI tests when `requirements.py`'s tier changed. Deriving the
+    sets directly from `REGISTRY` instead was considered and rejected: the CLI tests' sets
     exist to state, by hand, the expected status of every id against `conforming.py`/
     `conforming_full.py`, which is a stronger check than "the tier field matches" -- so this
     test cross-checks the two independently-written sources instead of collapsing them into
     one."""
-    import test_cli
+    from .cli import _expectations
 
     by_tier: dict[Tier, set[str]] = {tier: set() for tier in Tier}
     for req_id, requirement in REGISTRY.items():
         by_tier[requirement.tier].add(req_id)
 
-    assert test_cli._MANDATORY_IDS == by_tier[Tier.MANDATORY], (
-        test_cli._MANDATORY_IDS ^ by_tier[Tier.MANDATORY]
+    assert _expectations._MANDATORY_IDS == by_tier[Tier.MANDATORY], (
+        _expectations._MANDATORY_IDS ^ by_tier[Tier.MANDATORY]
     )
-    assert test_cli._ADVISORY_IDS == by_tier[Tier.ADVISORY], (
-        test_cli._ADVISORY_IDS ^ by_tier[Tier.ADVISORY]
+    assert _expectations._ADVISORY_IDS == by_tier[Tier.ADVISORY], (
+        _expectations._ADVISORY_IDS ^ by_tier[Tier.ADVISORY]
     )
-    assert test_cli._INFORMATIONAL_IDS == by_tier[Tier.INFORMATIONAL], (
-        test_cli._INFORMATIONAL_IDS ^ by_tier[Tier.INFORMATIONAL]
+    assert _expectations._INFORMATIONAL_IDS == by_tier[Tier.INFORMATIONAL], (
+        _expectations._INFORMATIONAL_IDS ^ by_tier[Tier.INFORMATIONAL]
     )
-    assert test_cli._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
-        test_cli._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
+    assert _expectations._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
+        _expectations._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
     )
 
 

@@ -1,4 +1,4 @@
-"""Prompt-turn conformance: ACP-PROMPT-002/003/201/203/207/209/211 and ACP-STATE-201..205.
+"""Prompt-turn conformance: ACP-PROMPT-002/003/201/203/207/209/211/220 and ACP-STATE-201..205.
 
 All are `capabilities.session`-gated. `ACP-STATE-204` is ADVISORY on the registry
 (`capability=None`); its test still carries the marker for the SKIP gate.
@@ -13,15 +13,17 @@ from __future__ import annotations
 import pytest
 
 from tck.common.harness import AgentTimeout, Direction
-from tck.v2.protocol import STOP_REASONS, is_valid_open_enum_value
+from tck.v2.protocol import STOP_REASONS, agent_content_blocks, is_valid_open_enum_value
 from tck.v2.validation import validate_agent_message
 
 from ._helpers import (
     assert_prompt_rejected_not_inserted,
     connected_agent,
+    drain_quiet,
     iter_messages,
     new_session,
     prompt_during_active_work,
+    quiet_period,
     run_prompt,
 )
 
@@ -291,7 +293,7 @@ async def test_prompt_during_active_work_is_not_rejected(
     """ACP-PROMPT-209. A second prompt sent on the first `running`/`requires_action` of a
     cancel-prompt turn is not rejected before the TCK's `session/cancel`: it is inserted right
     away (a success) or held (no response yet). Agents MUST NOT reject a prompt only because
-    foreground work is active (prompt-lifecycle.mdx:382); a plain text prompt has no other
+    foreground work is active (prompt-lifecycle.mdx:400); a plain text prompt has no other
     plausible cause for rejection. An error before the cancel FAILs, `-32800` included. How a held
     prompt is answered after the cancel is `ACP-CANCEL-214`'s. SKIPs when the first work may have
     ended before the agent read the second prompt (see `prompt_during_active_work`)."""
@@ -319,7 +321,7 @@ async def test_prompt_during_active_work_is_not_rejected(
 @pytest.mark.capability("capabilities.session")
 async def test_unknown_content_block_is_rejected_without_insertion(agent_launch, tmp_path):
     """ACP-PROMPT-211. A prompt with a content block of a type the agent cannot understand is
-    answered `-32602` and not inserted (prompt-lifecycle.mdx:313; content.mdx:22). A client never
+    answered `-32602` and not inserted (prompt-lifecycle.mdx:323; content.mdx:24). A client never
     sends such a block (it sends only baseline and advertised types); the probe breaks that rule
     on purpose because the spec defines the agent's answer, and its `_tck_unknown` type is
     `_`-prefixed, the extensibility rule's form for custom types. "Not inserted" means no
@@ -337,3 +339,28 @@ async def test_unknown_content_block_is_rejected_without_insertion(agent_launch,
             what=f"a prompt with an unknown {UNKNOWN_CONTENT_TYPE!r} content block",
             timeout=timeout,
         )
+
+
+@pytest.mark.requirement("ACP-PROMPT-220")
+@pytest.mark.capability("capabilities.session")
+async def test_no_skill_block_outside_user_messages(agent_launch, tmp_path):
+    """ACP-PROMPT-220 (ADVISORY). A `skill` content block appears only in user messages
+    (content.mdx:252); the schema's `ContentBlock` union admits it anywhere, so this reads the
+    content of what the agent authors over a `session/new`, a prompt turn and a quiet period:
+    agent message and thought updates, tool-call content, compaction summaries, prompt
+    suggestions and permission-request tool calls (`agent_content_blocks`). Passes vacuously for
+    an agent that sends no skill block."""
+    timeout = agent_launch.default_timeout
+    async with connected_agent(agent_launch) as agent:
+        session_id = await new_session(agent, tmp_path, timeout=timeout)
+        await run_prompt(agent, session_id, [{"type": "text", "text": _PROMPT_TEXT}], timeout=timeout)
+        await drain_quiet(agent, quiet_period(timeout))
+    found = [
+        f"{where}: {block!r}"
+        for entry in agent.transcript
+        if entry.direction is Direction.RECEIVED
+        for message in iter_messages(entry)
+        for where, block in agent_content_blocks(message.get("method"), message.get("params"))
+        if isinstance(block, dict) and block.get("type") == "skill"
+    ]
+    assert not found, "a skill content block outside a user message: " + "; ".join(found)

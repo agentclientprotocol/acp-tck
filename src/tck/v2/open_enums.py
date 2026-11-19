@@ -4,8 +4,8 @@ Walks the agent-authored values the suite can see in one turn -- `session/update
 `session/request_permission` params -- and checks each open-enum site against its defined
 constants (`tck.v2.protocol`). A site's value is legal when it is a defined constant or begins
 with `_`: the schema's own `other` fallback accepts any string, so only this check catches a
-custom non-underscore value (`extensibility.mdx:237-240`). A curated subset of the schema's
-open-enum sites (`subject.type` is deliberately not checked).
+custom non-underscore value (`extensibility.mdx:240-243`). A curated subset of the schema's
+open-enum sites.
 """
 
 from __future__ import annotations
@@ -16,10 +16,13 @@ from typing import Any
 from .protocol import (
     AVAILABLE_COMMAND_TYPE,
     BACKGROUND_WORK_TYPE,
+    CURSOR_ANCHOR_POSITION,
+    CURSOR_ANCHOR_TYPE,
     DIFF_FILE_TYPE,
     DIFF_OPERATION,
     DIFF_PATCH_FORMAT,
     PERMISSION_OPTION_KIND,
+    PERMISSION_SUBJECT_TYPE,
     PLAN_CONTENT_TYPE,
     PLAN_ENTRY_PRIORITY,
     PLAN_ENTRY_STATUS,
@@ -64,6 +67,13 @@ class OpenEnumScan:
             self._scan_content_item("tool_call_content_chunk.content", update.get("content"))
         elif kind == "plan_update":
             self._scan_plan(update.get("plan"))
+        elif kind == "cursor_update":
+            anchor = update.get("anchor")
+            if isinstance(anchor, dict):
+                if "type" in anchor:
+                    self.check("cursor anchor type", anchor["type"], CURSOR_ANCHOR_TYPE)
+                if "position" in anchor:
+                    self.check("cursor anchor position", anchor["position"], CURSOR_ANCHOR_POSITION)
         elif kind == "available_commands_update":
             commands = update.get("availableCommands")
             for command in commands if isinstance(commands, list) else []:
@@ -71,14 +81,16 @@ class OpenEnumScan:
                     self.check("available command type", command["type"], AVAILABLE_COMMAND_TYPE)
 
     def scan_permission_request(self, params: dict[str, Any]) -> None:
-        """`session/request_permission` params: option kinds, and a `tool_call` subject's
-        `toolCall`, which the client applies exactly like a `tool_call_update`
-        (`tool-calls.mdx:270-273`)."""
+        """`session/request_permission` params: option kinds, the `subject` type, and a
+        `tool_call` subject's `toolCall`, which the client applies exactly like a
+        `tool_call_update` (`tool-calls.mdx:270-273`)."""
         options = params.get("options")
         for option in options if isinstance(options, list) else []:
             if isinstance(option, dict) and "kind" in option:
                 self.check("permission option kind", option["kind"], PERMISSION_OPTION_KIND)
         subject = params.get("subject")
+        if isinstance(subject, dict) and "type" in subject:
+            self.check("permission subject type", subject["type"], PERMISSION_SUBJECT_TYPE)
         if isinstance(subject, dict) and subject.get("type") == "tool_call":
             tool_call = subject.get("toolCall")
             if isinstance(tool_call, dict):

@@ -43,12 +43,14 @@ it fail with a usage error instead of reporting nothing.
 ## Narrow runs
 
 ```
-uv run pytest tests --ignore tests/v1/test_cli.py --ignore tests/v2/test_cli.py
-uv run pytest tests/v1/test_cli.py -k conforming
+uv run pytest tests --ignore tests/v1/cli --ignore tests/v2/cli
+uv run pytest tests/v1/cli/session_replay tests/v2/cli/session_replay
+uv run pytest tests/v1/cli -k conforming
 ```
 
-- The first runs only the unit and registry tests, skipping the two end-to-end `test_cli.py` files.
-- The second runs the CLI tests whose name matches `-k`, usually a fixture agent's name.
+- The first runs only the unit and registry tests, skipping the end-to-end CLI tests under `tests/v{1,2}/cli/`.
+- The second runs one domain of the CLI tests in both versions ([layout](writing-tests.md#cli-test-layout)).
+- The third runs the CLI tests whose name matches `-k`, usually a fixture agent's name.
 
 Some CLI tests scope the inner `acp-tck` run with its own `-k` to the modules that own the ids they assert on. A
 scoped run leaves every unselected MANDATORY row NOT TESTED, so it prints NOT CONFORMANT; that is expected, and
@@ -58,8 +60,8 @@ the tests assert on the per-id statuses, not the verdict (see [Writing tests](wr
 
 - The registry tests (`tests/v{1,2}/test_registry.py`) fail if a registered id has no test, if a test references an
   unregistered id, or if the pinned id set or per-tier id sets were not updated by hand.
-- `tests/v{1,2}/test_cli.py` runs each fixture agent through `acp-tck`, asserts its exact FAIL set, and keeps its
-  own hand-written tier sets that must match the registry too.
+- The CLI tests under `tests/v{1,2}/cli/` run each fixture agent through `acp-tck` and assert its exact FAIL set;
+  their hand-written tier sets (`_expectations.py`) must match the registry too.
 
 [Writing tests](writing-tests.md) covers how to add the fixtures and assertions these check.
 
@@ -67,8 +69,13 @@ the tests assert on the per-id statuses, not the verdict (see [Writing tests](wr
 
 `.github/workflows/ci.yml` runs two independent parts side by side:
 
-- `test` (required): `uv sync --locked && uv run pytest -q` (the product suite, parallel via addopts), then the
-  spec-tracker tests against a fetched spec checkout.
+- `test` (required): passes only when all of the jobs below passed.
+  - `unit`: the product suite without the CLI tests (`--ignore tests/v1/cli --ignore tests/v2/cli`).
+  - `cli <domain>`: one job per [CLI test domain](writing-tests.md#cli-test-layout), running
+    `tests/v1/cli/<domain>` and `tests/v2/cli/<domain>` (parallel via addopts). A `list CLI test domains` job reads
+    the domains from the directories and fails if the two versions differ. On one runner the CLI tests no longer
+    fit the 30-minute job limit.
+  - `spec-tracker`: the spec-tracker tests against a fetched spec checkout.
 - The cross-check (informational, `continue-on-error: true`): one `cross-check <agent>` job per upstream agent,
   each running the TCK against it on its own runner, then a `cross-check` job that runs the cross-check tests and
   checks the four reports against the expected baseline.

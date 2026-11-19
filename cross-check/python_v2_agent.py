@@ -41,6 +41,7 @@ from acp.experimental.v2.schema import (
     ListSessionsResponse,
     NewSessionResponse,
     OtherContentBlock,
+    OtherSessionUpdate,
     AcpMcpServer,
     PromptResponse,
     ResourceContentBlock,
@@ -123,8 +124,15 @@ class V2CrossCheckAgent:
         # No history is retained (no config options either); a resumed session is simply
         # re-registered so later session/prompt or session/close calls against it still work.
         self._sessions[session_id] = {"cwd": cwd, "additional_directories": additional_directories}
-        # Every successful resume sends a current-state snapshot before responding.
         assert self._conn is not None
+        if replay_from is not None:
+            # An empty history (nothing is retained) still ends its replay with `replay_complete`,
+            # before the state snapshot. The SDK's schema predates that update, so it goes out
+            # through the open `OtherSessionUpdate` variant.
+            await self._conn.session_update(
+                session_id=session_id, update=OtherSessionUpdate(session_update="replay_complete")
+            )
+        # Every successful resume sends a current-state snapshot before responding.
         busy = session_id in self._cancel_events
         await self._conn.session_update(
             session_id=session_id,

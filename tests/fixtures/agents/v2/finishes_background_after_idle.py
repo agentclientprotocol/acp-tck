@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conforming fixture: `reports_background_work.py`, except each turn's background tool call is
 still listed on the turn-ending idle and ends after it. The agent sends its final status, then
-re-sends the idle snapshot with the item removed (prompt-lifecycle.mdx:205-206). The positive
+re-sends the idle snapshot with the item removed (prompt-lifecycle.mdx:215-216). The positive
 control for `ACP-STATE-209`.
 """
 

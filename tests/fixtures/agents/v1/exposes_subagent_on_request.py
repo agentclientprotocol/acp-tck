@@ -3,7 +3,7 @@
 prompt is the `__subagent__` text block (what `--subagent-prompt __subagent__` sends). Any other
 prompt, the built-in subagent-turn text included, gets `conforming.py`'s turn, so a run shows
 whether the custom prompt text reached the agent: with it every `_SUBAGENT_IDS` row PASSes
-(`tests/v1/test_cli.py`), without it they SKIP.
+(`tests/v1/cli/subagents/test_subagents.py`), without it they SKIP.
 """
 
 import sys

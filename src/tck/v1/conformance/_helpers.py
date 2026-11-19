@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
 import pytest
 
-from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction, TranscriptEntry
+from tck.common.harness import AgentExited, AgentLaunch, AgentProcess, AgentTimeout, Direction, TranscriptEntry
 from tck.common.plugin import (
     current_auth_method_id,
     current_initialize_auth_methods,
@@ -21,6 +21,20 @@ from tck.common.plugin import (
 )
 from tck.v1.protocol import AUTHENTICATION_REQUIRED, METHOD_NOT_FOUND, PROTOCOL_VERSION
 from tck.v1.validation import validate_against_def
+
+
+_MCP_STUB = Path(__file__).with_name("_mcp_stub.py")
+
+
+def stdio_mcp_server(marker: Path, env: list[dict] | None = None) -> dict:
+    """A stdio `McpServer` entry for the TCK's stub server (`_mcp_stub.py`), which writes `marker`
+    when an agent connects to it. `command` must be an absolute path, which `sys.executable` is."""
+    return {
+        "name": "acp-tck-stub",
+        "command": sys.executable,
+        "args": [str(_MCP_STUB), str(marker)],
+        "env": env or [],
+    }
 
 
 @contextlib.asynccontextmanager
@@ -93,6 +107,23 @@ async def connected_agent(
         yield agent
 
 
+def flatten_select_values(options: Any) -> list[Any]:
+    """`SessionConfigSelectOptions` is `anyOf` a flat array of `{value, name, ...}` or a grouped
+    array of `{group, name, options: [{value, ...}]}` -- flatten either shape down to the set of
+    legal `value`s."""
+    values = []
+    for entry in options if isinstance(options, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if "value" in entry:
+            values.append(entry["value"])
+        elif "options" in entry:
+            for sub in entry["options"]:
+                if isinstance(sub, dict) and "value" in sub:
+                    values.append(sub["value"])
+    return values
+
+
 def unusable_auth_method_reason(auth_methods: Any, method_id: str) -> str | None:
     """Why `authenticate` must not be called with `method_id` given the agent's advertised
     `authMethods`, or `None` if it may. The id must be one the agent advertised, and clients
@@ -145,6 +176,16 @@ def skip_if_auth_gated(entry: TranscriptEntry) -> None:
     )
 
 
+def skip_if_auth_required(entry: TranscriptEntry, method: str) -> None:
+    """SKIP when `entry` (the answer to `method`) is the `-32000` (authentication required) error:
+    nothing was judged. Marks the SKIP `AUTH-GATED:` when `skip_if_auth_gated` does."""
+    msg = entry.parsed
+    error = msg.get("error") if isinstance(msg, dict) else None
+    if isinstance(error, dict) and error.get("code") == AUTHENTICATION_REQUIRED:
+        skip_if_auth_gated(entry)
+        pytest.skip(f"{method} returned -32000 (authentication required)")
+
+
 async def new_session(agent: AgentProcess, cwd: Path, *, timeout: float | None = None) -> str:
     """Send `session/new` with an absolute `cwd` and no MCP servers; return the `sessionId`
     from the response.
@@ -186,25 +227,13 @@ def skip_if_version_mismatch(init_result: dict[str, Any]) -> None:
         )
 
 
-# RFC 3986 scheme (two or more characters, so a Windows drive path `C:\x` is not read as a
-# URI); `file:` further needs an RFC 8089 absolute path (`file:///p`, `file://host/p`, `file:/p`,
-# `file:c:/p`).
-_URI_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]+):")
-_FILE_ABSOLUTE_PATH_RE = re.compile(r"^file:(//[^/]*/|/(?!/)|[A-Za-z]:/)", re.IGNORECASE)
-
-
-def is_absolute_uri(uri: Any) -> bool:
-    """Whether `uri` is absolute for ACP-PLAN-001: an RFC 3986 URI with a scheme, and for the
-    `file` scheme an RFC 8089 absolute path. The spec leaves "absolute" undefined; this is the
-    TCK's reading."""
-    if not isinstance(uri, str):
-        return False
-    match = _URI_SCHEME_RE.match(uri)
-    if match is None:
-        return False
-    if match.group(1).lower() == "file":
-        return _FILE_ABSOLUTE_PATH_RE.match(uri) is not None
-    return True
+async def drain(agent: AgentProcess, seconds: float) -> None:
+    """Wait `seconds` for anything the agent still sends (it all lands in `agent.transcript`);
+    the agent exiting meanwhile ends the wait early."""
+    try:
+        await agent.wait_for_message(lambda _entry: False, timeout=seconds)
+    except (AgentTimeout, AgentExited):
+        pass
 
 
 def quiet_period(timeout: float) -> float:
@@ -222,7 +251,7 @@ HISTORY_KINDS = frozenset(
 its response, what `session/resume` must not replay, and the "content or tool call updates" that
 must not follow a cancelled prompt's response. Session-state kinds (`session_info_update`,
 `available_commands_update`, `usage_update`, ...) may be sent any time a session exists
-(`docs/protocol/v1/draft/prompt-turn.mdx:38`), so they are never judged by ordering rules."""
+(`docs/protocol/v1/draft/prompt-turn.mdx:40`), so they are never judged by ordering rules."""
 
 
 def session_update_kind(entry: TranscriptEntry, session_id: str | None = None) -> str | None:
@@ -416,7 +445,7 @@ async def run_prompt(
     - `session/request_permission` is answered per `permission` (see `PermissionPolicy`;
       options are picked by `kind`, never by position), or `{"outcome": {"outcome":
       "cancelled"}}` once `session/cancel` has been sent for this turn
-      (`docs/protocol/v1/draft/prompt-turn.mdx:641`).
+      (`docs/protocol/v1/draft/prompt-turn.mdx:851`).
     - any other agent -> client request (`fs/*`, `terminal/*`, `elicitation/create`, ...) gets
       `-32601`, since the mock client advertised `clientCapabilities: {}`; the request is also
       recorded on `PromptTurn.client_requests_seen`.
@@ -536,8 +565,8 @@ async def run_prompt(
                 # Once `session/cancel` (by this turn or by a driver on the same connection) or
                 # the `on_action` request (e.g. `session/close`) has fired for the request's
                 # session, a real client resolves an in-flight permission prompt as cancelled
-                # rather than picking an option on the user's behalf (`prompt-turn.mdx:641`;
-                # Active Subagents RFD, "Pending permission and elicitation requests").
+                # rather than picking an option on the user's behalf (`prompt-turn.mdx:851`;
+                # `subagents.mdx:466-467`, "Pending requests").
                 # Cancelling one session does not resolve another's requests.
                 outcome: dict[str, Any] = {"outcome": "cancelled"}
             else:
@@ -548,7 +577,7 @@ async def run_prompt(
                     permission_fallbacks.append(f"{note}; answered cancelled for session {target!r}")
                 elif note is not None and outcome["outcome"] == "cancelled":
                     # The policy's option kinds were not offered: cancel the turn first, then
-                    # answer `cancelled` (`prompt-turn.mdx:641`).
+                    # answer `cancelled` (`prompt-turn.mdx:851`).
                     await agent.send_notification("session/cancel", {"sessionId": session_id})
                     cancelled_at_index = len(agent.transcript) - 1
                     permission_cancels.append(note)
@@ -673,6 +702,27 @@ async def answer_post_turn_requests(agent: AgentProcess, entry: TranscriptEntry,
 # `subagent_update`.
 
 
+def load_answered(transcript: list[TranscriptEntry], replay: tuple[int, int] | None) -> bool:
+    """Whether the `session/load` exchange `replay` (`[start, end)`, starting at the request)
+    ended with a successful response: a `result` carrying the request's id."""
+    if replay is None:
+        return False
+    request = transcript[replay[0]] if replay[0] < len(transcript) else None
+    sent = request.parsed if request is not None and request.direction is Direction.SENT else None
+    if not isinstance(sent, dict) or "id" not in sent:
+        return False
+    for entry in transcript[replay[0] + 1 : replay[1]]:
+        msg = entry.parsed
+        if (
+            entry.direction is Direction.RECEIVED
+            and isinstance(msg, dict)
+            and "method" not in msg
+            and msg.get("id") == sent["id"]
+        ):
+            return "result" in msg
+    return False
+
+
 def _wire_messages_indexed(
     transcript: list[TranscriptEntry],
     client_sessions: set[str],
@@ -687,11 +737,15 @@ def _wire_messages_indexed(
 
     `replay` is the `[start, end)` transcript range of a `session/load` exchange. Inside it `known`
     starts over from `client_sessions`: a client loading a session on a fresh connection has not
-    seen earlier announcements, so only those made within the exchange count for it (Active
-    Subagents RFD, "Child announcements precede child traffic"). Announcements made inside the
-    range still count for traffic after it."""
+    seen earlier announcements, so only those made within the exchange count for it
+    (`subagents.mdx:517`, "What the Agent sends"). The rule applies again on every load, so once
+    the load was answered successfully (`load_answered`) the scope carries on after the
+    response: announcements made within the load, and after it, are all that count for later
+    traffic, not the earlier turn's. A load that failed or never answered attaches no runtime, so
+    traffic after it keeps counting every announcement made so far."""
     live = set(client_sessions)
     scoped: set[str] | None = None
+    rescoped = load_answered(transcript, replay)
     for index, entry in enumerate(transcript):
         msg = entry.parsed
         if entry.direction is not Direction.RECEIVED or not isinstance(msg, dict):
@@ -699,7 +753,9 @@ def _wire_messages_indexed(
         method = msg.get("method")
         if not isinstance(method, str):
             continue
-        if replay is not None and replay[0] <= index < replay[1]:
+        in_load = replay is not None and replay[0] <= index < replay[1]
+        after_load = rescoped and replay is not None and index >= replay[1]
+        if in_load or after_load:
             if scoped is None:
                 scoped = set(client_sessions)
             known = scoped
@@ -715,7 +771,8 @@ def _wire_messages_indexed(
             and isinstance(params.get("sessionId"), str)
         ):
             # Inside a replay the scoped set is stricter than `live`; each grows on its own.
-            for tracked in (known, live):
+            # After a successful load only the scoped set matters.
+            for tracked in (known,) if after_load else (known, live):
                 if params["sessionId"] in tracked:
                     tracked.add(update["sessionId"])
 
@@ -744,8 +801,10 @@ def child_session_traffic(
     `client_sessions` are the sessions the client created; they start out known. `replay` is the
     transcript range of a `session/load` exchange (`_wire_messages_indexed`). Traffic inside it is
     judged against the announcements made inside it, even if an earlier turn announced the child
-    (Active Subagents RFD: replayed child updates keep "child announcements precede child
-    traffic"). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
+    (`subagents.mdx:517,531`: the rule applies again on every load, and a child's replayed
+    `subagent_update` precedes its other replayed updates). After a successful load's response
+    only announcements made within the load or later count too (`subagents.mdx:517`: ancestors
+    are announced "during this load", before live updates or requests for a child). A `session_message`'s `senderSessionId`/`recipientSessionId` inside it are
     historical addresses, not announcements, and are neither judged nor counted as children (a
     recorded directed message may be replayed with its participants when the other participant's
     association is unavailable).
@@ -761,23 +820,29 @@ def child_session_traffic(
     children: set[str] = set()
     problems: list[str] = []
 
-    def carry(session_id: Any, what: str, known: set[str], replaying: bool) -> None:
+    rescoped = load_answered(transcript, replay)
+
+    def carry(session_id: Any, what: str, known: set[str], replaying: bool, after_load: bool) -> None:
         if not isinstance(session_id, str):
             return
         if session_id not in client_sessions:
             children.add(session_id)
         if session_id not in known:
+            where = ""
+            if replaying:
+                where = " within this `session/load` replay (draft docs)"
+            elif after_load:
+                where = " during the preceding `session/load` or since (draft docs)"
             problems.append(
                 f"{what} carries session ID {session_id!r}, which no earlier `subagent_update` "
-                f"on a known session announced"
-                + (" within this `session/load` replay (Active RFD)" if replaying else "")
-                + f" (known: {sorted(known)!r})"
+                f"on a known session announced{where} (known: {sorted(known)!r})"
             )
 
     for index, msg, method, params, known in _wire_messages_indexed(
         transcript, client_sessions, replay
     ):
         replaying = _in_replay(replay, index)
+        after_load = rescoped and replay is not None and index >= replay[1]
         update = params.get("update") if method == "session/update" else None
         update = update if isinstance(update, dict) else {}
         kind = update.get("sessionUpdate")
@@ -785,13 +850,19 @@ def child_session_traffic(
         if "id" in msg:
             what = f"request {what} (id {msg['id']!r})"
 
-        carry(params.get("sessionId"), what, known, replaying)
+        carry(params.get("sessionId"), what, known, replaying, after_load)
         if kind == "subagent_update":
             if isinstance(update.get("sessionId"), str) and update["sessionId"] not in client_sessions:
                 children.add(update["sessionId"])
         elif kind == "session_message" and not replaying:
-            carry(update.get("senderSessionId"), f"{what} senderSessionId", known, replaying)
-            carry(update.get("recipientSessionId"), f"{what} recipientSessionId", known, replaying)
+            carry(update.get("senderSessionId"), f"{what} senderSessionId", known, replaying, after_load)
+            carry(
+                update.get("recipientSessionId"),
+                f"{what} recipientSessionId",
+                known,
+                replaying,
+                after_load,
+            )
     return children, problems
 
 
@@ -807,7 +878,8 @@ def session_content_references(
 
     A reference inside `replay`, the transcript range of a `session/load` exchange, is a
     historical address: a replayed reference to a session that is not available follows the
-    historical replay rules (Active Subagents RFD), so it is neither judged nor counted.
+    historical replay rules (Preview Subagents RFD; the docs state no such exemption, see
+    `ACP-SUBAGENT-002`), so it is neither judged nor counted.
 
     Returns `(references, problems)`: the `sessionId` of every `session` item judged, in wire
     order, and one message per reference to a session not yet known. Items are read from a
@@ -950,12 +1022,12 @@ def subagent_updates(
         if child == outer:
             result.self_parented.append(
                 f"subagent_update on session {outer!r} announces that same session as its own child; "
-                f"the association cannot refer to itself (Active RFD)"
+                f"the association cannot refer to itself (draft docs)"
             )
         elif child in client_sessions:
             result.client_sessions_announced.append(
                 f"subagent_update on session {outer!r} announces session {child!r}, which the "
-                f"client created, as a child; a child's ID is unique to its session (Active RFD)"
+                f"client created, as a child; a child's ID is unique on the connection (draft docs)"
             )
         elif outer in known:
             old = parents.setdefault(child, outer)
@@ -968,7 +1040,7 @@ def subagent_updates(
                     f"subagent_update on session {outer!r} announces {child!r}, already a child "
                     f"of {old!r}"
                     + (" (the new parent descends from it: a cycle)" if cycle else "")
-                    + "; a child keeps one immediate parent (Active RFD)"
+                    + "; a child keeps one immediate parent (draft docs)"
                 )
         for field_name in ("cwd", "additionalDirectories"):
             value = update.get(field_name)
@@ -1018,7 +1090,7 @@ def session_messages(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> SessionMessages:
     """Replay the agent's `session_message` upserts in wire order and judge the participant and
-    link consistency rules (Active Subagents RFD, "Session-directed messages"). A message is the
+    link consistency rules (Preview Subagents RFD, "Session-directed messages"). A message is the
     transcript entry `(params.sessionId, messageId)`, and its participants and references follow
     the patch convention across upserts (omitted keeps, `null` clears, a value replaces).
 
@@ -1064,14 +1136,14 @@ def session_messages(
                 result.same_participants.append(
                     f"session_message {message_id!r} on session {outer!r} has {sender!r} as both "
                     f"senderSessionId and recipientSessionId; they must identify different "
-                    f"sessions (Active RFD)"
+                    f"sessions (Preview RFD)"
                 )
         elif outer not in (sender, recipient) and ("foreign", outer, message_id) not in seen:
             seen.add(("foreign", outer, message_id))
             result.foreign_outer.append(
                 f"session_message {message_id!r} is sent on session {outer!r}, which is neither "
                 f"its sender {sender!r} nor its recipient {recipient!r}; the outer sessionId "
-                f"must be one of them (Active RFD)"
+                f"must be one of them (Preview RFD)"
             )
 
     result.participants_judged = len(with_participants)
@@ -1093,7 +1165,7 @@ def session_messages(
             result.unlinked_views.append(
                 f"session_message {message_id!r} on session {outer!r} names {target_id!r} on "
                 f"session {target_session!r} as its other view, but that view's {back_name} "
-                f"is {other[back_ref]!r}; the two views must name each other (Active RFD)"
+                f"is {other[back_ref]!r}; the two views must name each other (Preview RFD)"
             )
     return result
 
@@ -1115,8 +1187,8 @@ class ChildTasks:
 
 def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[str]) -> ChildTasks:
     """Replay the agent's traffic in wire order and judge how each announced child is told its
-    task (`docs/protocol/v1/draft/prompt-turn.mdx` "Session-directed messages (unstable)"; Active
-    Subagents RFD, "Delegated tasks"). The task starts the child's work, so only what the child's
+    task (`docs/protocol/v1/draft/prompt-turn.mdx` "Session-directed messages (unstable)"; `subagents.mdx`
+    "Messages from a parent to a child"). The task starts the child's work, so only what the child's
     transcript holds before its first agent output (`agent_message_chunk` or
     `agent_thought_chunk`) is judged.
 
@@ -1124,11 +1196,15 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
     `user_message_tasks`. Otherwise a child whose first output was not preceded by an incoming
     `session_message` (outer `sessionId` the child, `senderSessionId` its immediate parent, the
     parent being the session that first announced it; the sender is stored across upserts of the
-    `messageId`) is `unreported`. A child that never produces output is not judged, and a child
+    `messageId`) is `unreported`. An incoming `session_message` that names no sender counts as
+    reported: an Agent with no evidence of who sent the message omits `senderSessionId` and does
+    not assume the parent (`subagents.mdx:287`, `prompt-turn.mdx:115-118`). Incoming means its
+    recipient, once stored, is the child or absent. A child that never produces output is not judged, and a child
     already in `user_message_tasks` is left out of `judged`."""
     result = ChildTasks()
     parents: dict[str, str] = {}
     senders: dict[tuple[str, str], str | None] = {}
+    recipients: dict[tuple[str, str], str | None] = {}
     tasked: set[str] = set()  # children told the task, either way
     started: set[str] = set()
     user_message_children: set[str] = set()  # `ACP-SUBAGENT-011`'s, not judged by 012
@@ -1160,7 +1236,9 @@ def child_task_reports(transcript: list[TranscriptEntry], client_sessions: set[s
         elif kind == "session_message" and isinstance(update.get("messageId"), str):
             key = (outer, update["messageId"])
             senders[key] = _patched(senders.get(key), update, "senderSessionId")
-            if senders[key] == parents[outer]:
+            recipients[key] = _patched(recipients.get(key), update, "recipientSessionId")
+            no_sender = senders[key] is None and recipients[key] in (None, outer)
+            if senders[key] == parents[outer] or no_sender:
                 tasked.add(outer)
         elif kind in _CHILD_OUTPUT_KINDS:
             started.add(outer)
@@ -1228,7 +1306,7 @@ def session_message_streams(
             result.late_participants.append(
                 f"session_message {key[1]!r} on session {key[0]!r} was streamed with "
                 f"`session_message_chunk` before any `session_message` upsert named its participants; "
-                f"participant IDs go on the first message when available (Active RFD)"
+                f"participant IDs go on the first message when available (Preview RFD)"
             )
     return result
 
@@ -1245,8 +1323,8 @@ class ChildConfigSelects:
 def child_config_selects(
     transcript: list[TranscriptEntry], client_sessions: set[str]
 ) -> ChildConfigSelects:
-    """Replay the agent's traffic in wire order and judge the child configuration rule (Active
-    Subagents RFD, "Child configuration"): a select option in a `config_option_update` for an
+    """Replay the agent's traffic in wire order and judge the child configuration rule
+    (`subagents.mdx:272-273`, "Configuration"): a select option in a `config_option_update` for an
     announced child offers only its current value, because no Client-initiated configuration
     change is permitted on a child. Values are counted across option groups. Updates for a
     session the client created, or for a child not yet announced (`child_session_traffic`'s), are
@@ -1280,6 +1358,73 @@ def child_config_selects(
                 result.with_choices.append(
                     f"config_option_update for child {outer!r}: select {option.get('id')!r} "
                     f"has current value {option.get('currentValue')!r} but also offers {extra!r}; "
-                    f"a child permits no Client-initiated configuration change (Active RFD)"
+                    f"a child permits no Client-initiated configuration change (draft docs)"
                 )
+    return result
+
+
+def announced_children(transcript: list[TranscriptEntry], client_sessions: set[str]) -> list[str]:
+    """The child session IDs a `subagent_update` sent on an already-known session announced, in
+    first-announcement order (the rule `child_session_traffic` judges). A session the client
+    created or the update's own session is never a child."""
+    children: list[str] = []
+    for _msg, method, params, known in _wire_messages(transcript, client_sessions):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        outer, child = params.get("sessionId"), update.get("sessionId")
+        if (
+            isinstance(outer, str)
+            and isinstance(child, str)
+            and outer in known
+            and child != outer
+            and child not in client_sessions
+            and child not in children
+        ):
+            children.append(child)
+    return children
+
+
+_STATE_VALUES = frozenset({"running", "idle", "requires_action", "unknown"})
+_STOP_REASONS = frozenset({"end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled", "error"})
+
+
+@dataclass
+class ChildStates:
+    """What `child_state_values` found: how many `state` snapshots carried a string `state`
+    (`judged`) and one message per value outside the protocol's and the `_` namespace."""
+
+    judged: int = 0
+    problems: list[str] = field(default_factory=list)
+
+
+def child_state_values(transcript: list[TranscriptEntry]) -> ChildStates:
+    """Judge the values of every `subagent_update.state` snapshot (`subagents.mdx:380`: a value
+    that begins with `_` is implementation-specific, and other values are reserved for the
+    protocol): `state` is `running`, `idle`, `requires_action`, `unknown` or `_`-prefixed, and an
+    `idle` snapshot's `stopReason`, when a string, is a v1 `StopReason`, `error` or
+    `_`-prefixed. A `state` or `stopReason` of another type is a schema defect
+    (`subagent_shape_issues`), not judged here."""
+    result = ChildStates()
+    for _msg, method, params, _known in _wire_messages(transcript, set()):
+        update = params.get("update") if method == "session/update" else None
+        if not isinstance(update, dict) or update.get("sessionUpdate") != "subagent_update":
+            continue
+        state = update.get("state")
+        value = state.get("state") if isinstance(state, dict) else None
+        if not isinstance(value, str):
+            continue
+        result.judged += 1
+        child = update.get("sessionId")
+        if value not in _STATE_VALUES and not value.startswith("_"):
+            result.problems.append(
+                f"subagent_update for {child!r} reports state {value!r}, which is neither a "
+                f"protocol state nor `_`-prefixed (draft docs)"
+            )
+        reason = state.get("stopReason") if value == "idle" else None
+        if isinstance(reason, str) and reason not in _STOP_REASONS and not reason.startswith("_"):
+            result.problems.append(
+                f"subagent_update for {child!r} reports idle stopReason {reason!r}, which is "
+                f"neither a stop reason nor `error` nor `_`-prefixed (draft docs)"
+            )
     return result

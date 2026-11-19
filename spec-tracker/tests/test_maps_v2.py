@@ -87,9 +87,11 @@ def test_spec_map_prompt_lifecycle_covers_everything_but_the_standalone_features
         covered.update(range(start, end + 1))
     left_out = set()
     for title in (
-        "Session-directed messages (unstable)",
+        "Session-directed messages",
         "Session notices",
+        "Prompt suggestions (unstable)",
         "Session compaction",
+        "Session cursors (unstable)",
         "Session usage updates",
         "End-turn token usage (unstable)",
     ):

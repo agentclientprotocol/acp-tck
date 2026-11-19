@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conforming fixture: `reports_background_work.py` plus `background_on_resume=True`, so every
 `session/resume` leaves the session with one unfinished background tool call. The snapshot lists
-it and a `tool_call_update` announces it first (session-setup.mdx:346). The positive control for
+it and a `tool_call_update` announces it first (session-setup.mdx:431). The positive control for
 `ACP-RESUME-213`, which SKIPs when a snapshot lists no background work.
 """
 

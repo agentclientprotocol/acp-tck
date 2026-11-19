@@ -41,7 +41,7 @@ _PROMPT_TEXT = "hi"
 
 @pytest.mark.requirement("ACP-EXT-001")
 async def test_unknown_custom_method_receives_a_response(agent_launch):
-    """ACP-EXT-001 (MANDATORY, `docs/protocol/v2/draft/extensibility.mdx:165,174,187,231`).
+    """ACP-EXT-001 (MANDATORY, `docs/protocol/v2/draft/extensibility.mdx:168,177,190,234`).
     *Some* response -- a result, or an error with any code -- must arrive for a `_`-prefixed
     custom method; the `-32601` code specifically is `ACP-JSONRPC-004`'s concern, not
     re-checked here."""
@@ -130,7 +130,7 @@ async def test_emitted_meta_is_object_or_null(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-META-202")
 @pytest.mark.capability("capabilities.session")
 async def test_non_object_meta_on_prompt_is_treated_as_omitted(agent_launch, tmp_path):
-    """ACP-META-202 (ADVISORY, `docs/protocol/v2/draft/extensibility.mdx:74`). `_meta` is an
+    """ACP-META-202 (ADVISORY, `docs/protocol/v2/draft/extensibility.mdx:77`). `_meta` is an
     object with string keys and "receivers treat any other value as omitted", so a
     `session/prompt` whose `_meta` is a string is accepted and its turn reaches idle (the
     schema marks `PromptRequest._meta` `x-deserialize-default-on-error`). A client never sends
@@ -186,7 +186,7 @@ async def _drive_exchange(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-META-203")
 @pytest.mark.capability("capabilities.session")
 async def test_emitted_w3c_trace_meta_keys_are_well_formed(agent_launch, tmp_path):
-    """ACP-META-203 (CAPABILITY, `docs/protocol/v2/draft/extensibility.mdx:97-100`). Wherever
+    """ACP-META-203 (CAPABILITY, `docs/protocol/v2/draft/extensibility.mdx:100-103`). Wherever
     the agent emits a `_meta` object with a root `traceparent`, `tracestate` or `baggage` key,
     "their values MUST use the corresponding W3C format". `traceparent` is checked against the
     Trace Context grammar (`tck.v2.protocol.is_valid_traceparent`); `tracestate` and `baggage`
@@ -236,7 +236,7 @@ def _agent_authored_meta_objects(msg: dict[str, Any]) -> list[dict[str, Any]]:
 @pytest.mark.requirement("ACP-META-204")
 @pytest.mark.capability("capabilities.session")
 async def test_agent_authored_meta_keys_are_namespaced(agent_launch, tmp_path):
-    """ACP-META-204 (ADVISORY, `docs/protocol/v2/draft/extensibility.mdx:102,259`). Unprefixed
+    """ACP-META-204 (ADVISORY, `docs/protocol/v2/draft/extensibility.mdx:105,262`). Unprefixed
     `_meta` keys, and keys whose reverse-DNS prefix has `agentclientprotocol` as its second
     label, are reserved for ACP; ACP defines no unprefixed key beyond the W3C `traceparent`/
     `tracestate`/`baggage`. So every key of an agent-authored `_meta` (positions in
@@ -269,7 +269,7 @@ async def test_agent_authored_meta_keys_are_namespaced(agent_launch, tmp_path):
 @pytest.mark.requirement("ACP-EXT-002")
 async def test_unrecognized_custom_notification_produces_no_response(agent_launch):
     """ACP-EXT-002 (ADVISORY). An unrecognized `_`-prefixed *notification* sent to the agent
-    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:231`)
+    produces no response and no crash (SHOULD-ignore, `docs/protocol/v2/draft/extensibility.mdx:234`)
     -- the v2 analogue of v1's `answers_notifications.py` defect pattern, generalised to any
     custom notification rather than specifically `session/cancel`. Only a reply fails this
     (`_helpers.is_response_line`), not the agent's own notifications or requests."""
@@ -294,7 +294,7 @@ async def test_unadvertised_mcp_message_notification_does_not_crash_the_agent(
     """ACP-EXT-002 (ADVISORY), probed with `mcp/message` notifications (the unstable MCP-over-ACP
     envelope) for an agent that does not advertise `capabilities.session.mcp.acp`: it has not
     recognized the method, so it SHOULD ignore it like any notification it does not recognize,
-    "whether it is custom or from a later ACP version" (extensibility.mdx:231). A well-formed
+    "whether it is custom or from a later ACP version" (extensibility.mdx:234). A well-formed
     envelope for a request nothing is waiting on, and one missing the required `requestId` and
     `method`; both break client rules (the envelope is for an active request on a declared `acp`
     server, sent to an agent that advertised `acp`) on purpose, because the spec defines how an
@@ -324,7 +324,7 @@ async def test_unadvertised_mcp_message_notification_does_not_crash_the_agent(
 async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
     """ACP-EXT-202 (ADVISORY). Any vendor extension the agent advertises lives under
     `initialize` -> `result.capabilities._meta`, not as a new root key of `capabilities` itself
-    (`docs/protocol/v2/draft/extensibility.mdx:253-261`) -- checked via a *nested* application of
+    (`docs/protocol/v2/draft/extensibility.mdx:256-264`) -- checked via a *nested* application of
     `find_unknown_root_keys` against the `AgentCapabilities` `$def`, rather than the
     whole-response root-level check `ACP-SCHEMA-002` already performs.
 
@@ -353,12 +353,12 @@ async def test_extensions_are_advertised_under_capabilities_meta(agent_launch):
 
 @pytest.mark.requirement("ACP-EXT-204")
 async def test_unknown_initialize_fields_are_ignored(agent_launch):
-    """ACP-EXT-204 (MANDATORY; initialization.mdx:156, extensibility.mdx:51-52,157). `initialize` with
+    """ACP-EXT-204 (MANDATORY; initialization.mdx:156, extensibility.mdx:54-55,160). `initialize` with
     unknown fields at the `capabilities` root, under `capabilities.auth`, and in `info` must not
     be rejected, and "Unknown fields do not advertise support": `auth.tckFutureAuthMode` is not
     `auth.terminal`, so no `type: "terminal"` auth method may appear. The names are deliberately
     not `_`-prefixed: they stand in for fields of a future ACP revision (a `_` name would be a
-    custom capability, which extensibility.mdx:261 forbids at these positions)."""
+    custom capability, which extensibility.mdx:264 forbids at these positions)."""
     params = SPEC.initialize_params()
     params = {
         **params,
@@ -389,7 +389,7 @@ async def test_unknown_initialize_fields_are_ignored(agent_launch):
 async def test_unrecognized_protocol_level_notification_produces_no_response(agent_launch):
     """ACP-EXT-203 (ADVISORY). An unrecognized `$/`-prefixed protocol-level notification sent to
     the agent produces no response and no crash (SHOULD-ignore,
-    `docs/protocol/v2/draft/extensibility.mdx:165,231`, `docs/protocol/v2/draft/error.mdx:44`):
+    `docs/protocol/v2/draft/extensibility.mdx:168,234`, `docs/protocol/v2/draft/error.mdx:44`):
     `$/` names are reserved for protocol-level messages, so `$/does_not_exist` stands in for one
     from a later ACP version. The schema's `ProtocolLevel` description ("free to ignore") agrees.
     The probe uses a name no ACP version defines, which a client would never send. Like
@@ -416,7 +416,7 @@ async def test_full_exchange_has_no_unknown_root_keys(agent_launch, tmp_path):
     `tck.v2.validation.find_unknown_root_keys` already skips detection for any object matched by
     an open `"other"`-titled fallback branch, since an unknown/`_`-prefixed variant is by
     construction not "a type that's part of the specification",
-    `docs/protocol/v2/draft/extensibility.mdx:104`). Swept over an ordinary
+    `docs/protocol/v2/draft/extensibility.mdx:107`). Swept over an ordinary
     initialize -> session/new -> session/prompt exchange, same trick as v1's version of this
     test: derive `method_by_id` from the SENT transcript to resolve each response's own method.
     Unwraps every transcript line via `iter_messages` rather than requiring

@@ -224,7 +224,7 @@ def test_record_test_property_appends_to_the_scoped_list() -> None:
     assert props == [("k", "v")]
 
 
-# --- `revokes` marker: ordering and the one-per-run limit ---
+# --- `revokes` marker: ordering ---
 
 
 class _FakeItem:
@@ -253,12 +253,16 @@ def test_no_revokes_item_leaves_order_untouched() -> None:
     assert items == before
 
 
-def test_two_revokes_items_are_an_error_and_nothing_is_reordered() -> None:
-    first, mid, second = _FakeItem("one", _REVOKES), _FakeItem("mid"), _FakeItem("two", _REVOKES)
-    items = [first, mid, second]
-    errors = _order_revokes_last(items)
-    assert len(errors) == 1 and "one" in errors[0] and "two" in errors[0]
-    assert items == [first, mid, second]
+def test_several_revokes_items_move_to_the_end_in_collection_order() -> None:
+    first, mid, second, tail = (
+        _FakeItem("one", _REVOKES),
+        _FakeItem("mid"),
+        _FakeItem("two", _REVOKES),
+        _FakeItem("tail"),
+    )
+    items = [first, mid, second, tail]
+    assert _order_revokes_last(items) == []
+    assert items == [mid, tail, first, second]
 
 
 def test_revokes_without_a_reason_is_an_error() -> None:
@@ -281,8 +285,9 @@ def test_last(): pass
 
 @pytest.mark.parametrize("shim", ["tck.v1.plugin", "tck.v2.plugin"])
 def test_version_shims_run_the_revokes_collection_hook(shim: str, tmp_path: Path) -> None:
-    """The shims copy hooks by name, so this proves the marker's reordering and its
-    one-per-run limit actually run under each `-p tck.v{1,2}.plugin`."""
+    """The shims copy hooks by name, so this proves the marker's reordering actually runs under
+    each `-p tck.v{1,2}.plugin`, and that several revoking tests keep their collection order at
+    the end."""
     (tmp_path / "test_x.py").write_text(_REVOKES_TESTS)
     cmd = [sys.executable, "-m", "pytest", "-p", shim, "--collect-only", "-q", "-p", "no:cacheprovider"]
     ok = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
@@ -291,6 +296,14 @@ def test_version_shims_run_the_revokes_collection_hook(shim: str, tmp_path: Path
     assert [line.split("::")[1] for line in collected] == ["test_first", "test_last", "test_revoker"]
 
     (tmp_path / "test_y.py").write_text(_REVOKES_TESTS)
-    bad = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
-    assert bad.returncode != 0
-    assert "at most one @pytest.mark.revokes test" in bad.stdout + bad.stderr
+    both = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
+    assert both.returncode == 0, both.stdout + both.stderr
+    collected = [line for line in both.stdout.splitlines() if "::" in line]
+    assert [line.split("::")[0:2] for line in collected] == [
+        ["test_x.py", "test_first"],
+        ["test_x.py", "test_last"],
+        ["test_y.py", "test_first"],
+        ["test_y.py", "test_last"],
+        ["test_x.py", "test_revoker"],
+        ["test_y.py", "test_revoker"],
+    ]

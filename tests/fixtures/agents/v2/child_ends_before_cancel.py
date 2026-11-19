@@ -2,7 +2,7 @@
 """Conforming fixture: `cancellable_subagent.py`, except that the cancellable child finishes on its
 own (`idle`, `stopReason: "end_turn"`) just as the TCK's requests reach the agent, so the
 `session/cancel` for it finds no running work and is ignored: a cancellation racing with
-already-ended work does not rewrite its outcome (RFD:1093-1095). `ACP-SUBAGENT-016` and `-017`
+already-ended work does not rewrite its outcome (`subagents.mdx:402`). `ACP-SUBAGENT-016` and `-017`
 judge nothing and SKIP; nothing FAILs. Cancelling the parent still stops the other child
 (`ACP-SUBAGENT-202` PASSes). Within the `-k` scope of the `test_subagent_controls.py` module, with
 `--cancel-prompt __hang__`.

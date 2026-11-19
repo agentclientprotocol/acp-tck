@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/new` carries `configOptions` but `session/resume` of that
-session leaves them out (session-setup.mdx:108,333-335).
+session leaves them out (session-setup.mdx:110,356-358).
 
 FAILs exactly `ACP-RESUME-210`. `ACP-CONFIG-203` SKIPs: with no list on the resume there is no
 shape to validate.

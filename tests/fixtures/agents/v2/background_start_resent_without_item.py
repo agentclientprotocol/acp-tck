@@ -2,7 +2,7 @@
 """Non-conforming fixture: `starts_background_after_idle.py`, except the background tool call that
 starts while the session is `idle` is announced and the state is re-sent as `idle`, but its
 background list omits the item, which stays live. The Agent SHOULD re-send the state with the
-updated list when background work starts (prompt-lifecycle.mdx:205).
+updated list when background work starts (prompt-lifecycle.mdx:215).
 
 FAILs exactly `ACP-STATE-210`, by the "next `idle` omits it" branch.
 """

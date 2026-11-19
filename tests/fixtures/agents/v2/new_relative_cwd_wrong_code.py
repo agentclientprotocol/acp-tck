@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/new` rejects a relative `cwd` with `-32600` (Invalid Request)
-instead of `-32602` (session-setup.mdx:524). The rejection itself is right, so `ACP-SESSION-204`
+instead of `-32602` (session-setup.mdx:613). The rejection itself is right, so `ACP-SESSION-204`
 PASSes. FAILs exactly `ACP-SESSION-209` (ADVISORY).
 """
 

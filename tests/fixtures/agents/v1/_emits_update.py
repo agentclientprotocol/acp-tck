@@ -1,6 +1,6 @@
 """Shared base for defect fixtures that send one extra, schema-valid `session/update` on every
 `session/prompt` for a known session, just before the normal turn (ACP-CLIENTCAP-004/006/007,
-ACP-PROMPT-004, ACP-PLAN-001/002). Each fixture script sets `_update` (or overrides
+ACP-PROMPT-004, ACP-PLAN-002/003/004). Each fixture script sets `_update` (or overrides
 `_build_update`) and runs its subclass. A fixture can set `_only_with_client_capability` to send
 the update only when the client advertised that `clientCapabilities` key.
 """

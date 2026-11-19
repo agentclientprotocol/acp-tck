@@ -11,8 +11,8 @@ with `VERSION-MISMATCH:` for an agent that negotiated down.
 
 Only `initialize` is unconditional in v2, so a probe uses a `session/*` method only when the agent
 advertises `capabilities.session` (`_helpers.advertises_session`), and otherwise the `_`-prefixed
-`_tck/does_not_exist` (every request gets a response; `extensibility.mdx:187`,
-`overview.mdx:223`). `ACP-JSONRPC-202` needs a prompt turn to elicit requests, so it SKIPs when
+`_tck/does_not_exist` (every request gets a response; `extensibility.mdx:190`,
+`overview.mdx:227`). `ACP-JSONRPC-202` needs a prompt turn to elicit requests, so it SKIPs when
 `capabilities.session` is not advertised.
 """
 
@@ -138,7 +138,7 @@ async def test_mcp_message_notification_receives_no_response(agent_launch):
     Both break client rules on purpose: the envelope is sent only for an active request on a
     declared `acp` MCP server and only to an agent that advertised `acp`, and `requestId` and
     `method` are required. The spec defines the agent's answer to exactly these inputs:
-    `overview.mdx:227` says notifications never receive responses, and the (Active)
+    `overview.mdx:231` says notifications never receive responses, and the (Draft)
     MCP-over-ACP RFD repeats it for this envelope (`mcp-over-acp.mdx:225,257`: no response,
     "malformed notifications do not receive synthetic replies"). Sent whether or not the agent
     advertises `capabilities.session.mcp.acp`: an agent that does not know the method must stay
@@ -162,7 +162,7 @@ async def test_mcp_message_notification_receives_no_response(agent_launch):
 
 @pytest.mark.requirement("ACP-JSONRPC-004")
 async def test_unknown_method_yields_method_not_found(agent_launch):
-    """ACP-JSONRPC-004 (MANDATORY, `extensibility.mdx:202`, `error.mdx:44`). An unknown
+    """ACP-JSONRPC-004 (MANDATORY, `extensibility.mdx:205`, `error.mdx:44`). An unknown
     `_`-prefixed method gets `-32601`; the code is asserted because the MUST names it. Replying
     at all is `ACP-EXT-001`'s concern, so an agent that never replies SKIPs here rather than
     failing two rows for one defect."""

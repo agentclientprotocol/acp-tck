@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: answers an `initialize` repeated after another request with a result
-instead of rejecting it (error.mdx:60). FAILs exactly `ACP-INIT-213`; `ACP-INIT-215` SKIPs
+instead of rejecting it (error.mdx:62). FAILs exactly `ACP-INIT-213`; `ACP-INIT-215` SKIPs
 because there is no error to check the code of.
 """
 

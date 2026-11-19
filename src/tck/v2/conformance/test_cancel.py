@@ -7,13 +7,13 @@ a duplicate probe. `ACP-CLOSE-205` lives here because it uses the same held-perm
 as `ACP-CANCEL-209`/`213`.
 
 v2 confirms cancellation with a `state_update {state: "idle", stopReason: "cancelled"}`, not
-the `session/prompt` response (only an acceptance receipt; prompt-lifecycle.mdx:1185-1189,1199).
+the `session/prompt` response (only an acceptance receipt; prompt-lifecycle.mdx:1460-1464,1474).
 A prompt cancelled before insertion is instead answered `-32800`, and then owes an idle only if
-foreground work was active (:1173,1191-1192). `ACP-CANCEL-204` is INFORMATIONAL (promptness has
+foreground work was active (:1446,1466-1467). `ACP-CANCEL-204` is INFORMATIONAL (promptness has
 no wire signal) and always SKIPs after recording what it saw; `ACP-INFO-CANCEL-201` records
 behaviour without asserting. `ACP-JSONRPC-006` and `ACP-CANCEL-211` (`$/cancel_request` for an
-unknown or answered id) are MANDATORY and need no session; `ACP-CANCEL-213` is ADVISORY. Everything else is
-CAPABILITY on `capabilities.session`.
+unknown or answered id) are MANDATORY and need no session. Everything else is CAPABILITY on
+`capabilities.session`.
 
 **The race, and the honest-SKIP pattern**: `run_prompt(..., on_cancel=True)` fires
 `session/cancel` on the first transition to an active state (or after `cancel_wait`).
@@ -26,7 +26,7 @@ CAPABILITY on `capabilities.session`.
    `refusal`, a `_`-prefixed one, or none at all (stopReason is only SHOULD).
 
 `error` is never excused: reporting an abort as `error` is exactly the defect the spec singles
-out (:1199). Reserved non-`_` values and late plausible ones are judged too.
+out (:1474). Reserved non-`_` values and late plausible ones are judged too.
 
 `ACP-CANCEL-001`/`207` share one test: a single `stopReason == "cancelled"` check evidences both
 the "MUST send a cancelled idle" rule and the "no illegal substitute value" rule.
@@ -105,7 +105,7 @@ def _skip_if_cancel_not_exercised(agent, turn, record_property, *, race_window: 
 
 def _skip_if_no_cancelled_idle_owed(turn) -> None:
     """After the race gate: an error response with no turn-ending idle owes no cancelled idle
-    itself. `-32800` with no active state is a pre-insertion cancel (:1173,1191-1192); any other
+    itself. `-32800` with no active state is a pre-insertion cancel (:1446,1466-1467); any other
     error is `ACP-CANCEL-203`'s finding."""
     error = response_error(turn)
     if error is None or turn.idle_update is not None:
@@ -313,7 +313,7 @@ async def test_close_cancels_foreground_work(
     """ACP-CANCEL-208 / ACP-CLOSE-002. `session/close` on a session with an in-flight turn
     cancels that work as `session/cancel` would: the idle ending it carries `cancelled`. If the
     close kept the prompt from being inserted, the prompt is answered `-32800`
-    (session-setup.mdx:395) -- any other error FAILs. `ACP-CLOSE-002` reuses this exact
+    (session-setup.mdx:480) -- any other error FAILs. `ACP-CLOSE-002` reuses this exact
     evidence; `ACP-CLOSE-001` covers `session/close`'s own result on an idle session."""
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
@@ -370,8 +370,8 @@ async def _run_held_permission_turn(agent, session_id, cancel_prompt_text, timeo
 def _skip_unless_cancelled_while_blocked(turn, record_property) -> None:
     """`ACP-CANCEL-209`/`213` precondition: a foreground permission request was held when cancel
     was sent (`run_prompt` never holds one for listed background work). No state gate: the
-    spec's own diagram sends the request before `requires_action` (prompt-lifecycle.mdx:246-247),
-    and reporting `requires_action` is only SHOULD (:153)."""
+    spec's own diagram sends the request before `requires_action` (prompt-lifecycle.mdx:256-257),
+    and reporting `requires_action` is only SHOULD (:163)."""
     record_property("acp_tck_state_at_cancel", turn.state_at_cancel)
     record_property("acp_tck_held_permission_answered_on", turn.held_answered_on)
     if turn.held_permission is None:
@@ -404,9 +404,9 @@ async def test_cancel_while_blocked_on_permission(
     """ACP-CANCEL-209. Cancelling while the turn is blocked on the agent's own permission
     request for foreground work (the request still unanswered) ends the work with an
     idle carrying `stopReason: "cancelled"`, without the TCK answering that request: the agent
-    must stop waiting for it (prompt-lifecycle.mdx:1177,1188-1189). The TCK answers it
+    must stop waiting for it (prompt-lifecycle.mdx:1452,1463-1464). The TCK answers it
     `cancelled` only once the agent withdraws it with `$/cancel_request` (it may then wait for
-    that answer, cancellation.mdx:31), or once the turn has ended. If the turn has not ended by
+    that answer, cancellation.mdx:33), or once the turn has ended. If the turn has not ended by
     the deadline, the TCK answers it anyway and FAILs either way, saying whether the agent ended
     the turn only once answered. SKIPs if no foreground permission request was pending when
     cancel was sent."""
@@ -435,11 +435,14 @@ async def test_cancel_while_blocked_on_permission(
 async def test_cancel_withdraws_the_pending_permission_request(
     agent_launch, tmp_path, cancel_prompt_text, record_property
 ):
-    """ACP-CANCEL-213 (ADVISORY). The `ACP-CANCEL-209` scenario: after `session/cancel`, the
-    agent sends `$/cancel_request` naming its held permission request, before the cancelled idle
-    or within `quiet_period` after it (`run_prompt` waits that long before answering it). Same
-    SKIPs as `ACP-CANCEL-209`, plus one when the turn never ends: that is `ACP-CANCEL-209`'s
-    finding, and the turn's record is lost with it."""
+    """ACP-CANCEL-213. The `ACP-CANCEL-209` scenario: after `session/cancel`, the agent MUST
+    send `$/cancel_request` naming its held permission request (prompt-lifecycle.mdx:1452,
+    cancellation.mdx:42). The MUST has no deadline, so the TCK accepts it before the cancelled
+    idle or within `quiet_period` after it (`run_prompt` waits that long before answering the
+    request). The Agent decides which requests belong to the cancelled work; a request it
+    treats as unlisted background work would be a false FAIL (narrow). Same SKIPs as
+    `ACP-CANCEL-209`, plus one when the turn never ends: that is `ACP-CANCEL-209`'s finding,
+    and the turn's record is lost with it."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         session_id = await new_session(agent, tmp_path, timeout=timeout)
@@ -461,7 +464,7 @@ async def test_close_withdraws_the_pending_permission_request(
 ):
     """ACP-CLOSE-205. Holds the agent's own permission request unanswered and sends
     `session/close` instead of `session/cancel`: a `$/cancel_request` naming that request must
-    arrive before the successful close response (session-setup.mdx:391). No state gate: the
+    arrive before the successful close response (session-setup.mdx:476). No state gate: the
     request is pending whatever the session reported. SKIPs if no permission request was
     pending when close was sent, if the close did not succeed, or if the turn never ended (the
     close-cancels-work rows judge that)."""
@@ -563,10 +566,10 @@ async def test_withdrawn_prompt_is_still_answered_exactly_once(
     """ACP-JSONRPC-007. `session/prompt` (the cancel prompt) immediately followed by
     `$/cancel_request` naming it still gets exactly one response (cancellation.mdx:20,24): a
     success, or an error that is `-32800` only if no user-message update was emitted for it
-    (prompt-lifecycle.mdx:325,388). Other error codes are recorded only: an agent may decline the
+    (prompt-lifecycle.mdx:341,413). Other error codes are recorded only: an agent may decline the
     cancel and send its normal response (cancellation.mdx:22). Cancellation is optional, so a
     prompt still unanswered after `--timeout` is not failed yet: the TCK sends `session/cancel`,
-    which also covers a prompt not yet inserted (prompt-lifecycle.mdx:384), and FAILs only if it
+    which also covers a prompt not yet inserted (prompt-lifecycle.mdx:404), and FAILs only if it
     stays unanswered after that. Either way no race SKIP is needed: every outcome is judged."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
@@ -627,7 +630,7 @@ async def test_cancel_answers_a_held_prompt_request_cancelled(
 ):
     """ACP-CANCEL-214. `ACP-PROMPT-209`'s scenario: a second prompt still unanswered when
     `session/cancel` is sent was received before the cancel and not inserted, so the cancel
-    covers it and the agent MUST answer it `-32800` (prompt-lifecycle.mdx:384,1173). A held
+    covers it and the agent MUST answer it `-32800` (prompt-lifecycle.mdx:404,1446). A held
     prompt must also never be inserted later: after the `-32800`, no user-message update for a
     new message (one other than the first prompt's) may follow within `quiet_period`. A success
     after the race window FAILs; one within it, or a user-message update with its `messageId`
@@ -723,7 +726,7 @@ async def test_cancel_with_no_foreground_work_behaviour(agent_launch, tmp_path, 
     """ACP-INFO-CANCEL-201 (INFORMATIONAL). `session/cancel` for an active session with no prompt
     in flight (no completion update is required), then for a session closed on this connection
     and for a never-created `_tck_never_created_session` (the agent ignores both,
-    session-setup.mdx:51): records whether the agent replies, stays silent, or exits. Never
+    session-setup.mdx:52): records whether the agent replies, stays silent, or exits. Never
     asserts."""
     timeout = agent_launch.default_timeout
     quiet = quiet_period(timeout)

@@ -3,7 +3,7 @@
 terminal (a `terminal` content item) and stays `in_progress` while the process runs. The
 terminal is announced, listed in `background` and still running at the turn-ending idle; the
 tool call itself is not listed. A tool call that references a listed terminal is live
-(prompt-lifecycle.mdx:216,998,1175), so `ACP-PATCH-211` PASSes, as do `ACP-STATE-206..208`.
+(prompt-lifecycle.mdx:226,1271,1450), so `ACP-PATCH-211` PASSes, as do `ACP-STATE-206..208`.
 """
 
 import sys
@@ -54,7 +54,7 @@ class ReferencesBackgroundTerminalAgent(ConformingAgent):
 
     def _resume_background(self, session_id: Any) -> None:
         """The resume snapshot lists the running terminals, so each is announced again first
-        (session-setup.mdx:346)."""
+        (session-setup.mdx:431)."""
         for terminal_id, tool_call_id in self._commands.get(session_id, []):
             self._announce_command(session_id, terminal_id, tool_call_id)
 

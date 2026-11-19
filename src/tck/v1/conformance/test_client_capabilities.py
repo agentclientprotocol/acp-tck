@@ -1,4 +1,4 @@
-"""Client-capability negative tests: ACP-CLIENTCAP-001..007.
+"""Client-capability negative tests: ACP-CLIENTCAP-001..009.
 
 The mock client (`_helpers.run_prompt`) advertises `clientCapabilities: {}` during every prompt
 turn in this suite -- no `fs`, no `terminal`, no elicitation mode. During *any* prompt turn the
@@ -22,11 +22,12 @@ no `fs/*`, `terminal/*` or `elicitation/create` request may appear, anywhere in 
 (turn, `session/load` replay or quiet period), whatever `sessionId` it carries -- a child's
 included. An agent that sends one only for a child session is caught only there.
 
-ACP-CLIENTCAP-004..007 cover client-gated `session/update` kinds rather than requests (notices,
-compaction, plan operations, subagent updates). These may be sent outside a prompt turn too, and
-compaction also during `session/load` replay, so each test scans the whole connection's
-transcript (see `_received_with_no_client_capabilities`), again one id per test. ACP-CLIENTCAP-007
-also scans tool-call content for `session` items. None of these connections ever advertises
+ACP-CLIENTCAP-004..009 cover client-gated `session/update` kinds rather than requests (notices,
+compaction, plan operations, subagent updates, prompt suggestions, cursors). These may be sent
+outside a prompt turn too, and compaction, prompt suggestions and cursors also during
+`session/load` replay, so each test scans the whole connection's transcript (see
+`_received_with_no_client_capabilities`), again one id per test. ACP-CLIENTCAP-007 also scans
+tool-call content for `session` items. None of these connections ever advertises
 `subagents`; what an agent sends once it *is* advertised is judged by `test_subagents.py`.
 """
 
@@ -260,4 +261,31 @@ async def test_no_subagent_update_without_client_capability(
         sent.append("session tool-call content")
     assert not sent, (
         f"ACP-CLIENTCAP-007: {sent!r} sent without clientCapabilities.subagents advertised"
+    )
+
+
+@pytest.mark.requirement("ACP-CLIENTCAP-008")
+async def test_no_prompt_suggestions_without_client_capability(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-CLIENTCAP-008. See module docstring; covers `session/load` replay too. What an
+    agent sends once `session.promptSuggestions` *is* advertised is judged by
+    `test_prompt_suggestions.py`."""
+    kinds = await _session_update_kinds_with_no_client_capabilities(
+        agent_launch, agent_initialize_result, tmp_path
+    )
+    assert "prompt_suggestions_update" not in kinds, (
+        "ACP-CLIENTCAP-008: prompt_suggestions_update sent without "
+        "clientCapabilities.session.promptSuggestions advertised"
+    )
+
+
+@pytest.mark.requirement("ACP-CLIENTCAP-009")
+async def test_no_cursor_update_without_client_capability(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-CLIENTCAP-009. See module docstring; covers `session/load` replay too."""
+    kinds = await _session_update_kinds_with_no_client_capabilities(
+        agent_launch, agent_initialize_result, tmp_path
+    )
+    assert "cursor_update" not in kinds, (
+        "ACP-CLIENTCAP-009: cursor_update sent without clientCapabilities.session.cursors advertised"
     )

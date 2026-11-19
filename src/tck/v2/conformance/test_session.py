@@ -70,7 +70,7 @@ async def _relative_cwd_response(agent_launch) -> tuple[Any, dict[str, Any] | No
 @pytest.mark.capability("capabilities.session")
 async def test_session_new_with_relative_cwd_is_rejected(agent_launch):
     """ACP-SESSION-204. Sends a relative `cwd` on purpose: the spec defines the agent's answer to
-    exactly this input (`session-setup.mdx:524`). Only error-vs-result is asserted: the sentence
+    exactly this input (`session-setup.mdx:613`). Only error-vs-result is asserted: the sentence
     naming `-32602` carries no RFC keyword, so the code is ACP-SESSION-209's (ADVISORY)
     concern."""
     entry, error = await _relative_cwd_response(agent_launch)
@@ -83,7 +83,7 @@ async def test_session_new_with_relative_cwd_is_rejected(agent_launch):
 @pytest.mark.capability("capabilities.session")
 async def test_session_new_relative_cwd_rejection_is_invalid_params(agent_launch):
     """ACP-SESSION-209 (ADVISORY). The rejection of a relative `cwd` is `-32602`
-    (`session-setup.mdx:524`; no RFC keyword, hence ADVISORY). SKIPs when the probe was not
+    (`session-setup.mdx:613`; no RFC keyword, hence ADVISORY). SKIPs when the probe was not
     rejected: that is ACP-SESSION-204's failure, not a second one."""
     entry, error = await _relative_cwd_response(agent_launch)
     if error is None:

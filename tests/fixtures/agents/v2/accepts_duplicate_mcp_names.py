@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `session.mcp.stdio` but accepts two MCP servers sharing a
-`name` instead of rejecting them with `-32602` (session-setup.mdx:547). FAILs exactly
+`name` instead of rejecting them with `-32602` (session-setup.mdx:636). FAILs exactly
 `ACP-MCP-204` (ADVISORY).
 """
 

@@ -11,23 +11,42 @@ child (its `capabilities.cancel`, its latest state from its own `state_update` o
    session's items). The child need not advertise `cancel` itself (tool-calls.mdx:457,603).
 2. `session/cancel` with the child's `sessionId`, only for a child that advertises
    `capabilities.cancel` and was last reported running (a client MUST NOT cancel one that does not;
-   RFD:1069-1073). The child's own idle report after it settles it: `idle` with `stopReason:
-   "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
+   `subagents.mdx:373,386`). The child's own idle `state_update` after it settles it
+   (`subagents.mdx:400`: the confirmation is the child's own report, and the mirror on the parent
+   is only a SHOULD, judged by `ACP-SUBAGENT-201`, so a mirror alone settles nothing): `idle` with
+   `stopReason: "cancelled"` is `confirmed`. Any other idle within `quiet_period(timeout)` of the cancel, with
    a stop reason the child could have reached on its own, means it ended first (`raced`: a cancel
-   racing with ended work does not rewrite its outcome, RFD:1093-1095, so nothing is judged; the
+   racing with ended work does not rewrite its outcome, `subagents.mdx:402`, so nothing is judged; the
    same race window as `ACP-CANCEL-*`). A later or implausible one is `not_cancelled`: the child
-   finished by other means after the cancel. Silence for `timeout / 2` is `unconfirmed`. After a
+   finished by other means after the cancel. An `unknown` state (the Agent can no longer observe
+   the child, `subagents.mdx:401`) settles nothing until a later `running` or `requires_action`
+   replaces it (`subagents.mdx:363`): an own `idle` with `stopReason: "cancelled"` still
+   confirms, but a non-cancelled `idle` straight after `unknown` (the work ended while out of
+   sight, `subagents.mdx:365`) or no `idle` within the wait leaves the cancel `unobservable`.
+   Other silence for the wait (`timeout / 2`, extended below) is `unconfirmed`. After a
    short quiet period the parent is checked for a cancelled `idle` the child's cancel must not
    have caused, and the other children's are recorded (not judged: the Agent may cancel its own
-   delegated work, RFD:1071-1073).
+   delegated work, `subagents.mdx:398`).
 3. `session/cancel` for the parent, so no work is left behind and the cascade can be judged: every
    descendant that was running and that the cancelled work waits on must reach `idle`. A
    descendant counts as waited on only when its parent's latest `state_update` reported a
    `background` list that does not name it *and* arrived after the descendant was announced: an
-   agent announces a background item before listing it (prompt-lifecycle.mdx:206) and re-sends
-   the state when the list changes only as a SHOULD (:205), so a descendant announced after the
+   agent announces a background item before listing it (prompt-lifecycle.mdx:216) and re-sends
+   the state when the list changes only as a SHOULD (:215), so a descendant announced after the
    latest list may be background work no list names yet, and a list never reported leaves the
-   TCK unable to tell (:204). Nothing is judged for those.
+   TCK unable to tell (:214). Nothing is judged for those.
+
+The turn holds every child `session/request_permission` unanswered (`ChildPermissionHold`), the
+evidence for `ACP-SUBAGENT-204`: when the Agent stops a session's cancelled work it cancels that
+work's pending permission requests with `$/cancel_request`, descendants' included
+(`subagents.mdx:417`), and the Client leaves a child's request open until the child reports its
+cancelled `idle` (`subagents.mdx:419`). A withdrawn request is answered `cancelled`. If the target
+has not settled within `timeout / 2` of its cancel while its own or its descendants' requests are
+still held, the TCK answers them per the `allow` policy and gives it `timeout / 2` more, so a child
+that waits for its requests before reporting its state (`subagents.mdx:421`) still has its
+confirmation judged by `ACP-SUBAGENT-016`, and the wait is `ACP-SUBAGENT-204`'s alone. Only a
+confirmation within `quiet_period` of the release counts as that wait; a later one is a slow
+stop. Requests still held when the parent's turn ends are answered then (`run_prompt`).
 
 Every wait is bounded per step (`timeout` to find something to cancel, `timeout / 2` for each
 response or state), never by one overall deadline that a long turn could exhaust, so a slow or
@@ -46,6 +65,8 @@ from typing import Any
 from tck.common.harness import AgentProcess, AgentTimeout, Direction, TranscriptEntry
 
 from ._helpers import (
+    ChildPermissionHold,
+    HeldRequest,
     ItemCancel,
     PatchTracker,
     PromptTurn,
@@ -72,6 +93,8 @@ class _Child:
     """`background_keys` of the child's own latest `state_update`; `None` when not reported."""
     background_at: int = -1
     """Transcript index of that `state_update`."""
+    listed: set[tuple[str, str]] = field(default_factory=set)
+    """The latest `background` list the child did report (a later omission leaves it unknown)."""
     tracker: PatchTracker = field(default_factory=PatchTracker)
 
 
@@ -87,8 +110,11 @@ class ChildCancelRun:
     """`none`: no child advertised `cancel` while reported running. `raced`: the child reported
     an idle that is not a cancellation within the race window (`quiet_period`), with a stop reason
     it could have reached on its own, so it had ended first. `not_cancelled`: any other
-    non-cancelled idle. `unconfirmed`: no idle within `timeout / 2`. `confirmed`: `idle` with
-    `stopReason: "cancelled"`."""
+    non-cancelled idle. `unobservable`: the child's latest state after the cancel was `unknown`
+    when no idle came within the wait, or when a non-cancelled one came. `unconfirmed`: no idle
+    `state_update` of the child's own within the wait otherwise (a mirror on the parent alone does
+    not count). The wait is `timeout / 2`, plus `timeout / 2` after a release. `confirmed`: `idle`
+    with `stopReason: "cancelled"` in the child's own `state_update`."""
     parent_cancelled: bool = False
     """The parent reported `idle`/`cancelled` after the child cancel and before the TCK's own
     parent `session/cancel`."""
@@ -105,6 +131,22 @@ class ChildCancelRun:
     tool_call_child: str | None = None
     terminal: ItemCancel = field(default_factory=ItemCancel)
     terminal_child: str | None = None
+    held: list[HeldRequest] = field(default_factory=list)
+    """Every child `session/request_permission` the turn held (`ChildPermissionHold`)."""
+    stopped: dict[str, int] = field(default_factory=dict)
+    """Child -> transcript index of its first own `idle`/`cancelled` `state_update` after a TCK
+    cancellation that covers it: the target's (for the target and its descendants) or the
+    parent's (for every child)."""
+    stopped_background: dict[str, set[tuple[str, str]]] = field(default_factory=dict)
+    """Child -> its latest reported `background` list as of that `idle`: the work the cancellation
+    did not cover (prompt-lifecycle.mdx:1452). Empty when it never reported one."""
+    released: bool = False
+    """The target had not settled within `timeout / 2` of its cancel while its own or its
+    descendants' requests were still held, so the TCK answered them (`ChildPermissionHold.release`)
+    and waited `timeout / 2` more."""
+    settled_after_release: bool = False
+    """The target settled after that release and within `quiet_period` of it, so it was waiting
+    for those answers. A later settle is a slow stop, not a wait."""
 
 
 def _is_idle_cancelled(state: Any) -> bool:
@@ -129,12 +171,16 @@ class _Driver:
         self.target_sent_index: int | None = None
         self.target_sent_at = 0.0
         self.target_settled_at: float | None = None
+        self.target_unknown = False
         self.parent_cancel_index: int | None = None
         self.parent_cancel_at = 0.0
         self.parent_ended_at: float | None = None
         self.cascade_targets: list[str] = []
         self.finishing = False
         self.turn_timed_out = False
+        self.hold = ChildPermissionHold()
+        self.released_at: float | None = None
+        self.release_index: int | None = None
 
     # --- reading the wire
 
@@ -191,19 +237,48 @@ class _Driver:
             ):
                 self.result.parent_cancelled = True
             return
-        self.children[sid].background = background_keys(update)
-        self.children[sid].background_at = index
-        self._report(index, sid, update)
+        child = self.children[sid]
+        child.background = background_keys(update)
+        child.background_at = index
+        if child.background is not None:
+            child.listed = child.background
+        if _is_idle_cancelled(update) and sid not in self.result.stopped and self._covered(index, sid):
+            self.result.stopped[sid] = index
+            self.result.stopped_background[sid] = child.listed
+        self._report(index, sid, update, own=True)
 
-    def _report(self, index: int, child_id: str, state: Any) -> None:
+    def _covered(self, index: int, child_id: str) -> bool:
+        """Whether a TCK cancellation sent before transcript index `index` covers `child_id`."""
+        if self.parent_cancel_index is not None and index > self.parent_cancel_index:
+            return True
+        target = self.result.target
+        return (
+            self.target_sent_index is not None
+            and index > self.target_sent_index
+            and target is not None
+            and (child_id == target or self._descends_from(child_id, target))
+        )
+
+    def _report(self, index: int, child_id: str, state: Any, own: bool = False) -> None:
         child = self.children[child_id]
         child.state = state if isinstance(state, dict) else None
         if self.target_sent_index is None or index <= self.target_sent_index or child.state is None:
             return
         if child_id == self.result.target:
-            if self.result.outcome == "none" and child.state.get("state") == "idle":
+            if own and self.result.outcome == "none" and child.state.get("state") == "idle":
                 self.result.outcome = self._settle(index, child.state)
+                self.result.settled_after_release = self.release_index is not None and (
+                    self.agent.transcript[index].timestamp
+                    - self.agent.transcript[self.release_index].timestamp
+                    <= self.quiet
+                )
                 self.target_settled_at = asyncio.get_running_loop().time()
+            elif child.state.get("state") == "unknown":
+                self.target_unknown = True
+            elif own and is_active_state(child.state.get("state")):
+                # A later `running` or `requires_action` replaces `unknown` (subagents.mdx:363);
+                # a parent's mirror may be a stale copy of an earlier state, so only the child's own.
+                self.target_unknown = False
         elif (
             self.parent_cancel_index is None
             and _is_idle_cancelled(child.state)
@@ -215,6 +290,10 @@ class _Driver:
     def _settle(self, index: int, state: dict[str, Any]) -> str:
         if _is_idle_cancelled(state):
             return "confirmed"
+        if self.target_unknown:
+            # The work ended while the Agent could not observe it (subagents.mdx:365), so the
+            # cancel may never have reached it.
+            return "unobservable"
         assert self.target_sent_index is not None
         transcript = self.agent.transcript
         elapsed = transcript[index].timestamp - transcript[self.target_sent_index].timestamp
@@ -325,8 +404,26 @@ class _Driver:
             or now - last_activity > self.silence
         )
         if self.result.target is not None and self.result.outcome == "none":
-            if now - self.target_sent_at > self.window:
-                self.result.outcome = "unconfirmed"
+            target = self.result.target
+            covered = {target, *(c for c in self.children if self._descends_from(c, target))}
+            if self.released_at is None and now - self.target_sent_at > self.window:
+                if self.hold.pending(covered):
+                    # A child that waits for its requests before reporting its state
+                    # (`subagents.mdx:421`) gets them answered, so its confirmation can still be
+                    # judged (`ACP-SUBAGENT-016`) and the wait is `ACP-SUBAGENT-204`'s.
+                    await self.hold.release(self.agent, covered)
+                    self.released_at = now
+                    released = [
+                        held.answered_at
+                        for held in self.hold.requests
+                        if held.answered_on == "released" and held.answered_at is not None
+                    ]
+                    self.release_index = max(released, default=None)
+                    self.result.released = True
+                else:
+                    self.released_at = self.target_sent_at
+            if self.released_at is not None and now - self.released_at > self.window:
+                self.result.outcome = "unobservable" if self.target_unknown else "unconfirmed"
                 self.target_settled_at = now
         target_settled = search_over and (
             self.result.target is None
@@ -359,7 +456,8 @@ class _Driver:
         if turn_done and self.parent_ended_at is None:
             self.parent_ended_at = now
         if self.parent_ended_at is None:
-            if now - self.parent_cancel_at > self.window:
+            # `run_prompt` returns `quiet` after the turn's idle while child requests are held.
+            if now - self.parent_cancel_at > self.window + self.quiet:
                 self.result.cascade_skip = "the parent's turn did not end after session/cancel"
                 return True
             return False
@@ -385,7 +483,13 @@ async def drive_child_cancel(
     # Several times the per-response timeout: the waits above are bounded one by one and add up
     # to less, so the turn's own deadline never fires first in a normal run.
     turn_task = asyncio.ensure_future(
-        run_prompt(agent, session_id, [{"type": "text", "text": prompt_text}], timeout=timeout * 3)
+        run_prompt(
+            agent,
+            session_id,
+            [{"type": "text", "text": prompt_text}],
+            hold_children=driver.hold,
+            timeout=timeout * 3,
+        )
     )
     try:
         while True:
@@ -416,6 +520,7 @@ async def drive_child_cancel(
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await turn_task
     result = driver.result
+    result.held = list(driver.hold.requests)
     if turn_task.done() and not turn_task.cancelled() and turn_task.exception() is None:
         result.turn = turn_task.result()
     _judge_cascade(driver, result)
@@ -423,6 +528,31 @@ async def drive_child_cancel(
         setattr(result, kind, probe.result)
         setattr(result, f"{kind}_child", driver.probe_child[kind])
     return result
+
+
+def stopped_requests_kept(
+    run: ChildCancelRun, transcript: list[TranscriptEntry], quiet: float
+) -> tuple[list[Any], list[tuple[str, Any]]]:
+    """`ACP-SUBAGENT-204`'s judgment of `run.held`: each request of a child in `run.stopped` that
+    arrived before the child's cancelled `idle` and that the TCK had not answered by then must be
+    withdrawn before it or within `quiet` after it. A request whose `subject` names an item in the
+    child's latest `background` list is not judged: that work is not cancelled
+    (prompt-lifecycle.mdx:1452). Returns `(judged, kept)`: the judged request IDs, and
+    `(session, request ID)` of each one not withdrawn in time."""
+    judged: list[Any] = []
+    kept: list[tuple[str, Any]] = []
+    for held in run.held:
+        stop = run.stopped.get(held.session_id)
+        if stop is None or held.index > stop:
+            continue
+        if held.answered_on in ("released", "turn_end", "timeout") and held.answered_at < stop:
+            continue  # the TCK answered it before the session stopped: nothing left to withdraw
+        if held.subject & run.stopped_background.get(held.session_id, set()):
+            continue
+        judged.append(held.request_id)
+        if held.withdrawn_at is None or transcript[held.withdrawn_at].timestamp - transcript[stop].timestamp > quiet:
+            kept.append((held.session_id, held.request_id))
+    return judged, kept
 
 
 def _judge_cascade(driver: _Driver, result: ChildCancelRun) -> None:

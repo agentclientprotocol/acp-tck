@@ -38,10 +38,10 @@ Run one researcher (`sonnet`) per version. It writes `.agents/research/spec-diff
 **Tracked RFDs** ([policy](../../../docs/spec-updates.md#tracked-rfds)):
 
 - **Stage:** the nearest enclosing sidebar group in the spec repo's `docs/docs.json` whose name is a stage (Draft,
-  Active, Preview, Completed). RFDs nested under Active, such as the `rfds/v2/*` pages in "Active > v2", are Active,
-  and tracked for v2 only.
-- **Tracked:** RFDs that are Active or Preview at the target, which includes those that moved from Draft into
-  Active or Preview within the range. Each is an affected doc in its own right.
+  Preview, Completed). RFDs nested under a stage, such as the `rfds/v2/*` pages in "Draft > v2", take that stage,
+  and one that reaches Preview is tracked for v2 only.
+- **Tracked:** RFDs that are Preview at the target, which includes those that moved from Draft into Preview
+  within the range. Each is an affected doc in its own right.
 - **Never tracked:** Completed RFDs, even ones that moved to Completed within the range (the doc diff covers
   their rules). Draft RFDs are not tracked either: cite them only where nothing else states the rule.
 - Keep only those whose wire shapes are in that version's schema (stable or unstable) or that otherwise apply to
@@ -110,7 +110,7 @@ Rules for RFD-sourced requirements (details in [`docs/requirements.md`](../../..
 - **Tier cap, for rules stated only in an RFD:** never `MANDATORY`. A MUST is `CAPABILITY` behind a real gate or an
   `inferred:<feature>` gate (the feature has no `initialize` marker); if no gate fits, it is `ADVISORY`. A SHOULD is
   `ADVISORY`.
-- Label every RFD citation with the RFD's stage at the pinned revision, e.g. `(Active RFD)`, `(Completed RFD)`.
+- Label every RFD citation with the RFD's stage at the pinned revision, e.g. `(Preview RFD)`, `(Completed RFD)`.
   For a Completed RFD prefer the docs that absorbed it.
 
 A new deliberate non-requirement must not rest on a TCK choice such as "the TCK never advertises X". If the rule
@@ -136,14 +136,14 @@ rules are in [`docs/requirements.md`](../../../docs/requirements.md). Run them i
    `VENDORED.md` and fix what `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag (run the
    latter with `--spec-repo <spec checkout>`). Also refresh the stage labels of the cited RFDs against the
    stage moves in the inventory. No requirement semantics change in this slice.
-2. **One slice per area:** registry rows, conformance tests, fixtures, the `test_cli.py`
+2. **One slice per area:** registry rows, conformance tests, fixtures, the CLI test
    expectations, and the ledger additions for that area. Area slices pick provisional ids; step 3
    settles them.
 3. **Final id alignment** ([details](../../../docs/spec-updates.md#id-alignment)), after all area
    slices and before the cross-check refresh. A researcher produces a read-only inventory of every v2
    `2xx` row against v1 and of every shared id, with a proposed rename and "same rule because..." for
    each. **The user approves each rename**; borderline pairs are the user's call. Then a programmer
-   applies the renames everywhere: registries, markers, `test_cli.py`/`test_registry.py` sets, fixture
+   applies the renames everywhere: registries, markers, CLI test (`tests/v{1,2}/cli/`)/`test_registry.py` sets, fixture
    docstrings, cross-check `--expect`, and `ci.yml`.
 4. **Cross-check refresh** ([details](../../../docs/spec-updates.md#cross-check-refresh)): bump the
    SDK pins if needed, re-observe the baselines, and update the `--expect` lines in

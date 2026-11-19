@@ -3,7 +3,7 @@
 `id: null`) to a well-formed `mcp/message` notification (one carrying `requestId` and `method`)
 instead of staying silent, as a dedicated MCP-over-ACP handler might. The malformed probe and other
 notifications are ignored. Violates ACP-JSONRPC-003 only, through its well-formed probe --
-notifications never receive a response (overview.mdx:239).
+notifications never receive a response (overview.mdx:242).
 """
 
 import sys

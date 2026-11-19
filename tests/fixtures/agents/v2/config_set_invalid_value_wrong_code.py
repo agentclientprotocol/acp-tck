@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: an invalid `session/set_config_option` value (undeclared select
 value, mismatched or unsupported value `type`) is rejected with `-32603` instead of `-32602`
-(session-config-options.mdx:234), leaving the configuration untouched. FAILs exactly
+(session-config-options.mdx:249), leaving the configuration untouched. FAILs exactly
 `ACP-CONFIG-208`; an unknown `configId` still gets `-32602`, so `ACP-CONFIG-207` PASSes.
 """
 

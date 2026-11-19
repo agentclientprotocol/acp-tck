@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/set_config_option` for a `configId` the session never
 advertised succeeds (answering the unchanged list) instead of `-32602`
-(session-config-options.mdx:234). FAILs exactly `ACP-CONFIG-207`. Invalid values are still
+(session-config-options.mdx:249). FAILs exactly `ACP-CONFIG-207`. Invalid values are still
 rejected, so `ACP-CONFIG-208` PASSes; `ACP-CONFIG-209` SKIPs (the only option is the
 follow-up's, so there is nothing to observe through).
 """

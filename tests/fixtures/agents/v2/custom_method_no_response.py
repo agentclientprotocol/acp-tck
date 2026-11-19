@@ -7,10 +7,9 @@ shape). Every other method is dispatched normally via `super()`, so the handshak
 turn are unaffected.
 
 Also FAILs `ACP-ERROR-001`: that requirement's own probe is a `_`-prefixed unknown method and
-gets no reply at all against this fixture (see `tests/v2/test_cli.py`'s widened `-k` scope for
-this fixture). Does NOT cascade into `ACP-BATCH-209`: an array is rejected as a whole, never dispatched
-per element.
-"""
+gets no reply at all against this fixture (see `tests/v2/cli/wire_format/test_extensibility.py`'s
+widened `-k` scope for this fixture). Does NOT cascade into `ACP-BATCH-209`: an array is rejected
+as a whole, never dispatched per element. """
 
 import sys
 from pathlib import Path

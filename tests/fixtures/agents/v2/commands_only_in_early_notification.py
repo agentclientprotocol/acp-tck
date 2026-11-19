@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: announces a command in an `available_commands_update` before the
 `session/new` response and leaves `availableCommands` out of the response, so the client's list
-is replaced with nothing (session-setup.mdx:103,108). FAILs `ACP-SESSION-208` and, since it also
+is replaced with nothing (session-setup.mdx:105,110). FAILs `ACP-SESSION-208` and, since it also
 notifies early, the ADVISORY `ACP-SESSION-207` -- the premise of 208 is that early notification.
 """
 

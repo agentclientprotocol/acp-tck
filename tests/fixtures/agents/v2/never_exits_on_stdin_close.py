@@ -3,9 +3,9 @@
 it needs SIGTERM/SIGKILL to actually terminate.
 
 FAILs `ACP-SHUTDOWN-001` (`agent.exited_on_stdin_close` after an ordinary close). Self-test
-only: its own `tests/v2/test_cli.py` entry keeps `--close-grace` small so the self-test doesn't
-have to wait out the default grace period at every rung of the shutdown ladder.
-"""
+only: its own `tests/v2/cli/wire_format/test_diagnostics.py` entry keeps `--close-grace` small so
+the self-test doesn't have to wait out the default grace period at every rung of the shutdown
+ladder. """
 
 import sys
 import time

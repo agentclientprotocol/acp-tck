@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises an unprefixed vendor key in `capabilities._meta`
-(`{"vendorThing": true}`), a name `extensibility.mdx:102` reserves for ACP. FAILs `ACP-META-204`
+(`{"vendorThing": true}`), a name `extensibility.mdx:105` reserves for ACP. FAILs `ACP-META-204`
 only (ADVISORY).
 """
 

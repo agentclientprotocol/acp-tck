@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `session/close` of a session that is not active -- already closed, or
-never created -- answers `-32002` instead of the empty result (session-setup.mdx:407-410).
+never created -- answers `-32002` instead of the empty result (session-setup.mdx:492-495).
 FAILs exactly `ACP-CLOSE-003` (ADVISORY): clients tolerate `-32002`, but the agent SHOULD succeed.
 """
 

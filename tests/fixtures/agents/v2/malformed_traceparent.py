@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: a `session/update` notification carries
 `_meta: {"traceparent": "not-a-trace-id"}`, which is not W3C Trace Context format
-(`extensibility.mdx:97-100`). FAILs `ACP-META-203` only; the key is a reserved W3C one, so
+(`extensibility.mdx:100-103`). FAILs `ACP-META-203` only; the key is a reserved W3C one, so
 `ACP-META-204` PASSes.
 """
 

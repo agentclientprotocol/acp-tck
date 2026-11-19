@@ -113,28 +113,32 @@ still running. The TCK sends this prompt, watches for such an item (for up to `-
 ends), cancels the first tool call and the first terminal it finds, then sends `session/cancel` for the turn. Once a
 tool call (or terminal) has advertised `cancel`, it also sends one `tool_call/cancel` (`terminal/cancel`) for an id no
 update announced and one for the first live item of that kind that does not advertise `cancel`, which the agent must
-reject. With the default essay prompt an agent essentially never has such an
-item, so those tests report `SKIPPED` ("no tool call advertised `capabilities.cancel` while still live"). To exercise
-them, choose a prompt that makes the agent start a long-running cancellable command or background task.
+reject. After an accepted cancel, once the item reports a final status, it sends one more cancel for it, which the agent
+must also reject (`ACP-TOOLCANCEL-210`/`ACP-TERMCANCEL-210`). With the default essay prompt an agent essentially never
+has such an item, so those tests report `SKIPPED` ("no tool call advertised `capabilities.cancel` while still live"). To
+exercise them, choose a prompt that makes the agent start a long-running cancellable command or background task.
 
 The subagent cancellation tests use it too unless `--subagent-cancel-prompt` is given (below).
 
 ### `--subagent-cancel-prompt TEXT`
 
 Prompt text for the child-cancel turn, replacing `--cancel-prompt` there (default: `--cancel-prompt`). It drives
-`ACP-SUBAGENT-016`/`017` (both versions), `ACP-SUBAGENT-202` and, in version 2, the child tool call and terminal rows
-`ACP-TOOLCANCEL-203`/`ACP-TERMCANCEL-203`. They judge an agent that exposes a child that advertises
-`capabilities.cancel` (or has a tool call or terminal that does). The TCK sends this prompt, cancels such a child with
-`session/cancel` for its `sessionId`, then cancels the turn itself. Choose a prompt that makes the agent delegate to a
-long-running subagent; with the default essay prompt they report `SKIPPED` ("no child advertised `capabilities.cancel`
-while reported running"). A prompt that produces no child leaves them `SKIPPED`.
+`ACP-SUBAGENT-016`/`017` (both versions) and, in version 2, `ACP-SUBAGENT-202`/`204` (a cancelled child's pending
+requests are withdrawn) and the child tool call and terminal rows `ACP-TOOLCANCEL-203`/`ACP-TERMCANCEL-203`. They judge
+an agent that exposes a child that advertises `capabilities.cancel` (or has a tool call or terminal that does). The TCK
+sends this prompt, cancels such a child with `session/cancel` for its `sessionId`, then cancels the turn itself. Choose
+a prompt that makes the agent delegate to a long-running subagent; with the default essay prompt they report `SKIPPED`
+("no child advertised `capabilities.cancel` while reported running"). A prompt that produces no child leaves them
+`SKIPPED`.
 
 ### `--subagent-prompt TEXT`
 
 Prompt text for the turn on the connection that advertises `clientCapabilities.subagents`, replacing a short built-in
-text (default: unchanged). That one turn is what the `ACP-SUBAGENT-*` rows judge (in version 1 also `session/load`
-replay when the agent supports it): without a child they report `SKIPPED`, so pick a prompt that makes the agent
-delegate to a subagent. A prompt that produces no child leaves them `SKIPPED`, since exposing subagents is optional.
+text (default: unchanged). That one turn is what the `ACP-SUBAGENT-*` rows and `ACP-LIST-004` judge (in version 1 also
+`session/load` replay when the agent supports it); after it, the TCK probes the announced children directly (requests
+naming a child, `session/close`/`delete` of a child, `session/list`). Without a child they report `SKIPPED`, so pick a
+prompt that makes the agent delegate to a subagent. A prompt that produces no child leaves them `SKIPPED`, since
+exposing subagents is optional.
 
 The turn must finish within `--timeout` as a whole, like any prompt turn, and an agent that does not fails the dependent
 rows instead of skipping them. A real delegating turn is often slower than the default, so raise `--timeout` (and
@@ -143,6 +147,11 @@ rows instead of skipping them. A real delegating turn is often slower than the d
 In version 1 the same connection and turn also judge `ACP-CLIENTCAP-001`..`003`. A prompt that makes the agent do real
 work there may provoke `fs/*`, `terminal/*` or elicitation requests the connection never advertised, which fails those
 rows.
+
+In version 2 the text also drives turns of its own, each on its own connection and bound by `--timeout` the same way:
+`ACP-SUBAGENT-203` prompts it and closes the session once a child permission request is held, and
+`ACP-RESUME-223`..`226` prompt it before the `session/resume` whose replay they judge. Without the option those rows use
+an ordinary prompt; `ACP-RESUME-223`, `225` and `226` then need a child to judge and report `SKIPPED` without one.
 
 ### `--auth-method ID`
 
@@ -159,8 +168,9 @@ the timeouts.
 
 Opts in to actually calling logout against the agent under test (`ACP-AUTH-004`): `logout` on v1 and `auth/logout`
 on v2. Off by default because it may revoke the operator's own credentials for whatever account the agent is
-authenticated as; without it, the logout requirement reports `SKIPPED` instead of exercising the method. With it,
-the logout test runs last, after every other test. A
+authenticated as; without it, the logout requirements report `SKIPPED` instead of exercising the method. With it,
+the logout tests (`ACP-AUTH-004`, and in version 2 also `ACP-AUTH-211`, which logs out twice) run last, after every
+other test. A
 `SKIPPED` `CAPABILITY`-tier requirement doesn't affect conformance - only a *failed* one does - so omitting
 `--allow-logout` never by itself makes a run `NOT CONFORMANT`.
 
@@ -274,17 +284,21 @@ spec commit recorded in `src/tck/v1/schema/VENDORED.md`.
   `session/resume`, `session/list`, `session/delete`, `session/close`, `session/archive`/`unarchive`,
   `additionalDirectories`, `systemPrompt`
 - `session/prompt` turns and `session/cancel`, including the cancellation race handling described above
-- Session `modes` and `configOptions`
+- Session `modes` and `configOptions`, `session/options`, and initial `configOptions` values on session setup
 - Prompt content capabilities (`image`/`audio`/`embeddedContext`)
-- Permission requests (a rejected or unrecognised answer is not approval) and plan updates
+- Permission requests (a rejected or unrecognised answer is not approval) and plan updates (markdown plans with an
+  absolute `path`)
+- Prompt suggestions (`prompt_suggestions_update`) and session cursors (`cursor_update` anchors, and `session/fork`
+  rejecting a cursor the agent never issued)
 - Authentication surface: `authMethods` (including `terminal` methods when the client enables them), `authenticate`,
   `logout`, `auth/status`
 - Client-capability negatives: the agent must never call `fs/*`, `terminal/*`, or `elicitation/create`, or send
-  notice, compaction, plan or subagent updates, when the client didn't advertise the matching capability
-  (`ACP-CLIENTCAP-001`..`007`)
+  notice, compaction, plan, subagent, prompt-suggestion or cursor updates, when the client didn't advertise the
+  matching capability (`ACP-CLIENTCAP-001`..`009`)
 - Subagents (unstable): over a connection that advertises `clientCapabilities.subagents`, an agent that exposes a
   child must announce it before any traffic for it, keep the association and `session` references consistent, report
-  absolute directories and schema-valid state (`ACP-SUBAGENT-*`; they SKIP when the agent exposes no child)
+  absolute directories and schema-valid state, reject requests that name a child, and never list one in `session/list`
+  (`ACP-SUBAGENT-*`, `ACP-LIST-004`; they SKIP when the agent exposes no child)
 - Error codes: unknown sessions, requests before `initialize`, unadvertised methods, unknown modes and config values,
   reserved-range codes
 - Extensibility and hygiene: `_`-prefixed custom methods must get a response (`ACP-EXT-001`), custom notifications
@@ -311,13 +325,20 @@ commit recorded in `src/tck/v2/schema/VENDORED.md`.
 - `session/cancel` (confirmed via a terminating `cancelled` idle `state_update`), including a turn blocked on a
   permission request, and `$/cancel_request`
 - Prompt content capabilities (`image`/`audio`/`embeddedContext`), and rejection of unknown or unadvertised content
-- `session/request_permission` flow and tool-call status rules
+- Prompt `idempotencyKey` (a retry returns the original `messageId` without a second insertion), prompt suggestions,
+  and skills (`skill` commands and prompt blocks)
+- `session/request_permission` flow and tool-call status rules, `tool_call/cancel` and `terminal/cancel`
+- Subagents (unstable): child announcement, mirroring and idle state, requests that name a child, `session/list`
+  never returning one, pending child requests withdrawn when the parent is closed or the child is stopped, and
+  children in resume replay (`ACP-SUBAGENT-*`; they SKIP when the agent exposes no child)
 - Agent -> client method rules (including the `_`/`$/`-prefix extensibility rule)
 - stdio transport and the JSON-RPC envelope (request ids, no batching: JSON arrays are rejected)
-- Session management: `session/resume` (including replay ordering), `session/list`, `session/close`/`delete`,
-  `session/fork`, `session/archive`/`unarchive`, `session/set_config_option`/`configOptions`, slash commands
+- Session management: `session/resume` (including replay ordering and `replay_complete`), session cursors,
+  `session/list`, `session/set_title`, `session/close`/`delete`, `session/fork`, `session/archive`/`unarchive`,
+  `session/set_config_option`/`configOptions`, `session/options` and initial `configOptions` values, slash commands
 - Authentication: `authMethods`, `auth/login`/`auth/logout`, `auth/status`
-- Keyed upsert/patch semantics (messages, tool calls, terminals), open-enum emitter rules (custom values must be `_`
+- Keyed upsert/patch semantics (messages, tool calls, terminals), diff and `git_patch` paths, markdown plan paths,
+  open-enum emitter rules (custom values must be `_`
   -prefixed)
 - Error codes (unknown sessions, unadvertised methods, reserved ranges), extensibility/`_meta` (including trace
   context keys), schema hygiene, error shape, shutdown promptness

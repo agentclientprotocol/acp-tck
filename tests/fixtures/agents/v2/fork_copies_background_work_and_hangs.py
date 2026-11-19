@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `fork_copies_background_work.py`, except the forked session's turn
 never ends (no idle). The fork's `running` snapshot still lists the source session's background
-item, which a fork must not inherit (session-setup.mdx:49): `ACP-FORK-206` judges the snapshots it
+item, which a fork must not inherit (session-setup.mdx:50): `ACP-FORK-206` judges the snapshots it
 received before the turn timed out and FAILs, next to `ACP-FORK-202` (the fork's turn never
 ends). Within the `-k fork` scope.
 """

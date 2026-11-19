@@ -1,6 +1,6 @@
-"""Agent-plan conformance: ACP-PLAN-001/002.
+"""Agent-plan conformance: ACP-PLAN-002/003/004.
 
-Both rules only apply once the client advertised `clientCapabilities.plan`, which every other
+All three rules only apply once the client advertised `clientCapabilities.plan`, which every other
 connection in this suite leaves out (ACP-CLIENTCAP-006 depends on that). So each test opens its
 own connection with `plan: {}`, runs one plan-flavoured prompt turn, waits a quiet period, and
 scans every `session/update` the agent sent. Plans are unstable and optional (`agent-plan.mdx`
@@ -14,10 +14,11 @@ from __future__ import annotations
 import pytest
 
 from tck.common.harness import AgentExited, AgentTimeout, Direction
+from tck.v1.validation import validate_against_def
 
 from ._helpers import (
     connected_agent,
-    is_absolute_uri,
+    is_absolute_path,
     new_session,
     quiet_period,
     run_prompt,
@@ -58,27 +59,6 @@ async def _updates_with_plan_capability(agent_launch, agent_initialize_result, t
     ]
 
 
-@pytest.mark.requirement("ACP-PLAN-001")
-async def test_plan_file_uri_is_absolute(agent_launch, agent_initialize_result, tmp_path):
-    """ACP-PLAN-001. "Absolute" is the TCK's own reading (see `is_absolute_uri`); the spec does
-    not define it."""
-    updates = await _updates_with_plan_capability(agent_launch, agent_initialize_result, tmp_path)
-    relative = []
-    for update in updates:
-        plan = update.get("plan")
-        if (
-            update.get("sessionUpdate") == "plan_update"
-            and isinstance(plan, dict)
-            and plan.get("type") == "file"
-            and not is_absolute_uri(plan.get("uri"))
-        ):
-            relative.append(plan.get("uri"))
-    assert not relative, (
-        f"ACP-PLAN-001: plan_update file uri is not absolute: {relative!r} (the TCK reads "
-        "'absolute' as an RFC 3986 URI with a scheme, and for `file:` an RFC 8089 absolute path)"
-    )
-
-
 @pytest.mark.requirement("ACP-PLAN-002")
 async def test_plan_update_used_when_plan_capability_advertised(
     agent_launch, agent_initialize_result, tmp_path
@@ -90,3 +70,41 @@ async def test_plan_update_used_when_plan_capability_advertised(
         "ACP-PLAN-002: baseline `plan` update sent although clientCapabilities.plan was "
         "advertised (agent may not implement the unstable plan operations)"
     )
+
+
+@pytest.mark.requirement("ACP-PLAN-003")
+async def test_markdown_plan_path_is_an_absolute_native_path(
+    agent_launch, agent_initialize_result, tmp_path
+):
+    """ACP-PLAN-003. Only a string `path` is judged: `null` and omission mean no file, and a
+    non-string `path` is `ACP-PLAN-004`'s."""
+    updates = await _updates_with_plan_capability(agent_launch, agent_initialize_result, tmp_path)
+    not_absolute = []
+    for update in updates:
+        plan = update.get("plan")
+        if (
+            update.get("sessionUpdate") == "plan_update"
+            and isinstance(plan, dict)
+            and plan.get("type") == "markdown"
+            and isinstance(plan.get("path"), str)
+            and not is_absolute_path(plan["path"])
+        ):
+            not_absolute.append(plan["path"])
+    assert not not_absolute, (
+        f"ACP-PLAN-003: markdown plan path is not an absolute native path: {not_absolute!r} "
+        "(a relative path or a URI such as `file:///...` is not one)"
+    )
+
+
+@pytest.mark.requirement("ACP-PLAN-004")
+async def test_plan_updates_validate_against_the_schema(agent_launch, agent_initialize_result, tmp_path):
+    """ACP-PLAN-004. Judges the whole `update` of every `plan_update` and `plan_removed`; the
+    baseline `plan` update is not this row's."""
+    updates = await _updates_with_plan_capability(agent_launch, agent_initialize_result, tmp_path)
+    problems = [
+        f"{update!r}: {issue.message}"
+        for update in updates
+        if update.get("sessionUpdate") in ("plan_update", "plan_removed")
+        for issue in validate_against_def("SessionUpdate", update)
+    ]
+    assert not problems, "ACP-PLAN-004: plan update does not match the schema: " + "; ".join(problems)

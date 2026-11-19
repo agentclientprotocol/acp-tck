@@ -79,6 +79,13 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-SUBAGENT-017",
         "ACP-SUBAGENT-201",
         "ACP-SUBAGENT-202",
+        "ACP-SUBAGENT-203",
+        "ACP-SUBAGENT-204",
+        "ACP-SUBAGENT-205",
+        "ACP-SUBAGENT-206",
+        "ACP-SUBAGENT-207",
+        "ACP-SUBAGENT-018",
+        "ACP-SUBAGENT-019",
         "ACP-PROMPT-201",
         "ACP-PROMPT-203",
         "ACP-STATE-201",
@@ -91,7 +98,17 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PROMPT-207",
         "ACP-PROMPT-209",
         "ACP-PROMPT-211",
+        "ACP-PROMPT-212",
+        "ACP-PROMPT-213",
+        "ACP-PROMPT-214",
+        "ACP-PROMPT-215",
+        "ACP-PROMPT-216",
+        "ACP-PROMPT-217",
+        "ACP-PROMPT-218",
+        "ACP-PROMPT-219",
         "ACP-PROMPTCAP-201",
+        "ACP-PROMPTCAP-202",
+        "ACP-PROMPT-220",
         "ACP-STATE-204",
         "ACP-STATE-205",
         "ACP-STATE-206",
@@ -105,7 +122,29 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PERM-002",
         "ACP-PERM-204",
         "ACP-CLIENTCAP-003",
+        "ACP-CLIENTCAP-008",
         "ACP-CLIENTCAP-202",
+        "ACP-CLIENTCAP-203",
+        "ACP-SUGGEST-001",
+        "ACP-SUGGEST-002",
+        "ACP-SUGGEST-003",
+        "ACP-SUGGEST-004",
+        "ACP-CURSOR-001",
+        "ACP-CURSOR-002",
+        "ACP-CURSOR-003",
+        "ACP-CURSOR-004",
+        "ACP-OPTIONS-001",
+        "ACP-OPTIONS-002",
+        "ACP-OPTIONS-003",
+        "ACP-OPTIONS-004",
+        "ACP-OPTIONS-005",
+        "ACP-OPTIONS-006",
+        "ACP-OPTIONS-007",
+        "ACP-OPTIONS-008",
+        "ACP-OPTIONS-009",
+        "ACP-OPTIONS-010",
+        "ACP-OPTIONS-011",
+        "ACP-OPTIONS-201",
         "ACP-INFO-CONCURRENT-201",
         "ACP-INFO-BACKGROUND-201",
         "ACP-INFO-BACKGROUND-202",
@@ -155,13 +194,25 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-RESUME-214",
         "ACP-RESUME-216",
         "ACP-RESUME-217",
+        "ACP-RESUME-218",
+        "ACP-RESUME-219",
+        "ACP-RESUME-220",
+        "ACP-RESUME-221",
+        "ACP-RESUME-222",
+        "ACP-RESUME-223",
+        "ACP-RESUME-224",
+        "ACP-RESUME-225",
+        "ACP-RESUME-226",
         "ACP-LIST-001",
         "ACP-LIST-002",
         "ACP-LIST-203",
         "ACP-LIST-204",
         "ACP-LIST-205",
         "ACP-LIST-003",
+        "ACP-LIST-004",
         "ACP-LIST-207",
+        "ACP-LIST-208",
+        "ACP-LIST-209",
         "ACP-CLOSE-001",
         "ACP-CLOSE-002",
         "ACP-CLOSE-203",
@@ -183,6 +234,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-ADDDIRS-001",
         "ACP-ADDDIRS-202",
         "ACP-ADDDIRS-203",
+        "ACP-ADDDIRS-204",
         "ACP-FORK-201",
         "ACP-FORK-202",
         "ACP-FORK-203",
@@ -210,6 +262,7 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-CONFIG-211",
         "ACP-CONFIG-212",
         "ACP-COMMANDS-201",
+        "ACP-COMMANDS-202",
         "ACP-AUTH-001",
         "ACP-AUTH-002",
         "ACP-AUTH-004",
@@ -221,10 +274,12 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-AUTH-007",
         "ACP-AUTH-008",
         "ACP-AUTH-210",
+        "ACP-AUTH-211",
         "ACP-PATCH-201",
         "ACP-PATCH-203",
         "ACP-PATCH-204",
         "ACP-PATCH-205",
+        "ACP-PLAN-003",
         "ACP-PATCH-206",
         "ACP-PATCH-207",
         "ACP-PATCH-208",
@@ -232,6 +287,10 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-PATCH-210",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-213",
+        "ACP-PATCH-214",
+        "ACP-PATCH-215",
+        "ACP-PATCH-216",
         "ACP-TOOLCANCEL-201",
         "ACP-TOOLCANCEL-202",
         "ACP-TOOLCANCEL-203",
@@ -241,6 +300,8 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-TOOLCANCEL-207",
         "ACP-TOOLCANCEL-208",
         "ACP-TOOLCANCEL-209",
+        "ACP-TOOLCANCEL-210",
+        "ACP-TOOLCANCEL-211",
         "ACP-TERMCANCEL-201",
         "ACP-TERMCANCEL-202",
         "ACP-TERMCANCEL-203",
@@ -250,6 +311,8 @@ def test_registry_has_exactly_the_expected_requirements():
         "ACP-TERMCANCEL-207",
         "ACP-TERMCANCEL-208",
         "ACP-TERMCANCEL-209",
+        "ACP-TERMCANCEL-210",
+        "ACP-TERMCANCEL-211",
         "ACP-ENUM-201",
         "ACP-ENUM-203",
         "ACP-ENUM-204",
@@ -284,6 +347,8 @@ def test_advisory_tier_is_exactly_these_ids():
     assert {req.id for req in REGISTRY.values() if req.tier is Tier.ADVISORY} == {
         "ACP-AUTH-005",
         "ACP-AUTH-210",
+        "ACP-AUTH-211",
+        "ACP-ADDDIRS-204",
         "ACP-BATCH-209",
         "ACP-INIT-215",
         "ACP-SUBAGENT-011",
@@ -291,7 +356,8 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-SUBAGENT-013",
         "ACP-SUBAGENT-014",
         "ACP-SUBAGENT-201",
-        "ACP-CANCEL-213",
+        "ACP-SUBAGENT-207",
+        "ACP-SUBAGENT-018",
         "ACP-CLOSE-204",
         "ACP-CLOSE-003",
         "ACP-CONFIG-211",
@@ -315,12 +381,15 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-PATCH-209",
         "ACP-PATCH-211",
         "ACP-PATCH-212",
+        "ACP-PATCH-216",
         "ACP-TOOLCANCEL-205",
         "ACP-TERMCANCEL-205",
         "ACP-TOOLCANCEL-207",
         "ACP-TERMCANCEL-207",
         "ACP-TOOLCANCEL-209",
         "ACP-TERMCANCEL-209",
+        "ACP-TOOLCANCEL-211",
+        "ACP-TERMCANCEL-211",
         "ACP-RESUME-214",
         "ACP-RESUME-216",
         "ACP-SCHEMA-002",
@@ -328,10 +397,20 @@ def test_advisory_tier_is_exactly_these_ids():
         "ACP-SESSION-207",
         "ACP-SESSION-209",
         "ACP-LIST-207",
+        "ACP-LIST-208",
+        "ACP-LIST-209",
         "ACP-SHUTDOWN-001",
         "ACP-STATE-209",
         "ACP-STATE-210",
         "ACP-STATE-204",
+        "ACP-SUGGEST-004",
+        "ACP-RESUME-222",
+        "ACP-PROMPT-216",
+        "ACP-PROMPT-220",
+        "ACP-CURSOR-004",
+        "ACP-OPTIONS-007",
+        "ACP-OPTIONS-008",
+        "ACP-OPTIONS-009",
     }
 
 
@@ -349,6 +428,8 @@ def test_informational_tier_is_exactly_these_ids():
         "ACP-INFO-PARSE-001",
         "ACP-MCP-201",
         "ACP-MCP-202",
+        "ACP-OPTIONS-010",
+        "ACP-OPTIONS-201",
         "ACP-STDERR-001",
     }
 
@@ -424,21 +505,20 @@ def test_every_registry_id_is_referenced_by_at_least_one_test():
 
 def test_cli_selftest_tier_sets_match_the_registry():
     """v2 twin of `tests/v1/test_registry.py::test_cli_selftest_tier_sets_match_the_registry`:
-    `tests/v2/test_cli.py` hand-maintains `_MANDATORY_IDS`/`_CAPABILITY_IDS`, which must mirror
-    `REGISTRY`'s own `Tier` field exactly -- otherwise a tier misclassification could go
-    unnoticed. `tests/v2` is a package (unlike `tests/v1`), so the sibling module is imported as
-    `v2.test_cli`, not the bare `test_cli` v1 uses."""
-    import v2.test_cli as test_cli
+    `tests/v2/cli/_expectations.py` hand-maintains `_MANDATORY_IDS`/`_CAPABILITY_IDS`, which must
+    mirror `REGISTRY`'s own `Tier` field exactly -- otherwise a tier misclassification could go
+    unnoticed."""
+    from .cli import _expectations
 
     by_tier: dict[Tier, set[str]] = {tier: set() for tier in Tier}
     for req_id, requirement in REGISTRY.items():
         by_tier[requirement.tier].add(req_id)
 
-    assert test_cli._MANDATORY_IDS == by_tier[Tier.MANDATORY], (
-        test_cli._MANDATORY_IDS ^ by_tier[Tier.MANDATORY]
+    assert _expectations._MANDATORY_IDS == by_tier[Tier.MANDATORY], (
+        _expectations._MANDATORY_IDS ^ by_tier[Tier.MANDATORY]
     )
-    assert test_cli._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
-        test_cli._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
+    assert _expectations._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
+        _expectations._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
     )
 
 
@@ -606,7 +686,7 @@ def test_every_logout_test_carries_the_revokes_marker_and_nothing_else_does():
     logout_tests = {
         test_name
         for test_name, marks in _tests_with_marker("requirement").items()
-        if "ACP-AUTH-004" in {req_id for mark in marks for req_id in mark.args}
+        if {"ACP-AUTH-004", "ACP-AUTH-211"} & {req_id for mark in marks for req_id in mark.args}
     }
     assert logout_tests, "no test is bound to ACP-AUTH-004"
     revoking = _tests_with_marker("revokes")

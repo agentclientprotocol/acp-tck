@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: sends a `session/request_permission` request naming the new session
-before the `session/new` response, when the client cannot yet show it (session-setup.mdx:103).
+before the `session/new` response, when the client cannot yet show it (session-setup.mdx:105).
 FAILs exactly `ACP-SESSION-206` (ADVISORY). The request is never awaited.
 """
 

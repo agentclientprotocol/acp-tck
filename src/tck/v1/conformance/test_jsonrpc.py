@@ -179,7 +179,7 @@ async def test_mcp_message_notification_receives_no_response(agent_launch):
     Both break client rules on purpose: the envelope is sent only for an active request on a
     declared `acp` MCP server and only to an agent that advertised `acp`, and `requestId` and
     `method` are required. The spec defines the agent's answer to exactly these inputs:
-    `overview.mdx:239` says notifications never receive responses, and the (Active)
+    `overview.mdx:242` says notifications never receive responses, and the (Draft)
     MCP-over-ACP RFD repeats it for this envelope (`mcp-over-acp.mdx:225,257`: no response,
     "malformed notifications do not receive synthetic replies"). Sent whether or not the agent
     advertises `mcpCapabilities.acp`: an agent that does not know the method must stay silent

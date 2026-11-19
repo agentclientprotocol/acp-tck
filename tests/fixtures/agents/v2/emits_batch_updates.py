@@ -51,7 +51,7 @@ def main() -> None:
     EmitsBatchUpdatesAgent(
         capabilities={
             "session": {
-                "prompt": {"image": {}, "audio": {}, "embeddedContext": {}},
+                "prompt": {"image": {}, "audio": {}, "embeddedContext": {}, "skill": {}},
             },
         }
     ).run()

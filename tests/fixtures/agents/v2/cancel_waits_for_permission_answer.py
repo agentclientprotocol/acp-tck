@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: asks for permission mid-turn; on `session/cancel` it neither stops
 waiting for the request nor withdraws it, and ends the work `cancelled` only once the client
-answers it. After `session/cancel` the Agent MUST stop waiting (and SHOULD send
-`$/cancel_request`): FAILs exactly `ACP-CANCEL-209` and the ADVISORY `ACP-CANCEL-213`.
+answers it. After `session/cancel` the Agent MUST stop waiting (and MUST send
+`$/cancel_request`): FAILs exactly `ACP-CANCEL-209` and `ACP-CANCEL-213`.
 """
 
 import sys

@@ -31,7 +31,7 @@ Prints a Markdown report of what a spec diff touches: changed files and sections
 map's core docs and `$defs`, the schema `$ref` closure, docs linking to changed docs, the
 requirement ids and ledger entries whose citations fall in a changed region, and each RFD's stage
 at base and target (from the sidebar groups in the spec's `docs/docs.json`) with the tracked RFDs
-(Active or Preview at target), the stage moves, and whether the map's `rfd_audit` marker records
+(Preview at target), the stage moves, and whether the map's `rfd_audit` marker records
 a prior full RFD audit.
 
 With `--fix` it instead remaps the `.mdx` line citations in `src/tck/vN/requirements.py` and
@@ -48,5 +48,5 @@ uv run --package spec-tracker pytest spec-tracker/tests --spec-repo PATH
 ```
 
 Without `--spec-repo`, or when the clone lacks a pinned revision, the spec-doc checks SKIP locally
-(check the skip count) and FAIL under `CI=true`. The CI `test` job runs these after the root suite,
-against a fetch of each pinned revision.
+(check the skip count) and FAIL under `CI=true`. The CI `spec-tracker` job runs these against a
+fetch of each pinned revision; the required `test` check waits for it.

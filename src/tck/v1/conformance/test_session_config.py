@@ -25,7 +25,13 @@ from tck.common.harness import AgentExited, AgentTimeout, Direction
 from tck.common.plugin import capability_is_supported
 from tck.v1.validation import validate_agent_response
 
-from ._helpers import connected_agent, quiet_period, session_update_kind, skip_if_auth_gated
+from ._helpers import (
+    connected_agent,
+    flatten_select_values,
+    quiet_period,
+    session_update_kind,
+    skip_if_auth_gated,
+)
 
 
 async def _new_session_full_result(agent, cwd, *, timeout):
@@ -41,23 +47,6 @@ async def _new_session_full_result(agent, cwd, *, timeout):
     issues = validate_agent_response("session/new", msg)
     assert not issues, f"session/new result failed schema validation: {issues!r}"
     return msg["result"]
-
-
-def _flatten_select_values(options) -> list[Any]:
-    """`SessionConfigSelectOptions` is `anyOf` a flat array of `{value, name, ...}` or a grouped
-    array of `{group, name, options: [{value, ...}]}` -- flatten either shape down to the set of
-    legal `value`s."""
-    values = []
-    for entry in options:
-        if not isinstance(entry, dict):
-            continue
-        if "value" in entry:
-            values.append(entry["value"])
-        elif "options" in entry:
-            for sub in entry["options"]:
-                if isinstance(sub, dict) and "value" in sub:
-                    values.append(sub["value"])
-    return values
 
 
 # --- modes ---
@@ -180,7 +169,7 @@ async def test_config_options_current_values_are_valid(agent_launch, tmp_path):
                 )
             else:
                 # Default/select variant: currentValue must be one of the declared options.
-                legal_values = _flatten_select_values(option.get("options") or [])
+                legal_values = flatten_select_values(option.get("options") or [])
                 assert current_value in legal_values, (
                     f"config option {option['id']!r} currentValue {current_value!r} is not "
                     f"among its declared options {legal_values!r}"
@@ -213,7 +202,7 @@ async def test_set_config_option_returns_the_complete_list(agent_launch, tmp_pat
                 "value": new_value,
             }
         else:
-            legal_values = _flatten_select_values(target.get("options") or [])
+            legal_values = flatten_select_values(target.get("options") or [])
             remaining = [value for value in legal_values if value != target.get("currentValue")]
             if not remaining:
                 pytest.skip(f"config option {target['id']!r} has no alternative value to switch to")
@@ -257,10 +246,14 @@ def _boolean_options(config_options: Any) -> list[Any]:
 
 
 async def _result_of(agent, method: str, params: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-    """The `result` object of `method`, or `{}` if it errored -- an error is another
-    requirement's finding; CONFIG-003 only inspects payloads that were actually sent."""
+    """The `result` object of `method`, or `{}` if it errored or was not answered within `timeout`
+    -- either is another requirement's finding (ACP-LOAD-001, ACP-OPTIONS-001, ...); CONFIG-003
+    only inspects payloads that were actually sent."""
     req_id = await agent.send_request(method, params)
-    entry = await agent.wait_for_response(req_id, timeout=timeout)
+    try:
+        entry = await agent.wait_for_response(req_id, timeout=timeout)
+    except AgentTimeout:
+        return {}
     msg = entry.parsed
     result = msg.get("result") if isinstance(msg, dict) else None
     return result if isinstance(result, dict) else {}
@@ -273,7 +266,7 @@ async def test_no_boolean_config_option_without_client_capability(
     """ACP-CONFIG-003 (MANDATORY). Connects with `clientCapabilities: {}` explicitly (no
     `session.configOptions.boolean`) and asserts no `type: "boolean"` option appears in any
     `configOptions` payload: `session/new`'s result, a `session/set_config_option` result (when
-    a select option has an alternative value), `session/load`/`session/resume` results (when
+    a select option has an alternative value), `session/load`/`session/resume`/`session/options` results (when
     advertised), and any `config_option_update` seen on the connection. Passes vacuously if the
     agent has no config options at all, or none of type boolean."""
     init_result = agent_initialize_result.result or {}
@@ -295,7 +288,7 @@ async def test_no_boolean_config_option_without_client_capability(
         )
         alternatives = [
             value
-            for value in _flatten_select_values((select or {}).get("options") or [])
+            for value in flatten_select_values((select or {}).get("options") or [])
             if value != (select or {}).get("currentValue")
         ]
         if alternatives:
@@ -322,6 +315,11 @@ async def test_no_boolean_config_option_without_client_capability(
                 timeout=timeout,
             )
             payloads["session/resume"] = resume_result.get("configOptions")
+        if capability_is_supported(init_result, "agentCapabilities.sessionCapabilities.options"):
+            options_result = await _result_of(
+                agent, "session/options", {"cwd": str(tmp_path)}, timeout=timeout
+            )
+            payloads["session/options"] = options_result.get("configOptions")
 
         payloads["config_option_update"] = [
             option

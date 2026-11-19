@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fixture for `ACP-INFO-BACKGROUND-201`: `references_background_terminal.py`, except the
 background list names the command's tool call as well as its terminal. Process-backed work is
-listed as its terminal only (prompt-lifecycle.mdx:208), but the client cannot tell whether the
+listed as its terminal only (prompt-lifecycle.mdx:218), but the client cannot tell whether the
 tool call has other live work, so the row only records the pair and nothing FAILs.
 """
 

@@ -15,8 +15,18 @@ even though it *does* have a boolean option, as long as the TCK's own probe conn
 that capability (see `test_session_config.py`).
 
 For a client that advertised `clientCapabilities.plan` (only the `ACP-PLAN-*` tests do), each
-prompt turn also sends two `plan_update` messages -- an item plan and a file plan with an
-absolute `uri` -- so ACP-PLAN-001/002 PASS non-vacuously. Without `plan`, no plan is sent.
+prompt turn also sends two `plan_update` messages -- an item plan and a markdown plan with an
+absolute `path` -- so ACP-PLAN-002/003/004 PASS non-vacuously. Without `plan`, no plan is sent.
+For a client that advertised `clientCapabilities.session.promptSuggestions` it sends a suggestion
+list after each prompt response and withdraws the previous one when the next prompt is accepted, so
+ACP-SUGGEST-001..004 PASS non-vacuously (`_suggests.py`); the replay on `session/load` has none.
+For a client that advertised `clientCapabilities.session.cursors` it reports each agent message
+with a `messageId` and announces a fork-capable cursor after it (replayed on `session/load` with
+the same id), and `session/fork` accepts those cursors and rejects any other with `-32602`, so
+ACP-CURSOR-001..004 PASS non-vacuously (`_cursors.py`).
+It advertises `sessionCapabilities.options`, and `_base.py` answers `session/options` (with or without a
+persisted `sessionId`) without creating a session or touching MCP servers, so ACP-OPTIONS-001/002/003/009
+PASS non-vacuously.
 It also inherits `HonorsPermissionAgent`'s permission probe, so ACP-PERM-001/002 PASS
 non-vacuously; ordinary prompts never request permission.
 """
@@ -27,6 +37,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from _cursors import CursorsMixin  # noqa: E402
+from _suggests import SuggestsMixin  # noqa: E402
 from honors_permission import HonorsPermissionAgent  # noqa: E402
 
 CAPABILITIES = {
@@ -37,8 +49,10 @@ CAPABILITIES = {
         "archive": {},
         "resume": {},
         "close": {},
+        "fork": {},
         "additionalDirectories": {},
         "systemPrompt": {},
+        "options": {},
     },
     "promptCapabilities": {
         "image": True,
@@ -97,11 +111,16 @@ PLANS = [
         "planId": "steps",
         "entries": [{"content": "Read the code", "priority": "medium", "status": "pending"}],
     },
-    {"type": "file", "planId": "design-doc", "uri": "file:///tmp/plan.md"},
+    {
+        "type": "markdown",
+        "planId": "design-doc",
+        "content": "## Steps\n- [ ] Read the code",
+        "path": "/tmp/plan.md",
+    },
 ]
 
 
-class ConformingFullAgent(HonorsPermissionAgent):
+class ConformingFullAgent(CursorsMixin, SuggestsMixin, HonorsPermissionAgent):
     # So load/resume can be probed from a fresh process (ACP-SYSPROMPT-002/003).
     _persist_sessions = True
 

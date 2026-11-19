@@ -3,7 +3,7 @@
 permission for its listed background tool call (the `tool_call` subject names it) instead of
 finishing it at once. The request belongs to background work, so foreground work is not
 blocked and the session never reports `requires_action` (tool-calls.mdx:268;
-prompt-lifecycle.mdx:174): `ACP-PATCH-209` SKIPs rather than FAILs. Once answered, the tool
+prompt-lifecycle.mdx:184): `ACP-PATCH-209` SKIPs rather than FAILs. Once answered, the tool
 call ends `completed` if approved, else `cancelled`, and a repeated idle snapshot removes it
 from the list.
 """

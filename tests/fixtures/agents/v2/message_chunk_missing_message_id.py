@@ -8,7 +8,7 @@ sent, so `ACP-PATCH-204/205/208` and `ACP-ENUM-201` SKIP "no <variant> observed"
 
 Since `_send_rich_turn_updates` runs on every turn, this also cascades into `ACP-PROMPT-002`
 (CAPABILITY, affects the verdict) whenever this fixture is run unscoped -- see the widened `-k`
-scope on its self-test in `tests/v2/test_cli.py`.
+scope on its self-test in `tests/v2/cli/tool_calls/test_patches.py`.
 """
 
 import sys

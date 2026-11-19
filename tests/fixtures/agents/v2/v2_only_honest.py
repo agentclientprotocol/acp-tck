@@ -5,11 +5,10 @@ with `protocolVersion: 2`, including a v1-shaped request (`{"protocolVersion": 1
 current draft that selects a version higher than requested (initialization.mdx:110-112), so under
 `--protocol-version 2` it FAILs `ACP-INIT-202` and `ACP-INIT-205`.
 
-Used by `tests/v1/test_cli.py` for the version-mismatch path where the agent *answers* the v1
-handshake with another version: its v2-shaped result cannot be judged against v1's shape rules,
-so every v1-shape-dependent row SKIPs with the `VERSION-MISMATCH:` marker -- the mirror image of
-a v1-only agent run under `--protocol-version 2`.
-"""
+Used by `tests/v1/cli/connection_setup/test_initialize.py` for the version-mismatch path where the
+agent *answers* the v1 handshake with another version: its v2-shaped result cannot be judged
+against v1's shape rules, so every v1-shape-dependent row SKIPs with the `VERSION-MISMATCH:` marker
+-- the mirror image of a v1-only agent run under `--protocol-version 2`. """
 
 import sys
 from pathlib import Path

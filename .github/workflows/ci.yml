@@ -11,10 +11,11 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: test
+  # Everything in the product suite except the end-to-end CLI tests, which the `cli` jobs run.
+  unit:
+    name: unit
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -29,10 +30,75 @@ jobs:
       - name: Sync dependencies
         run: uv sync --locked
 
-      # The end-to-end CLI tests mostly wait on agent subprocesses, so they parallelize well
-      # (pytest's addopts in pyproject.toml runs them in parallel).
-      - name: Run test suite
-        run: uv run pytest -q
+      - name: Run unit and registry tests
+        run: uv run pytest -q tests --ignore tests/v1/cli --ignore tests/v2/cli
+
+  # The CLI test domains are the directories under tests/v1/cli and tests/v2/cli (the same in both
+  # versions), so a new domain gets its own `cli` job without editing this file.
+  domains:
+    name: list CLI test domains
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      domains: ${{ steps.list.outputs.domains }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: List domains
+        id: list
+        run: |
+          list() { find "tests/$1/cli" -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name '.*' -exec basename {} \; | sort; }
+          if ! diff <(list v1) <(list v2); then
+            echo "::error::tests/v1/cli and tests/v2/cli must have the same domain directories"
+            exit 1
+          fi
+          echo "domains=$(list v1 | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  # One job per domain runs that domain's CLI tests for both versions. They mostly wait on agent
+  # subprocesses, so they parallelize well (pytest's addopts in pyproject.toml runs them in parallel).
+  cli:
+    name: cli ${{ matrix.domain }}
+    needs: domains
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        domain: ${{ fromJSON(needs.domains.outputs.domains) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Run CLI tests (${{ matrix.domain }})
+        run: uv run pytest -q tests/v1/cli/${{ matrix.domain }} tests/v2/cli/${{ matrix.domain }}
+
+  spec-tracker:
+    name: spec-tracker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Sync dependencies
+        run: uv sync --locked
 
       # spec-tracker's tests check the spec maps against the spec docs at each version's vendored
       # schema revision (SCHEMA_REVISION in protocol.py); under CI they fail, not skip, if this
@@ -51,10 +117,28 @@ jobs:
       - name: Test spec-tracker
         run: uv run --locked --package spec-tracker pytest spec-tracker/tests -q --spec-repo "$RUNNER_TEMP/acp-spec"
 
+  # The single required check: green only when the unit tests, every CLI domain and spec-tracker
+  # passed, so domains can be added without touching branch protection.
+  test:
+    name: test
+    needs: [unit, domains, cli, spec-tracker]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the test jobs
+        env:
+          RESULTS: ${{ needs.unit.result }} ${{ needs.domains.result }} ${{ needs.cli.result }} ${{ needs.spec-tracker.result }}
+        run: |
+          echo "unit, domains, cli, spec-tracker: $RESULTS"
+          for result in $RESULTS; do
+            test "$result" = success
+          done
+
   # The cross-check is informational: independently implemented upstream agents are expected to
   # FAIL some requirements, so a red result here does not mean the TCK broke. It needs nothing from
-  # `test`, so it starts right away. Each agent runs on its own runner, so the TCK runs never share
-  # CPUs (several checks are timing-sensitive), and the last job checks all four reports.
+  # the test jobs, so it starts right away. Each agent runs on its own runner, so the TCK runs never
+  # share CPUs (several checks are timing-sensitive), and the last job checks all four reports.
   cross-check-agent:
     name: cross-check ${{ matrix.leg }} (informational)
     runs-on: ubuntu-latest

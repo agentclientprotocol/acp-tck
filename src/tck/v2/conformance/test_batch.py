@@ -17,7 +17,7 @@ agent's answer for exactly that input, so the probe is legitimate.
 `test_jsonrpc.py`. A v1-only agent forced under `--protocol-version 2` (per
 `tck.v1.conformance._base`'s `run()`: a top-level JSON array is silently dropped, `isinstance(
 message, dict)` gate, no reply at all) would otherwise time out and FAIL this file's rows,
-breaking `tests/v2/test_cli.py`'s
+breaking `tests/v2/cli/connection_setup/test_initialize.py`'s
 `test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mismatch` invariant
 (zero FAILs, full `VERSION-MISMATCH:` coverage for every non-negotiation id).
 `_helpers.v2_only_agent` implements this "manual initialize + skip on mismatch" pattern.

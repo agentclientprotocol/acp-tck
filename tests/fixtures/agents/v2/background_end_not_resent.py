@@ -2,7 +2,7 @@
 """Non-conforming fixture: `finishes_background_after_idle.py`, except after the background tool
 call ends (its final status is sent) the agent never re-sends the state, so the last snapshot
 still lists the finished item. The Agent SHOULD re-send the state when background work ends
-(prompt-lifecycle.mdx:205).
+(prompt-lifecycle.mdx:215).
 
 FAILs exactly `ACP-STATE-209`.
 """

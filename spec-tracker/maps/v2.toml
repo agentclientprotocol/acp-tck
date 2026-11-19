@@ -22,9 +22,10 @@
 #   statement  the spec rule, in one sentence
 #   reason     why the TCK does not test it (not observable, unsafe, out of scope, ...)
 
-# Optional top-level `rfd_audit = "<spec commit>"` (put it above the first table; absent until the first
-# full RFD audit): the spec revision at which every tracked RFD was last audited in full. `spec-impact`
-# reports a missing marker; the update process sets it after a full RFD audit.
+# Optional top-level `rfd_audit = "<spec commit>"` (put it above the first table): the spec revision at which
+# every tracked RFD was last audited in full. `spec-impact` reports a missing marker; the update
+# process sets it after each full RFD audit.
+rfd_audit = "3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 
 # Schema `$defs` whose changes are treated like a core doc change.
 core_defs = [
@@ -39,8 +40,9 @@ core_defs = [
 
 [[core_doc]]
 path = "docs/protocol/v2/draft/prompt-lifecycle.mdx"
-# Everything except the standalone feature subsections: Session-directed messages (unstable),
-# Session notices, Session compaction, Session usage updates, End-turn token usage (unstable).
+# Everything except the standalone feature subsections: Session-directed messages, Session notices,
+# Prompt suggestions (unstable), Session compaction, Session cursors (unstable), Session usage
+# updates, End-turn token usage (unstable).
 sections = [
     "(intro)",
     "Session updates > (intro)",
@@ -65,6 +67,7 @@ code = [
     "src/tck/v2/conformance/test_cancel.py",
     "src/tck/v2/conformance/test_patches.py",
     "src/tck/v2/conformance/test_permission.py",
+    "src/tck/v2/conformance/test_idempotency.py",
 ]
 reason = "foreground state machine, insertion boundary, entity IDs, upserts, stop reasons and cancellation, restated by tool-calls, elicitation, cancellation, session-setup and others"
 
@@ -166,582 +169,789 @@ reason = "stdio framing, shutdown, message timing and order, and the no-batches 
 # --- prompt-lifecycle.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:325,372 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:341,388 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The Agent responds to `session/prompt` once the message is inserted, without waiting for foreground work to finish."
 reason = "Unobservable: the response has no fixed order relative to session updates, the `idle` that ends the work may arrive before or after it, and clients must not infer ordering between them, so wire order is no evidence of when the agent responded."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:382 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:400 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Held prompts are inserted in the order they were received."
 reason = "Out of scope: no MUST/SHOULD, and the TCK can only bound a hold by sending `session/cancel`, which answers held prompts `-32800` instead of inserting them; waiting for a real agent's work to end on its own is unbounded."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:180 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:190 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "While a terminal is listed as background work, the Agent keeps its output current whenever it can read the process output (SHOULD)."
 reason = "Unobservable: the client cannot tell whether the agent can read the process output, and output is not a liveness signal."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:184,186 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:194,196 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When the Agent knows a tool call's work continues after the call returns control to the model, it keeps that tool call non-final and lists it (SHOULD), and it does not list housekeeping it starts on its own (SHOULD NOT)."
 reason = "Unobservable: depends on what the agent knows about its own work and on why it started it."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:207 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:217 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When the Agent knows finished work starts follow-up foreground work, it reports `running` no later than the snapshot that removes the item (SHOULD)."
 reason = "Unobservable: whether the agent already knows of follow-up foreground work when it removes an item is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:208 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:218 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A terminal or tool call that foreground work is waiting on is not listed as background work, and the Agent does not also list a tool call whose only live work is a listed terminal (MUST NOT)."
 reason = "Unobservable: the client cannot tell what foreground work is waiting on, or whether a tool call has live work besides its terminal."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:210 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:220 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A detached background child is listed while its state is not `idle`, or while its own `background` list is non-empty or not reported; an `idle` child with no background work of its own is not listed."
 reason = "Partly unobservable: a client cannot tell whether a `running` or `requires_action` child is detached work, which must be listed, or foreground work, which is never listed, so a missing listing cannot be judged. Deferred: only the converse, a listed child that is `idle` with an empty `background` list of its own, is checkable from the parent's snapshots and the child's `state_update`s, and it is not a row yet."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:67; docs/rfds/subagents.mdx:439-441 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:70; docs/rfds/subagents.mdx:439-441 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The Agent does not reuse an entity ID for a different entity of the same type within a session, including the `messageId` of session-directed messages (MUST NOT)."
 reason = "Partly unobservable: an update that repeats an ID is an upsert of the same entity, so reuse for a different entity cannot be told from a legitimate update. The observable cases are judged by rows: ACP-PATCH-203 (two prompts on a session answered with the same `messageId`, which are two user messages) and ACP-CANCEL-002 (an `agent_message*`/`agent_thought*` update reusing a `messageId` of the cancelled turn after its idle). A `terminalId` is ledgered on its own (tool-calls.mdx:496,497)."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:455 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A retry of a recorded `idempotencyKey` starts no second round of work for the message; whether it continues work that stopped before it finished is up to the Agent."
+reason = "Not decidable: what counts as a second round of work is internal to the agent, and the activity a retry may legitimately resume is left to it, so a `running` state after a retry is no evidence. ACP-PROMPT-212 judges that no second message is inserted."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:405,458 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that honors `$/cancel_request` for any pending request with an `idempotencyKey` withdraws the prompt if it is not inserted yet, and answers every pending request for that key with `-32800`."
+reason = "Deferred: the held-prompt driver (`prompt_during_active_work`) only sends `session/cancel`, and a check needs it extended to send `$/cancel_request` for one of two held requests with the key. Request cancellation is optional for the receiver, so the check must also SKIP an agent that does not honor it (the prompt is then inserted as usual). ACP-PROMPT-215 judges the same-outcome rule for two held requests answered by `session/cancel`."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:466 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "For a prompt whose message the Agent does not retain, such as a locally handled command, the Agent MUST recognize the key while the session stays active on a connection."
+reason = "Unsafe: it needs a prompt the agent handles locally without recording it, which means invoking an advertised command (`/clear`, `/compact`, `/logout`) whose side effects the TCK cannot predict (the blocker of slash-commands.mdx:152,160-163). ACP-PROMPT-212 judges the same recognition on an ordinary prompt."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:469 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD store the idempotency key in the same step as the message, for example as part of the message's ID."
+reason = "Not observable from a client: how and when an agent writes the key is internal. A key lost with a message that was never written is a permitted outcome, and ACP-PROMPT-218 judges recognition across connections for a message the agent replays."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:754 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent predicts a prompt-suggestion list from the conversation as it stands when it sends it, and discards a prediction the conversation outgrew before it was sent, for example because a `session/prompt` arrived."
+reason = "Not observable from a client: it sees only the lists sent, never the predictions an agent discarded, and whether a sent list was predicted from the current conversation cannot be told from its content."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:756 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD replace or withdraw the prompt-suggestion list when it stops applying for a reason other than an accepted `session/prompt`, such as foreground work that starts without a prompt."
+reason = "Not observable from a client: it cannot tell whether a list still applies, and the spec sets no deadline, so a list that stays current proves nothing. ACP-SUGGEST-003 judges the one trigger it can drive, an accepted `session/prompt`."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:999,1001-1002 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With a cursor the Agent issued, `session/fork` does not act at a different position: the new session's history is the source session's history before the cursor."
+reason = "Deferred: judging it needs the agent to retain and replay the fork, and the docs do not say whether a fork keeps the source's entity IDs, so the fork's replay cannot be matched to the cursor's anchor. ACP-CURSOR-003 judges the rejection of a cursor the agent did not issue."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:1024-1028 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD accept a cursor for as long as they retain the history at its position. The Agent can stop accepting a cursor at any time, and SHOULD then send a `cursor_update` that clears the cursor's `capabilities`, if the session is active on a connection."
+reason = "Not observable from a client: whether the agent still retains the history, and when it stops accepting a cursor, is internal and may happen at any time, so a rejected cursor proves no violation and no deadline bounds the clearing update."
 
 # --- initialization.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/initialization.mdx:88,90 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/initialization.mdx:88,90 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A request other than `initialize` that is sent while `initialize` is in flight (sent, not yet answered) is rejected with `-32600`."
 reason = "Unobservable: whether a pipelined request \"arrives before initialization completes\" depends on the agent's scheduling, so a client cannot provoke it deterministically. ACP-ERROR-005 covers the requests sent before or after a failed `initialize`."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/initialization.mdx:147 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/initialization.mdx:147 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD support all possible combinations of their peer's capabilities."
 reason = "Out of scope: the combinations are combinatorial. The TCK exercises the empty set (`{}`) and targeted single-capability connections such as `auth.terminal: {}` (the object marker; ACP-AUTH-006's dedicated connection)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/initialization.mdx:200 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/initialization.mdx:273 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The Agent SHOULD specify whether it supports each of the listed agent capabilities."
 reason = "Not observable: an omitted capability is defined as unsupported (line 149), so an agent that omits one cannot be told apart from one that sets it to `null`."
 
 # --- transports.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/transports.mdx:61 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/transports.mdx:61 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Transports MUST deliver messages in the order they were sent."
 reason = "Not observable on stdio: a pipe is ordered by construction, so the TCK only ever sees one ordering. A custom transport that reorders is never reached (see the custom-transports entry)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/transports.mdx:45 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/transports.mdx:45 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When the connection ends, an agent treats the requests it sent that have no response as failed."
 reason = "Not observable: after the connection ends the agent has no channel left to show how it treats its own pending requests."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/transports.mdx:43; docs/protocol/v2/draft/session-setup.mdx:55 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/transports.mdx:43; docs/protocol/v2/draft/session-setup.mdx:57 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "At the end of the connection (stdin EOF), the agent's sessions stop being active."
 reason = "Not observable from a single-connection stdio client: the next connection is a new process, where a session is not active by definition. ACP-SHUTDOWN-001 covers the exit half."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/transports.mdx:10,71,73 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/transports.mdx:10,71,73 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD support stdio whenever possible, and an agent that implements a custom transport MUST preserve the JSON-RPC message format, message order and lifecycle requirements."
-reason = "Out of scope: the TCK only launches agents over stdio, so the first rule is vacuous for any agent it can run and a custom transport is never reached."
+reason = "Not observable over stdio: an agent reached over stdio supports stdio by construction, and ACP does not specify custom transports, so no generic client can drive one."
 
 # --- extensibility.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:16-19,26 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:16-19,26 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Implementations MUST NOT infer peer support from their own schema selection, generated types or local feature flags, and senders of informational additions MUST NOT depend on feature-specific presentation, acknowledgement or action."
 reason = "Not observable: both rules concern the implementation's internal reasoning. The concrete instances that show on the wire are tested per feature, for example ACP-CLIENTCAP-003."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:57-60,159 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:60-63,162 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A malformed value for a discriminator the receiver recognizes MUST NOT be treated as an unknown variant."
 reason = "Not observable at the sites an agent receives: it is indistinguishable on the wire from a correct rejection (both end in an error or a decline). The sender side is covered by the schema's own shape checks through ACP-SCHEMA-001."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:157,240 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:160,243 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Receivers MUST NOT assign protocol behavior to unrecognized properties or `_meta` keys, and MUST NOT treat unknown non-underscore values as custom extensions."
 reason = "Not observable: it concerns the agent's internal interpretation. The one visible case, an unknown capability field advertising nothing, is ACP-EXT-204."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:102 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:105 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents preserve the `_meta` keys and prefixes that MCP reserves when forwarding MCP content."
 reason = "Deferred: needs the agent's model to call a tool on a TCK-supplied MCP server and to relay the tool's content in a tool call. No prompt can force either, and the TCK's stdio MCP stub exposes no tools."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:102,259 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:105,262 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Extension keys SHOULD use a reverse-DNS prefix the implementer controls: `com.example/<name>` for `_meta` keys (including capability entries) and `_com.example/<name>` for custom methods and custom enum values."
 reason = "Not observable: domain ownership cannot be checked, and a syntax check cannot tell reverse-DNS from forward-DNS. ACP-META-204 checks only the part that is decidable, that no key falls in the ACP-reserved space."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:215,253,261 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:218,256,264 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Extensions SHOULD advertise their custom capabilities in `_meta`, so callers can check availability first, and both sides advertise an extension under the same namespaced key."
 reason = "Not observable: a client cannot know which extensions an agent has unless it uses them. ACP-EXT-202 covers where an advertised extension lives."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/extensibility.mdx:249 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/extensibility.mdx:252 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When storing, replaying, proxying or forwarding data, implementations SHOULD preserve unknown values and raw tagged-union payloads, and SHOULD display unknown values generically."
 reason = "Not observable at the agent-received sites: the baseline ones (`ContentBlock`, `McpServer`) must reject unknown variants, and the others are responses. Replaying an unknown client-sent variant would need the agent to store it. Display is client-side."
+
+# --- metadata patches (extensibility.mdx) ---
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154; docs/protocol/v2/draft/session-setup.mdx:333-335 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "To send the current metadata of an entity the Client may already hold, the Agent removes stale keys, either by setting each to `null` alongside the current keys or by sending `_meta: null` and then the current object in a later update."
+reason = "Not observable: a client cannot know which keys the agent considers current, and on a full replay it rebuilds rather than merges (`session-setup.mdx:300`), so a stale key left behind cannot be told from one the agent still holds."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When an entity's current metadata is empty, the Agent sends `_meta: null`, not `{}`."
+reason = "Not decidable: `_meta: {}` is a legal no-op patch (`extensibility.mdx:116`), so an occurrence cannot be told from an intentional no-op."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154; docs/protocol/v2/draft/session-setup.mdx:330-332 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Replay and resynchronization apply metadata patches exactly as live delivery does and never reset metadata implicitly, and an update that replaces another field leaves the `_meta` keys it does not mention."
+reason = "Not observable: applying patches is client-side, and whether replayed metadata reproduces the agent's intended state is not visible on the wire."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:154 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Intermediaries that combine updates MUST keep removals and clears."
+reason = "Not observable: combining happens inside an intermediary, and the TCK sees only the resulting stream, with no record of the updates before they were combined."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/extensibility.mdx:156 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Metadata that is not a patch (on requests, responses, notification params, chunks, content items, snapshots and other nested objects) is not copied into a patch unchanged, for example from a `session/list` entry into a `session_info_update`, because its `null` key values would become removals."
+reason = "Not decidable: a `session_info_update` with a `null` key may be a deliberate removal, so it cannot be told from a copied one."
 
 # --- overview.mdx and error.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/overview.mdx:235 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/overview.mdx:239 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "For an optional field whose schema allows `null`, omitting it and setting it to `null` are equivalent, unless the field says otherwise."
 reason = "Out of scope as a generic probe: receiver-side equivalence is checked field by field (ACP-SESSION-203, ACP-RESUME-002), and the sender-side rule is enforced by schema validation of the agent's own output."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/error.mdx:38 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/error.mdx:38 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Receivers MUST treat an unrecognized error code as a generic failure."
-reason = "Not observable: how an agent handles an unknown code in a client's error reply has no defined wire effect, and the TCK's mock client sends only well-known codes. ACP-ERROR-008 covers the error codes the agent itself sends."
+reason = "Not observable: \"generic failure\" has no defined wire shape, so how an agent treats an unknown code in a client's error reply has no defined wire effect. ACP-ERROR-008 covers the error codes the agent itself sends."
 
 # --- authentication.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:191 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/authentication.mdx:191 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A failed or abandoned `auth/login` is answered `-32000`."
 reason = "Not observable: it needs a controllable failing or abandoning user, and a login against an agent's real credential flow is not safe to start unattended."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:191 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/authentication.mdx:191 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An `auth/login` cancelled with `$/cancel_request` is answered `-32800`."
 reason = "Unsafe: it needs a valid advertised method, so it starts a real interactive login on the operator's agent, and the race with the login finishing is not controllable."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:213,214 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/authentication.mdx:213,214 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD provide a terminal auth method's `args` so that they enter a login-only flow and exit when it completes."
 reason = "Out of scope: terminal authentication is an out-of-band relaunch the client performs, which the TCK does not drive."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:224 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/authentication.mdx:224 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A terminal auth method's `env` values SHOULD NOT contain secrets."
 reason = "Not observable: the TCK cannot classify an `env` value as secret."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:233,235,236 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/authentication.mdx:233,235,236 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When authentication fails after a prompt was inserted, the Agent still answers `session/prompt` successfully with the `messageId`, MUST report `idle` if the failure ends foreground work, and SHOULD include `stopReason: \"error\"` with `error.code: -32000`."
 reason = "Not triggerable: it needs authentication to fail mid-turn. The general insertion and `idle` rules are covered by the prompt-lifecycle rows (ACP-PROMPT-201, ACP-STATE-202)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/authentication.mdx:270,271 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/authentication.mdx:270,271 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After a successful `auth/logout`, authentication-gated requests require the user to complete an advertised authentication flow again."
-reason = "Out of scope: seeing it needs the destructive `--allow-logout`, which may revoke the operator's own credentials, and gating itself is only a MAY (`schema.mdx:954`)."
+reason = "Out of scope: seeing it needs the destructive `--allow-logout`, which may revoke the operator's own credentials, and gating itself is only a MAY (`schema.mdx:990`)."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD); docs/protocol/v2/draft/schema.mdx:144 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD); docs/protocol/v2/draft/schema.mdx:144 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Calling `auth/status` MUST NOT modify any agent state."
 reason = "Not observable: a client cannot enumerate the agent's state; ACP-AUTH-007/008 only check the answer."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:291 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:297 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An agent that supports `auth/status` SHOULD advertise `auth.status` in `agentCapabilities`."
-reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and the TCK only calls it when it is advertised."
+reason = "Not observable: an agent that supports the method without advertising it looks the same as one that does not support it, and probing an unadvertised `auth/status` would break the client MUST on the same line (\"Clients MUST check for this capability before calling the method\")."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:309 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD list the accounts and credentials they have configured in `auth/status` `accounts`, and SHOULD mark the ones in effect with `active: true`."
 reason = "Not observable: the TCK cannot know which accounts the agent has configured, so an empty or unmarked list proves nothing."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:303 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:309 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`auth/status` `accounts` MUST NOT include secrets."
 reason = "Not observable: the TCK cannot tell a secret from a display label."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:295,301 (Draft RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "schema/v2/schema.unstable.json#/$defs/AuthAccount/properties/description; docs/rfds/get-auth-state.mdx:174-176 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An `AuthAccount` `description` MUST NOT contain credentials."
+reason = "Not observable: the TCK cannot tell a credential from display text such as a credential source name."
+
+[[not_requirement]]
+citation = "docs/rfds/get-auth-state.mdx:301,307 (Draft RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD keep `auth/status` fast, answering `unknown` and sending `auth/status_update` later rather than blocking, and SHOULD return `unknown` rather than guess."
 reason = "Not reliably observable: timing depends on the environment and \"guessing\" is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/rfds/get-auth-state.mdx:307 (Draft RFD); schema/v2/schema.unstable.json#/$defs/AuthStatusUpdateNotification @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/rfds/get-auth-state.mdx:313 (Draft RFD); schema/v2/schema.unstable.json#/$defs/AuthStatusUpdateNotification @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents that advertise `auth.status` SHOULD send `auth/status_update` when their status changes (including after `auth/login` or `auth/logout`), and only when it differs from the last one sent on the connection."
-reason = "Out of scope for now: an RFD-only SHOULD that needs a live credential change (`--auth-method`, or the destructive `--allow-logout`), and a real agent may already be in the target state. Revisit if the RFD stabilizes."
+reason = "Not conclusive: a Draft-RFD SHOULD with no deadline for the notification, so its absence never proves a violation, and seeing a change needs a live credential change (`--auth-method`, or the destructive `--allow-logout`) from a state the agent may already be in. Revisit if the RFD stabilizes."
 
-# --- elicitation.mdx (coverage deferred: the TCK never advertises an elicitation mode) ---
+# --- elicitation.mdx (coverage deferred: needs an MCP-stub-forwarded elicitation trigger and a mock client that advertises a mode and holds `elicitation/create`) ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:54 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/elicitation.mdx:54 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent that forwards elicitation for an MCP server MUST NOT copy the Client's capability object to that server unchanged."
-reason = "Deferred: observable once the TCK's stdio MCP stub records the `capabilities` of the MCP `initialize` it receives and the mock client advertises an elicitation mode (it advertises none, and would then have to answer `elicitation/create`). Neither is built yet."
+reason = "Deferred: observable once a stdio MCP stub records the `capabilities` of the MCP `initialize` it receives and a mock client advertises an elicitation mode and answers the resulting `elicitation/create`. Neither is built yet."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:56-57 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/elicitation.mdx:56-57 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents MUST NOT request an elicitation mode the Client has not advertised, and SHOULD provide a graceful fallback when the required mode is unavailable."
-reason = "Deferred (elicitation coverage): the TCK only checks the zero-modes case (ACP-CLIENTCAP-003). A partial-mode check needs a client advertising one mode and an agent that elicits, which no prompt can force."
+reason = "Deferred: the zero-modes case is ACP-CLIENTCAP-003. A partial-mode check needs a client advertising one mode and an agent that elicits; no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:67-74,76-77 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/elicitation.mdx:67-74,76-77 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Exactly one of `sessionId` or `requestId` is present in an elicitation request, a `requestId` names a pending Client-to-Agent request on the same connection, and the Agent cancels pending request-scoped elicitations before it responds to that request."
-reason = "Deferred (elicitation coverage): an agent cannot be made to elicit. The shape is schema-enforced wherever an `elicitation/create` is observed, and the ordering rule needs a live elicitation."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). The shape is schema-enforced wherever an `elicitation/create` is observed, and the ordering rule needs a live elicitation."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:157-163,186-187,255-256,268 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/elicitation.mdx:157-163,186-187,258-259,271 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Form mode MUST NOT request secrets and sensitive interactions use URL mode without falling back to form, credentials obtained through URL mode never travel over ACP or sit in the URL, and URL completion is bound to the user and connection that started it."
 reason = "Not observable: the rules are semantic or concern an out-of-band browser flow the TCK cannot see."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:197 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/elicitation.mdx:197 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents MUST handle an unknown elicitation response action as `cancel`."
-reason = "Deferred (elicitation coverage): needs an agent with a live elicitation, and \"handled as cancel\" is only weakly observable."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). \"Handled as cancel\" is also only weakly observable."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:211-216 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/elicitation.mdx:211-216 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An `elicitationId` is unique among outstanding URL elicitations, and `elicitation/complete` goes only to the Client that received the original request, carrying the original `elicitationId`."
-reason = "Deferred (elicitation coverage): needs an agent with live URL elicitations."
+reason = "Deferred: needs live URL elicitations; no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/elicitation.mdx:225-227,233; docs/protocol/v2/draft/session-setup.mdx:391 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "On `session/cancel` the Agent SHOULD cancel with `$/cancel_request` each pending elicitation the cancelled work made irrelevant, and before responding to `session/close` it MUST cancel every pending elicitation scoped to that session."
-reason = "Deferred (elicitation coverage): an agent cannot be made to hold an elicitation. The permission-request half of the `session/close` rule is covered by ACP-CLOSE-205."
+citation = "docs/protocol/v2/draft/elicitation.mdx:225-228,236; docs/protocol/v2/draft/session-setup.mdx:476 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the Agent stops waiting for a pending elicitation because the work that needed it was cancelled, it MUST cancel that individual request with `$/cancel_request` (the Agent decides which elicitations the cancelled work no longer needs), and before responding to `session/close` it MUST cancel every pending elicitation scoped to that session."
+reason = "Deferred: no prompt can force an agent to elicit, so a test needs an elicitation triggered through an MCP stub the agent forwards for, and a mock client that advertises a mode and holds `elicitation/create` (neither is built). The permission-request halves are covered by ACP-CANCEL-213 and ACP-CLOSE-205. Upstream discrepancy: the schema description of `CreateElicitationRequest` still says agents SHOULD cancel pending elicitations no longer needed by cancelled work; the docs state a MUST and govern."
 
 # --- session-setup.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:49 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:50 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Unfinished tool calls and running terminals copied into a forked session's history are not live."
 reason = "Not observable: whether the agent treats copied history as live is internal. What it would show, a fork's `background` snapshots listing the source's work, is judged by ACP-FORK-206, which SKIPs unless the source session has listed work at fork time."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:223 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:230 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A replayed tool call whose work is no longer running or waiting SHOULD have a final status (`completed`, `failed` or `cancelled`)."
 reason = "Vacuous without control of the history: it needs a replayed tool call whose work was interrupted, and the TCK cannot make an agent leave one behind. A replay of only finished calls passes either way."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:228 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Notices are live-only and SHOULD NOT be replayed."
-reason = "Not observable: a notice that arrives around a resume cannot be told apart from a new live one, which the spec allows if the condition still holds."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:289 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:297 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD preserve the IDs of the other replayed entities (agent and thought message IDs, `toolCallId`, `terminalId`, `planId`, `compactionId`) across replay when possible."
 reason = "Not observable: the rule is hedged (\"when possible\", not guaranteed across restarts), and matching a replayed entity to its live original needs content heuristics. The message ID of a prompt is judged by ACP-RESUME-204."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:355,356 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:330-335 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Replay applies top-level `_meta` as a metadata patch and does not reset it; when the Client may hold metadata for an entity, the Agent removes stale keys by setting them to `null`, or sends `_meta: null` before the current object."
+reason = "Not observable: under patch semantics an omitted key means \"unchanged\", so a client cannot tell a stale key left behind from a current one without knowing the entity's current metadata."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:339 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When an Agent replays history, it SHOULD send a `cursor_update` for each cursor in that history that it still accepts."
+reason = "Not observable from a client: which cursors the agent still accepts is internal to it and may change at any time (prompt-lifecycle.mdx:1026), so a cursor missing from a replay is no evidence. ACP-CURSOR-001/002 judge the cursors a replay does carry."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:342 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A resume without replay announces no cursors for earlier history. The cursors the Client already holds stay usable."
+reason = "Not observable from a client: a cursor the agent newly offers may legitimately anchor to an earlier entity, and the wire cannot tell it from an announcement for earlier history."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:52,390 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A session that was not active before a `session/resume` becomes active only with its successful response, so `session/prompt` before it fails with `-32002`; `replay_complete` does not make it active."
+reason = "Not observable as pass/fail: a prompt sent after `replay_complete` and before the response is seen may reach the agent after it has sent the response, so an accepted prompt is no evidence of a violation."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:392 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD report known replay gaps after `replay_complete`, for example with a notice. `replay_complete` does not mean that the Agent retained all history."
+reason = "Not observable: the client cannot know what history the agent no longer has."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-setup.mdx:440,441 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "If connection loss made a pending permission request or elicitation unusable, the Agent SHOULD reestablish it or safely resolve the wait."
 reason = "Out of scope: it needs a connection loss and a reconnect, and the TCK's stdio session is one process."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:391; docs/protocol/v2/draft/session-delete.mdx:95; docs/protocol/v2/draft/session-list.mdx:247 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Closing, deleting or archiving an active session frees its resources, and closing also stops the session's background work."
-reason = "Not observable: freeing resources is internal to the agent, and background work needs an agent that reports it. The cancellation of foreground work is covered by ACP-CLOSE-002, ACP-DELETE-204 and ACP-ARCHIVE-201."
+citation = "docs/protocol/v2/draft/session-setup.mdx:476; docs/protocol/v2/draft/session-delete.mdx:95; docs/protocol/v2/draft/session-list.mdx:247 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Closing, deleting or archiving an active session frees its resources, and closing also stops the session's background work and its child sessions, at any depth."
+reason = "Not observable: freeing resources is internal to the agent, and background work and child sessions need an agent that reports them. The cancellation of foreground work is covered by ACP-CLOSE-002, ACP-DELETE-204 and ACP-ARCHIVE-201."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:443 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Agents that do not advertise `session.additionalDirectories` ignore the `additionalDirectories` field."
-reason = "Not tested: it needs the TCK to send the field against the client MUST at line 441, and the unadvertised-capability probe is not built. ACP-ADDDIRS-203 probes only an agent that advertises the capability."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:475,476,480 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:560,561,565 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`append` SHOULD get system-level precedence, `override` replaces the agent's default instructions without changing tools, MCP servers, permissions or configuration, and a changed `systemPrompt` on `session/resume` or `session/fork` SHOULD be applied."
 reason = "Not observable: how the agent places and applies the prompt is model-internal."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:538,539 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:627,628 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD NOT treat model output, Agent content or replayed history as granting access outside the root set, and implementations that enforce the root set SHOULD check the resolved path at the time of use, compare paths by component and fail closed."
 reason = "Unobservable from a client: it needs the model to attempt out-of-root access, which a driven TCK cannot trigger reliably or safely, and the path-checking mechanics are internal to the agent."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:549 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:638 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "On `session/resume` and `session/fork`, `mcpServers` is the complete set of Client-provided servers, and Agents SHOULD NOT restore servers from earlier requests."
 reason = "Deferred: a relaunch of a server from an earlier request after `session/resume` with `mcpServers: []` would be positive evidence, but the TCK's stdio MCP stub records only its first launch, not every one. Absence of a launch is only negative evidence, and `session/fork` may reuse the source session's connection without a new launch."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:607,626 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:696,715 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD launch stdio MCP servers in the session's `cwd`, with `env` entries added to the inherited environment (the last of duplicate names winning), and use the transport's own values for the headers it owns."
 reason = "Deferred: the TCK's stdio MCP stub could record its working directory and the environment it was launched with, but records only its `argv` (ACP-SESSION-006) so far. The transport-owned-headers half needs an HTTP MCP stub server, which the TCK does not yet ship. Whether the base environment is the one the Agent would otherwise give the process is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:693 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:782 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD launch a stdio MCP server's `command` with `args` as separate arguments, without a shell."
 reason = "Indistinguishable from correct behavior: a shell launch with correct quoting delivers the same arguments as a direct exec, so a client can only observe that arguments arrive verbatim, not whether a shell was involved."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:695 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:784 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD NOT include `env` or `headers` values in model context or command lines, and SHOULD NOT log or persist them."
 reason = "Unobservable from a client (model context, disk persistence, logs other than stderr); ACP-SESSION-006 covers only the client-visible part of the same bullet, and does not probe the model context."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-setup.mdx:696 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-setup.mdx:785 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send `headers` only to the configured origin."
 reason = "Deferred: the TCK does not yet ship an HTTP MCP stub server (its MCP stub is stdio-only). The check needs one that answers with a cross-origin redirect and records whether the configured `headers` reach the second origin, and it applies only when the agent advertises `capabilities.session.mcp.http`. An agent whose HTTP client never follows the redirect would pass vacuously."
 
 # --- session-list.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-list.mdx:158 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-list.mdx:158 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD enforce reasonable page sizes internally."
 reason = "Not observable as a pass/fail: \"reasonable\" has no threshold, and a client sees a page's size only if the agent holds enough sessions to paginate."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-list.mdx:162 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-list.mdx:162 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send a `session_info_update` on each connection where the session is active whenever its metadata changes."
-reason = "Not observable: the client cannot trigger or detect a metadata change, since the only client-driven one, `session/set_title`, is deferred and its follow-up notification is only a MAY in the RFD."
+reason = "Not observable beyond ACP-LIST-208, which judges a `session/set_title` on an agent that advertises it, on the requesting connection: other metadata changes are internal to the agent, so a client cannot tell that one happened without the notification. Other connections are deferred: they need a second connection to the same agent instance, which stdio cannot provide, and whether a session can be active on several connections is the agent's choice (session-setup.mdx:56)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-list.mdx:243 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-list.mdx:243 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The `archived` filter combines with `cwd` and applies before pagination, and clients keep the same `cwd` and `archived` values when following `nextCursor`."
 reason = "Impractical: \"before pagination\" is not observable without an agent holding more than one page of sessions in a TCK-owned `cwd`, and keeping the filter values across pages is a client rule."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-list.mdx:248 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-list.mdx:248 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/unarchive` never loads or resumes a session."
-reason = "Deferred: seeing it needs the agent to list a TCK-created session, archive it (which closes it), unarchive it and then show it is still not active. Absence of a side effect is only negative evidence, and the TCK does not test it yet."
+reason = "Deferred: seeing it needs the agent to list a created session, archive it (which closes it), unarchive it and then show it is still not active. Absence of a side effect is only negative evidence, so a quiet agent proves nothing; a SKIPpable probe is a follow-up."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-list.mdx:249 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-list.mdx:249 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Archive state persists across connections and restarts, and closing, loading or resuming a session does not change it."
-reason = "Out of scope for now: it needs a two-process test against the agent's real persistent store, and the TCK does not restart agents."
+reason = "Deferred: the persistence half needs the harness to restart the agent process mid-test, and an agent with an ephemeral store gives an inconclusive result. The resume half is observable on one connection, but `session/resume` of an archived session MAY be rejected (line 248); a follow-up SKIPpable row can cover it."
 
 # --- session-config-options.mdx and slash-commands.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/slash-commands.mdx:12; docs/protocol/v2/draft/session-setup.mdx:108 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/slash-commands.mdx:12; docs/protocol/v2/draft/session-setup.mdx:110 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent with slash commands MUST include them in `availableCommands` in the `session/new`, `session/resume` and (when supported) `session/fork` responses."
-reason = "Unobservable as stated: the client cannot know the agent has commands, and an agent may announce commands later (slash-commands.mdx:47), so a late `available_commands_update` is no evidence. The inferable case is ACP-SESSION-208 and ACP-RESUME-210."
+reason = "Unobservable as stated: the client cannot know the agent has commands, and an agent may announce commands later (slash-commands.mdx:49), so a late `available_commands_update` is no evidence. The inferable case is ACP-SESSION-208 and ACP-RESUME-210."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/slash-commands.mdx:149,157-160 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/slash-commands.mdx:152,160-163 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Invoking a command (a prompt whose first text block starts with `/` and the command name) follows the prompt insertion contract, and a locally handled command reports an active state and then `idle`."
 reason = "Unsafe: invoking an arbitrary advertised command (`/compact`, `/clear`, `/logout`) has side effects the TCK cannot predict. The generic turn lifecycle is judged by the STATE rows."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-config-options.mdx:222 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/slash-commands.mdx:194-197 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that has a shorter description of a skill meant for users SHOULD send that one as the entry's `description`."
+reason = "Not observable: the client cannot see the skill's frontmatter or any other description the agent holds, so it cannot tell a long description from a user-facing one."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/slash-commands.mdx:210 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD advertise only skills the user can invoke."
+reason = "Unsafe: the only evidence is invoking a listed skill, which runs arbitrary user-installed code the TCK cannot predict. ACP-PROMPTCAP-202 judges the unlisted-name rejection with a name that resolves nowhere."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/slash-commands.mdx:238-239,255 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With `session.prompt.skill: {}` (no `inline`), the Agent rejects with `-32602`, without inserting it, a prompt whose `skill` block is not first or that holds more than one `skill` block."
+reason = "Unsafe: a prompt that would pass the position rule needs a skill name the agent lists, and accepting it runs that skill. A name that resolves nowhere is rejected for the name whatever the position, so it cannot isolate the rule. ACP-PROMPTCAP-202 judges the first-position case with an unknown name."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/content.mdx:252; docs/protocol/v2/draft/slash-commands.mdx:254,256 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent treats each `skill` block as the user explicitly invoking that skill for the prompt, and reports the block as part of the inserted user message in `user_message` and in replay."
+reason = "Unsafe: it needs an accepted prompt that invokes a skill the agent lists, and running an arbitrary user-installed skill has side effects the TCK cannot predict (the same blocker as invoking a command, slash-commands.mdx:152,160-163). ACP-PROMPT-220 judges where a `skill` block may not appear."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:209 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD list the values of a `select` `thought_level` option from lowest to highest."
+reason = "Not observable: the protocol carries no measure of a reasoning level, so which value is higher is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:215,217 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "In a `boolean` `speed` option `true` is the faster setting, and agents SHOULD list the values of a `select` `speed` option from slowest to fastest."
+reason = "Not observable: the protocol carries no measure of speed for option values, so which value is faster is the agent's own judgement."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:219 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD NOT use the `speed` category for an option that mainly selects a model, reasoning level or session mode."
+reason = "Not observable: whether an option mainly selects a model is a semantic judgement the wire format does not express."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:237 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Every config option's `currentValue` is the value the agent uses, and agents MUST be able to operate with it even if the client does not support, display or recognize the option."
 reason = "Not observable: it concerns the agent's internal operation. The observable part, `currentValue` being present and valid, is checked by schema validation and ACP-CONFIG-201."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/session-config-options.mdx:375 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/session-config-options.mdx:390 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send a `config_option_update` on each connection where the session is active whenever configuration state changes."
-reason = "Out of scope: whether a session can be active on several connections is the agent's choice (session-setup.mdx:54), so fan-out to connections other than the requesting one is not judged. ACP-CONFIG-211 covers the requesting connection."
+reason = "Deferred: needs a second connection to the same agent instance, which stdio cannot provide; whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so multi-connection activity is optional. ACP-CONFIG-211 covers the requesting connection."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:514 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "With a `sessionId`, `session/options` returns what `session/resume` with the same `cwd` and `additionalDirectories` would return."
+reason = "Not deterministically observable: the response is a snapshot and options can change between `session/options` and session setup, so a later difference is not a violation. ACP-OPTIONS-002, -003 and -009 judge the parts a client can observe."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:551 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "`session/options` MUST NOT change an existing session, and it stores no session and writes nothing to the history of `sessionId`."
+reason = "Not deterministically observable: a change to the session or its history has no client-visible marker, and comparing `session/resume` replays before and after does not work because replays need not be identical. ACP-OPTIONS-002 judges the observable parts (no session created or resumed, no `session/update`, no `session/list` entry)."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:572,574 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The agent applies initial config option entries in list order, each checked against the option set as it stands at that point, on top of a restored session's configuration or the fork's starting configuration, and on `session/resume` before it replays history and before it responds."
+reason = "Not observable: order only matters through dependencies between options, which are agent-specific and not described on the wire, and the entries are applied before the response whichever way the resume replays. The resulting values are judged as far as observable by ACP-OPTIONS-006, -010 and -011."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/session-config-options.mdx:585 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A `session/resume` with initial config option entries that reaches a session active on other connections changes its configuration, so the agent SHOULD send `config_option_update` on those connections."
+reason = "Deferred: needs a second connection to the same agent instance, which stdio cannot provide; whether a session can be active on several connections is the agent's choice (session-setup.mdx:56), so multi-connection activity is optional. ACP-OPTIONS-007 judges the requesting connection."
 
 # --- content.mdx and security.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/content.mdx:18,20 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/content.mdx:18,22 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents forward content from MCP tool outputs unchanged, and convert or omit a content type from a later MCP revision that ACP does not define."
 reason = "Deferred: needs the agent's model to call a tool on a TCK-supplied MCP server and to relay its output in a tool call. No prompt can force that, and the TCK's stdio MCP stub exposes no tools. The wire shape of what the agent emits is checked by schema validation."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/content.mdx:24 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/content.mdx:26 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents that need content to reach the user in a particular form SHOULD also include it as text."
 reason = "Not observable: it depends on the agent's intent for a given piece of content."
 
 [[not_requirement]]
-citation = "schema/v2/schema.unstable.json#/$defs/Icon/properties/src @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "schema/v2/schema.unstable.json#/$defs/Icon/properties/src @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An icon `src` an agent emits MUST be an `https:` or `data:` URI."
 reason = "Not tested: the schema constrains it only with `format: uri`, which the validator does not check, and agents rarely emit icons (only `ResourceLink.icons` carry one), so a passive scheme check would almost always be vacuous."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/security.mdx:13 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/security.mdx:13 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Implementations SHOULD NOT use `info` in `initialize` for security decisions."
 reason = "Not observable: it concerns the agent's internal decision logic."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/security.mdx:39 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/security.mdx:40 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD apply the root set and the client fetch rules to URIs in prompts."
 reason = "Unsafe and out of scope: seeing it needs a network canary (a TCK-hosted listener or an out-of-root `file:` target), and agents are not required to dereference links, so a quiet agent proves nothing."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/security.mdx:43 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/security.mdx:44 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Implementations SHOULD NOT put credentials in `_meta`, including `traceparent`, `tracestate` and `baggage`."
 reason = "Not observable: the TCK cannot tell a credential from any other string in `_meta`."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/security.mdx:48,49,50 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/security.mdx:49,50,51 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD treat embedded resources, files, tool results and MCP results as data and not as user instructions, SHOULD request permission before sending data off the machine after reading untrusted content, and SHOULD request permission before writing files that control execution or approval."
 reason = "Not testable deterministically: it depends on model behavior and agent-specific tool use, and prompt-injection detection is out of scope (security.mdx:15)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/security.mdx:58 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/security.mdx:59 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An agent serving more than one user SHOULD scope `session/list`, every request that names a session, permission requests and elicitations to the user that owns the session, treating another user's session as nonexistent."
+reason = "Out of scope: ACP has no user identity on the wire, so a client cannot present as a second user."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/security.mdx:59 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An agent serving more than one user SHOULD authorize `cwd`, `additionalDirectories` and `mcpServers` against the requesting user, and SHOULD NOT launch stdio MCP servers that user is not permitted to run."
 reason = "Out of scope: ACP has no user identity on the wire, so a client cannot present as a second user."
 
 # --- tool-calls.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:268 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:268 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The Agent MUST list background work before sending a permission request for it, and a permission request for listed background work SHOULD reference the item in `subject`."
 reason = "Unobservable: whether a request belongs to background work is internal to the agent, and the TCK cannot make an agent start background work. ACP-PATCH-209 excludes such requests from the `requires_action` check."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:385 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:385 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD NOT give a permission option a `name` that contradicts its `kind`."
 reason = "Not mechanically decidable: it needs a natural-language judgement of `name`. ACP-PERM-002 covers the other half of the line (acting on a selected option)."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:387 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:387 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD perform only the operation the approved permission request described, and SHOULD request again if the command or resolved target changes."
-reason = "Not observable: the TCK cannot tell a changed target from the original, and the operation itself is not on the wire."
+reason = "Not decidable: the approved request describes the operation only in agent-authored free-form fields, so a client cannot tell a changed command or target from the original."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:376-380,388 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:376-380,388 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The agent owns remembered (`allow_always`/`reject_always`) decisions, SHOULD state their scope in the option `name`, and SHOULD NOT apply them beyond that scope."
 reason = "Unsafe and unobservable: scope and lifetime are agent-defined free text, and probing needs `allow_always`, which may persist on the operator's machine."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:389 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:389 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD NOT switch to a configuration that reduces user oversight without user action."
 reason = "Not observable: whether a change \"reduces oversight\" is semantic, and agents may legitimately change modes themselves."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:466 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:466 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Implementations SHOULD preserve unknown tool call content payloads when storing, replaying, proxying or forwarding tool calls."
 reason = "Out of scope: it needs an agent that stores and echoes unknown content, and the content of a tool call is authored by the agent, not sent by the TCK."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:496,497 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:496,497 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A `terminalId` is stable for the terminal's lifetime and MUST NOT be reused for a different terminal."
-reason = "Unobservable: whether a later terminal is \"different\" is internal to the agent, and the TCK cannot force an agent to run several terminals. This is the `terminalId` case of the general entity-ID rule at prompt-lifecycle.mdx:67."
+reason = "Unobservable: whether a later terminal is \"different\" is internal to the agent, and the TCK cannot force an agent to run several terminals. This is the `terminalId` case of the general entity-ID rule at prompt-lifecycle.mdx:70."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:578,579 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Agents SHOULD send all of a terminal's output before a concrete `exitStatus`."
-reason = "Deferred: a passive per-terminal check of `terminal_output_chunk` after `exitStatus` is possible but not yet built, and it is vacuous against agents that never report a terminal."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:528,529 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD provide a terminal's `command` on its first update when applicable."
+reason = "Not decidable: whether a command applies to a terminal (rather than an interactive shell or an agent-managed process) is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:622,653-661 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "A `git_patch` diff's paths (including `rename`/`copy` lines) MUST be absolute or `/dev/null` with no `a/` or `b/` prefix, each matches a `changes` entry, and each `path` appears in at most one `changes` entry."
-reason = "Deferred: a passive check of agent-emitted `diff` content is possible but not yet built, and it is vacuous against agents that emit no diff in a short turn."
+citation = "docs/protocol/v2/draft/tool-calls.mdx:617,618,648 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents SHOULD provide a diff's `patch` whenever feasible."
+reason = "Not decidable: whether renderable patch text is feasible for a change (a binary file, a directory, a very large edit) is internal to the agent, and the TCK cannot tell it from a choice to omit it."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:460 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:753-756; docs/rfds/subagents.mdx:655-657,659-661 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent that sends new `content` on a `tool_call_update` includes the session references again, because `content` replaces the whole array, and when a tool addresses a session by a name or another handle it adds a reference only if it can resolve the handle to a known session, without guessing."
+reason = "Not decidable: a reference missing from new content cannot be told from one the agent meant to drop, since a client does not know which sessions the tool call still addresses. The resolution half carries no RFC 2119 keyword in the docs (the Preview RFD states MUST NOT guess), and is not observable beyond ACP-SUBAGENT-002: a reference to an unknown session FAILs that row, but a guess that lands on a known yet wrong session looks like a correct resolution."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/tool-calls.mdx:460 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Cancelling a tool call does not change the foreground state by itself."
 reason = "Unobservable: a foreground state change after the cancel cannot be attributed to the cancel rather than to the agent finishing, ending or continuing its work on its own."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/tool-calls.mdx:606 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/tool-calls.mdx:606 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Cancelling a terminal stops the process but does not release it: its output remains available for display and replay, and it does not change the foreground state or the status of any tool call that references it."
 reason = "Unobservable: a change of the foreground state or of a referencing tool call's status after the cancel cannot be attributed to the cancel rather than to the agent's own work, and whether the agent keeps the terminal's output for replay is internal to the agent, since the client already holds the output it received."
 
 # --- agent-plan.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/agent-plan.mdx:119 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Plan file URIs MUST be absolute."
-reason = "Deferred: the `file` plan variant is unstable, and a passive check of it is not yet built and would be vacuous against agents that send no file plans."
-
-[[not_requirement]]
-citation = "docs/protocol/v2/draft/agent-plan.mdx:139 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/agent-plan.mdx:131 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD send `plan_removed` when a plan is cancelled, for example when the user rejects it or the Agent abandons it."
 reason = "Not observable: no protocol event marks a plan as rejected or abandoned, and `session/cancel` cancels a turn, not a plan."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/agent-plan.mdx:186 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/agent-plan.mdx:178 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "For item-based plans, the Agent MUST send the complete list of plan entries, with their current status, in each update."
 reason = "Not observable: the TCK cannot know the agent's full internal plan, so a shorter list cannot be told from a plan the agent legitimately shrank."
 
 # --- cancellation.mdx ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/cancellation.mdx:12 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/cancellation.mdx:12 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Receivers match a `$/cancel_request` only against requests they received from that sender."
 reason = "Not observable beyond ACP-JSONRPC-006 and ACP-CANCEL-211: misapplying a client's `requestId` to the agent's own outgoing request of the same id has no reliable wire symptom."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/cancellation.mdx:31 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/cancellation.mdx:33 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A sender that stops waiting for a response SHOULD send `$/cancel_request` for that request."
 reason = "Out of scope: for an agent as the sender, the TCK has no way to make it abandon its own request, beyond the permission-request cases ACP-CANCEL-213 and ACP-CLOSE-205 observe."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/cancellation.mdx:54,56 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/cancellation.mdx:56,58 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "On internal cancellation (the LLM context limit is reached, an internal timeout fires, resources run out), the executing party SHOULD send the same response it would send for `$/cancel_request`."
 reason = "Not elicitable: a client-driven TCK cannot make an agent hit an internal limit."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/cancellation.mdx:40,41; docs/protocol/v2/draft/prompt-lifecycle.mdx:1109,1110,1181-1183 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/cancellation.mdx:42,43; docs/protocol/v2/draft/prompt-lifecycle.mdx:1382,1383,1456-1458 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After cancellation completes, or once the work has ended, Agents SHOULD ignore late responses and URL completions rather than use them to resume the work."
 reason = "Not observable: \"ignored\" cannot be told apart from \"used without visible effect\", and probing it needs a non-`cancelled` late answer, which contradicts the client rule once the agent has sent `$/cancel_request`."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:1173; docs/protocol/v2/draft/tool-calls.mdx:268 @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:1446; docs/protocol/v2/draft/tool-calls.mdx:268 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/cancel` does not cover work in the latest `background` list or its permission requests, which keep running, and the Agent MAY stop background activity it does not list."
 reason = "Not observable as a violation: listed work may end on its own at any moment, so an item that reaches a final status after `session/cancel` cannot be told from one that finished by itself, and an item that keeps running proves nothing about unlisted activity, which the Agent MAY stop. ACP-INFO-BACKGROUND-202 records what happens to the listed items."
 
-# --- subagents (docs/rfds/subagents.mdx, Active RFD) ---
+# --- subagents (docs/protocol/v2/draft/subagents.mdx; docs/rfds/subagents.mdx, Preview RFD) ---
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:322-326 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:239-240; docs/rfds/subagents.mdx:322-326 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent reports a child directory that differs from the parent's before it sends child traffic that depends on it (MUST), and does not expose a child whose directories it cannot determine as sharing the parent's workspace (SHOULD NOT)."
 reason = "Unobservable: a client cannot know where the agent actually placed a child, whether that differs from the parent's directories, or whether the agent could determine them, so a child reported with no directories cannot be told from one that really shares the parent's. ACP-SUBAGENT-006 judges only that reported paths are absolute."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:381-382,387-390 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:241,473; docs/rfds/subagents.mdx:381-382,387-390 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents report the narrowest directories a child needs (SHOULD), send current directory values after reconnecting when they differ (SHOULD), and report a new value or `null` when a child's directory no longer exists (MUST)."
 reason = "Unobservable: what a child needs, and whether its directory still exists or has changed since the recorded context, is known only to the agent; the client sees only the values it chooses to report."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:198-199,939-940 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:134,484; docs/rfds/subagents.mdx:198-199,976-977 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent does not guess a child's parentage, and does not temporarily announce a nested child under the root, whether live or when a replay cannot reconstruct the association truthfully (MUST NOT)."
 reason = "Unobservable: a child's true parent is known only to the agent, so a guessed parent cannot be told from a recovered one. A later announcement of the same child under a different parent is judged by ACP-SUBAGENT-005."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:203-206 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:135-136,413; docs/rfds/subagents.mdx:203-206 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent that keeps an operation unexposed does not later move an already-issued interaction to a different session, and once a child is exposed its new interactions use the child's session ID rather than falling back to the root (MUST NOT / MUST)."
 reason = "Unobservable: which session an interaction belongs to is known only to the agent, so a request sent under the root cannot be told from one that really belongs to the root."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:223-226 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:143; docs/rfds/subagents.mdx:223-226 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After announcing a child the Agent sends its events automatically, without waiting for another Client request, and with no `session/attach`, `session/subscribe` or per-child opt-in."
 reason = "Unobservable: a quiet child cannot be told from one whose events the agent is withholding, so the absence of events proves nothing. Events the agent does send are judged by the announcement rows from ACP-SUBAGENT-001."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:576-577 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/prompt-lifecycle.mdx:137-139; docs/rfds/subagents.mdx:584-585 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "An Agent reports each side of a session-directed message only when it can observe that side, and does not manufacture an incoming entry from an outgoing one."
 reason = "Unobservable: whether the agent observed the recipient's receipt is internal, and an incoming entry looks the same whether it was observed or derived."
 
 [[not_requirement]]
-citation = "schema/v2/schema.unstable.json#/$defs/UnknownStateUpdate; docs/rfds/subagents.mdx:855-860 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "When observability of a child's foreground work is actually lost the Agent reports the `unknown` state as a `state_update` on the child's own stream, mirrored on the parent association (MUST), and not merely because the child has been quiet."
-reason = "Unobservable: whether the agent has lost sight of a child's work is internal, and a child that is only quiet looks the same from outside, so neither a missing `unknown` nor a spurious one can be judged."
+citation = "docs/protocol/v2/draft/subagents.mdx:360,364-365; schema/v2/schema.unstable.json#/$defs/UnknownStateUpdate; docs/rfds/subagents.mdx:881-889 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the Agent can no longer observe a child's foreground work, including when it stops tracking a child that may still be working, it reports the `unknown` state as a `state_update` on the child's own stream, mirrored on the parent association (MUST), and not merely because the child has been quiet; it does not invent a final status for the child's unfinished tool calls, terminals or `background` list (MUST NOT), and sends new `capabilities` if one is no longer available."
+reason = "Unobservable: whether the agent has lost sight of a child's work, or stopped tracking it, is internal, and a child that is only quiet looks the same from outside, so neither a missing `unknown` nor a spurious one can be judged. A final status after `unknown` is correct once the agent learns the work ended (`subagents.mdx:365`), and which capabilities remain available is internal."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1117-1121 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Closing a parent session cancels all of its active descendant work, background children included, and releases the associated active resources, without requiring a new terminal-state notification."
-reason = "Not observable as a violation: the rule requires no wire signal, so a descendant that stopped looks like one with nothing to report, and releasing resources is internal to the agent."
+citation = "docs/protocol/v2/draft/subagents.mdx:425,428; docs/protocol/v2/draft/session-setup.mdx:476; docs/rfds/subagents.mdx:1161-1165 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Closing a parent session stops the work of all its descendants, background children included, and frees their active resources, without requiring a final update for each child."
+reason = "Not observable as a violation: this part of the rule requires no wire signal, so a descendant that stopped looks like one with nothing to report, and freeing resources is internal to the agent. The separate MUST to cancel the descendants' pending permission requests and elicitations with `$/cancel_request` before the close response (`subagents.mdx:427`) is not part of this entry."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1151-1153 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:420; docs/rfds/subagents.mdx:1198-1200 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "A late response still resolves its original request, but the Agent does not use it to restart cancelled or otherwise abandoned work, or to authorize a new assignment to the same child (MUST NOT)."
-reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt. Provoking it also needs a non-`cancelled` answer to a request of cancelled work, which breaks the client rule at :1126-1128."
+reason = "Not observable: using a late response cannot be told from ignoring it without visible effect, and work that follows cannot be attributed to the late answer rather than to the agent's own work or a new prompt."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:999-1001 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:488; docs/rfds/subagents.mdx:1038-1040 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Replay (v2 `session/resume` with history) does not reissue recorded permission, elicitation or other Agent-to-Client requests (MUST NOT)."
 reason = "Unobservable: a request sent during replay cannot be told from a newly issued live request, which the RFD allows, and whether it was recorded is internal to the agent."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:942-949 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:485; docs/rfds/subagents.mdx:979-986 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "When replaying a recorded directed message the Agent does not invent either participant ID, and does not reinterpret its content as an ordinary message to or from the human user (MUST NOT)."
-reason = "Unobservable: a replayed participant address is historical and need not be announced (:945), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
+reason = "Unobservable: a replayed participant address is historical and need not be announced (`subagents.mdx:485`), so an invented ID cannot be told from a recorded one, and a reinterpreted entry cannot be told from an ordinary user message."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1024-1028 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/subagents.mdx:472; docs/rfds/subagents.mdx:1063-1067 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "The Agent does not manufacture a failure, cancellation or permanent orphan outcome for a child solely because the persisted history lacks a final update or a runtime could not be restored (MUST NOT)."
 reason = "Unobservable: whether the stored history lacked a final update, or a runtime could be restored, is internal to the agent, so a reported failure or cancellation looks like a real outcome."
 
 [[not_requirement]]
-citation = "docs/rfds/subagents.mdx:1168-1170 (Active RFD) @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
-statement = "Agents do not fabricate an exclusive parent or child cost amount from incomplete token counts or an aggregate total (MUST NOT)."
-reason = "Unobservable: a client cannot know the provider's true cost or token counts, so a fabricated amount cannot be told from a real one."
+citation = "docs/protocol/v2/draft/subagents.mdx:139 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Requests the Agent sends for a child pass through the same Client capability and permission checks as the parent's, and the Agent does not use a child to get around a restriction the Client placed on the parent session (MUST NOT)."
+reason = "Not observable: whether a child's activity circumvents a parent restriction depends on the Agent's internal routing and agent-local tools, and restrictions such as permission policy are not on the wire. The Client capability gate on `elicitation/create` is judged by ACP-CLIENTCAP-003 whatever `sessionId` the request carries."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:248,474 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents report a child's configuration with `config_option_update` on the child after the announcement, again on every change, and for a restored child after a resume, when it is available (SHOULD)."
+reason = "Unobservable: whether a child's configuration is available, or has changed, is known only to the agent, so a missing update cannot be told from a configuration that was not available. ACP-SUBAGENT-014 judges what is reported."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:263 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the parent's conversation also records a message to a child, Agents report the outgoing view in the parent's transcript and link the two views with `senderMessageId` and `recipientMessageId` (SHOULD)."
+reason = "Unobservable: whether the parent's conversation records the message is internal to the agent, so a missing outgoing view or link cannot be told from one the agent had no reason to report. Links that are reported are judged by ACP-SUBAGENT-009."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:265; docs/protocol/v2/draft/prompt-lifecycle.mdx:149-152 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "When the Agent has no evidence of who sent a message a child received, it omits `senderSessionId` and does not assume the parent (MUST NOT), and it links two views only when it can establish that they are the same message."
+reason = "Unobservable: the agent's evidence is internal, so a `senderSessionId` naming the parent, or a link between views, looks the same whether it was established or assumed. An omitted sender still counts as reporting the message in ACP-SUBAGENT-012."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:380 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent ignores a `session/cancel` for a child that does not advertise `cancel`."
+reason = "Not observable as a violation: the Agent can cancel delegated work at any time (`subagents.mdx:398`) and a child may stop on its own, so an `idle`/`cancelled` after such a notification cannot be attributed to it."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:401,403 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "The Agent reports `cancelled` only when it observes that the child's work stopped, not on the provider accepting a stop command, and cancellation does not close the child."
+reason = "Unobservable: when the provider actually stopped is internal to the agent, and a child need not get more work after a cancel (`subagents.mdx:130`), so \"not closed\" has no wire signal. The confirmation itself is judged by ACP-SUBAGENT-016."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:418 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "`session/cancel` on a parent does not resolve the pending requests of a child that keeps running."
+reason = "Not observable as a violation: the Agent decides which other descendants keep running (`subagents.mdx:405`) and cancels the pending permission requests of work it stops (`subagents.mdx:417`), so a request withdrawn after a parent cancel cannot be told from one that belonged to descendant work the Agent stopped."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:470,480,487 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "After a resume the Agent reports each child's current state when it can determine it, replays the associations and child history it still has, and reports known gaps, for example with a notice (SHOULD)."
+reason = "Unobservable: what the agent can determine, still has or knows to be missing is internal, and child history may be incomplete or missing without a violation."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:494-496; docs/protocol/v2/draft/prompt-lifecycle.mdx:1055 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "A session's reported cost includes the costs of its descendants, and a root session's cost is the Agent's total for the whole tree."
+reason = "Not observable as a violation: the true cost is unknown to the client, and a descendant's cost can reach its ancestors later (`subagents.mdx:494`), with no deadline, so no snapshot comparison proves one. Cost reporting is optional."
+
+[[not_requirement]]
+citation = "docs/protocol/v2/draft/subagents.mdx:436-438 @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "If forking a parent copies child history, the Agent remaps the copied session IDs consistently in the participant fields of `session_message` and in `session` tool call content, including references to the forked root (MUST)."
+reason = "Deferred: observing it needs a `session/fork` of a parent with announced children followed by a `session/resume` with replay of the fork. It would be unblocked by a fork and resume step on the subagents connection, gated on `sessionCapabilities.fork`."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:586-588 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "An Agent does not report an outgoing view of a session-directed message for a send it knows failed before the message left the sender (SHOULD NOT)."
+reason = "Unobservable: whether a send failed, and whether the agent knew it had, is internal to the agent; an outgoing view looks the same whether or not its delivery failed."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:471-472 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents supply each `senderMessageId` / `recipientMessageId` reference once they know it (SHOULD)."
+reason = "Unobservable: when, or whether, the agent learns the other view's `messageId` is internal, and it leaves views unlinked when it cannot establish that they are the same message, so two unlinked views cannot be told from views the agent could have linked. Conflicting references are judged by ACP-SUBAGENT-009."
+
+[[not_requirement]]
+citation = "docs/rfds/subagents.mdx:995-996 (Preview RFD) @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
+statement = "Agents retain or reconstruct child identity, associations and ACP-visible conversation data where practical (SHOULD)."
+reason = "Unobservable: what the agent retained, and what was practical, is internal to the agent; child replay is best-effort, so missing child history after `session/resume` is not a violation a client can prove."
 
 
 # --- deferred unstable methods and rules ---
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/error.mdx:65; docs/protocol/v2/draft/session-list.mdx:250; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SessionStatusRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/error.mdx:67; docs/protocol/v2/draft/session-list.mdx:250; docs/rfds/session-status.mdx:126,130 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SessionStatusRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "`session/status` answers an unknown session with `-32002` and the requested `sessionId` in `data`, reports an archived session as `saved`, and MUST NOT have side effects."
-reason = "Deferred unstable method: `session/status` is not yet tested and no draft doc covers it beyond the cited lines; absence of side effects is not observable."
+reason = "Deferred unstable method: the `saved` and `-32002` answers are observable whenever the agent advertises the method and are left to SKIPpable follow-up rows; absence of side effects is not observable, since a client cannot enumerate the agent's state."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/error.mdx:67; docs/rfds/session-set-title.mdx:178,179 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/error.mdx:69; docs/rfds/session-set-title.mdx:178,179 (Draft RFD); schema/v2/schema.unstable.json#/$defs/SetSessionTitleRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "After a successful `session/set_title` the agent SHOULD NOT replace the title with one it generates automatically, and SHOULD discard a title it was generating; a session that does not exist gets `-32002` and a title the agent rejects gets `-32602`."
-reason = "Deferred unstable method: `session/set_title` is not yet tested, and when an agent generates titles is internal, so a clean window proves nothing."
+reason = "Deferred unstable method: the `-32002` and `-32602` answers are observable whenever the agent advertises the method and are left to SKIPpable follow-up rows; when an agent generates titles is internal, so a clean window proves nothing."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/overview.mdx:266; docs/rfds/proxy-chains.mdx:235,236,304,305 (Draft RFD); schema/v2/schema.unstable.json#/$defs/ProxyRequest @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/overview.mdx:269; docs/rfds/proxy-chains.mdx:235,236,304,305 (Draft RFD); schema/v2/schema.unstable.json#/$defs/ProxyRequest @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents receive `initialize` and are terminal; only a conductor sends `proxy/initialize`, and `proxy/successor` is exchanged only between a conductor and its proxies."
 reason = "Out of scope: `proxy/initialize` and `proxy/successor` are intermediary-only methods of a Draft RFD that the TCK does not exercise; an agent that sends one is still caught by ACP-CLIENTCAP-202 as an undefined client method."
 
 [[not_requirement]]
-citation = "docs/protocol/v2/draft/security.mdx:81; schema/v2/schema.unstable.json#/$defs/ProviderInfo @ 3961af94fa62d2386d993cadf1afc8b146fc799a"
+citation = "docs/protocol/v2/draft/security.mdx:81; schema/v2/schema.unstable.json#/$defs/ProviderInfo @ 3ea94133bb4e7cfdb1105df75660ff83e66acf62"
 statement = "Agents SHOULD NOT return provider `headers` from `providers/list`."
-reason = "Deferred unstable method: the TCK never obtains a populated `providers/list` result, and `ProviderInfo` has no `headers` field, so only an off-schema extra key could violate the rule. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-006's."
+reason = "Deferred unstable method: `ProviderInfo` has no `headers` field, so only an off-schema nested key could violate the rule, and a useful check needs a `providers/set` call that plants a canary header, which is a persistent configuration change and unsafe on a real agent. The `-32601` rule for calls without the `providers` capability is ACP-ERROR-006's."

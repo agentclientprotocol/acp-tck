@@ -19,7 +19,9 @@ import pytest
 
 from tck.common.harness import AgentLaunch, AgentProcess, AgentTimeout, Direction
 from tck.common.plugin import _TEST_PROPERTIES
+from tck.v2.conformance._child_cancel import drive_child_cancel, stopped_requests_kept
 from tck.v2.conformance._helpers import (
+    ChildPermissionHold,
     UNKNOWN_PERMISSION_OPTION_ID,
     UNKNOWN_PERMISSION_OUTCOME,
     background_keys,
@@ -436,7 +438,7 @@ def test_hold_permission_ignores_a_withdrawal_after_answering_at_the_deadline():
 
 
 def test_hold_permission_holds_a_request_sent_before_requires_action():
-    """The diagram order (prompt-lifecycle.mdx:246-247): the request is held while the session
+    """The diagram order (prompt-lifecycle.mdx:256-257): the request is held while the session
     is still `running`."""
     agent, turn = _drive(
         [_RESPONSE, _state("running"), _permission_request(_ALLOW_ONCE), _state("requires_action"),
@@ -844,8 +846,8 @@ def _drive_cancelling(steps: list[dict[str, Any]], *cancelled: str, **kwargs: An
 
 def test_requests_after_a_drivers_own_cancel_are_answered_cancelled_not_allowed():
     """The driver's `session/cancel` for the prompted session or for a subagent resolves that
-    session's later permission requests `cancelled` (prompt-lifecycle.mdx:1177; Active Subagents
-    RFD, "Pending permission and elicitation requests"); a request of a session nobody
+    session's later permission requests `cancelled` (prompt-lifecycle.mdx:1452: the Client MAY
+    answer a request it knows belongs to the cancelled work); a request of a session nobody
     cancelled is still answered per the policy."""
     steps = [
         _RESPONSE,
@@ -899,3 +901,212 @@ def test_a_subagents_unsatisfiable_request_is_declined_without_any_session_cance
     assert turn.permission_cancels == []
     assert turn.permission_fallbacks == [f"{_NO_ALLOW_NOTE}; answered cancelled for session {_CHILD!r}"]
     assert turn.stop_reason == "end_turn"
+
+
+# --- holding other sessions' permission requests (`hold_children`) ---
+
+_CHILD_WITHDRAWAL = {"jsonrpc": "2.0", "method": "$/cancel_request", "params": {"requestId": "perm-child"}}
+
+
+def test_hold_children_answers_a_withdrawn_child_request_cancelled():
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE), {"sleep": 0.1},
+         _CHILD_WITHDRAWAL, {"wait_id": "perm-child"}, _state("idle", stopReason="end_turn")],
+        hold_children=hold,
+    )
+    (held,) = hold.requests
+    assert (held.session_id, held.request_id, held.answered_on) == (_CHILD, "perm-child", "cancel_request")
+    answer_index, answer = _sent_answer(agent, "perm-child")
+    assert answer["result"]["outcome"] == {"outcome": "cancelled"}
+    assert held.index < held.withdrawn_at < held.answered_at == answer_index < turn.idle_index
+
+
+def test_hold_children_answers_a_still_held_request_per_policy_at_the_turn_end():
+    """The prompted session's own request is not held; the child's is answered only once the turn
+    has ended (after the wait for a late withdrawal), and per the policy: nobody cancelled it."""
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _permission_request(_ALLOW_ONCE), {"wait_id": "perm-1"},
+         _child_request("perm-child", _ALLOW_ONCE), _state("idle", stopReason="end_turn")],
+        hold_children=hold,
+    )
+    (held,) = hold.requests
+    assert held.answered_on == "turn_end" and held.withdrawn_at is None
+    _assert_answered(agent, "perm-1", _selected("yes"))
+    answer_index, answer = _sent_answer(agent, "perm-child")
+    assert answer["result"]["outcome"] == _selected("yes")
+    assert turn.idle_index < answer_index
+
+
+def test_hold_children_answers_cancelled_once_the_cancelled_child_reported_its_cancelled_idle():
+    """A child the TCK cancelled that then reports `idle`/`cancelled` may have its request answered
+    `cancelled` (`subagents.mdx:419`); one that did not is still answered per the policy."""
+    for child_idle, expected in ((True, {"outcome": "cancelled"}), (False, _selected("yes"))):
+        hold = ChildPermissionHold()
+        steps = [_RESPONSE, _state("running"), {"wait_method": "session/cancel"},
+                 _child_request("perm-child", _ALLOW_ONCE)]
+        if child_idle:
+            steps.append(_state("idle", _CHILD, stopReason="cancelled"))
+        agent, _ = _drive_cancelling(
+            [*steps, _state("idle", stopReason="end_turn")], _CHILD, hold_children=hold
+        )
+        assert hold.requests[0].answered_on == "turn_end"
+        _assert_answered(agent, "perm-child", expected)
+
+
+def test_hold_children_fires_the_trigger_on_the_first_held_request():
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE),
+         {"wait_method": "session/cancel"}, _CHILD_WITHDRAWAL, _state("idle", stopReason="cancelled")],
+        hold_children=hold,
+        on_cancel=True,
+        cancel_wait=2.5,
+    )
+    assert hold.requests[0].index < turn.cancelled_at_index
+    assert hold.requests[0].answered_on == "cancel_request"
+    assert turn.stop_reason == "cancelled"
+
+
+def test_hold_children_answers_at_the_deadline_and_holds_no_later_request():
+    hold = ChildPermissionHold()
+    agent, turn = _drive(
+        [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE),
+         {"wait_id": "perm-child"}, _child_request("perm-late", _ALLOW_ONCE), {"wait_id": "perm-late"},
+         _state("idle", stopReason="end_turn")],
+        hold_children=hold,
+    )
+    assert [held.request_id for held in hold.requests] == ["perm-child"]
+    assert hold.requests[0].answered_on == "timeout"
+    _assert_answered(agent, "perm-late", _selected("yes"))
+    assert turn.stop_reason == "end_turn"
+
+
+def test_released_child_requests_are_answered_per_policy_while_the_turn_runs():
+    hold = ChildPermissionHold()
+    steps = [_RESPONSE, _state("running"), _child_request("perm-child", _ALLOW_ONCE),
+             _child_request("perm-other", _ALLOW_ONCE, "s1-other"), {"wait_id": "perm-child"},
+             _state("idle", stopReason="end_turn")]
+
+    async def go():
+        plan = json.dumps({"pre": [], "steps": steps})
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, plan], startup_timeout=2.0, default_timeout=2.0
+        )
+        async with AgentProcess(launch) as agent:
+            task = asyncio.ensure_future(
+                run_prompt(agent, _SESSION, [{"type": "text", "text": "hi"}], hold_children=hold, timeout=3.0)
+            )
+            while len(hold.requests) < 2:
+                await asyncio.sleep(0.01)
+            assert await hold.release(agent, {_CHILD}) == 1
+            assert await hold.release(agent, {_CHILD}) == 0
+            return agent, await task
+
+    agent, _ = asyncio.run(go())
+    by_id = {held.request_id: held for held in hold.requests}
+    assert by_id["perm-child"].answered_on == "released"
+    assert by_id["perm-other"].answered_on == "turn_end"
+    _assert_answered(agent, "perm-child", _selected("yes"))
+
+
+# --- the child-cancel driver (`drive_child_cancel`) ---
+
+_CANCELLABLE = _update(
+    {"sessionUpdate": "subagent_update", "sessionId": _CHILD, "capabilities": {"cancel": {}}}
+)
+_CHILD_RUNNING = [_RESPONSE, _state("running"), _CANCELLABLE, _state("running", _CHILD)]
+_PARENT_CANCELLED = [{"wait_method": "session/cancel"}, _state("idle", stopReason="cancelled")]
+
+
+def _drive_child_cancel(steps: list[dict[str, Any]], before_cancel: list[dict[str, Any]] = ()):
+    """`drive_child_cancel` with `timeout` 2 s (`timeout / 2` waits of 1 s, `quiet_period` 0.5 s)
+    against a turn that runs `_CHILD_RUNNING` and `before_cancel`, reads the child's
+    `session/cancel`, then runs `steps`, then ends on the parent's `session/cancel`."""
+
+    async def go():
+        script = [*_CHILD_RUNNING, *before_cancel, {"wait_method": "session/cancel"}, *steps, *_PARENT_CANCELLED]
+        launch = AgentLaunch(
+            command=[sys.executable, "-c", _SCRIPT, json.dumps({"pre": [], "steps": script})],
+            startup_timeout=2.0,
+            default_timeout=2.0,
+        )
+        async with AgentProcess(launch) as agent:
+            run = await drive_child_cancel(agent, _SESSION, "hi", timeout=2.0)
+            return agent, run
+
+    return asyncio.run(go())
+
+
+def test_child_cancel_running_after_unknown_is_judged_as_unconfirmed():
+    """A later `running` replaces `unknown` (subagents.mdx:363): no confirmation then FAILs 016."""
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), _state("running", _CHILD)])
+    assert (run.target, run.outcome) == (_CHILD, "unconfirmed")
+    _, run = _drive_child_cancel([_state("unknown", _CHILD)])
+    assert run.outcome == "unobservable"
+
+
+def test_child_cancel_non_cancelled_idle_straight_after_unknown_is_unobservable():
+    """The work ended while the Agent could not see it (subagents.mdx:365): not judged. After a
+    `running` replaced `unknown` the same idle is `not_cancelled`; a cancelled idle confirms."""
+    late_end = [{"sleep": 0.7}, _state("idle", _CHILD, stopReason="end_turn")]
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), *late_end])
+    assert run.outcome == "unobservable"
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), _state("running", _CHILD), *late_end])
+    assert run.outcome == "not_cancelled"
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), _state("idle", _CHILD, stopReason="cancelled")])
+    assert run.outcome == "confirmed"
+
+
+def test_child_cancel_a_mirrored_running_does_not_replace_unknown():
+    """A parent's `subagent_update` may be a stale copy of an earlier `running`; only the child's
+    own `running` replaces `unknown`, so the idle after it stays `unobservable`."""
+    stale_mirror = _update({"sessionUpdate": "subagent_update", "sessionId": _CHILD, "state": {"state": "running"}})
+    late_end = [{"sleep": 0.7}, _state("idle", _CHILD, stopReason="end_turn")]
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), stale_mirror, *late_end])
+    assert run.outcome == "unobservable"
+
+
+def _held_child_stop(pause: float):
+    """A child that holds a permission request and confirms its cancel `pause` s after the TCK
+    releases it (at `timeout / 2`)."""
+    return _drive_child_cancel(
+        [{"wait_id": "perm-child"}, {"sleep": pause}, _state("idle", _CHILD, stopReason="cancelled")],
+        before_cancel=[_child_request("perm-child", _ALLOW_ONCE)],
+    )
+
+
+def test_child_cancel_confirmed_right_after_the_release_waited_for_it():
+    """Confirming within `quiet_period` of the release is the wait 204 FAILs; a later one is a slow
+    stop, which 016 still confirms."""
+    _, run = _held_child_stop(0.0)
+    assert (run.outcome, run.released, run.settled_after_release) == ("confirmed", True, True)
+    _, run = _held_child_stop(0.8)
+    assert (run.outcome, run.released, run.settled_after_release) == ("confirmed", True, False)
+
+
+def test_stopped_child_requests_for_listed_background_work_are_not_judged():
+    """prompt-lifecycle.mdx:1452: a request whose `subject` names an item in the child's latest
+    `background` list is not cancelled, so 204 does not require its withdrawal."""
+    tool_call = {"sessionUpdate": "tool_call", "toolCallId": "bg", "title": "bg", "status": "in_progress"}
+
+    def steps(listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        request = _child_request("perm-child", _ALLOW_ONCE)
+        request["params"]["subject"] = {"type": "tool_call", "toolCall": {"toolCallId": "bg"}}
+        return [
+            _update(tool_call, _CHILD),
+            _state("running", _CHILD, background=listed),
+            request,
+            {"sleep": 0.1},
+            _state("idle", _CHILD, stopReason="cancelled", background=listed),
+        ]
+
+    cases = (
+        ([{"type": "tool_call", "toolCallId": "bg"}], ([], [])),
+        ([], (["perm-child"], [(_CHILD, "perm-child")])),
+    )
+    for listed, expected in cases:
+        agent, run = _drive_child_cancel(steps(listed))
+        assert run.outcome == "confirmed"
+        assert stopped_requests_kept(run, agent.transcript, 0.5) == expected, listed

@@ -56,7 +56,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/error.mdx:6-10; "
-            "docs/protocol/v1/draft/overview.mdx:235-239; "
+            "docs/protocol/v1/draft/overview.mdx:238-242; "
             "agent-client-protocol-schema/src/v1/error.rs:25-49; "
             "schema/v1/schema.unstable.json#/$defs/Error"
         ),
@@ -81,9 +81,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "tck.v1.conformance._helpers.quiet_period."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/overview.mdx:239; "
+            "docs/protocol/v1/draft/overview.mdx:242; "
             "agent-client-protocol-schema/src/v1/error.rs:9; "
-            "docs/rfds/mcp-over-acp.mdx:225,257 (Active RFD); "
+            "docs/protocol/v1/draft/schema.mdx:285-302; "
             "schema/v1/schema.unstable.json#/$defs/MessageMcpNotification"
         ),
     ),
@@ -108,7 +108,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "still succeed)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/overview.mdx:235-239; "
+            "docs/protocol/v1/draft/overview.mdx:238-242; "
             "docs/protocol/v1/draft/extensibility.mdx:84-96; spec silent, de-facto rule from "
             "reference-SDK regression tests -- rust-sdk@d5e8bf4 "
             "src/agent-client-protocol/tests/jsonrpc_error_handling.rs:697-772,796-886, "
@@ -196,7 +196,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability=None,
         text="`agentInfo` with `name` and `version` is present in the `initialize` result.",
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:57,369; "
+            "docs/protocol/v1/draft/initialization.mdx:57,452; "
             "schema/v1/schema.unstable.json#/$defs/Implementation"
         ),
     ),
@@ -242,7 +242,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(`tck.v1.conformance._mcp_stub`), run by the TCK's own Python interpreter."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:480,488-513; "
+            "docs/protocol/v1/draft/session-setup.mdx:493,501-526; "
             "schema/v1/schema.unstable.json#/$defs/McpServer; "
             "schema/v1/schema.unstable.json#/$defs/McpServerStdio"
         ),
@@ -257,7 +257,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(\"Agents SHOULD connect to all MCP servers specified by the Client\"); the prompt "
             "turn gives an agent that connects lazily a chance to do so before the check."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:650"),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:663"),
     ),
     Requirement(
         id="ACP-SESSION-006",
@@ -271,7 +271,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "client-observable part of the rule: model context, logging beyond stderr and "
             "persistence are not covered."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:660"),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:673"),
     ),
     Requirement(
         id="ACP-PROMPT-001",
@@ -282,10 +282,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "is one of the defined `StopReason` values."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:530; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:740; "
             "schema/v1/schema.unstable.json#/$defs/PromptResponse; "
             "schema/v1/schema.unstable.json#/$defs/StopReason (Req 24); "
-            "docs/protocol/v1/draft/initialization.mdx:264, docs/protocol/v1/draft/content.mdx:31 "
+            "docs/protocol/v1/draft/initialization.mdx:340, docs/protocol/v1/draft/content.mdx:31 "
             "(baseline text support, Req 7)"
         ),
     ),
@@ -301,7 +301,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "in that case."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:313 (Req 1); "
+            "docs/protocol/v1/draft/initialization.mdx:389 (Req 1); "
             "schema/v1/schema.unstable.json#/$defs/SessionNotification (SessionNotification); "
             "Testability notes 'Weakly assertable' first bullet"
         ),
@@ -318,7 +318,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/content.mdx:170; "
-            "docs/protocol/v1/draft/initialization.mdx:264; "
+            "docs/protocol/v1/draft/initialization.mdx:340; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v1/schema.unstable.json#/$defs/ContentBlock"
         ),
@@ -334,7 +334,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Windows drive path, or a UNC path. Passes vacuously when the agent emits no paths."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/overview.mdx:230; "
+            "docs/protocol/v1/draft/overview.mdx:233; "
             "docs/protocol/v1/draft/session-list.mdx:136-137; "
             "schema/v1/schema.unstable.json#/$defs/ToolCallLocation/properties/path; "
             "schema/v1/schema.unstable.json#/$defs/Diff/properties/path"
@@ -348,7 +348,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "After `session/cancel` during an in-flight `session/prompt`, the prompt request "
             "resolves with a successful result whose `stopReason` is `cancelled`, not an error."
         ),
-        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:645,652 (Reqs 25, 26)"),
+        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:855,862 (Reqs 25, 26)"),
     ),
     Requirement(
         id="ACP-CANCEL-002",
@@ -362,7 +362,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "are not judged. \"None arrive after it\" is checked with a quiet period derived from "
             "--tck-timeout (tck.v1.conformance._helpers.quiet_period), not an infinite wait."
         ),
-        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:38,656"),
+        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:40,866"),
     ),
     Requirement(
         id="ACP-LOAD-001",
@@ -373,8 +373,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema-valid `LoadSessionResponse` object."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:106,110-201 (`{}` result example at "
-            "192-201); "
+            "docs/protocol/v1/draft/session-setup.mdx:106,110-210 (`{}` result example at "
+            "201-210); "
             "schema/v1/schema.unstable.json#/$defs/AgentCapabilities/properties/loadSession; "
             "schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; "
             "schema/v1/schema.unstable.json#/$defs/LoadSessionRequest (C1, L1, L4)"
@@ -393,8 +393,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "is made about how many history updates are replayed or their fidelity."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:136-142,192-193; "
-            "docs/protocol/v1/draft/prompt-turn.mdx:38"
+            "docs/protocol/v1/draft/session-setup.mdx:136-142,201-202; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:40"
         ),
     ),
     Requirement(
@@ -410,7 +410,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "(ACP-LOAD-001) treats `null` as equivalent for an all-optional object response."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:195-201; "
+            "docs/protocol/v1/draft/session-setup.mdx:204-210; "
             "schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; "
             "agent-client-protocol-schema/src/serde_util.rs:30-38"
         ),
@@ -424,7 +424,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema-valid `ResumeSessionResponse` object."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:240-245,267-278; "
+            "docs/protocol/v1/draft/session-setup.mdx:249-254,276-287; "
             "schema/v1/schema.unstable.json#/$defs/ResumeSessionRequest; "
             "schema/v1/schema.unstable.json#/$defs/ResumeSessionResponse (C2, R1, R3)"
         ),
@@ -440,7 +440,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "is scoped to history updates in the pre-response window only, not to every update "
             "kind or to updates after the response."
         ),
-        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:267-270 (R2)"),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:276-279 (R2)"),
     ),
     Requirement(
         id="ACP-LIST-001",
@@ -482,6 +482,24 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-list.mdx:174; docs/protocol/v1/draft/error.mdx:47"
+        ),
+    ),
+    Requirement(
+        id="ACP-LIST-004",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.list",
+        text=(
+            "`session/list` never returns a child session an Agent announced with "
+            "`subagent_update`: a Client learns of children from `subagent_update`, not from the "
+            "list. Judged on the connection that advertised `subagents` (see `ACP-SUBAGENT-001`), "
+            "after its turn and replay: the TCK lists with `params: {}` and follows `nextCursor` "
+            "for at most ten pages, and every announced child is looked for in the result. SKIPs "
+            "when the agent announced no child or the list did not answer with a `sessions` array "
+            "(`ACP-LIST-001`'s finding). Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:430; "
+            "docs/rfds/subagents.mdx:1098-1100 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -600,7 +618,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "asserted."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-list.mdx:260; docs/protocol/v1/draft/error.mdx:67; "
+            "docs/protocol/v1/draft/session-list.mdx:260; docs/protocol/v1/draft/error.mdx:69; "
             "schema/v1/schema.unstable.json#/$defs/ArchiveSessionRequest; "
             "schema/v1/schema.unstable.json#/$defs/UnarchiveSessionRequest"
         ),
@@ -632,7 +650,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "empty-object result."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:329-344; "
+            "docs/protocol/v1/draft/session-setup.mdx:338-353; "
             "schema/v1/schema.unstable.json#/$defs/CloseSessionRequest; "
             "schema/v1/schema.unstable.json#/$defs/CloseSessionResponse (C2, X1)"
         ),
@@ -649,8 +667,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`stopReason`; inferred by reference to the cancellation contract (X3)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:333-335 -> "
-            "docs/protocol/v1/draft/prompt-turn.mdx:645,652,656 (X2, X3)"
+            "docs/protocol/v1/draft/session-setup.mdx:342-344 -> "
+            "docs/protocol/v1/draft/prompt-turn.mdx:855,862,866 (X2, X3)"
         ),
     ),
     Requirement(
@@ -665,7 +683,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "when `sessionCapabilities.close` is advertised; the test is gated on it."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:347-350; "
+            "docs/protocol/v1/draft/session-setup.mdx:356-359; "
             "docs/protocol/v1/draft/error.mdx:55"
         ),
     ),
@@ -675,7 +693,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         capability="agentCapabilities.sessionCapabilities.additionalDirectories",
         text="`session/new` with an absolute `additionalDirectories` entry is accepted.",
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:354-383; "
+            "docs/protocol/v1/draft/session-setup.mdx:363-392; "
             "schema/v1/schema.unstable.json#/$defs/NewSessionRequest/properties/additionalDirectories "
             "(C2, A1, A2)"
         ),
@@ -690,7 +708,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "supports `append`, and MUST accept text content blocks."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:414,418; "
+            "docs/protocol/v1/draft/session-setup.mdx:423,427; "
             "schema/v1/schema.unstable.json#/$defs/SystemPrompt; "
             "schema/v1/schema.unstable.json#/$defs/SessionSystemPromptModeCapabilities"
         ),
@@ -708,7 +726,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "succeed. The error code is recorded, not asserted (`-32602` is only RECOMMENDED)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:415,422; "
+            "docs/protocol/v1/draft/session-setup.mdx:424,431; "
             "schema/v1/schema.unstable.json#/$defs/SystemPromptMode"
         ),
     ),
@@ -725,7 +743,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "not succeed."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-setup.mdx:418,422; "
+            "docs/protocol/v1/draft/session-setup.mdx:427,431; "
             "schema/v1/schema.unstable.json#/$defs/SystemPrompt/properties/content"
         ),
     ),
@@ -782,7 +800,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`capability=\"inferred:configOptions\"` is documentation-only."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-config-options.mdx:118-130,245; "
+            "docs/protocol/v1/draft/session-config-options.mdx:118-130,258; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigOption; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigSelect; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigBoolean (§7, §0)"
@@ -800,7 +818,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/session-config-options.mdx:304,373-377; "
+            "docs/protocol/v1/draft/session-config-options.mdx:317,386-390; "
             "schema/v1/schema.unstable.json#/$defs/SetSessionConfigOptionRequest; "
             "schema/v1/schema.unstable.json#/$defs/SetSessionConfigOptionResponse (§7 'complete "
             "list' rule)"
@@ -816,14 +834,236 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`clientCapabilities.session.configOptions.boolean: {}` -- a genuine client- "
             "controlled MUST NOT. Checked on `session/new`'s result, a "
             "`session/set_config_option` result, `session/load`/`session/resume` results when "
-            "advertised, and any `config_option_update` seen meanwhile. Passes vacuously if the "
-            "agent has no config options, or none of `type: \"boolean\"`, at all."
+            "advertised, a `session/options` result when `sessionCapabilities.options` is "
+            "advertised (its `configOptions` follow \"the same type and rules as on "
+            "`NewSessionResponse`\"), and any `config_option_update` seen meanwhile; a call "
+            "other than `session/new` that fails or is not answered within `--timeout` adds no "
+            "payload (other rows judge it). Passes "
+            "vacuously if the agent has no config options, or none of `type: \"boolean\"`, at "
+            "all. Upstream discrepancy: the `session/options` docs and schema descriptions name "
+            "the gate `sessionCapabilities.configOptions.boolean`, which does not exist; the "
+            "client capability that gates it is `clientCapabilities.session.configOptions.boolean`."
         ),
         citation=_cite(
             "schema/v1/schema.unstable.json#/$defs/SessionConfigOption/oneOf/1; "
             "schema/v1/schema.unstable.json#/$defs/SessionConfigBoolean (SessionConfigOption "
-            "boolean variant); docs/protocol/v1/draft/session-config-options.mdx:207-209 "
-            "(normative MUST NOT text); docs/protocol/v1/draft/initialization.mdx:189-198"
+            "boolean variant); docs/protocol/v1/draft/session-config-options.mdx:207-209,535 "
+            "(normative MUST NOT text); docs/protocol/v1/draft/initialization.mdx:189-198; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-001",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "An agent that advertises `sessionCapabilities.options` supports `session/options`: "
+            "`session/options` with an absolute `cwd` (and no `sessionId`) succeeds, and its "
+            "result validates as `SessionOptionsResponse`. Unstable feature. The docs state this "
+            "declaratively, with no RFC keyword; advertising the capability is the opt-in. A "
+            "`-32000` (authentication required) reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,479-500,511-535; "
+            "docs/protocol/v1/draft/initialization.mdx:424-429; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsResponse"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-002",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "`session/options` MUST NOT create a session, send a `session/update` notification "
+            "or add an entry to `session/list`. Checked on a connection with no session: no "
+            "`session/update` arrives from the request until a quiet period after its response, "
+            "and, when `sessionCapabilities.list` is advertised, a `session/list` for the same "
+            "`cwd` shows no session it did not show before. Without `list`, only the "
+            "notification half is checked. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:537; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "`session/options` with a `sessionId` the agent never issued fails with an error "
+            "rather than a result. The docs give the code (`-32002`) without an RFC keyword and "
+            "`error.mdx` lists it only as a SHOULD, so the code is not asserted. The probe "
+            "breaks a client MUST (send `sessionId` only when the agent supports `loadSession`, "
+            "`sessionCapabilities.resume` or `sessionCapabilities.fork`) only on an agent that "
+            "advertises one of them; "
+            "SKIPs otherwise. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:507; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest/properties/sessionId"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-009",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "`session/options` with a `sessionId` SHOULD NOT connect to MCP servers (the request "
+            "has no `mcpServers`, so an agent that does reconnects those the session was "
+            "created with). Checked with a session created with the TCK's stub stdio MCP server "
+            "on one connection, the stub's marker deleted, then `session/options` for that "
+            "session on a fresh connection: the marker must not reappear. SKIPs without "
+            "`sessionCapabilities.options`, without any of `loadSession`, "
+            "`sessionCapabilities.resume` and `sessionCapabilities.fork`, "
+            "when the agent never connected to the stub, or when the second connection cannot "
+            "answer for the session (the agent does not persist sessions). Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:507,509; "
+            "schema/v1/schema.unstable.json#/$defs/SessionOptionsRequest"
+        ),
+    ),
+
+    Requirement(
+        id="ACP-OPTIONS-004",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "An initial `configOptions` entry that does not match the schema fails the setup "
+            "request with `-32602`. Checked on `session/new` with `[{\"value\": \"x\"}]` (no "
+            "`configId`) and `[{\"configId\": \"x\", \"value\": 42}]` (a value that is "
+            "neither a string nor, with `type: \"boolean\"`, a boolean). The probes break a "
+            "client rule (send schema-valid entries) on purpose, because the docs define the "
+            "agent's answer. Both probes are repeated on `session/fork` of a fresh session when "
+            "`sessionCapabilities.fork` is advertised and a plain fork of it succeeds; the docs "
+            "also list `session/load` and `session/resume`, which are not probed. Unstable "
+            "feature. A `-32000` reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,541,563; "
+            "docs/protocol/v1/draft/session-setup.mdx:456; "
+            "schema/v1/schema.unstable.json#/$defs/InitialSessionConfigOption; "
+            "schema/v1/schema.unstable.json#/$defs/NewSessionRequest/properties/configOptions"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-005",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "Two initial `configOptions` entries with the same `configId` fail the setup "
+            "request with `-32602`. Checked on `session/new` with a real option of "
+            "`session/options` (a non-boolean one, at its current value) sent twice; an agent "
+            "with none gets a synthetic id, since the rule has no exception for unknown ids. "
+            "Repeated on `session/fork` of a fresh session when `sessionCapabilities.fork` is "
+            "advertised and a plain fork of it succeeds. The probe breaks a client rule (no "
+            "duplicate entries) on purpose, because the docs define the agent's answer. Unstable "
+            "feature. A `-32000` reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,541,564; "
+            "docs/protocol/v1/draft/session-setup.mdx:456; "
+            "schema/v1/schema.unstable.json#/$defs/NewSessionRequest/properties/configOptions"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-006",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "An initial `configOptions` entry the agent cannot apply does not fail setup: the "
+            "request succeeds and the option keeps a value valid for its type (not the one "
+            "sent). Probed on `session/new` with an unknown `configId`, a value no option lists, "
+            "and, on a connection that advertises `clientCapabilities.session.configOptions."
+            "boolean: {}`, a `type: \"boolean\"` entry for a select option and a string value "
+            "for a boolean option (the docs and schema descriptions name the gate "
+            "`sessionCapabilities.configOptions.boolean`, a path that does not exist; the real "
+            "one is the client capability); every `session/new` probe is repeated on "
+            "`session/fork` of a fresh session when `sessionCapabilities.fork` is advertised and "
+            "a plain fork of it succeeds, and the unknown-id probe on `session/load` and "
+            "`session/resume` when advertised. Entries that apply are not probed (their values "
+            "may legitimately be refused at runtime). Unstable feature. A `-32000` reply SKIPs."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:475,541,565-566; "
+            "docs/protocol/v1/draft/session-setup.mdx:456; "
+            "schema/v1/schema.unstable.json#/$defs/InitialSessionConfigOption"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-007",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD NOT send `config_option_update` notifications for initial "
+            "`configOptions` entries; the setup response carries the resulting values. Judged "
+            "on `session/new` with a select option of `session/options` set to an alternative "
+            "value, from the request until a quiet period after the response (the connection "
+            "has no other session, so any such update is attributed to the entries). SKIPs "
+            "without `sessionCapabilities.options`, without such an option, or when setup "
+            "fails. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:567; "
+            "docs/protocol/v1/draft/session-setup.mdx:456"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-008",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "Until the `session/new` or `session/fork` response, the agent SHOULD NOT send other "
+            "`session/update` notifications caused by applying initial `configOptions` entries "
+            "(such as a notice that a value fell back, or a `current_mode_update`); it sends "
+            "them after the response. Judged on the exchange of ACP-OPTIONS-007, and on a "
+            "`session/fork` of a fresh session with the same entry when "
+            "`sessionCapabilities.fork` is advertised: an update for the new session before the "
+            "response FAILs, except `config_option_update` (ACP-OPTIONS-007's) and kinds that "
+            "the same request without entries, on a fresh connection, also sends before its "
+            "response or within a quiet period after it (they are not caused by the entries). A "
+            "fork that does not succeed is not judged. SKIPs under the conditions of "
+            "ACP-OPTIONS-007. Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:541,568; "
+            "docs/protocol/v1/draft/session-setup.mdx:456"
+        ),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-010",
+        tier=Tier.INFORMATIONAL,
+        capability=None,
+        text=(
+            "Records whether a valid initial value (an alternative value of a select option of "
+            "`session/options`, sent on `session/new`) shows in the setup response's "
+            "`configOptions`. Asserts nothing: the agent may ignore a value its runtime refuses "
+            "or one that changed since `session/options`. SKIPs without "
+            "`sessionCapabilities.options`, without such an option, or when setup fails. "
+            "Unstable feature."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-config-options.mdx:559,561,565-566"),
+    ),
+    Requirement(
+        id="ACP-OPTIONS-011",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.options",
+        text=(
+            "The `configOptions` in a setup response contain the values the session actually "
+            "has. Checked on `session/new` with an initial entry, on a connection that "
+            "advertises `clientCapabilities.session.configOptions.boolean: {}` (so a second "
+            "option is visible): a no-op `session/set_config_option` of a *different* option "
+            "(to the `currentValue` the response reported) must return the same "
+            "`(id, currentValue)` pairs as the setup response. Setting the entry's own option "
+            "would overwrite the evidence. SKIPs without a select option with an alternative "
+            "value, without a second settable option, or when a `config_option_update` arrived "
+            "meanwhile (the agent may change its own configuration). Unstable feature."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/session-config-options.mdx:566; "
+            "docs/protocol/v1/draft/session-setup.mdx:456"
         ),
     ),
     Requirement(
@@ -836,7 +1076,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "text resolves with a successful result whose `stopReason` is a defined value."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:266-270; "
+            "docs/protocol/v1/draft/initialization.mdx:342-346; "
             "docs/protocol/v1/draft/content.mdx:54-56; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v1/schema.unstable.json#/$defs/ImageContent"
@@ -852,7 +1092,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "text resolves with a successful result whose `stopReason` is a defined value."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:272-274; "
+            "docs/protocol/v1/draft/initialization.mdx:348-350; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v1/schema.unstable.json#/$defs/AudioContent"
         ),
@@ -868,7 +1108,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "whose `stopReason` is a defined value."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:276-278; "
+            "docs/protocol/v1/draft/initialization.mdx:352-354; "
             "docs/protocol/v1/draft/content.mdx:122-125; "
             "schema/v1/schema.unstable.json#/$defs/PromptCapabilities; "
             "schema/v1/schema.unstable.json#/$defs/EmbeddedResource"
@@ -998,11 +1238,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "observed unauthenticated."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/initialization.mdx:300-304; "
+            "docs/protocol/v1/draft/initialization.mdx:376-380; "
             "schema/v1/schema.unstable.json#/$defs/AgentAuthCapabilities/properties/status; "
             "schema/v1/schema.unstable.json#/$defs/AuthStatusRequest; "
             "schema/v1/schema.unstable.json#/$defs/AuthStatusResponse; "
-            "docs/rfds/get-auth-state.mdx:293,297 (Draft RFD)"
+            "docs/rfds/get-auth-state.mdx:299,303 (Draft RFD)"
         ),
     ),
     Requirement(
@@ -1038,6 +1278,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/file-system.mdx:10,29; "
+            "docs/protocol/v1/draft/subagents.mdx:95,157; "
             "schema/v1/schema.unstable.json#/$defs/FileSystemCapabilities (Req 29)"
         ),
     ),
@@ -1052,7 +1293,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`ACP-CLIENTCAP-001`): no `terminal/*` request there either, including one carrying "
             "a child session's ID. PASS is vacuous for an agent that never needs a terminal."
         ),
-        citation=_cite("docs/protocol/v1/draft/terminals.mdx:10,26 (Req 30)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/terminals.mdx:10,26 (Req 30); "
+            "docs/protocol/v1/draft/subagents.mdx:95,157"
+        ),
     ),
     Requirement(
         id="ACP-CLIENTCAP-003",
@@ -1067,7 +1311,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         ),
         citation=_cite(
             "docs/protocol/v1/draft/elicitation.mdx:40-47,54; "
-            "docs/protocol/v1/draft/initialization.mdx:160-166"
+            "docs/protocol/v1/draft/initialization.mdx:160-166; "
+            "docs/protocol/v1/draft/subagents.mdx:95,157"
         ),
     ),
     Requirement(
@@ -1082,7 +1327,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "notices."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:293-296; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:300-303; "
             "docs/protocol/v1/draft/initialization.mdx:228-234; "
             "schema/v1/schema.unstable.json#/$defs/Notice"
         ),
@@ -1098,7 +1343,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "for an agent that never reports compaction."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:355-360; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:429-434; "
             "docs/protocol/v1/draft/session-setup.mdx:139-142; "
             "docs/protocol/v1/draft/initialization.mdx:210-216; "
             "schema/v1/schema.unstable.json#/$defs/CompactionUpdate; "
@@ -1130,15 +1375,57 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session_message_chunk`, nor `session` content (`{\"type\": \"session\"}`) in a "
             "`tool_call`, a `tool_call_update`, or a `session/request_permission` `toolCall`, "
             "unless the client advertised `clientCapabilities.subagents` -- checked the same way "
-            "as ACP-CLIENTCAP-004. Unstable feature: an agent that does not expose subagents "
-            "never sends these and passes vacuously."
+            "as ACP-CLIENTCAP-004, so `session/load` replay to a client that did not advertise it "
+            "is judged too. Unstable feature: an agent that does not expose subagents never "
+            "sends these and passes vacuously. The draft docs state the rule: the MUST NOT for "
+            "the three update kinds, and the `session` content clause as part of the same "
+            "capability gate. That clause carries no RFC keyword there, but the capability is "
+            "defined as what the client handles, so it is held to the same MANDATORY (the "
+            "Preview RFD states it too)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:19-21,42; "
+            "docs/protocol/v1/draft/subagents.mdx:61,530; "
+            "docs/protocol/v1/draft/initialization.mdx:308-314; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:19-21,44; "
             "docs/protocol/v1/draft/tool-calls.mdx:358; "
-            "docs/rfds/subagents.mdx:76-78,644-645 (Active RFD); "
+            "docs/rfds/subagents.mdx:76-78,663-664 (Preview RFD); "
             "schema/v1/schema.unstable.json#/$defs/SubagentCapabilities; "
             "schema/v1/schema.unstable.json#/$defs/SessionReference"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-008",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `prompt_suggestions_update` unless the client advertised "
+            "`clientCapabilities.session.promptSuggestions` (omitting `session` or "
+            "`promptSuggestions`, or setting either to `null`, is not advertising), live or "
+            "during `session/load` replay -- checked the same way as ACP-CLIENTCAP-004. Unstable "
+            "feature: an agent that sends no prompt suggestions passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:35,364; "
+            "docs/protocol/v1/draft/initialization.mdx:244-256; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestionsUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CLIENTCAP-009",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "The agent MUST NOT send `cursor_update` unless the client advertised "
+            "`clientCapabilities.session.cursors` (omitting `session` or `cursors`, or setting "
+            "either to `null`, is not advertising), live or during `session/load` replay -- "
+            "checked the same way as ACP-CLIENTCAP-004. Unstable feature: an agent that "
+            "announces no session cursors passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:36,584-589; "
+            "docs/protocol/v1/draft/initialization.mdx:289-297; "
+            "docs/protocol/v1/draft/session-setup.mdx:152; "
+            "schema/v1/schema.unstable.json#/$defs/CursorUpdate"
         ),
     ),
     Requirement(
@@ -1154,13 +1441,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`terminal/*` with the child's `sessionId`, and a live `session_message` naming the "
             "child as `senderSessionId` or `recipientSessionId`. The announcement must itself be "
             "sent on a known session (nested children included); traffic for an unannounced "
-            "child FAILs. Stated by the draft docs' `SubagentUpdate` and the Subagents RFD "
-            "(Active RFD). Replay is judged on its own terms: inside the `session/load` exchange "
-            "only an announcement made within it counts, even if an earlier turn announced the "
-            "child, because the client need not retain an earlier session tree and replayed "
-            "child updates keep announcements before child traffic (Active RFD); a replayed "
+            "child FAILs. Stated by the draft docs and schema (`SubagentUpdate`). Replay is "
+            "judged on its own terms: inside the `session/load` exchange, and after its "
+            "successful response, only an announcement made during that load counts, even if an "
+            "earlier turn announced the child, because the rule applies again on every load (the "
+            "client need not retain an earlier session tree) and a child's replayed "
+            "`subagent_update` precedes its other replayed updates; a replayed "
             "`session_message`'s participant IDs are historical addresses, not announcements, "
-            "and are not judged (Active RFD). Judged in wire order over one `session/new`, one "
+            "and are not judged. Judged in wire order over one `session/new`, one "
             "prompt turn, a `session/load` of that session when `loadSession` is advertised "
             "(after a quiet period, so child traffic trailing the turn is not read as replay) "
             "and a quiet period after them. The mock client advertises only `subagents`, so "
@@ -1174,9 +1462,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "which v2 removed."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/schema.mdx:8709-8713; "
+            "docs/protocol/v1/draft/subagents.mdx:90-97,212,517,531,533-534; "
+            "docs/protocol/v1/draft/schema.mdx:9709-9715; "
             "schema/v1/schema.unstable.json#/$defs/SubagentUpdate; "
-            "docs/rfds/subagents.mdx:95-99,189-193,933-935,942-948,981-987 (Active RFD)"
+            "docs/rfds/subagents.mdx:95-99,189-193,970-972,979-985,1018-1024 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1190,18 +1479,29 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`tool_call_update` `content` array and a `session/request_permission` request's "
             "`toolCall.content`, in wire order over the connection that advertised `subagents` "
             "(see `ACP-SUBAGENT-001` for its scope). A reference to a session no announcement "
-            "preceded FAILs. A reference replayed inside the `session/load` exchange is a "
-            "historical address, so is neither judged nor counted (Active RFD: a replayed "
-            "reference to an unavailable session follows the historical replay rules). A "
-            "reference does not count as traffic carrying the child's ID, so it never FAILs "
-            "`ACP-SUBAGENT-001`. The draft docs state the rule, but only an agent that emits "
+            "preceded FAILs. After a successful `session/load` only announcements made during "
+            "that load or since count, as for `ACP-SUBAGENT-001` (the rule applies again on "
+            "every load, and ancestors are announced during this load): a child announced only "
+            "in the earlier turn and referenced after the load FAILs. A failed load leaves the "
+            "earlier announcements counting. The draft docs state the rule as a MUST (the "
+            "announcement precedes "
+            "a `session` content item that references the child), but only an agent that emits "
             "`session` content is bound and no agent-side `initialize` marker announces that, so "
             "the row is gated by `inferred:subagents` (documentation-only) and SKIPs when no "
-            "`session` content item appears outside a replay. Shared id with v2."
+            "`session` content item appears outside a replay. A reference replayed inside the "
+            "`session/load` exchange is a historical address, so is neither judged nor counted "
+            "(Preview RFD: a replayed reference to an unavailable session follows the historical "
+            "replay rules). The docs state no such exemption for `session` content (they say "
+            "the rule applies again on every load, and exempt only a replayed "
+            "`session_message`'s participants), so this is a discrepancy kept on the Preview "
+            "RFD's basis: judging a replayed reference against the load's own announcements "
+            "would be stricter than the RFD allows. A reference does not count as traffic "
+            "carrying the child's ID, so it never FAILs `ACP-SUBAGENT-001`. Shared id with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/tool-calls.mdx:349-351; "
-            "docs/rfds/subagents.mdx:636-639 (Active RFD)"
+            "docs/protocol/v1/draft/subagents.mdx:90,94,517; "
+            "docs/protocol/v1/draft/tool-calls.mdx:349-352,364-365; "
+            "docs/rfds/subagents.mdx:647-650 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1211,15 +1511,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A `subagent_update` never makes a session its own parent: `update.sessionId` differs "
             "from the `sessionId` of the session the notification is sent on, whichever session "
-            "that is. Stated only by the Subagents RFD (Active RFD: `the association cannot ... "
-            "refer to itself`), so the row is capped at CAPABILITY and gated by "
-            "`inferred:subagents` (documentation-only). Judged for every `subagent_update` over "
+            "that is. The draft docs state it (a `subagent_update` `cannot ... name its own "
+            "outer session as the child`), and it binds only an agent that exposes subagents, so "
+            "the row is CAPABILITY and gated by `inferred:subagents` (documentation-only). "
+            "Judged for every `subagent_update` over "
             "the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
             "SKIPs when none appears. A self-referencing update is judged here and by no other "
             "association row (`ACP-SUBAGENT-004`/`-005` leave it out), so one defect never FAILs "
             "several. Shared id with v2."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:165-169 (Active RFD)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:144; "
+            "docs/rfds/subagents.mdx:165-169 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-004",
@@ -1229,15 +1533,20 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "A `subagent_update` never announces a session ID that is already an ordinary session "
             "the client created with `session/new`, as the child of another session. The child's "
             "ID identifies the child session in all ACP messages and is unique within the "
-            "connection, so it is not reused for an unrelated session. Stated only by the "
-            "Subagents RFD (Active RFD), so the row is capped at CAPABILITY and gated by "
-            "`inferred:subagents`. A client session announced as its own child is "
+            "connection, so it is not reused for an unrelated session. The draft docs state it "
+            "(`unique on the connection`, and the Agent `MUST NOT` reuse it for an unrelated "
+            "session), and it binds only an agent that exposes subagents, so the row is "
+            "CAPABILITY and gated by `inferred:subagents`. A client session announced as its own "
+            "child is "
             "`ACP-SUBAGENT-003`'s. Judged for every `subagent_update` over the connection that "
             "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs when none "
             "appears. Announcing a client session under one of its own descendants is the cycle "
             "case of this row. Shared id with v2."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:122-124,165-169 (Active RFD)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:99-102,144; "
+            "docs/rfds/subagents.mdx:122-124,165-169 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-005",
@@ -1248,17 +1557,18 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`subagent_update` for the same `sessionId` sent on a different session (a "
             "reparenting, which includes one that would create a cycle) FAILs. Later updates only "
             "modify the association's metadata, not its ownership. The draft docs state the "
-            "ownership rule and the RFD states the one-parent, no-cycle rule; the rule binds only "
-            "an agent that emits `subagent_update`, so the row is CAPABILITY and gated by "
-            "`inferred:subagents`. The remaining ways to close a cycle are `ACP-SUBAGENT-003` (a "
+            "ownership and the one-parent, no-cycle rule, and replayed child updates keep their "
+            "known parent; the rule binds only an agent that emits `subagent_update`, so the "
+            "row is CAPABILITY and gated by `inferred:subagents`. The remaining ways to close a cycle are `ACP-SUBAGENT-003` (a "
             "self-parent) and `-004` (a client session announced as a child), so a cycle never "
             "FAILs more than one row. Judged for every `subagent_update` sent on a known session "
             "over the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its "
             "scope); SKIPs when none appears. Shared id with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/schema.mdx:8705-8707; "
-            "docs/rfds/subagents.mdx:165-169 (Active RFD)"
+            "docs/protocol/v1/draft/subagents.mdx:88,144,531; "
+            "docs/protocol/v1/draft/schema.mdx:9705-9707; "
+            "docs/rfds/subagents.mdx:165-169 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1280,10 +1590,11 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "carries a string `cwd` or `additionalDirectories` entry. Shared id with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/schema.mdx:8741,8760; "
+            "docs/protocol/v1/draft/subagents.mdx:232; "
+            "docs/protocol/v1/draft/schema.mdx:9741,9760; "
             "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/cwd; "
             "schema/v1/schema.unstable.json#/$defs/SubagentUpdate/properties/additionalDirectories; "
-            "docs/rfds/subagents.mdx:298-308 (Active RFD)"
+            "docs/rfds/subagents.mdx:298-308 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1296,13 +1607,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "same transcript; `null` clears, omitted keeps), they identify different sessions. A "
             "message a session sends to itself FAILs, whatever session the update is sent on "
             "(`ACP-SUBAGENT-008` judges only messages with different participants, so one defect "
-            "never FAILs both). Stated only by the Subagents RFD (Active RFD: `they identify "
+            "never FAILs both). Stated only by the Subagents RFD (Preview RFD: `they identify "
             "different sessions`), so the row is capped at CAPABILITY and gated by "
             "`inferred:subagents` (documentation-only). Judged for every `session_message` over "
             "the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
             "SKIPs when no message has both participants known. Shared id with v2."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:477-480 (Active RFD)"),
+        citation=_cite("docs/rfds/subagents.mdx:485-488 (Preview RFD)"),
     ),
     Requirement(
         id="ACP-SUBAGENT-008",
@@ -1314,14 +1625,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "transcript holds the outgoing view and the recipient's the incoming view, so an "
             "update sent on a third session FAILs. Participants are stored across upserts of the "
             "same `messageId`, as for `ACP-SUBAGENT-007`, whose equal-participant case this row "
-            "leaves out. Stated only by the Subagents RFD (Active RFD: `the outer "
+            "leaves out. Stated only by the Subagents RFD (Preview RFD: `the outer "
             "params.sessionId matches one of them`), so the row is capped at CAPABILITY and gated "
             "by `inferred:subagents`. Judged for every `session_message` over the connection that "
             "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs when no message "
             "has both participants known. A participant that was never announced is "
             "`ACP-SUBAGENT-001`'s. Shared id with v2."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:477-481 (Active RFD)"),
+        citation=_cite("docs/rfds/subagents.mdx:485-489 (Preview RFD)"),
     ),
     Requirement(
         id="ACP-SUBAGENT-009",
@@ -1336,18 +1647,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "the referenced view's own participants. A reference to a view the agent never "
             "reported, or to a view with no reference of its own, is not judged (each side is "
             "reported only when observed, and the draft docs add that views are not linked by "
-            "equal IDs alone). The draft docs define what each field names; the RFD alone states "
-            "the MUST that both references agree, so the row is capped at CAPABILITY and gated by "
-            "`inferred:subagents`. Judged on the stored state after every `session_message` over "
+            "equal IDs alone). The draft docs define what each field names and add only a SHOULD "
+            "to link the two views; the RFD alone states the MUST that both references agree, "
+            "so the row is capped at CAPABILITY and gated by `inferred:subagents`. Judged on the stored state after every `session_message` over "
             "the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
             "SKIPs when no two views were found that both carry a reference, so no link was "
             "judged. `session_message_chunk` carries no identity, so is not judged. Shared id "
             "with v2."
         ),
         citation=_cite(
-            "docs/rfds/subagents.mdx:466-475 (Active RFD); "
-            "docs/protocol/v1/draft/prompt-turn.mdx:96-100; "
-            "docs/protocol/v1/draft/schema.mdx:7249,7263"
+            "docs/rfds/subagents.mdx:466-475 (Preview RFD); "
+            "docs/protocol/v1/draft/subagents.mdx:285; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:98-102; "
+            "docs/protocol/v1/draft/schema.mdx:8150,8164"
         ),
     ),
     Requirement(
@@ -1355,18 +1667,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The task a parent gives a child is not reported as a `user_message_chunk` in the "
-            "child's transcript (SHOULD NOT): none appears for an announced child before that "
-            "child's first agent output (`agent_message_chunk` or `agent_thought_chunk`), which "
-            "is when the first task has started its work. The Client cannot prompt a child, so "
+            "A message from a parent to a child is not reported as a `user_message_chunk` in "
+            "the child's transcript (SHOULD NOT): judged is the first one, which starts the "
+            "child's work, so none appears for an announced child before that child's first "
+            "agent output (`agent_message_chunk` or `agent_thought_chunk`). The Client cannot prompt a child, so "
             "such a message would attribute the task to the user. Judged over the connection that "
             "advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); SKIPs itself when no "
             "announced child produces agent output and none has a user message. Shared id with "
             "v2, whose rule also covers its `user_message`."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:106-111; "
-            "docs/rfds/subagents.mdx:648-664 (Active RFD)"
+            "docs/protocol/v1/draft/subagents.mdx:286; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:108-113; "
+            "docs/rfds/subagents.mdx:667-690 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1374,11 +1687,14 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "The task a parent gives a child is reported as an incoming `session_message` in the "
-            "child's transcript, with `senderSessionId` set to the parent, before the child's "
-            "first agent output (SHOULD): the child's `agent_message_chunk` or "
-            "`agent_thought_chunk` is preceded by such an upsert (the sender is stored across "
-            "upserts of the `messageId`; the parent is the session that announced the child). A "
+            "A message from a parent to a child is reported as an incoming `session_message` in "
+            "the child's transcript, with `senderSessionId` set to the parent, before the "
+            "child's response to it (SHOULD): judged is the first one, which starts the child's "
+            "work, so the child's first `agent_message_chunk` or `agent_thought_chunk` is "
+            "preceded by such an upsert (the sender is stored across upserts of the "
+            "`messageId`; the parent is the session that announced the child). An incoming "
+            "`session_message` with no `senderSessionId` also counts: an Agent with no evidence "
+            "of the sender omits it and `MUST NOT` assume the parent. A "
             "child whose task was reported as a `user_message_chunk` is `ACP-SUBAGENT-011`'s "
             "FAIL, so is not judged here. Judged over the connection that advertised `subagents` "
             "(see `ACP-SUBAGENT-001` for its scope); SKIPs itself when no announced child that "
@@ -1386,8 +1702,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:106-111; "
-            "docs/rfds/subagents.mdx:648-657 (Active RFD)"
+            "docs/protocol/v1/draft/subagents.mdx:284,287; "
+            "docs/protocol/v1/draft/prompt-turn.mdx:108-113,115-118; "
+            "docs/rfds/subagents.mdx:667-676 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1402,13 +1719,13 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "for it supplies one (participant IDs follow the patch convention). A message that "
             "never names a participant, or has one before its first chunk, is not flagged. The "
             "draft docs state it without an RFC keyword (\"Include them ... when available\") "
-            "and the Active RFD as a SHOULD; either way it is not a MUST. Judged over the "
+            "and the Preview RFD as a SHOULD; either way it is not a MUST. Judged over the "
             "connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
             "SKIPs itself when no `session_message_chunk` appears. Shared id with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/prompt-turn.mdx:46-50; "
-            "docs/rfds/subagents.mdx:461-464 (Active RFD)"
+            "docs/protocol/v1/draft/prompt-turn.mdx:48-52; "
+            "docs/rfds/subagents.mdx:461-464 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1418,16 +1735,19 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "A select config option reported for a child in a `config_option_update` offers only "
             "its current value (SHOULD): the child does not permit Client-initiated "
-            "configuration changes (the only mutation the Subagents RFD defines is `cancel`, and "
-            "`session/set_config_option` is not authorized for a child), so the value is kept for "
+            "configuration changes (the only capability defined for a child is `cancel`, and "
+            "`session/set_config_option` is not permitted for a child), so the value is kept for "
             "its name without advertising choices the Client cannot select. Values are counted "
             "across option groups; boolean options and updates for a not-yet-announced child are "
-            "not judged. Stated only by the Subagents RFD (Active RFD), so the row is ADVISORY. "
+            "not judged. The draft docs state it as a SHOULD, so the row is ADVISORY. "
             "Judged over the connection that advertised `subagents` (see `ACP-SUBAGENT-001` for "
             "its scope); SKIPs itself when no `config_option_update` for an announced child "
             "carries a select. Shared id with v2."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:392-419 (Active RFD)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:272-273,427; "
+            "docs/rfds/subagents.mdx:392-419 (Preview RFD)"
+        ),
     ),
     Requirement(
         id="ACP-SUBAGENT-015",
@@ -1457,7 +1777,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "schema/v1/schema.unstable.json#/$defs/SessionMessage; "
             "schema/v1/schema.unstable.json#/$defs/SessionMessageChunk; "
             "schema/v1/schema.unstable.json#/$defs/SessionReference; "
-            "docs/rfds/subagents.mdx:815-829 (Active RFD)"
+            "docs/protocol/v1/draft/subagents.mdx:356-372,382; "
+            "docs/rfds/subagents.mdx:841-855 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1469,11 +1790,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "with `session/cancel` for the child's `sessionId`, and confirms it: the child's "
             "state snapshot on the parent association (`subagent_update.state`, the only place v1 "
             "reports a child's work state) becomes `idle` with `stopReason: \"cancelled\"`. The "
-            "per-child capability is stated by the draft docs and schema "
+            "per-child capability and the confirmation are stated by the draft docs and schema "
             "(`SubagentSessionCapabilities`: `cancel` `Permits the client to cancel this child's "
-            "current work`); the confirmation is stated only by the Subagents RFD (Active RFD), "
-            "and no `initialize` marker announces it, so the row is CAPABILITY, gated by "
-            "`inferred:subagentCancel` (documentation-only). Judged on the connection that "
+            "current work`); no `initialize` marker announces it, so the row is CAPABILITY, "
+            "gated by `inferred:subagentCancel` (documentation-only). An Agent that can no "
+            "longer observe the child reports `unknown` instead of a confirmation, so the row "
+            "SKIPs when the child's latest snapshot after the request is `unknown` and no `idle` "
+            "follows within the wait, or a non-cancelled `idle` follows it (the work ended out "
+            "of sight): the cancellation is not observable. A later `running` or "
+            "`requires_action` replaces `unknown`, so the wait then judges the child as usual. "
+            "Judged on the connection that "
             "advertised `subagents`, in a driven turn of the cancel prompt: the TCK sends the "
             "request only to a child that advertises `cancel` and was last reported running (the "
             "client MUST NOT cancel one that does not) and gives the child `timeout / 2` to "
@@ -1486,9 +1812,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`state_update`)."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/schema.mdx:8694; "
+            "docs/protocol/v1/draft/subagents.mdx:413,415,423,435,449-451; "
+            "docs/protocol/v1/draft/schema.mdx:9694; "
             "schema/v1/schema.unstable.json#/$defs/SubagentSessionCapabilities/properties/cancel; "
-            "docs/rfds/subagents.mdx:1069-1073,1089-1095 (Active RFD)"
+            "docs/rfds/subagents.mdx:1113-1117,1133-1139 (Preview RFD)"
         ),
     ),
     Requirement(
@@ -1499,11 +1826,12 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/cancel` for a child cancels current work in that child, not its parent: "
             "after the TCK cancels a running child that advertises `cancel`, the parent's "
             "`session/prompt` is not answered with `stopReason: \"cancelled\"` before the TCK "
-            "itself cancels the parent. Stated only by the Subagents RFD (Active RFD: `This "
-            "cancels current work in that child, not its parent or siblings`), so the row is "
-            "CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). Siblings are "
-            "not judged: the same RFD says the per-child capability `does not prevent the Agent "
-            "from cancelling its own delegated work`, and an Agent that reacts to the cancelled "
+            "itself cancels the parent. The draft docs state it (`not the work of its parent or "
+            "siblings`), and it binds only an agent that exposes cancellable children, so the row "
+            "is CAPABILITY, gated by `inferred:subagentCancel` (documentation-only). Siblings are "
+            "not judged: the docs say the Agent `can cancel work it delegated at any time` (the "
+            "Preview RFD: the per-child capability `does not prevent the Agent from cancelling "
+            "its own delegated work`), and an Agent that reacts to the cancelled "
             "child by stopping a sibling is indistinguishable on the wire from a cancel that "
             "leaked, so a sibling reported `idle`/`cancelled` is only recorded on the test's "
             "report entry (`acp_tck_cancelled_siblings`). Judged over the same driven turn as "
@@ -1512,24 +1840,79 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "reaction. SKIPs when no child was cancelled or it had ended first. Shared id with "
             "v2."
         ),
-        citation=_cite("docs/rfds/subagents.mdx:1069-1073 (Active RFD)"),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:447; "
+            "docs/rfds/subagents.mdx:1113-1117 (Preview RFD)"
+        ),
     ),
     Requirement(
-        id="ACP-PLAN-001",
-        tier=Tier.MANDATORY,
+        id="ACP-SUBAGENT-018",
+        tier=Tier.ADVISORY,
         capability=None,
         text=(
-            "When the client advertised `clientCapabilities.plan`, every `plan_update` whose "
-            "`plan.type` is `\"file\"` carries an absolute `plan.uri`. The spec does not define "
-            "\"absolute\"; the TCK reads it as an RFC 3986 URI with a scheme and, for `file:`, "
-            "an RFC 8089 absolute path (`file:///tmp/plan.md`, `file:/tmp/plan.md`), so "
-            "`plan.md`, `/tmp/plan.md` and `file:plan.md` fail. Unstable feature: an agent that "
-            "sends no file plan passes vacuously."
+            "An Agent rejects a Client-initiated request that names an announced child session "
+            "with `-32602`, any request other than `session/cancel` (which it ignores for a "
+            "child that does not advertise `cancel`). The draft docs state the SHOULD "
+            "(`session/close` and `session/delete` included), so the row is ADVISORY. The probe "
+            "deliberately breaks a Client MUST NOT (the restricted-methods allowlist), because "
+            "the docs define the Agent's answer to exactly that input: after the judged "
+            "transcript of the connection that advertised `subagents`, the TCK sends "
+            "`session/load` (when `loadSession` is advertised), `session/close` (when "
+            "`sessionCapabilities.close` is) and `session/delete` (when `.delete` is) for each of "
+            "the first two announced children. The probes are mutating methods only: the docs "
+            "(`error.mdx`) say an Agent rejects `any other request` that names a child, while "
+            "the Preview RFD leaves read-only operations their normal semantics, so no read-only "
+            "request is probed. Judged only for a probe that came back as an error: a success "
+            "is `ACP-SUBAGENT-019`'s (close/delete) and a missing reply is not judged. SKIPs "
+            "when the agent announced no child, advertised none of the probe methods, or no "
+            "probe was answered with an error. Shared id with v2."
         ),
         citation=_cite(
-            "docs/protocol/v1/draft/agent-plan.mdx:127; "
-            "docs/rfds/plan-operations.mdx:63 (Draft RFD); "
-            "schema/v1/schema.unstable.json#/$defs/PlanFile"
+            "docs/protocol/v1/draft/error.mdx:57; "
+            "docs/protocol/v1/draft/subagents.mdx:419-428; "
+            "docs/rfds/subagents.mdx:1088-1096 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-019",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.close",
+        text=(
+            "`session/close` and `session/delete` naming an announced child session do not "
+            "report success: the docs say they `do not report success for a child`. The probe "
+            "is the one of `ACP-SUBAGENT-018` (which breaks a Client MUST NOT on purpose, "
+            "because the docs define the Agent's answer): `session/close` is sent for each of "
+            "the first two announced children, `session/delete` too when "
+            "`sessionCapabilities.delete` is advertised. A success FAILs, whatever an error's "
+            "code (the code is `-32602` under `ACP-SUBAGENT-018`). SKIPs when the agent "
+            "announced no child or no probe was answered. Shared id with v2."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:425,428; "
+            "docs/rfds/subagents.mdx:1093-1096 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUBAGENT-020",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "A child's work state in `subagent_update.state` carries a `state` that is one of "
+            "`running`, `idle`, `requires_action`, `unknown` or begins with `_` (the docs "
+            "reserve every other value for the protocol), and an `idle` snapshot's `stopReason` "
+            "is a v1 stop reason (`end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, "
+            "`cancelled`), `error` or begins with `_`. A value of another type is a schema "
+            "defect (`ACP-SUBAGENT-015`). The schema accepts any string as an unrecognized "
+            "state or stop reason, so only this row judges the reserved namespace; the docs "
+            "state a reservation and no RFC keyword, so it is ADVISORY. Judged over the "
+            "connection that advertised `subagents` (see `ACP-SUBAGENT-001` for its scope); "
+            "SKIPs when no `subagent_update` carries a `state`. v1 only: v2 reports a child's "
+            "state on its own `state_update`."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/subagents.mdx:356-372,380; "
+            "schema/v1/schema.unstable.json#/$defs/StateUpdate; "
+            "schema/v1/schema.unstable.json#/$defs/IdleStateUpdate"
         ),
     ),
     Requirement(
@@ -1547,6 +1930,188 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "docs/protocol/v1/draft/initialization.mdx:172-179; "
             "schema/v1/schema.unstable.json#/$defs/PlanCapabilities"
         ),
+    ),
+    Requirement(
+        id="ACP-PLAN-003",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.plan`, a markdown plan's `path`, "
+            "when it is a string, is an absolute path in the native syntax of the agent's "
+            "machine (POSIX `/...`, a Windows drive path or a UNC path) and not a URI: "
+            "`PLAN.md`, `./PLAN.md` and `file:///tmp/PLAN.md` fail. `null` and an omitted "
+            "`path` mean the plan has no file and are not judged; a `path` of the wrong type "
+            "is a schema defect, `ACP-PLAN-004`'s. Unstable feature: an agent that sends no "
+            "markdown plan with a `path` passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:112-117; "
+            "docs/protocol/v1/draft/overview.mdx:233; "
+            "schema/v1/schema.unstable.json#/$defs/PlanMarkdown/properties/path; "
+            "docs/rfds/plan-operations.mdx:64,196 (Preview RFD)"
+        ),
+    ),
+    Requirement(
+        id="ACP-PLAN-004",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.plan`, every `plan_update` and "
+            "`plan_removed` the agent sends validates against the v1 schema's `SessionUpdate`: "
+            "a plan of `type` `items` (with `entries`) or `markdown` (with `content`), each "
+            "with a `planId`. A legacy `file` plan, which the protocol no longer defines, fails. "
+            "Unstable feature: an agent that sends neither update passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/agent-plan.mdx:55,108-117; "
+            "schema/v1/schema.unstable.json#/$defs/SessionUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-001",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "When the client advertised `clientCapabilities.session.promptSuggestions: {}` and "
+            "nothing else, each suggestion in a `prompt_suggestions_update` has a `prompt` that "
+            "is valid as the `prompt` of a `session/prompt` request (a non-empty list of valid "
+            "content blocks) and holds only `text` and `resource_link` blocks: `image`, `audio` "
+            "and `resource` blocks need the client to advertise them under "
+            "`session.promptSuggestions` too, which the TCK's connection does not. Checked over "
+            "a connection of `session/new`, two prompt turns, `session/load` when advertised, "
+            "and quiet periods. Unstable feature: an agent that sends no suggestion passes "
+            "vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:398-405; "
+            "docs/protocol/v1/draft/initialization.mdx:250-255,258-279; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestion"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-002",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "No suggestion in a `prompt_suggestions_update` has a `prompt` whose only content is "
+            "empty or whitespace-only text -- checked over the connection of ACP-SUGGEST-001. "
+            "Unstable feature: an agent that sends no suggestion passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:402; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestion"
+        ),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-003",
+        tier=Tier.CAPABILITY,
+        capability="inferred:promptSuggestions",
+        text=(
+            "When the agent accepts a `session/prompt` while the session's current suggestion "
+            "list is not empty, it replaces the list or withdraws it with `suggestions: []`. "
+            "Judged on the connection of ACP-SUGGEST-001: if the list the agent sent after the "
+            "first turn is non-empty when the second `session/prompt` is sent and that prompt is "
+            "accepted, a `prompt_suggestions_update` for the session must arrive before the end "
+            "of that turn plus a quiet period (the rule has no deadline of its own; the window "
+            "is the TCK's). SKIPs when the agent sent no non-empty list before the second "
+            "prompt, or did not accept it."
+        ),
+        citation=_cite("docs/protocol/v1/draft/prompt-turn.mdx:409,412"),
+    ),
+    Requirement(
+        id="ACP-SUGGEST-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD NOT include prompt suggestions in `session/load` replay: no "
+            "`prompt_suggestions_update` arrives between the `session/load` request and its "
+            "response, on the connection of ACP-SUGGEST-001. A loaded session starts with an "
+            "empty list. Applies only to an agent that advertised `loadSession` (SKIPs "
+            "otherwise) and SKIPs when no suggestion was seen live."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:425; "
+            "docs/protocol/v1/draft/session-setup.mdx:150; "
+            "schema/v1/schema.unstable.json#/$defs/PromptSuggestionsUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-001",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "On a connection where the client advertised `clientCapabilities.session.cursors: "
+            "{}`, the first `cursor_update` for a `cursorId` on a session carries a non-null "
+            "`anchor`, and no later update for that `cursorId` carries a different anchor (a "
+            "cursor never moves; omitting the anchor or repeating it is fine). The state is per "
+            "session and `cursorId`, and starts afresh at each successful `session/load`, whose "
+            "replay rebuilds the session's cursors: the first update for a cursor inside the "
+            "replay (up to the load response) carries its anchor too. After the response, an "
+            "update without an anchor for a cursor anchored before the load is not judged (the "
+            "agent may clear the `capabilities` of a cursor it stopped accepting and did not "
+            "replay). Checked over a connection of `session/new`, "
+            "two prompt turns, two `session/load`s when advertised, and a `session/fork` probe. "
+            "Unstable feature: an agent that announces no cursor passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:617,619,622-624,707-708; "
+            "docs/protocol/v1/draft/session-setup.mdx:154,156; "
+            "schema/v1/schema.unstable.json#/$defs/CursorUpdate"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-002",
+        tier=Tier.MANDATORY,
+        capability=None,
+        text=(
+            "A `cursor_update` whose `anchor` has a defined `type` (`user_message`, "
+            "`agent_message`, `agent_thought`, `session_message`, `tool_call`, `compaction`) "
+            "names an entity the agent already reported on the same session, by the matching "
+            "ID (`messageId`, `toolCallId` or `compactionId`) in an earlier `session/update`; "
+            "a message needs a `messageId` to be anchored to. A `session/load` replay delivers "
+            "each entity before the cursors anchored to it, so the reported set starts afresh "
+            "at each successful load. Anchors of unknown `type` are not judged. Judged on the "
+            "session the TCK created, over the connection of ACP-CURSOR-001. Unstable feature: "
+            "an agent that announces no cursor passes vacuously."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:652-654,656-657,674; "
+            "docs/protocol/v1/draft/session-setup.mdx:154; "
+            "schema/v1/schema.unstable.json#/$defs/CursorAnchor"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-003",
+        tier=Tier.CAPABILITY,
+        capability="agentCapabilities.sessionCapabilities.fork",
+        text=(
+            "`session/fork` with a `cursorId` the agent did not issue for that session is "
+            "rejected with `-32602`: the agent does not fork at another position and does not "
+            "treat the request as if `cursorId` had been omitted (a whole-session fork). Probed "
+            "on every agent that advertises `fork`, whether or not it announced a cursor, with "
+            "a fabricated `cursorId` on the session of ACP-CURSOR-001's connection. The probe "
+            "breaks a client MUST (only pass an announced cursor) on purpose, because the docs "
+            "define the agent's answer."
+        ),
+        citation=_cite(
+            "docs/protocol/v1/draft/prompt-turn.mdx:676-680,698-701; "
+            "schema/v1/schema.unstable.json#/$defs/ForkSessionRequest/properties/cursorId"
+        ),
+    ),
+    Requirement(
+        id="ACP-CURSOR-004",
+        tier=Tier.ADVISORY,
+        capability=None,
+        text=(
+            "The agent SHOULD use the same `cursorId` for the same position in every "
+            "`session/load`. Two loads of the session of ACP-CURSOR-001's connection are "
+            "compared by position, not by entity ID (message IDs may change across a load): a "
+            "cursor is keyed by its anchor's `type`, `position`, and the ordinal of the "
+            "anchored entity among the entities of that `type` the replay reported. SKIPs "
+            "without `loadSession`, when either load did not succeed, when the first load "
+            "replayed no cursor, or when no replayed cursor has a placeable anchor."
+        ),
+        citation=_cite("docs/protocol/v1/draft/session-setup.mdx:155,157"),
     ),
     Requirement(
         id="ACP-PERM-001",
@@ -1698,7 +2263,7 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "as the connection's first message) gets error `-32600`. Only SHOULD; nothing is "
             "asserted about the connection afterwards."
         ),
-        citation=_cite("docs/protocol/v1/draft/error.mdx:29,59-61"),
+        citation=_cite("docs/protocol/v1/draft/error.mdx:29,61-63"),
     ),
     Requirement(
         id="ACP-ERROR-006",

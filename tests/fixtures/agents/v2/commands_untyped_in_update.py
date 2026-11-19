@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: right after the `session/new` response, an
 `available_commands_update` carries a command without the required `type` discriminator
-(slash-commands.mdx:110; `AvailableCommand` requires `type`). The setup response itself is
+(slash-commands.mdx:113; `AvailableCommand` requires `type`). The setup response itself is
 conforming. FAILs `ACP-COMMANDS-201`.
 """
 

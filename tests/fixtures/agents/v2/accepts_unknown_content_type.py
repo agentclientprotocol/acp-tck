@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: accepts a prompt containing a `_tck_unknown` content block instead of
-rejecting it with `-32602` (prompt-lifecycle.mdx:313). Unadvertised `image`/`audio`/`resource`
+rejecting it with `-32602` (prompt-lifecycle.mdx:323). Unadvertised `image`/`audio`/`resource`
 blocks are still rejected. FAILs `ACP-PROMPT-211` only.
 """
 

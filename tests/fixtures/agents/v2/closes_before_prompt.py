@@ -2,7 +2,7 @@
 """Conforming fixture: an agent that processes `session/close` before a `session/prompt` sent just
 ahead of it. Only a prompt that is the single text `__close_first__` (pass it as
 `--cancel-prompt`) is deferred, and once the close has taken effect it is answered `-32002`
-(the session is no longer active, session-setup.mdx:51). `ACP-CLOSE-204` PASSes with outcome
+(the session is no longer active, session-setup.mdx:52). `ACP-CLOSE-204` PASSes with outcome
 `not_active`.
 """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: `resume_lists_background_work.py`, except the resume snapshot lists
 the unfinished background tool call without first sending a `tool_call_update` for it
-(session-setup.mdx:346).
+(session-setup.mdx:431).
 
 FAILs exactly `ACP-RESUME-213`.
 """

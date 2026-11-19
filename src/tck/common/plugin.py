@@ -231,8 +231,8 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "revokes(what, reason=...): this test takes away something other tests rely on (e.g. "
-        '`revokes("auth", reason=...)` for logout), so it is moved to the end of the run. At most '
-        "one such test may be collected per run.",
+        '`revokes("auth", reason=...)` for logout), so it is moved to the end of the run, after '
+        "every other test, in collection order among the revoking tests.",
     )
     config.stash[TEST_STATES_KEY] = {}
 
@@ -242,8 +242,9 @@ def _revokes_markers(item: pytest.Item) -> list[pytest.Mark]:
 
 
 def _order_revokes_last(items: list[pytest.Item]) -> list[str]:
-    """Move `revokes`-marked items to the end (collection order otherwise kept) and return
-    problems. More than one is an error: a second would need dependency ordering among them."""
+    """Move `revokes`-marked items to the end (collection order otherwise kept, among the
+    revoking items too) and return problems. A revoking test that runs after an earlier one
+    must SKIP, not FAIL, if what that one took away stops it from setting up."""
     errors: list[str] = []
     revoking = [item for item in items if _revokes_markers(item)]
     for item in revoking:
@@ -253,11 +254,6 @@ def _order_revokes_last(items: list[pytest.Item]) -> list[str]:
                     f'{item.nodeid}: use @pytest.mark.revokes("<what>", reason="<why>") '
                     "(one positional argument and a non-empty reason)"
                 )
-    if len(revoking) > 1:
-        errors.append(
-            "at most one @pytest.mark.revokes test may be collected per run (a second would need "
-            "dependency ordering); collected: " + ", ".join(item.nodeid for item in revoking)
-        )
     if not errors:
         items[:] = [item for item in items if item not in revoking] + revoking
     return errors
@@ -443,7 +439,7 @@ class InitializeOutcome:
 
 
 UNSUPPORTED_PROTOCOL_VERSION = -32022
-"""Error code for "no supported version <= requested" (v2 draft initialization.mdx:100). Version
+"""Error code for "no supported version <= requested" (v2 draft initialization.mdx:112). Version
 agnostic: a v2-only agent answers a v1 client's `initialize` with it too."""
 
 AGENT_INIT_KEY = pytest.StashKey[InitializeOutcome]()

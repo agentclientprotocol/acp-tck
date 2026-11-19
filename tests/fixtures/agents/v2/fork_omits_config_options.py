@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-conforming fixture: advertises `capabilities.session.fork`; `session/new` carries both
 `configOptions` and `availableCommands`, but the `session/fork` response leaves out
-`configOptions` (session-setup.mdx:108).
+`configOptions` (session-setup.mdx:110).
 
 FAILs exactly `ACP-FORK-205`. `ACP-FORK-201`/`202` PASS: the omitted list is optional in the schema.
 """
