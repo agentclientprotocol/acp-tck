@@ -11,10 +11,16 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: test
+  # The product suite is split over runners by `--shard K/N` (tests/conftest.py, round robin over
+  # the collected tests): on one 4-core runner it no longer fits in 30 minutes.
+  product:
+    name: product ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
 
@@ -31,8 +37,26 @@ jobs:
 
       # The end-to-end CLI tests mostly wait on agent subprocesses, so they parallelize well
       # (pytest's addopts in pyproject.toml runs them in parallel).
-      - name: Run test suite
-        run: uv run pytest -q
+      - name: Run test suite (shard ${{ matrix.shard }}/4)
+        run: uv run pytest -q --shard ${{ matrix.shard }}/4
+
+  spec-tracker:
+    name: spec-tracker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Sync dependencies
+        run: uv sync --locked
 
       # spec-tracker's tests check the spec maps against the spec docs at each version's vendored
       # schema revision (SCHEMA_REVISION in protocol.py); under CI they fail, not skip, if this
@@ -50,6 +74,23 @@ jobs:
 
       - name: Test spec-tracker
         run: uv run --locked --package spec-tracker pytest spec-tracker/tests -q --spec-repo "$RUNNER_TEMP/acp-spec"
+
+  # The single required check: green only when every product shard and spec-tracker passed, so
+  # the shard count can change without touching branch protection.
+  test:
+    name: test
+    needs: [product, spec-tracker]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check product shards and spec-tracker
+        env:
+          PRODUCT: ${{ needs.product.result }}
+          SPEC_TRACKER: ${{ needs.spec-tracker.result }}
+        run: |
+          echo "product: $PRODUCT, spec-tracker: $SPEC_TRACKER"
+          test "$PRODUCT" = success && test "$SPEC_TRACKER" = success
 
   # The cross-check is informational: independently implemented upstream agents are expected to
   # FAIL some requirements, so a red result here does not mean the TCK broke. It needs nothing from
