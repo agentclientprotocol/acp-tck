@@ -29,6 +29,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
   FIX-LEDGER: S9, S10, N10, N17.
 - Follow-up rows (user, 2026-11-18): ADD now, one slice FOLLOWUP-ROWS before id alignment: (1) v2 OPTIONS row for early updates caused by initial entries (SCO:584, mirror v1 OPTIONS-008 baseline); (2) v2 set_title -> session_info_update row (session-list.mdx:162); (3) v2 replayed child parent/order vs pre-resume traffic (subagents.mdx:482). Leave as follow-ups: elicitation $/cancel_request on close/cancel; SUBAGENT-201 double missing-mirror message.
 - Leftovers (user, 2026-11-19): one GAPS slice, ledger-first: T1 text fix; G1 v1 SA:471, G2 v2 SL:163-165, G3 child idle stopReason (verify) get a real ledger entry or a row only where cheaply observable.
+- Final fixes (user, 2026-11-19): one FINAL-FIX slice (opus): F1 + N-a..N-e from review-final.md.
 - No "ignored RFDs" list exists in the maps; nothing to remove there (user asked; confirmed by grep).
 ## Done
 - Step 2 inventory — ceef9a8 — .agents/research/spec-diff-v{1,2}.md
@@ -76,7 +77,7 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - CROSS-CHECK — c19acff — Rust SDK v5.1.0 -> v5.3.0 (schema crate 1.18.0 = vendored 3ea94133; v5.4.0 is ahead), Python kept 1.0.0 (no newer tag); MANDATORY --expect unchanged (ci.yml untouched); new CAPABILITY FAILs all real SDK deviations: PROMPT-212..214 testy_v2, PROMPT-212..215 python_v2_agent (SDK hides idempotencyKey); python_v2_agent now sends replay_complete (RESUME-218/-220 PASS); cross-check tests 20 passed. No suspected TCK false positives.
 - Final review — review-final.md — 0 blocker, 1 should-fix (F1: OPTIONS-008 both versions FAILs an early state_update; v2 SS:100-103 allows initial idle before/after response; baseline sampled without quiet period), 5 nits (N-a parent mirror resets target_unknown; N-b 205 pairing stops on extra leading mirror; N-c broken fork also FAILs OPTIONS-004..006; N-d _replay_end crashes on non-dict params; N-e README --subagent-prompt omits RESUME-223/225/226); all milestone-2 findings verified fixed (S4 partial accepted); suite 1235, spec-tracker 121, cross-check 20.
 ## Next
-Order (plan section 5): id alignment DONE (no renames) -> GAPS done -> cross-check DONE -> final review DONE -> fix slice? (asking user) -> finish.
+Order (plan section 5): id alignment DONE (no renames) -> GAPS done -> cross-check DONE -> final review DONE -> FINAL-FIX slice (running) -> finish.
 - Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-28 done (ALL area slices) (plus R-FIX, typo fix, DEL204-FIX).
 - Milestone-2 review DONE over 7254513..c80a543 (milestone-1 review covered 6bce0b3..7254513), report .agents/research/review-area-slices.md, decisions D1-D13,
   plan sections 1-5. Show findings to the user; fixes become slices. Known items to hand the reviewer: v1 OPTIONS-008 also flags
