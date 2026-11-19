@@ -76,18 +76,11 @@ mode: single · branch: eugenethedev/spec-update (from main ee2af8a) · reviews:
 - GAPS — 79edd34 — T1 fixed (v1 already right); G1 v1 SA:471 Deferred ledger entry (no v1 hold mode); G2 +v2 LIST-209 ADVISORY (set_title update before response, CONFIG-212 style; duplicates allowed); G3 verified unjudged -> +v2 SUBAGENT-206 CAPABILITY inferred:subagents (child idle stopReason defined or _-prefixed), +SUBAGENT-207 ADVISORY (first idle after work carries stopReason); spec-tracker 121, suite 1235.
 - CROSS-CHECK — c19acff — Rust SDK v5.1.0 -> v5.3.0 (schema crate 1.18.0 = vendored 3ea94133; v5.4.0 is ahead), Python kept 1.0.0 (no newer tag); MANDATORY --expect unchanged (ci.yml untouched); new CAPABILITY FAILs all real SDK deviations: PROMPT-212..214 testy_v2, PROMPT-212..215 python_v2_agent (SDK hides idempotencyKey); python_v2_agent now sends replay_complete (RESUME-218/-220 PASS); cross-check tests 20 passed. No suspected TCK false positives.
 - Final review — review-final.md — 0 blocker, 1 should-fix (F1: OPTIONS-008 both versions FAILs an early state_update; v2 SS:100-103 allows initial idle before/after response; baseline sampled without quiet period), 5 nits (N-a parent mirror resets target_unknown; N-b 205 pairing stops on extra leading mirror; N-c broken fork also FAILs OPTIONS-004..006; N-d _replay_end crashes on non-dict params; N-e README --subagent-prompt omits RESUME-223/225/226); all milestone-2 findings verified fixed (S4 partial accepted); suite 1235, spec-tracker 121, cross-check 20.
+- FINAL-FIX — 57ae389 — F1 (v2 excludes state_update per SS:100-103; baseline through quiet period, both versions; 3 conforming fixtures), N-a, N-b (narrowed to avoid S1 regression), N-c (failed plain fork leaves fork half out; options_fork_always_fails both versions), N-d, N-e (README lists SUBAGENT-203, RESUME-223..226); suite 1241, spec-tracker 121.
 ## Next
-Order (plan section 5): id alignment DONE (no renames) -> GAPS done -> cross-check DONE -> final review DONE -> FINAL-FIX slice (running) -> finish.
-- Milestone 1 (re-vendor) DONE and reviewed. Milestone 2 (area slices) in progress: slices 1-28 done (ALL area slices) (plus R-FIX, typo fix, DEL204-FIX).
-- Milestone-2 review DONE over 7254513..c80a543 (milestone-1 review covered 6bce0b3..7254513), report .agents/research/review-area-slices.md, decisions D1-D13,
-  plan sections 1-5. Show findings to the user; fixes become slices. Known items to hand the reviewer: v1 OPTIONS-008 also flags
-  config_option_update (overlaps -007; plan meant "other" updates); session/fork initial config entries not probed (both versions);
-  CURSOR-001 requires an anchor on the first replayed update (accepted); cursor fixtures exercise only message anchors.
-- Then id alignment (plan 5.3): researcher inventory -> user approves EACH rename -> programmer applies everywhere.
-- Then cross-check refresh (plan 5.4): expect new CAPABILITY failures for SDK agents (replay_complete, idempotency, CANCEL-213,
-  CURSOR-003, file plans on ENUM-201); never bake a suspected TCK false positive into --expect.
-- Finish: grep `.agents/(research|state.md|prompt.md)` in src tests cross-check spec-tracker (clean so far); remind the user to delete
-  .agents/prompt.md, .agents/state.md, .agents/research/ before the PR merges. No push / PR unless asked.
+GOAL DONE (2026-11-19). All milestones, reviews and fixes landed; final `.agents/` grep over src tests cross-check spec-tracker docs README.md is clean.
+- Remaining for the user: delete .agents/prompt.md, .agents/state.md, .agents/research/ before the PR merges (put the same reminder in the PR description). No push / PR unless asked.
+- Follow-ups for a later PR (not in this one): elicitation $/cancel_request on close/cancel (needs an elicitation trigger); SUBAGENT-201 double missing-mirror message; set_title success / -32002 / -32602 rows and other D10(b) -32002 halves; RESUME-226 can't judge children from earlier connections; S4 residual (in-flight traffic on the resumed session itself); v1 has no FORK row, so a broken v1 fork now fails no row (since 57ae389); mcp-over-acp (D12); Rust SDK v5.4.0 when the vendored spec moves to schema 1.19.0.
 ## Working notes for programmers (put in every brief)
 - Full suite ~10 min: run it in the FOREGROUND (timeout 600000); background runs force premature hand-backs.
 - Commit only after a green full run; never stage `tck-iso-*` temp dirs; verify every citation at 3ea94133 via
