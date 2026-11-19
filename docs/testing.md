@@ -50,9 +50,6 @@ uv run pytest tests/v1/test_cli.py -k conforming
 - The first runs only the unit and registry tests, skipping the two end-to-end `test_cli.py` files.
 - The second runs the CLI tests whose name matches `-k`, usually a fixture agent's name.
 
-`--shard K/N` (defined in `tests/conftest.py`) keeps every N-th collected test, starting at the K-th, and
-deselects the rest; the N shards together run each test exactly once. CI uses it to split the suite over runners.
-
 Some CLI tests scope the inner `acp-tck` run with its own `-k` to the modules that own the ids they assert on. A
 scoped run leaves every unselected MANDATORY row NOT TESTED, so it prints NOT CONFORMANT; that is expected, and
 the tests assert on the per-id statuses, not the verdict (see [Writing tests](writing-tests.md#fixtures)).
@@ -70,11 +67,8 @@ the tests assert on the per-id statuses, not the verdict (see [Writing tests](wr
 
 `.github/workflows/ci.yml` runs two independent parts side by side:
 
-- `test` (required): passes only when every `product K/4` job and the `spec-tracker` job passed.
-  - `product K/4`: `uv sync --locked && uv run pytest -q --shard K/4`, four runners side by side, each running a
-    quarter of the product suite (parallel via addopts). On one runner the suite no longer fits the 30-minute job
-    limit.
-  - `spec-tracker`: the spec-tracker tests against a fetched spec checkout.
+- `test` (required): `uv sync --locked && uv run pytest -q` (the product suite, parallel via addopts), then the
+  spec-tracker tests against a fetched spec checkout.
 - The cross-check (informational, `continue-on-error: true`): one `cross-check <agent>` job per upstream agent,
   each running the TCK against it on its own runner, then a `cross-check` job that runs the cross-check tests and
   checks the four reports against the expected baseline.
