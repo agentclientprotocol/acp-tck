@@ -27,7 +27,7 @@ tests, so the same id can exist in both.
 There is no retirement mechanism and no list of retired ids.
 
 - When a spec change removes a requirement, delete its registry row, its test, its marker and its fixture
-  expectations (`test_cli.py` id sets, fixture docstrings). Nothing is left behind.
+  expectations (the CLI tests' id sets, fixture docstrings). Nothing is left behind.
 - A removed number may be reused later for a new requirement **in the same area**, subject to two guards:
   1. Never reuse a number in the same change that freed it. A reader comparing the before and after of one
      change must never see an id whose meaning silently flipped.

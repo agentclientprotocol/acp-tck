@@ -19,10 +19,10 @@ the same for v1 and v2; substitute the version package (`src/tck/v1/` or `src/tc
 4. If the test sends a probe the agent is not expected to recognize, follow the [probe rules](#probes).
 5. Run the [tests](testing.md). The registry tests (`tests/v{1,2}/test_registry.py`) fail if the id is not referenced by a
    test, if a test references an unregistered id, and, because they pin the id set and the per-tier id sets by
-   hand, if you did not update those. `tests/v{1,2}/test_cli.py` keeps hand-written tier sets that must match the
-   registry too.
-6. Add a non-conforming fixture that trips only the new row, and assert it in `tests/v{1,2}/test_cli.py`
-   ([Fixtures](#fixtures)).
+   hand, if you did not update those. `tests/v{1,2}/cli/_expectations.py` keeps hand-written tier sets that must
+   match the registry too.
+6. Add a non-conforming fixture that trips only the new row, and assert it in the CLI tests
+   ([Fixtures](#fixtures), [CLI test layout](#cli-test-layout)).
 
 ## Markers
 
@@ -112,10 +112,36 @@ A SKIP says "nothing was judged", so it must be honest.
   filename and docstring.
 - The docstring lists the rows the fixture FAILs and any intended cascade (rows that fail as a consequence, and
   rows that deliberately do not).
-- `tests/v{1,2}/test_cli.py` asserts each fixture's **exact FAIL set**, so a change that moves a row for the wrong
-  fixture is caught.
+- The CLI tests under `tests/v{1,2}/cli/` assert each fixture's **exact FAIL set**, so a change that moves a row
+  for the wrong fixture is caught.
 - Some tests scope the run with `-k` to the module(s) that own the ids they assert on. That flips the printed
   verdict to NOT CONFORMANT (every unselected MANDATORY row is NOT_TESTED). When a run is scoped, the fixture's
   docstring says its FAIL set holds "within its `-k` scope".
 - Cover both sides: `conforming.py` (or a fixture that advertises the capability) PASSes the row, and the defect
   fixture FAILs it.
+
+### CLI test layout
+
+The CLI tests for the rows of `src/tck/vN/conformance/test_X.py` live in `tests/vN/cli/<domain>/test_X.py`. Both
+versions have the same domains, and CI runs each domain as its own job:
+
+| Domain | Conformance modules |
+|---|---|
+| `connection_setup` | `transport`, `initialize`, `authentication` |
+| `wire_format` | `jsonrpc`, `batch`, `errors`, `extensibility`, `enums`, `diagnostics`, `informational` |
+| `session_lifecycle` | `session`, `session_capabilities` (except replay) |
+| `session_replay` | `session/load` and `session/resume` replay (`test_load.py`, `test_resume.py`), `cursors` |
+| `session_config` | `session_config`, `initial_config`, `session_options`, `slash_commands` |
+| `prompt_turn` | `prompt`, `prompt_capabilities`, `prompt_suggestions`, `idempotency`, `background`, `plan`, `cancel` |
+| `tool_calls` | `permission(s)`, `patches`, `item_controls` |
+| `client_capabilities` | `client_capabilities` |
+| `subagents` | `subagents`, `subagent_controls` |
+| `conforming_agents` | full runs of the conforming fixtures (`test_conforming.py`) |
+| `tck_runner` | `acp-tck` itself: its command line and `--report-json` |
+
+A test goes with the module whose rows it asserts on. Helpers shared by several domains live in
+`tests/vN/cli/_runner.py` (`_run_cli`, the summary-table parsers) and the shared id sets in
+`tests/vN/cli/_expectations.py`; a helper one domain uses stays in that domain. Every directory is a package
+(`__init__.py`), so the two versions can use the same file names; import the shared modules relatively
+(`from .._runner import _run_cli`). A new domain needs the same directory in both versions: CI lists the domains
+from the directories and fails if the two versions differ.

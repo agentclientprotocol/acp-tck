@@ -3,8 +3,9 @@ mechanism: `tck.common.plugin._build_report` reads the `initialize` result's
 agent-identity/capabilities keys via these two field names rather than
 hard-coding v1's `agentInfo`/`agentCapabilities`, so v2's rename (`info`/`capabilities`) is
 plumbed through without `common/` importing anything version-specific. End-to-end coverage of the
-full JSON report for a real v2 run lives in `tests/v2/test_cli.py`; this file isolates the
-mechanism itself against both real `SPEC` instances, without needing a live pytest run.
+full JSON report for a real v2 run lives in `tests/v2/cli/tck_runner/test_report_json.py`; this
+file isolates the mechanism itself against both real `SPEC` instances, without needing a live
+pytest run.
 """
 
 from __future__ import annotations

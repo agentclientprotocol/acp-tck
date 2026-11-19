@@ -32,8 +32,8 @@ documentation-only), so each connects via `_helpers.v2_only_agent` -- the shared
 initialize + skip on VERSION-MISMATCH + login_if_needed" pattern -- instead of
 `connected_agent(agent_launch)` directly, so a v1-only agent forced under
 `--protocol-version 2` SKIPs with the `VERSION-MISMATCH:` marker instead of just "session/new
-returned no configOptions" (`tests/v2/test_cli.py`'s `test_v1_conforming_agent_under_protocol_
-version_2_is_blocked_by_version_mismatch` invariant).
+returned no configOptions" (`tests/v2/cli/connection_setup/test_initialize.py`'s
+`test_v1_conforming_agent_under_protocol_version_2_is_blocked_by_version_mismatch` invariant).
 """
 
 from __future__ import annotations

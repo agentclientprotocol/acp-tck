@@ -12,13 +12,14 @@ absolute `cwd` and `additionalDirectories`, and announces one nested child of it
 an absolute `cwd`). Everything is legal once announced, and the child's idle must not end the
 parent's turn: must PASS `ACP-PROMPT-002/203`, `ACP-SUBAGENT-001..009`, `-011..014`, `-201` and `-205` and
 `ACP-STATE-201..205` like `conforming.py`, and also exercises the rows that need a subagent, a
-permission request or `session` content (`_SUBAGENT_EXERCISED_IDS` in `tests/v2/test_cli.py`). The
-mock client answers the permission requests; the child's is not awaited. A Client-initiated
-request naming an announced child gets `-32602` (`_answer_child_request`, `subagents.mdx:380`), so
-the child-session probes (`ACP-SUBAGENT-018`, `-019`) and `ACP-LIST-004` PASS: the child is never
-listed, and a later `session/new` never reuses its ID. `session/close` for a session first cancels
-its descendants' still-unanswered permission requests with `$/cancel_request`
-(`_withdraw_child_requests_on_close`, `subagents.mdx:427`), so `ACP-SUBAGENT-203` PASSes.
+permission request or `session` content (`_SUBAGENT_EXERCISED_IDS` in
+`tests/v2/cli/subagents/test_subagents.py`). The mock client answers the permission requests; the
+child's is not awaited. A Client-initiated request naming an announced child gets `-32602`
+(`_answer_child_request`, `subagents.mdx:380`), so the child-session probes (`ACP-SUBAGENT-018`,
+`-019`) and `ACP-LIST-004` PASS: the child is never listed, and a later `session/new` never reuses
+its ID. `session/close` for a session first cancels its descendants' still-unanswered permission
+requests with `$/cancel_request` (`_withdraw_child_requests_on_close`, `subagents.mdx:427`), so
+`ACP-SUBAGENT-203` PASSes.
 
 The `_`-hooks below are the seams the violator fixtures override.
 """

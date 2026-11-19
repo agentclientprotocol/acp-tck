@@ -13,8 +13,8 @@ auth method (`methodId: "tck"`), `capabilities.auth.status` (`ACP-AUTH-007`/`008
 `AsksPermissionAgent` with `permission_tool_call=True`, so every turn also exercises the
 permission-request shape and a `tool_call` subject that ends `completed` only when approved
 (`ACP-PERM-203`/`ACP-PERM-002`). Must PASS every
-CAPABILITY/INFORMATIONAL id its advertised capabilities gate (see `tests/v2/test_cli.py` for the
-exact set).
+CAPABILITY/INFORMATIONAL id its advertised capabilities gate (see
+`tests/v2/cli/conforming_agents/test_conforming.py` for the exact set).
 
 The `tck` auth method correctly implements `auth/login`/`auth/logout` via
 `_base.ConformingAgent`, but does not set `require_auth`, so `session/new` never actually gates

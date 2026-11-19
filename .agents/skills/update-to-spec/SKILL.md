@@ -136,14 +136,14 @@ rules are in [`docs/requirements.md`](../../../docs/requirements.md). Run them i
    `VENDORED.md` and fix what `tests/v<N>/test_registry.py` and `spec-tracker/tests/` flag (run the
    latter with `--spec-repo <spec checkout>`). Also refresh the stage labels of the cited RFDs against the
    stage moves in the inventory. No requirement semantics change in this slice.
-2. **One slice per area:** registry rows, conformance tests, fixtures, the `test_cli.py`
+2. **One slice per area:** registry rows, conformance tests, fixtures, the CLI test
    expectations, and the ledger additions for that area. Area slices pick provisional ids; step 3
    settles them.
 3. **Final id alignment** ([details](../../../docs/spec-updates.md#id-alignment)), after all area
    slices and before the cross-check refresh. A researcher produces a read-only inventory of every v2
    `2xx` row against v1 and of every shared id, with a proposed rename and "same rule because..." for
    each. **The user approves each rename**; borderline pairs are the user's call. Then a programmer
-   applies the renames everywhere: registries, markers, `test_cli.py`/`test_registry.py` sets, fixture
+   applies the renames everywhere: registries, markers, CLI test (`tests/v{1,2}/cli/`)/`test_registry.py` sets, fixture
    docstrings, cross-check `--expect`, and `ci.yml`.
 4. **Cross-check refresh** ([details](../../../docs/spec-updates.md#cross-check-refresh)): bump the
    SDK pins if needed, re-observe the baselines, and update the `--expect` lines in

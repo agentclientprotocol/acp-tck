@@ -505,21 +505,20 @@ def test_every_registry_id_is_referenced_by_at_least_one_test():
 
 def test_cli_selftest_tier_sets_match_the_registry():
     """v2 twin of `tests/v1/test_registry.py::test_cli_selftest_tier_sets_match_the_registry`:
-    `tests/v2/test_cli.py` hand-maintains `_MANDATORY_IDS`/`_CAPABILITY_IDS`, which must mirror
-    `REGISTRY`'s own `Tier` field exactly -- otherwise a tier misclassification could go
-    unnoticed. `tests/v2` is a package (unlike `tests/v1`), so the sibling module is imported as
-    `v2.test_cli`, not the bare `test_cli` v1 uses."""
-    import v2.test_cli as test_cli
+    `tests/v2/cli/_expectations.py` hand-maintains `_MANDATORY_IDS`/`_CAPABILITY_IDS`, which must
+    mirror `REGISTRY`'s own `Tier` field exactly -- otherwise a tier misclassification could go
+    unnoticed."""
+    from .cli import _expectations
 
     by_tier: dict[Tier, set[str]] = {tier: set() for tier in Tier}
     for req_id, requirement in REGISTRY.items():
         by_tier[requirement.tier].add(req_id)
 
-    assert test_cli._MANDATORY_IDS == by_tier[Tier.MANDATORY], (
-        test_cli._MANDATORY_IDS ^ by_tier[Tier.MANDATORY]
+    assert _expectations._MANDATORY_IDS == by_tier[Tier.MANDATORY], (
+        _expectations._MANDATORY_IDS ^ by_tier[Tier.MANDATORY]
     )
-    assert test_cli._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
-        test_cli._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
+    assert _expectations._CAPABILITY_IDS == by_tier[Tier.CAPABILITY], (
+        _expectations._CAPABILITY_IDS ^ by_tier[Tier.CAPABILITY]
     )
 
 

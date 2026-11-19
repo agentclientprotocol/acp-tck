@@ -27,7 +27,7 @@ The tooling is documented in [`spec-tracker/README.md`](../spec-tracker/README.m
    and removals are decisions: get them confirmed before implementing.
 6. **Slices**, in this order:
    1. [re-vendor](#re-vendor), first and alone;
-   2. one slice per area (registry rows, tests, fixtures, `test_cli.py` expectations, ledger additions);
+   2. one slice per area (registry rows, tests, fixtures, CLI test expectations, ledger additions);
    3. the [final id-alignment step](#id-alignment);
    4. the [cross-check refresh](#cross-check-refresh).
 
@@ -107,8 +107,8 @@ after area slices that picked provisional numbers independently per version.
    they are the same rule ("same rule because ..."). Propose renames: a `2xx` row that restates a v1 rule takes the
    v1 id; a shared id that no longer means the same rule is split.
 2. **The user approves each rename.** Borderline pairs are the user's call.
-3. **Apply the renames everywhere:** both registries, test markers, the id sets in `tests/v{1,2}/test_cli.py` and
-   `test_registry.py`, fixture docstrings, prose mentions in code and tests, the `--expect` lines in
+3. **Apply the renames everywhere:** both registries, test markers, the id sets in the CLI tests under
+   `tests/v{1,2}/cli/` and `test_registry.py`, fixture docstrings, prose mentions in code and tests, the `--expect` lines in
    `cross-check/run.sh`, and the mirrored lines in `.github/workflows/ci.yml`. Re-run the blast-radius grep
    afterwards, once the last area slice has landed.
 

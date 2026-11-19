@@ -6,8 +6,8 @@ instead of silently swallowing it. v2 twin of v1's `noisy_stderr_and_parse_error
 Self-test only: deterministically exercises `ACP-STDERR-001`'s (INFORMATIONAL, non-zero stderr
 byte count) and `ACP-INFO-PARSE-001`'s (INFORMATIONAL, "replied with error code -32700" instead
 of the default "silent") non-default branches -- neither is asserted on, so this fixture does
-not FAIL anything; it exists purely so `tests/v2/test_cli.py` can check the recorded
-`record_property` values take their non-default shape at least once.
+not FAIL anything; it exists purely so `tests/v2/cli/wire_format/test_diagnostics.py` can check the
+recorded `record_property` values take their non-default shape at least once.
 """
 
 import json

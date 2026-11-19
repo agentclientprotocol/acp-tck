@@ -8,8 +8,8 @@ Only requires `--cancel-prompt __hang__` to trigger, since `_is_hang_prompt` sti
 that literal sentinel (see `conforming.py`). Every other prompt finishes normally.
 
 FAILs exactly `ACP-CANCEL-208`/`ACP-CLOSE-002` (both bound to
-`test_close_cancels_foreground_work`, see `tests/v2/test_cli.py`) when run with that flag; other
-ids (`ACP-CANCEL-001/002/203..207`, `ACP-CLOSE-001`) are unaffected.
+`test_close_cancels_foreground_work`, see `tests/v2/cli/prompt_turn/test_cancel.py`) when run with
+that flag; other ids (`ACP-CANCEL-001/002/203..207`, `ACP-CLOSE-001`) are unaffected.
 """
 
 import sys

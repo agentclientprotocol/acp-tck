@@ -15,7 +15,7 @@ again to spawn the nested child with a `toolCall` carrying a `session` reference
 child's own `agent_message_chunk` before reporting it `idle(end_turn)`. After the prompt response
 the child sends one more chunk (child work outlives the parent's turn). Everything is legal once
 announced: must PASS `ACP-SUBAGENT-001..009`, `-011..015` (`_SUBAGENT_IDS` in
-`tests/v1/test_cli.py`). The mock client answers the permission requests; the child's is not
+`tests/v1/cli/subagents/`). The mock client answers the permission requests; the child's is not
 awaited.
 
 With `replay_on_load` (see `replays_subagent_history.py`) `session/load` also replays every
