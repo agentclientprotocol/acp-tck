@@ -204,6 +204,10 @@ if [ "$RUN_SUMMARY" = "1" ]; then
     #     requesting 2 is answered by the v1 implementation selecting 1 instead of 2.
     # Both are deterministic (6/6 runs). The old ACP-INIT-205/206 flakiness (testy exiting before
     # flushing its error reply) is gone: the router keeps the connection open after a rejection.
+    # CAPABILITY, not in the MANDATORY-only `--expect` set: testy_v2 FAILs ACP-PROMPT-212/213/214.
+    # It advertises `capabilities.session` but ignores `PromptRequest.idempotencyKey`: a retry or a
+    # reused key inserts a second message, and an empty key is accepted instead of -32602
+    # (prompt-lifecycle.mdx:439,441,444,452,457). ACP-RESUME-218 PASSes: testy sends `replay_complete`.
     #
     # python_v2_agent (repo-authored fixture, see `python_v2_agent.py` docstring), all from the
     # Python SDK's v2 runtime, which the fixture delegates framing and validation to:
@@ -222,6 +226,14 @@ if [ "$RUN_SUMMARY" = "1" ]; then
     #   ACP-RESUME-208). The fixture itself skips validation the spec requires (CAPABILITY
     #   ACP-ERROR-003/004, ACP-LIST-003/205, ACP-MCP-203, ACP-PROMPT-211, ACP-PROMPTCAP-201,
     #   ACP-SESSION-204, ADVISORY ACP-RESUME-214), so those FAIL too.
+    #   CAPABILITY ACP-PROMPT-212..215 FAIL like testy_v2's, for the same reason, and the fixture
+    #   cannot fix it: the SDK's request models drop fields they do not declare, so the handler
+    #   never sees `idempotencyKey` (`acp.utils.model_to_kwargs`). `replay_complete` is also
+    #   missing from the SDK's schema; the fixture sends it through the open `OtherSessionUpdate`
+    #   variant, so ACP-RESUME-218 PASSes.
+    # Neither SDK agent advertises or exercises the other new features (fork `cursorId`,
+    # `$/cancel_request`, `file` plans, child sessions), so ACP-CURSOR-003, ACP-CANCEL-213,
+    # ACP-ENUM-201 and ACP-RESUME-223 are SKIPPED or PASS, and the new MANDATORY rows stay vacuous.
     "${AGENT_PYTHON[@]}" "$SCRIPT_DIR/summary.py" \
       "$OUT_DIR/testy.json" testy \
       "$OUT_DIR/echo_agent.json" echo_agent \

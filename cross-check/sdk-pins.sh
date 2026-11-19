@@ -6,10 +6,12 @@
 #
 # Each SHA must be the commit its release tag points at: `git ls-remote --tags <url> <tag>^{}`.
 
-# Rust SDK `v5.1.0`; new enough for the `unstable_protocol_v2` cargo feature (the v2 leg).
+# Rust SDK `v5.3.0`: pins `agent-client-protocol-schema =1.18.0`, the schema release the vendored
+# spec commit sits on (v5.4.0 moves to 1.19.0, ahead of it). Has the `unstable_protocol_v2` cargo
+# feature (the v2 leg).
 RUST_SDK_URL=https://github.com/agentclientprotocol/rust-sdk
-RUST_SDK_TAG=v5.1.0
-RUST_SDK_SHA=026fe25d515f0ca5a32828e3327fcfd40aa92f60
+RUST_SDK_TAG=v5.3.0
+RUST_SDK_SHA=05fd3893cca2f1be2eb3a262b0f7da2c52abaa58
 
 # Python SDK `1.0.0`. Its tag must equal the `agent-client-protocol==` pin in `pyproject.toml`
 # (the version the agents actually run on); `echo_agent.py` is taken from this checkout.

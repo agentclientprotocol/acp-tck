@@ -61,6 +61,11 @@ run to run out of one report's check. The baseline is the `--expect` lines at th
   and a first `initialize` without a valid version to its v1 implementation, which keeps the
   connection).
 - `python_v2_agent`: a small set of known SDK limitations, explained above the `--expect` lines.
+- CAPABILITY and ADVISORY results are not in `--expect`, but the comment block above the `--expect`
+  lines records the known ones. Notably, v2 `testy` and `python_v2_agent` advertise
+  `capabilities.session` but ignore `idempotencyKey`, so ACP-PROMPT-212..214 FAIL for both and
+  ACP-PROMPT-215 for `python_v2_agent`. The Python SDK has no `replay_complete` in its schema;
+  `python_v2_agent` sends it as an `OtherSessionUpdate`, so ACP-RESUME-218 passes.
 - `--expect-flaky` is available for ids that PASS or FAIL run to run (an upstream race); none
   are flaky today.
 
