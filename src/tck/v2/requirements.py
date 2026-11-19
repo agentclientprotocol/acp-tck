@@ -3811,8 +3811,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "\"boolean\", \"value\": \"yes\"}]` (a `value` that does not match its `type`). "
             "The probes break a client rule (send schema-valid entries) on purpose, because the "
             "docs define the agent's answer. Every probe is repeated on `session/fork` of a fresh "
-            "session when `capabilities.session.fork` is advertised; the docs also list "
-            "`session/resume`, which is not probed. Unstable feature. A `-32000` reply SKIPs."
+            "session when `capabilities.session.fork` is advertised and a plain fork of it "
+            "succeeds (ACP-FORK-201 judges one that fails); the docs also list `session/resume`, "
+            "which is not probed. Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:482,555,578; "
@@ -3828,7 +3829,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
         text=(
             "Two initial `configOptions` entries with the same `configId` fail the setup "
             "request with `-32602`. Checked on `session/new`, and on `session/fork` of a fresh "
-            "session when `capabilities.session.fork` is advertised, with a real option of "
+            "session when `capabilities.session.fork` is advertised and a plain fork of it "
+            "succeeds (ACP-FORK-201 judges one that fails), with a real option of "
             "`session/options` at its current value sent twice: a select one, else a boolean one. "
             "Only an agent with neither gets a synthetic id (the rule to ignore an unknown id "
             "applies to it too). The probe breaks a client rule (no duplicate entries) on "
@@ -3852,7 +3854,8 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "lists, a `type: \"boolean\"` entry for a select option and a `type: \"id\"` "
             "entry for a boolean option (neither needs a client capability in v2); every probe "
             "is repeated on `session/fork` of a fresh session when `capabilities.session.fork` "
-            "is advertised, and the unknown-id probe on `session/resume` of a session the "
+            "is advertised and a plain fork of it succeeds (ACP-FORK-201 judges one that fails), "
+            "and the unknown-id probe on `session/resume` of a session the "
             "`session/new` probes made. Entries that apply are not probed (their values may "
             "legitimately be refused at runtime). Unstable feature. A `-32000` reply SKIPs."
         ),
@@ -3891,14 +3894,16 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "Judged on the `session/new` of ACP-OPTIONS-007 (a select option of `session/options` "
             "set to an alternative value), and on a `session/fork` of a fresh session with the "
             "same entry when `session.fork` is advertised: an update for the new session before "
-            "the response FAILs, except `config_option_update` (ACP-OPTIONS-007's) and kinds "
-            "that the same request without entries, on a fresh connection, also sends before "
-            "its response (they are not caused by the entries). A fork that does not succeed is "
-            "not judged. SKIPs under the conditions of ACP-OPTIONS-007. Unstable feature."
+            "the response FAILs, except `config_option_update` (ACP-OPTIONS-007's), "
+            "`state_update` (it may arrive before or after the response, and an initial idle "
+            "one is a snapshot) and kinds that the same request without entries, on a fresh "
+            "connection, also sends before its response or within a quiet period after it (they "
+            "are not caused by the entries). A fork that does not succeed is not judged. SKIPs "
+            "under the conditions of ACP-OPTIONS-007. Unstable feature."
         ),
         citation=_cite(
             "docs/protocol/v2/draft/session-config-options.mdx:584; "
-            "docs/protocol/v2/draft/session-setup.mdx:105,596"
+            "docs/protocol/v2/draft/session-setup.mdx:100-103,105,596"
         ),
     ),
     Requirement(

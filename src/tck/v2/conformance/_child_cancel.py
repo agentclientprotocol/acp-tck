@@ -273,9 +273,12 @@ class _Driver:
                     <= self.quiet
                 )
                 self.target_settled_at = asyncio.get_running_loop().time()
-            elif child.state.get("state") == "unknown" or is_active_state(child.state.get("state")):
-                # A later `running` or `requires_action` replaces `unknown` (subagents.mdx:363).
-                self.target_unknown = child.state.get("state") == "unknown"
+            elif child.state.get("state") == "unknown":
+                self.target_unknown = True
+            elif own and is_active_state(child.state.get("state")):
+                # A later `running` or `requires_action` replaces `unknown` (subagents.mdx:363);
+                # a parent's mirror may be a stale copy of an earlier state, so only the child's own.
+                self.target_unknown = False
         elif (
             self.parent_cancel_index is None
             and _is_idle_cancelled(child.state)

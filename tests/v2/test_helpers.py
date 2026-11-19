@@ -980,6 +980,33 @@ def test_a_missing_mirror_is_not_reported_as_a_late_one():
     assert found.judged == 1 and len(found.out_of_order) == 1
 
 
+def test_a_leading_snapshot_mirror_does_not_stop_the_pairing():
+    """An announcement carrying an `idle` snapshot before the child's own first `running` mirrors
+    no own state: it is skipped, so the transitions after it are still judged."""
+    announce_idle = _mirror("idle")
+    late = _traffic(
+        announce_idle, _state("c", "running"), _state("c", "idle"), _mirror("running"), _mirror("idle")
+    )
+    found = child_state_order(late, {"p"})
+    assert found.judged == 1 and len(found.out_of_order) == 1
+    prompt = _traffic(
+        announce_idle, _state("c", "running"), _mirror("running"), _state("c", "idle"), _mirror("idle")
+    )
+    assert (child_state_order(prompt, {"p"}).judged, child_state_order(prompt, {"p"}).out_of_order) == (1, [])
+    # a missing first mirror after the snapshot still stops the pairing rather than FAILing
+    missing = _traffic(
+        announce_idle,
+        _state("c", "running"),
+        _state("c", "idle"),
+        _mirror("idle"),
+        _state("c", "running"),
+        _mirror("running"),
+        _state("c", "idle"),
+        _mirror("idle"),
+    )
+    assert (child_state_order(missing, {"p"}).judged, child_state_order(missing, {"p"}).out_of_order) == (0, [])
+
+
 def test_announced_children_follow_the_announcement_rule():
     """First-announcement order, nested children included; a session the client created, the
     update's own session and a child announced on a session nothing announced are not children."""

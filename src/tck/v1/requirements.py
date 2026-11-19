@@ -937,8 +937,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "neither a string nor, with `type: \"boolean\"`, a boolean). The probes break a "
             "client rule (send schema-valid entries) on purpose, because the docs define the "
             "agent's answer. Both probes are repeated on `session/fork` of a fresh session when "
-            "`sessionCapabilities.fork` is advertised; the docs also list `session/load` and "
-            "`session/resume`, which are not probed. Unstable feature. A `-32000` reply SKIPs."
+            "`sessionCapabilities.fork` is advertised and a plain fork of it succeeds; the docs "
+            "also list `session/load` and `session/resume`, which are not probed. Unstable "
+            "feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:475,541,563; "
@@ -957,8 +958,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`session/options` (a non-boolean one, at its current value) sent twice; an agent "
             "with none gets a synthetic id, since the rule has no exception for unknown ids. "
             "Repeated on `session/fork` of a fresh session when `sessionCapabilities.fork` is "
-            "advertised. The probe breaks a client rule (no duplicate entries) on purpose, "
-            "because the docs define the agent's answer. Unstable feature. A `-32000` reply SKIPs."
+            "advertised and a plain fork of it succeeds. The probe breaks a client rule (no "
+            "duplicate entries) on purpose, because the docs define the agent's answer. Unstable "
+            "feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:475,541,564; "
@@ -979,10 +981,10 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "for a boolean option (the docs and schema descriptions name the gate "
             "`sessionCapabilities.configOptions.boolean`, a path that does not exist; the real "
             "one is the client capability); every `session/new` probe is repeated on "
-            "`session/fork` of a fresh session when `sessionCapabilities.fork` is advertised, and "
-            "the unknown-id probe on `session/load` and `session/resume` when advertised. Entries "
-            "that apply are not probed (their values may legitimately be refused at runtime). "
-            "Unstable feature. A `-32000` reply SKIPs."
+            "`session/fork` of a fresh session when `sessionCapabilities.fork` is advertised and "
+            "a plain fork of it succeeds, and the unknown-id probe on `session/load` and "
+            "`session/resume` when advertised. Entries that apply are not probed (their values "
+            "may legitimately be refused at runtime). Unstable feature. A `-32000` reply SKIPs."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:475,541,565-566; "
@@ -1021,8 +1023,9 @@ _DECLARATIONS: tuple[Requirement, ...] = (
             "`sessionCapabilities.fork` is advertised: an update for the new session before the "
             "response FAILs, except `config_option_update` (ACP-OPTIONS-007's) and kinds that "
             "the same request without entries, on a fresh connection, also sends before its "
-            "response (they are not caused by the entries). A fork that does not succeed is not "
-            "judged. SKIPs under the conditions of ACP-OPTIONS-007. Unstable feature."
+            "response or within a quiet period after it (they are not caused by the entries). A "
+            "fork that does not succeed is not judged. SKIPs under the conditions of "
+            "ACP-OPTIONS-007. Unstable feature."
         ),
         citation=_cite(
             "docs/protocol/v1/draft/session-config-options.mdx:541,568; "

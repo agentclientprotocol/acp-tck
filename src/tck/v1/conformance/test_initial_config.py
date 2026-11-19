@@ -7,11 +7,12 @@ test judges its own fresh connection. The entries come from `session/options` of
 a select option with an alternative value for the rows that apply one, a real id for the duplicate
 probe. Probes are `session/new` requests, repeated by ACP-OPTIONS-004..006 and -008 as
 `session/fork` requests (of a plain session made on the same connection) when
-`sessionCapabilities.fork` is advertised; ACP-OPTIONS-006 also repeats its unknown-id probe on
-`session/load` and `session/resume` when advertised. `type: "boolean"` entries are only sent, and
-boolean options only seen, on a connection that advertises
-`clientCapabilities.session.configOptions.boolean` (the docs and schema descriptions call the gate
-`sessionCapabilities.configOptions.boolean`, a path that does not exist).
+`sessionCapabilities.fork` is advertised (a fork that fails even without entries is not probed);
+ACP-OPTIONS-006 also repeats its unknown-id probe on `session/load` and `session/resume` when
+advertised. `type: "boolean"` entries are only sent, and boolean options only seen, on a connection
+that advertises `clientCapabilities.session.configOptions.boolean` (the docs and schema
+descriptions call the gate `sessionCapabilities.configOptions.boolean`, a path that does not
+exist).
 """
 
 from __future__ import annotations
@@ -89,10 +90,16 @@ async def _source_session(agent, cwd: Path, *, timeout: float) -> str:
 
 async def _setup_targets(agent, cwd: Path, init_result: Any, *, timeout: float) -> list[tuple[str, str | None]]:
     """`(method, source sessionId)` for each setup request the probes go to: `session/new`, and
-    `session/fork` of a fresh session when `sessionCapabilities.fork` is advertised."""
+    `session/fork` of a fresh session when `sessionCapabilities.fork` is advertised and a plain fork
+    of that session succeeds. A fork that fails without entries is not the entries' fault, so it
+    is left out rather than FAILing the probes."""
     targets: list[tuple[str, str | None]] = [("session/new", None)]
     if init_result is not None and capability_is_supported(init_result, _FORK_PATH):
-        targets.append(("session/fork", await _source_session(agent, cwd, timeout=timeout)))
+        source_id = await _source_session(agent, cwd, timeout=timeout)
+        params = {"sessionId": source_id, "cwd": str(cwd), "mcpServers": []}
+        plain = await _call(agent, "session/fork", params, timeout=timeout)
+        if _result(plain) is not None:
+            targets.append(("session/fork", source_id))
     return targets
 
 
@@ -328,10 +335,12 @@ async def _value_exchange(agent_launch, tmp_path, *, fork: bool) -> _Exchange | 
         return _Exchange(option, value, result, agent.transcript[start : end + 1], agent.transcript[end + 1 :])
 
 
-async def _early_kinds_without_entries(agent_launch, tmp_path, *, fork: bool) -> set[str]:
+async def _kinds_without_entries(agent_launch, tmp_path, *, fork: bool) -> set[str]:
     """The update kinds a plain `session/new` (or `session/fork`, made like `_value_exchange`'s)
-    sends for its session before its response, on a fresh connection: kinds that do not come from
-    initial entries. Empty when the request fails."""
+    sends for its session on a fresh connection, from the request through a quiet period after
+    its response: kinds that do not come from initial entries. Kinds sent after the response count
+    too: applying entries delays the response, so an update the plain request sends just after it
+    may come before it when entries are applied. Empty when the request fails."""
     timeout = agent_launch.default_timeout
     async with connected_agent(agent_launch) as agent:
         if fork:
@@ -345,7 +354,8 @@ async def _early_kinds_without_entries(agent_launch, tmp_path, *, fork: bool) ->
         session_id = (_result(entry) or {}).get("sessionId")
         if not isinstance(session_id, str):
             return set()
-        return set(_update_kinds(agent.transcript[start : _index_of(agent, entry, start) + 1], session_id))
+        await drain(agent, quiet_period(timeout))
+        return set(_update_kinds(agent.transcript[start:], session_id))
 
 
 def _index_of(agent, entry, start: int) -> int:
@@ -379,9 +389,9 @@ async def test_no_config_option_update_for_initial_entries(agent_launch, tmp_pat
 async def test_no_update_before_the_setup_response_for_initial_entries(agent_launch, agent_initialize_result, tmp_path):
     """ACP-OPTIONS-008 (ADVISORY). No `session/update` for the new session before the `session/new`
     response, when the request carried an initial entry, other than `config_option_update`
-    (ACP-OPTIONS-007's) and kinds a plain `session/new` also sends before its response (not caused
-    by the entry). Repeated on `session/fork` when advertised; a fork that cannot be made with
-    the entry is left unjudged (ACP-OPTIONS-006's)."""
+    (ACP-OPTIONS-007's) and kinds a plain `session/new` also sends, before or after its response
+    (not caused by the entry). Repeated on `session/fork` when advertised; a fork that cannot be
+    made with the entry is left unjudged (ACP-OPTIONS-006's)."""
     exchanges = [("session/new", await _initial_value_exchange(agent_launch, tmp_path))]
     init_result = agent_initialize_result.result
     if init_result is not None and capability_is_supported(init_result, _FORK_PATH):
@@ -393,7 +403,7 @@ async def test_no_update_before_the_setup_response_for_initial_entries(agent_lau
         session_id = exchange.response.get("sessionId")
         kinds = set(_update_kinds(exchange.before, session_id)) - {"config_option_update"}
         if kinds:
-            kinds -= await _early_kinds_without_entries(agent_launch, tmp_path, fork=method == "session/fork")
+            kinds -= await _kinds_without_entries(agent_launch, tmp_path, fork=method == "session/fork")
         if kinds:
             problems.append(f"session/update {sorted(kinds)!r} sent before the {method} response for an initial entry")
     assert not problems, "; ".join(problems)

@@ -144,6 +144,11 @@ In version 1 the same connection and turn also judge `ACP-CLIENTCAP-001`..`003`.
 work there may provoke `fs/*`, `terminal/*` or elicitation requests the connection never advertised, which fails those
 rows.
 
+In version 2 the text also drives turns of its own, each on its own connection and bound by `--timeout` the same way:
+`ACP-SUBAGENT-203` prompts it and closes the session once a child permission request is held, and
+`ACP-RESUME-223`..`226` prompt it before the `session/resume` whose replay they judge. Without the option those rows use
+an ordinary prompt; `ACP-RESUME-223`, `225` and `226` then need a child to judge and report `SKIPPED` without one.
+
 ### `--auth-method ID`
 
 Authenticates with this method id (one advertised in `initialize`'s `authMethods`) right after `initialize`, before any

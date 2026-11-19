@@ -1312,6 +1312,35 @@ def test_duplicate_probe_uses_a_real_boolean_option_when_there_is_no_select():
     assert statuses["ACP-OPTIONS-005"] == "PASS", result.stdout
 
 
+def test_early_updates_not_caused_by_initial_entries_pass_options_008():
+    """`options_idle_before_response.py` sends the initial idle `state_update` before the response
+    only when the request carries entries (session-setup.mdx:100-103 allow it on either side);
+    `options_usage_overtakes_response.py` sends a `usage_update` just after a plain `session/new`
+    response and before one with entries. Neither is caused by the entries, so ACP-OPTIONS-008
+    PASSes and nothing FAILs."""
+    for fixture in ("options_idle_before_response.py", "options_usage_overtakes_response.py"):
+        result = _run_cli(FIXTURES_DIR_V2, fixture, protocol_version=2, k="test_initial_config")
+        statuses = _table_statuses(result.stdout)
+        assert _fails(statuses) == set(), f"{fixture}:\n{result.stdout}"
+        assert statuses["ACP-OPTIONS-008"] == "PASS", f"{fixture}:\n{result.stdout}"
+
+
+def test_a_fork_that_always_fails_fails_only_the_fork_row():
+    """`options_fork_always_fails.py` advertises `fork` but every `session/fork` fails with
+    `-32603`. Only ACP-FORK-201 FAILs: the initial-config rows leave the fork out and PASS on
+    `session/new`."""
+    result = _run_cli(
+        FIXTURES_DIR_V2,
+        "options_fork_always_fails.py",
+        protocol_version=2,
+        k="test_initial_config or test_fork_session_returns_a_new_session",
+    )
+    statuses = _table_statuses(result.stdout)
+    assert _fails(statuses) == {"ACP-FORK-201"}, result.stdout
+    for n in (4, 5, 6, 8):
+        assert statuses[f"ACP-OPTIONS-{n:03}"] == "PASS", result.stdout
+
+
 def test_conforming_initial_config_passes_non_vacuously_and_conforming_skips(tmp_path):
     """`conforming_full.py` applies initial entries, ignores inapplicable ones and reports the real
     values, so every ACP-OPTIONS row of the initial-value family PASSes (010 and 201 record and PASS);

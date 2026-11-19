@@ -1059,6 +1059,15 @@ def test_child_cancel_non_cancelled_idle_straight_after_unknown_is_unobservable(
     assert run.outcome == "confirmed"
 
 
+def test_child_cancel_a_mirrored_running_does_not_replace_unknown():
+    """A parent's `subagent_update` may be a stale copy of an earlier `running`; only the child's
+    own `running` replaces `unknown`, so the idle after it stays `unobservable`."""
+    stale_mirror = _update({"sessionUpdate": "subagent_update", "sessionId": _CHILD, "state": {"state": "running"}})
+    late_end = [{"sleep": 0.7}, _state("idle", _CHILD, stopReason="end_turn")]
+    _, run = _drive_child_cancel([_state("unknown", _CHILD), stale_mirror, *late_end])
+    assert run.outcome == "unobservable"
+
+
 def _held_child_stop(pause: float):
     """A child that holds a permission request and confirms its cancel `pause` s after the TCK
     releases it (at `timeout / 2`)."""

@@ -177,3 +177,21 @@ def test_replayed_cursors_are_keyed_by_the_whole_anchor():
     replayed = _replayed_cursors(connection, connection.resumes[0][:2])
     assert sorted(replayed.values()) == [("c1",), ("c2",), ("c3",)]
     assert repr(sorted(_SESSION_MESSAGE_ANCHOR.items())) in replayed
+
+
+def test_a_malformed_update_inside_a_replay_is_ignored():
+    """A `session/update` without object `params` inside a resume's replay is skipped, as the
+    walker skips it elsewhere, rather than crashing the judging."""
+    connection = _connection(
+        _TOOL,
+        _cursor("c1", _TOOL_ANCHOR),
+        _resume(5),
+        (Direction.RECEIVED, {"method": "session/update"}),
+        (Direction.RECEIVED, {"method": "session/update", "params": ["not", "an", "object"]}),
+        _TOOL,
+        _cursor("c1", _TOOL_ANCHOR),
+        _REPLAY_COMPLETE,
+        _reply(5),
+    )
+    assert anchor_problems(connection) == []
+    assert unreported_anchor_problems(connection) == []

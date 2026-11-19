@@ -1176,16 +1176,27 @@ def child_state_order(
 
     Per announced child, the distinct consecutive states of each path (the child's own
     `state_update`s, and the `subagent_update.state`s on its parent) are paired in order, n-th
-    with n-th, while the two paths agree. At the first state that differs (a missing, extra or
-    swapped mirror, `child_state_mirrors`' finding) the pairing stops: scanning ahead would pair
-    an own state with the mirror of a later transition and report a missing mirror as a late
-    one. For each two consecutive paired transitions, the later one's first copy must arrive
-    after the earlier one's second copy."""
+    with n-th, while the two paths agree. Mirrors that arrive before the child's first own state
+    and differ from it (an announcement carrying an `idle` snapshot, say) mirror no own state and
+    are skipped first. At the first state that differs (a missing, extra or swapped mirror,
+    `child_state_mirrors`' finding) the pairing stops: scanning ahead would pair an own state
+    with the mirror of a later transition and report a missing mirror as a late one. For each
+    two consecutive paired transitions, the later one's first copy must arrive after the earlier
+    one's second copy."""
     _parents, own, mirrored = _child_state_paths(transcript, client_sessions)
     result = ChildStateOrder()
     for child, states in own.items():
+        mirrors = mirrored.get(child, [])
+        first_position, first_state = states[0]
+        skipped = 0
+        while (
+            skipped < len(mirrors)
+            and mirrors[skipped][0] < first_position
+            and mirrors[skipped][1] != first_state
+        ):
+            skipped += 1
         copies: list[tuple[int, str]] = []
-        for position, state in mirrored.get(child, []):
+        for position, state in mirrors[skipped:]:
             if not copies or copies[-1][1] != state:  # a repeated snapshot is idempotent
                 copies.append((position, state))
         aligned: list[tuple[int, int, str]] = []  # (own position, mirror position, state)

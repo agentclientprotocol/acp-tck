@@ -169,10 +169,11 @@ def _replay_end(connection: CursorsConnection, start: int, end: int) -> int:
             return index
         for message in iter_messages(entry):
             params = message.get("params")
-            update = params.get("update") if isinstance(params, dict) else None
+            if message.get("method") != "session/update" or not isinstance(params, dict):
+                continue
+            update = params.get("update")
             if (
-                message.get("method") == "session/update"
-                and params.get("sessionId") == connection.session_id
+                params.get("sessionId") == connection.session_id
                 and isinstance(update, dict)
                 and update.get("sessionUpdate") == "replay_complete"
             ):
